@@ -65,6 +65,20 @@
       "reply_to": "msg_0005",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0006",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: New Task Assigned",
+      "content": "I confirm receiving the new task assignment. Ready to proceed with collaboration.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:50:56.080915",
+      "status": "pending",
+      "reply_to": "msg_0005",
+      "reply_depth": 1,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -124,8 +138,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 5,
+    "last_message_id": 6,
     "last_checked": null,
-    "unread_count": 5
+    "unread_count": 6
   }
 }
