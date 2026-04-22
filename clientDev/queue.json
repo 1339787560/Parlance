@@ -1,0 +1,23 @@
+{
+  "inbox": [
+    {
+      "id": "msg_0001",
+      "from": "admin",
+      "to": "clientDev",
+      "type": "request",
+      "subject": "Communication Test",
+      "content": "This is a test message. Please reply to confirm receipt.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:38:35.780977",
+      "status": "pending",
+      "reply_to": null,
+      "attachments": []
+    }
+  ],
+  "outbox": [],
+  "metadata": {
+    "last_message_id": 1,
+    "last_checked": null,
+    "unread_count": 1
+  }
+}
