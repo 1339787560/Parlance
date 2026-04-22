@@ -149,6 +149,20 @@
       "reply_to": "msg_0001",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0016",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: Client Integration",
+      "content": "Received. Started preparing client integration. Will confirm server interface details with gamesvrDev first.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T16:00:15.571443",
+      "status": "pending",
+      "reply_to": "msg_0001",
+      "reply_depth": 1,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -296,8 +310,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 15,
+    "last_message_id": 16,
     "last_checked": null,
-    "unread_count": 11
+    "unread_count": 12
   }
 }
