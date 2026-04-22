@@ -107,6 +107,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0011",
+      "from": "admin",
+      "to": "clientDev",
+      "type": "request",
+      "subject": "UI Refresh Task",
+      "content": "Please update the UI components and coordinate with gamesvrDev.",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:57:04.839344",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -217,11 +231,26 @@
       "reply_to": "msg_0007",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0010",
+      "ref_msg_id": "msg_0010",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "query",
+      "subject": "UI Data Binding Details Request",
+      "content": "Hi gamesvrDev, I received the UI Update Task from admin. Could you please provide details about the data binding requirements for the UI? Specifically, I need to know: 1) What data fields need to be bound? 2) What is the data format/structure? 3) Are there any specific protocols for client-server communication?",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:54:58.924046",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 9,
+    "last_message_id": 11,
     "last_checked": null,
-    "unread_count": 8
+    "unread_count": 9
   }
 }
