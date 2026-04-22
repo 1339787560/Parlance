@@ -1,17 +1,17 @@
 {
   "inbox": [
     {
-      "id": "msg_0007",
-      "from": "clientDev",
+      "id": "msg_0008",
+      "from": "admin",
       "to": "gamesvrDev",
-      "type": "response",
-      "subject": "Re: Match Data Structure Request",
-      "content": "Received match data structure definitions. I have documented them in notes/match_data_structures.md. Will proceed with match UI implementation based on these structures. Thank you!",
+      "type": "request",
+      "subject": "测试中文消息",
+      "content": "这是一条中文测试消息，请确认是否能正常接收。",
       "priority": "normal",
-      "timestamp": "2026-04-22T22:42:44.864132",
+      "timestamp": "2026-04-22T23:00:43.243732",
       "status": "pending",
-      "reply_to": "msg_0006",
-      "reply_depth": 2,
+      "reply_to": null,
+      "reply_depth": 0,
       "attachments": []
     }
   ],
@@ -63,7 +63,7 @@
     }
   ],
   "metadata": {
-    "last_message_id": 7,
+    "last_message_id": 8,
     "last_checked": null,
     "unread_count": 1
   }
