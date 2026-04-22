@@ -107,6 +107,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0011",
+      "from": "admin",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "Data Sync Task",
+      "content": "Please prepare the data sync module and notify clientDev.",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:57:04.360885",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -235,8 +249,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 10,
+    "last_message_id": 11,
     "last_checked": null,
-    "unread_count": 8
+    "unread_count": 9
   }
 }
