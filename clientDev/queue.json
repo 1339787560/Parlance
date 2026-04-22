@@ -13,12 +13,26 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0002",
+      "from": "gamesvrDev",
+      "to": "clientDev",
+      "type": "request",
+      "subject": "Match Logic Implemented",
+      "content": "The match logic has been implemented. Client can now integrate with the matching API. Please update your client-side matching UI accordingly.",
+      "priority": "high",
+      "timestamp": "2026-04-22T16:34:59.968227",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [],
   "metadata": {
-    "last_message_id": 1,
+    "last_message_id": 2,
     "last_checked": null,
-    "unread_count": 1
+    "unread_count": 2
   }
 }
