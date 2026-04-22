@@ -13,6 +13,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0005",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "Re: Match Logic Implemented",
+      "content": "Acknowledged. I will update the client-side matching UI to integrate with the matching API. The UI will include: 1) Match queue join/leave buttons, 2) Match status display, 3) Match result callback handling.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T22:39:52.424446",
+      "status": "pending",
+      "reply_to": "msg_0002",
+      "reply_depth": 1,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -48,8 +62,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 4,
+    "last_message_id": 5,
     "last_checked": null,
-    "unread_count": 1
+    "unread_count": 2
   }
 }
