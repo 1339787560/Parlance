@@ -5,65 +5,20 @@
       "from": "admin",
       "to": "gamesvrDev",
       "type": "request",
-      "subject": "Game Logic Update",
-      "content": "Please update the game logic module and notify clientDev.",
+      "subject": "Match Logic Implementation",
+      "content": "Implement the match logic and inform clientDev.",
       "priority": "high",
-      "timestamp": "2026-04-22T16:19:39.822872",
-      "status": "pending",
-      "reply_to": null,
-      "reply_depth": 0,
-      "attachments": []
-    },
-    {
-      "id": "msg_0004",
-      "from": "clientDev",
-      "to": "gamesvrDev",
-      "type": "request",
-      "subject": "Animation Trigger Timing",
-      "content": "Please explain the server-side animation trigger timing and protocol fields. I need this for client sync implementation.",
-      "priority": "high",
-      "timestamp": "2026-04-22T16:20:23.684104",
+      "timestamp": "2026-04-22T16:34:31.355822",
       "status": "pending",
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
     }
   ],
-  "outbox": [
-    {
-      "id": "msg_0002",
-      "ref_msg_id": "msg_0019",
-      "from": "gamesvrDev",
-      "to": "admin",
-      "type": "reply",
-      "subject": "Re: Game Logic Update",
-      "content": "Message received. Game logic module has been updated.",
-      "priority": "normal",
-      "timestamp": "2026-04-22T16:20:14.080153",
-      "status": "sent",
-      "reply_to": "msg_0001",
-      "reply_depth": 1,
-      "attachments": []
-    },
-    {
-      "id": "msg_0003",
-      "ref_msg_id": "msg_0002",
-      "from": "gamesvrDev",
-      "to": "clientDev",
-      "type": "notification",
-      "subject": "Game Logic Updated",
-      "content": "Game logic module has been updated. Please sync with the latest changes.",
-      "priority": "normal",
-      "timestamp": "2026-04-22T16:20:14.387667",
-      "status": "sent",
-      "reply_to": null,
-      "reply_depth": 0,
-      "attachments": []
-    }
-  ],
+  "outbox": [],
   "metadata": {
-    "last_message_id": 4,
+    "last_message_id": 1,
     "last_checked": null,
-    "unread_count": 2
+    "unread_count": 1
   }
 }
