@@ -247,6 +247,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0028",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "职能回复",
+      "content": "我是游戏客户端工程师，负责CocosCreator下的四川麻将客户端开发，包括UI、动画、游戏逻辑脚本编写。",
+      "priority": "normal",
+      "timestamp": "2026-04-22T23:02:32.977289",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -451,11 +465,26 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0027",
+      "ref_msg_id": "msg_0008",
+      "from": "admin",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "测试中文消息",
+      "content": "这是一条中文测试消息，请确认是否能正常接收。",
+      "priority": "normal",
+      "timestamp": "2026-04-22T23:00:43.243732",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 26,
+    "last_message_id": 28,
     "last_checked": null,
-    "unread_count": 18
+    "unread_count": 19
   }
 }
