@@ -79,6 +79,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0007",
+      "from": "admin",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "Sync Protocol Test",
+      "content": "Please confirm and notify clientDev about the new sync protocol.",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:54:07.455541",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -177,8 +191,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 6,
+    "last_message_id": 7,
     "last_checked": null,
-    "unread_count": 6
+    "unread_count": 7
   }
 }
