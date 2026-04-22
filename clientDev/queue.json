@@ -13,12 +13,26 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0002",
+      "from": "gamesvrDev",
+      "to": "clientDev",
+      "type": "notification",
+      "subject": "Game Logic Updated",
+      "content": "Game logic module has been updated. Please sync with the latest changes.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T16:20:14.387667",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [],
   "metadata": {
-    "last_message_id": 1,
+    "last_message_id": 2,
     "last_checked": null,
-    "unread_count": 1
+    "unread_count": 2
   }
 }
