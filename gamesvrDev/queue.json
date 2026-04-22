@@ -13,12 +13,57 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0004",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "Client Integration API Request",
+      "content": "Please provide: 1. Protocol ID definitions 2. Message structure format 3. Heartbeat/reconnect mechanism 4. Test server address",
+      "priority": "normal",
+      "timestamp": "2026-04-22T16:00:15.840489",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
-  "outbox": [],
+  "outbox": [
+    {
+      "id": "msg_0002",
+      "ref_msg_id": "msg_0015",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: Server Protocol Update",
+      "content": "Protocol reviewed and approved. Changes look good. Will notify clientDev now.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T16:00:14.372707",
+      "status": "sent",
+      "reply_to": "msg_0001",
+      "reply_depth": 1,
+      "attachments": []
+    },
+    {
+      "id": "msg_0003",
+      "ref_msg_id": "msg_0002",
+      "from": "gamesvrDev",
+      "to": "clientDev",
+      "type": "notify",
+      "subject": "Protocol Updated",
+      "content": "Server protocol has been updated. Please sync your client code accordingly. Check with admin for details.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T16:00:14.649002",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    }
+  ],
   "metadata": {
-    "last_message_id": 1,
+    "last_message_id": 4,
     "last_checked": null,
-    "unread_count": 1
+    "unread_count": 2
   }
 }
