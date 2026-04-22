@@ -177,6 +177,20 @@
       "reply_to": "msg_0001",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0020",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "reply",
+      "subject": "Re: Animation Sync",
+      "content": "Received. I will work on animation sync. Need to confirm trigger timing with gamesvrDev first.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T16:20:22.908842",
+      "status": "pending",
+      "reply_to": "msg_0001",
+      "reply_depth": 1,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -354,8 +368,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 19,
+    "last_message_id": 20,
     "last_checked": null,
-    "unread_count": 13
+    "unread_count": 14
   }
 }
