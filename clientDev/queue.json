@@ -12,12 +12,52 @@
       "status": "pending",
       "reply_to": null,
       "attachments": []
+    },
+    {
+      "id": "msg_0002",
+      "from": "gamesvrDev",
+      "to": "clientDev",
+      "type": "query",
+      "subject": "Collaboration Test",
+      "content": "Hi clientDev, are you ready for collaboration test?",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:39:20.851140",
+      "status": "pending",
+      "reply_to": null,
+      "attachments": []
     }
   ],
-  "outbox": [],
+  "outbox": [
+    {
+      "id": "msg_0001",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "reply",
+      "subject": "Re: Communication Test",
+      "content": "Hi admin, I have received your message. This is clientDev confirming receipt. Ready for collaboration!",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:39:13.155521",
+      "status": "sent",
+      "reply_to": null,
+      "attachments": []
+    },
+    {
+      "id": "msg_0002",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "query",
+      "subject": "Collaboration Test",
+      "content": "Hi gamesvrDev, are you ready for collaboration test?",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:39:14.457208",
+      "status": "sent",
+      "reply_to": null,
+      "attachments": []
+    }
+  ],
   "metadata": {
-    "last_message_id": 1,
+    "last_message_id": 2,
     "last_checked": null,
-    "unread_count": 1
+    "unread_count": 2
   }
 }
