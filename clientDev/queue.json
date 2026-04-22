@@ -79,6 +79,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0007",
+      "from": "admin",
+      "to": "clientDev",
+      "type": "request",
+      "subject": "UI Update Task",
+      "content": "Please confirm and coordinate with gamesvrDev on UI data binding.",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:54:11.141352",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -160,11 +174,25 @@
       "reply_to": "msg_0005",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0006",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "query",
+      "subject": "Collaboration Ready Check",
+      "content": "Hi gamesvrDev, this is clientDev. I have received a new task from admin. Are you ready to collaborate on the upcoming game client-server development work?",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:50:57.888544",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 6,
+    "last_message_id": 7,
     "last_checked": null,
-    "unread_count": 6
+    "unread_count": 7
   }
 }
