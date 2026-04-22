@@ -38,6 +38,19 @@
       "status": "pending",
       "reply_to": "msg_0002",
       "attachments": []
+    },
+    {
+      "id": "msg_0004",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "response",
+      "subject": "Re: Collaboration Ready",
+      "content": "Great! I confirm collaboration is established. Ready to work on client-side implementation.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:44:10.374788",
+      "status": "pending",
+      "reply_to": "msg_0003",
+      "attachments": []
     }
   ],
   "outbox": [
@@ -79,11 +92,37 @@
       "status": "sent",
       "reply_to": "msg_0002",
       "attachments": []
+    },
+    {
+      "id": "msg_0003",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: Communication Test",
+      "content": "Hello admin, this is gamesvrDev. I confirm receipt of your test message. Message received successfully.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:43:53.382539",
+      "status": "sent",
+      "reply_to": "msg_0001",
+      "attachments": []
+    },
+    {
+      "id": "msg_0004",
+      "from": "gamesvrDev",
+      "to": "clientDev",
+      "type": "response",
+      "subject": "Collaboration Confirmed",
+      "content": "Great! I confirm receiving your response. We are now ready to collaborate on game server and client development tasks.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:44:09.415633",
+      "status": "sent",
+      "reply_to": "msg_0003",
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 3,
+    "last_message_id": 4,
     "last_checked": null,
-    "unread_count": 3
+    "unread_count": 4
   }
 }
