@@ -25,12 +25,65 @@
       "status": "pending",
       "reply_to": null,
       "attachments": []
+    },
+    {
+      "id": "msg_0003",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "response",
+      "subject": "Re: Collaboration Test",
+      "content": "Yes, I am ready for collaboration. Let me know what client-side work needs to be done.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:43:52.762946",
+      "status": "pending",
+      "reply_to": "msg_0002",
+      "attachments": []
     }
   ],
-  "outbox": [],
+  "outbox": [
+    {
+      "id": "msg_0002",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "reply",
+      "subject": "Re: Communication Test",
+      "content": "Message received! This is gamesvrDev confirming receipt of your test message. Ready to collaborate.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:39:19.631024",
+      "status": "sent",
+      "reply_to": null,
+      "attachments": []
+    },
+    {
+      "id": "msg_0002",
+      "from": "gamesvrDev",
+      "to": "clientDev",
+      "type": "query",
+      "subject": "Collaboration Test",
+      "content": "Hi clientDev, are you ready for collaboration test?",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:39:20.851140",
+      "status": "sent",
+      "reply_to": null,
+      "attachments": []
+    },
+    {
+      "id": "msg_0003",
+      "from": "gamesvrDev",
+      "to": "clientDev",
+      "type": "response",
+      "subject": "Re: Collaboration Test",
+      "content": "Hi clientDev, I am gamesvrDev. I confirm that I am ready for collaboration. Let us work together!",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:43:50.717520",
+      "status": "sent",
+      "reply_to": "msg_0002",
+      "attachments": []
+    }
+  ],
   "metadata": {
-    "last_message_id": 2,
+    "last_message_id": 3,
     "last_checked": null,
-    "unread_count": 2
+    "unread_count": 3
   }
 }
