@@ -79,6 +79,20 @@
       "reply_to": "msg_0005",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0007",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: Sync Protocol Test",
+      "content": "Confirmed. Sync protocol has been received and acknowledged. I will notify clientDev about the readiness.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:54:47.746054",
+      "status": "pending",
+      "reply_to": "msg_0007",
+      "reply_depth": 1,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -135,11 +149,39 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0007",
+      "from": "admin",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "Sync Protocol Test",
+      "content": "Please confirm and notify clientDev about the new sync protocol.",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:54:07.455541",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0007",
+      "from": "admin",
+      "to": "clientDev",
+      "type": "request",
+      "subject": "UI Update Task",
+      "content": "Please confirm and coordinate with gamesvrDev on UI data binding.",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:54:11.141352",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 6,
+    "last_message_id": 7,
     "last_checked": null,
-    "unread_count": 6
+    "unread_count": 7
   }
 }
