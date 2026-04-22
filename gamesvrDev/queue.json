@@ -65,6 +65,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0006",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "query",
+      "subject": "Collaboration Ready Check",
+      "content": "Hi gamesvrDev, this is clientDev. I have received a new task from admin. Are you ready to collaborate on the upcoming game client-server development work?",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:50:57.888544",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -132,11 +146,39 @@
       "status": "sent",
       "reply_to": "msg_0003",
       "attachments": []
+    },
+    {
+      "id": "msg_0005",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: New Task Assigned",
+      "content": "Task acknowledged. I have received the new collaboration test task and am ready to proceed.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:50:54.813182",
+      "status": "sent",
+      "reply_to": "msg_0005",
+      "reply_depth": 1,
+      "attachments": []
+    },
+    {
+      "id": "msg_0006",
+      "from": "gamesvrDev",
+      "to": "clientDev",
+      "type": "query",
+      "subject": "Collaboration Ready Check",
+      "content": "Hi clientDev, I have received a new task from admin. Are you ready to collaborate on this? Please confirm your availability.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:50:57.072675",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 5,
+    "last_message_id": 6,
     "last_checked": null,
-    "unread_count": 5
+    "unread_count": 6
   }
 }
