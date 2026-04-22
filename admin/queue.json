@@ -135,6 +135,20 @@
       "reply_to": "msg_0011",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0015",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: Server Protocol Update",
+      "content": "Protocol reviewed and approved. Changes look good. Will notify clientDev now.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T16:00:14.372707",
+      "status": "pending",
+      "reply_to": "msg_0001",
+      "reply_depth": 1,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -249,11 +263,41 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0013",
+      "ref_msg_id": "msg_0001",
+      "from": "admin",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "Server Protocol Update",
+      "content": "Please review the new server protocol and inform clientDev.",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:59:42.725209",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0014",
+      "ref_msg_id": "msg_0001",
+      "from": "admin",
+      "to": "clientDev",
+      "type": "request",
+      "subject": "Client Integration",
+      "content": "Please prepare client integration and check with gamesvrDev.",
+      "priority": "high",
+      "timestamp": "2026-04-22T15:59:43.016796",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 12,
+    "last_message_id": 15,
     "last_checked": null,
-    "unread_count": 10
+    "unread_count": 11
   }
 }
