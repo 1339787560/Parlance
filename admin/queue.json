@@ -1,0 +1,50 @@
+{
+  "inbox": [
+    {
+      "id": "msg_0001",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "reply",
+      "subject": "Re: Communication Test",
+      "content": "Hi admin, I have received your message. This is clientDev confirming receipt. Ready for collaboration!",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:39:13.155521",
+      "status": "pending",
+      "reply_to": null,
+      "attachments": []
+    }
+  ],
+  "outbox": [
+    {
+      "id": "msg_0001",
+      "from": "admin",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "Communication Test",
+      "content": "This is a test message. Please reply to confirm receipt.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:38:32.839858",
+      "status": "sent",
+      "reply_to": null,
+      "attachments": []
+    },
+    {
+      "id": "msg_0001",
+      "from": "admin",
+      "to": "clientDev",
+      "type": "request",
+      "subject": "Communication Test",
+      "content": "This is a test message. Please reply to confirm receipt.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:38:35.780977",
+      "status": "sent",
+      "reply_to": null,
+      "attachments": []
+    }
+  ],
+  "metadata": {
+    "last_message_id": 1,
+    "last_checked": null,
+    "unread_count": 1
+  }
+}
