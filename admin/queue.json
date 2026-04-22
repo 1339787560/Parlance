@@ -191,6 +191,20 @@
       "reply_to": "msg_0001",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0023",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "request",
+      "subject": "Re: Match Logic Implementation",
+      "content": "Match logic has been implemented successfully. Player matching algorithm is ready for testing.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T16:34:59.398290",
+      "status": "pending",
+      "reply_to": "msg_0001",
+      "reply_depth": 1,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -365,11 +379,41 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0021",
+      "ref_msg_id": "msg_0001",
+      "from": "admin",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "Match Logic Implementation",
+      "content": "Implement the match logic and inform clientDev.",
+      "priority": "high",
+      "timestamp": "2026-04-22T16:34:31.355822",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0022",
+      "ref_msg_id": "msg_0001",
+      "from": "admin",
+      "to": "clientDev",
+      "type": "request",
+      "subject": "Match UI Design",
+      "content": "Design match UI and coordinate with gamesvrDev.",
+      "priority": "high",
+      "timestamp": "2026-04-22T16:34:31.697134",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 20,
+    "last_message_id": 23,
     "last_checked": null,
-    "unread_count": 14
+    "unread_count": 15
   }
 }
