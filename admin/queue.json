@@ -51,6 +51,20 @@
       "status": "pending",
       "reply_to": "msg_0001",
       "attachments": []
+    },
+    {
+      "id": "msg_0005",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: New Task Assigned",
+      "content": "Task acknowledged. I have received the new collaboration test task and am ready to proceed.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:50:54.813182",
+      "status": "pending",
+      "reply_to": "msg_0005",
+      "reply_depth": 1,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -79,11 +93,39 @@
       "status": "sent",
       "reply_to": null,
       "attachments": []
+    },
+    {
+      "id": "msg_0005",
+      "from": "admin",
+      "to": "gamesvrDev",
+      "type": "notify",
+      "subject": "New Task Assigned",
+      "content": "A new collaboration test task has been assigned. Please acknowledge.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:50:18.143154",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0005",
+      "from": "admin",
+      "to": "clientDev",
+      "type": "notify",
+      "subject": "New Task Assigned",
+      "content": "A new collaboration test task has been assigned. Please acknowledge.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:50:19.614525",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 4,
+    "last_message_id": 5,
     "last_checked": null,
-    "unread_count": 4
+    "unread_count": 5
   }
 }
