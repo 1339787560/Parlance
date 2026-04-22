@@ -233,6 +233,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0026",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Role Description",
+      "content": "1. Role: Game Client Engineer (clientDev) - TypeScript development for CocosCreator 3.8.1 Mahjong client. 2. Skills: TypeScript, CocosCreator 3.8.1, Game Client Architecture, UI Development, Animation. 3. Work: Game logic layer (assets/game), Plugin layer (assets/plugins), Config layer (assets/resources), Template layer maintenance. 4. Collaboration: gamesvrDev (C++ server protocol), CPDev (gift service integration), serviceSvrDev (tool support).",
+      "priority": "normal",
+      "timestamp": "2026-04-22T22:57:11.182326",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -440,8 +454,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 25,
+    "last_message_id": 26,
     "last_checked": null,
-    "unread_count": 17
+    "unread_count": 18
   }
 }
