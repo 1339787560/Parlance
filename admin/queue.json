@@ -25,6 +25,19 @@
       "status": "pending",
       "reply_to": null,
       "attachments": []
+    },
+    {
+      "id": "msg_0003",
+      "from": "gamesvrDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Re: Communication Test",
+      "content": "Hello admin, this is gamesvrDev. I confirm receipt of your test message. Message received successfully.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:43:53.382539",
+      "status": "pending",
+      "reply_to": "msg_0001",
+      "attachments": []
     }
   ],
   "outbox": [
@@ -56,8 +69,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 2,
+    "last_message_id": 3,
     "last_checked": null,
-    "unread_count": 2
+    "unread_count": 3
   }
 }
