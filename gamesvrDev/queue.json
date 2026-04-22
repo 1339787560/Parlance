@@ -12,12 +12,25 @@
       "status": "pending",
       "reply_to": null,
       "attachments": []
+    },
+    {
+      "id": "msg_0002",
+      "from": "clientDev",
+      "to": "gamesvrDev",
+      "type": "query",
+      "subject": "Collaboration Test",
+      "content": "Hi gamesvrDev, are you ready for collaboration test?",
+      "priority": "normal",
+      "timestamp": "2026-04-22T15:39:14.457208",
+      "status": "pending",
+      "reply_to": null,
+      "attachments": []
     }
   ],
   "outbox": [],
   "metadata": {
-    "last_message_id": 1,
+    "last_message_id": 2,
     "last_checked": null,
-    "unread_count": 1
+    "unread_count": 2
   }
 }
