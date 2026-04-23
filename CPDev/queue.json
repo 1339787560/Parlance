@@ -1,0 +1,130 @@
+{
+  "inbox": [
+    {
+      "id": "msg_0008",
+      "from": "clientDev",
+      "to": "CPDev",
+      "type": "request",
+      "subject": "礼包兑换API协商",
+      "content": "我是客户端工程师，关于礼包兑换功能，我建议：1. API路径: /api/gift/redeem 2. 请求方式: POST 3. 参数: {code: string, playerId: string} 请确认接口定义是否可行，有什么补充？",
+      "priority": "normal",
+      "timestamp": "2026-04-23T20:07:27.000278",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    }
+  ],
+  "outbox": [
+    {
+      "id": "msg_0001",
+      "ref_msg_id": "msg_0029",
+      "from": "CPDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Role Description",
+      "content": "CPDev - Game Gift Package Service Engineer. Develops TypeScript scripts running in C++ coroutine server. Skills: TypeScript, CP Service, Coroutine Server, Protocol Processing, Business Logic. Main work: gift package logic, protocol handling, async code, server-client communication. Collaborates with: gamesvrDev, clientDev, serviceSvrDev.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T23:14:36.653258",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0002",
+      "ref_msg_id": "msg_0017",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:07:07.575847",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0003",
+      "ref_msg_id": "msg_0018",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发礼包匹配服务接口",
+      "content": "任务 ID: task_0004\n任务标题: 开发礼包匹配服务接口\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:07:07.669364",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0004",
+      "ref_msg_id": "msg_0021",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:07:12.737946",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0005",
+      "ref_msg_id": "msg_0022",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发礼包匹配服务接口",
+      "content": "任务 ID: task_0004\n任务标题: 开发礼包匹配服务接口\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:07:12.824695",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0006",
+      "ref_msg_id": "msg_0025",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:07:17.908671",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0007",
+      "ref_msg_id": "msg_0026",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发礼包匹配服务接口",
+      "content": "任务 ID: task_0004\n任务标题: 开发礼包匹配服务接口\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:07:18.000857",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    }
+  ],
+  "metadata": {
+    "last_message_id": 8,
+    "last_checked": null,
+    "unread_count": 1
+  }
+}
