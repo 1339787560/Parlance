@@ -13,12 +13,26 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0002",
+      "from": "Admin",
+      "to": "serviceSvrDev",
+      "type": "request",
+      "subject": "特殊字符测试",
+      "content": "测试各种字符：\n1. 中文：四川麻将、客户端、服务端\n2. 数字：123456\n3. 英文：Hello World\n4. 标点：，。！？、；：''（）【】\n5. 路径：D:\\Codlib\\douque\\xzmx\\ClientEngineGame\n6. 混合：C++服务端 + TypeScript客户端",
+      "priority": "normal",
+      "timestamp": "2026-04-23T16:19:51.901972",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [],
   "metadata": {
-    "last_message_id": 1,
+    "last_message_id": 2,
     "last_checked": null,
-    "unread_count": 1
+    "unread_count": 2
   }
 }
