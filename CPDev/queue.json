@@ -1,14 +1,14 @@
 {
   "inbox": [
     {
-      "id": "msg_0008",
+      "id": "msg_0009",
       "from": "clientDev",
       "to": "CPDev",
       "type": "request",
       "subject": "礼包兑换API协商",
       "content": "我是客户端工程师，关于礼包兑换功能，我建议：1. API路径: /api/gift/redeem 2. 请求方式: POST 3. 参数: {code: string, playerId: string} 请确认接口定义是否可行，有什么补充？",
-      "priority": "normal",
-      "timestamp": "2026-04-23T20:07:27.000278",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:09:06.657125",
       "status": "pending",
       "reply_to": null,
       "reply_depth": 0,
@@ -123,7 +123,7 @@
     }
   ],
   "metadata": {
-    "last_message_id": 8,
+    "last_message_id": 9,
     "last_checked": null,
     "unread_count": 1
   }
