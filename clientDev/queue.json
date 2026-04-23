@@ -1,16 +1,16 @@
 {
   "inbox": [
     {
-      "id": "msg_0093",
+      "id": "msg_0096",
       "from": "Admin",
       "to": "clientDev",
       "type": "response",
       "subject": "批准",
       "content": "approve",
       "priority": "normal",
-      "timestamp": "2026-04-23T20:19:54.599071",
+      "timestamp": "2026-04-23T20:19:56.731363",
       "status": "pending",
-      "reply_to": "msg_0144",
+      "reply_to": "msg_0141",
       "reply_depth": 0,
       "attachments": []
     }
@@ -1079,10 +1079,25 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0095",
+      "ref_msg_id": "msg_0163",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发匹配UI与交互动画",
+      "content": "任务 ID: task_0003\n任务标题: 开发匹配UI与交互动画\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:19:54.684163",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 94,
+    "last_message_id": 96,
     "last_checked": "2026-04-22T22:45:00.000000",
     "unread_count": 1
   }
