@@ -1,30 +1,16 @@
 {
   "inbox": [
     {
-      "id": "msg_0018",
+      "id": "msg_0022",
       "from": "Admin",
       "to": "CPDev",
       "type": "response",
       "subject": "批准: 需要确认: 开发礼包匹配服务接口",
       "content": "approve",
       "priority": "normal",
-      "timestamp": "2026-04-23T20:11:57.644046",
+      "timestamp": "2026-04-23T20:12:06.131266",
       "status": "pending",
-      "reply_to": "msg_0022",
-      "reply_depth": 0,
-      "attachments": []
-    },
-    {
-      "id": "msg_0019",
-      "from": "Admin",
-      "to": "CPDev",
-      "type": "response",
-      "subject": "批准: 需要确认: 设计礼包兑换功能",
-      "content": "approve",
-      "priority": "normal",
-      "timestamp": "2026-04-23T20:11:59.765309",
-      "status": "pending",
-      "reply_to": "msg_0021",
+      "reply_to": "msg_0018",
       "reply_depth": 0,
       "attachments": []
     }
@@ -209,11 +195,41 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0020",
+      "ref_msg_id": "msg_0040",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:12:02.040056",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0021",
+      "ref_msg_id": "msg_0041",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发礼包匹配服务接口",
+      "content": "任务 ID: task_0004\n任务标题: 开发礼包匹配服务接口\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:12:02.104870",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 19,
+    "last_message_id": 22,
     "last_checked": null,
-    "unread_count": 2
+    "unread_count": 1
   }
 }
