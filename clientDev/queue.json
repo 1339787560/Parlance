@@ -55,6 +55,20 @@
       "reply_to": "msg_0019",
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0031",
+      "from": "Admin",
+      "to": "clientDev",
+      "type": "response",
+      "subject": "批准: 需要确认: 开发匹配UI与交互动画",
+      "content": "approve",
+      "priority": "normal",
+      "timestamp": "2026-04-23T20:12:10.364319",
+      "status": "pending",
+      "reply_to": "msg_0016",
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -359,8 +373,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 30,
+    "last_message_id": 31,
     "last_checked": "2026-04-22T22:45:00.000000",
-    "unread_count": 4
+    "unread_count": 5
   }
 }
