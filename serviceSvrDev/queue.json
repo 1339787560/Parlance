@@ -1,0 +1,24 @@
+{
+  "inbox": [
+    {
+      "id": "msg_0001",
+      "from": "Admin",
+      "to": "serviceSvrDev",
+      "type": "question",
+      "subject": "测试中文",
+      "content": "这是一条中文测试消息：你好世界！",
+      "priority": "normal",
+      "timestamp": "2026-04-23T16:19:38.927471",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    }
+  ],
+  "outbox": [],
+  "metadata": {
+    "last_message_id": 1,
+    "last_checked": null,
+    "unread_count": 1
+  }
+}
