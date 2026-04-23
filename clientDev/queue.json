@@ -1,16 +1,16 @@
 {
   "inbox": [
     {
-      "id": "msg_0059",
+      "id": "msg_0064",
       "from": "Admin",
       "to": "clientDev",
       "type": "response",
-      "subject": "批准: 需要确认: 开发匹配UI与交互动画",
+      "subject": "批准: 需要确认: 设计礼包兑换功能",
       "content": "approve",
       "priority": "normal",
-      "timestamp": "2026-04-23T20:15:31.469049",
+      "timestamp": "2026-04-23T20:15:35.690795",
       "status": "pending",
-      "reply_to": "msg_0053",
+      "reply_to": "msg_0051",
       "reply_depth": 0,
       "attachments": []
     }
@@ -644,10 +644,70 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0060",
+      "ref_msg_id": "msg_0116",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:15:34.394548",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0061",
+      "ref_msg_id": "msg_0117",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发匹配UI与交互动画",
+      "content": "任务 ID: task_0003\n任务标题: 开发匹配UI与交互动画\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:15:34.478546",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0062",
+      "ref_msg_id": "msg_0118",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "response",
+      "subject": "完成: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n处理结果:\n",
+      "priority": "normal",
+      "timestamp": "2026-04-23T20:15:34.561477",
+      "status": "sent",
+      "reply_to": "task_0006",
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0063",
+      "ref_msg_id": "msg_0119",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "response",
+      "subject": "完成: 开发匹配UI与交互动画",
+      "content": "任务 ID: task_0003\n处理结果:\n",
+      "priority": "normal",
+      "timestamp": "2026-04-23T20:15:34.623184",
+      "status": "sent",
+      "reply_to": "task_0003",
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 59,
+    "last_message_id": 64,
     "last_checked": "2026-04-22T22:45:00.000000",
     "unread_count": 1
   }
