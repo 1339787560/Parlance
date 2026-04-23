@@ -41,6 +41,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0011",
+      "from": "Admin",
+      "to": "gamesvrDev",
+      "type": "request",
+      "subject": "匹配功能开发任务",
+      "content": "任务分配\n\n请完成以下工作：\n\n1. 【服务端】gamesvrDev 负责匹配逻辑\n   - 文件路径：D:\\Codlib\\douque\\xzmx\\Server\\match.cpp\n   - 要求：支持金币场和银子场\n\n2. 【客户端】clientDev 负责匹配UI\n   - 使用 CocosCreator 3.8.1\n   - 包含：匹配按钮、状态显示、结果回调\n\n3. 【协作】双方需要对接以下协议：\n   - MatchRequest { userId, roomType, goldAmount }\n   - MatchResponse { success, roomId, players[] }\n\n完成时间：本周五\n优先级：高",
+      "priority": "high",
+      "timestamp": "2026-04-23T16:20:42.754968",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -91,8 +105,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 10,
+    "last_message_id": 11,
     "last_checked": null,
-    "unread_count": 3
+    "unread_count": 4
   }
 }
