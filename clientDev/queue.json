@@ -13,6 +13,20 @@
       "reply_to": "msg_0146",
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0086",
+      "from": "Admin",
+      "to": "clientDev",
+      "type": "response",
+      "subject": "批准",
+      "content": "approve",
+      "priority": "normal",
+      "timestamp": "2026-04-23T20:19:52.472376",
+      "status": "pending",
+      "reply_to": "msg_0145",
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -977,8 +991,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 85,
+    "last_message_id": 86,
     "last_checked": "2026-04-22T22:45:00.000000",
-    "unread_count": 1
+    "unread_count": 2
   }
 }
