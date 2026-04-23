@@ -13,6 +13,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0012",
+      "from": "Admin",
+      "to": "clientDev",
+      "type": "question",
+      "subject": "询问职责",
+      "content": "请介绍一下你的职责是什么？你负责哪些工作内容？",
+      "priority": "normal",
+      "timestamp": "2026-04-23T10:34:29.740690",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -122,8 +136,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 11,
+    "last_message_id": 12,
     "last_checked": "2026-04-22T22:45:00.000000",
-    "unread_count": 1
+    "unread_count": 2
   }
 }
