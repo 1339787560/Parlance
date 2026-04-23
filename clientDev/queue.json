@@ -1,5 +1,20 @@
 {
-  "inbox": [],
+  "inbox": [
+    {
+      "id": "msg_0011",
+      "from": "Admin",
+      "to": "clientDev",
+      "type": "question",
+      "subject": "Ask about responsibilities",
+      "content": "What are your responsibilities?",
+      "priority": "normal",
+      "timestamp": "2026-04-23T10:33:44.563071",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    }
+  ],
   "outbox": [
     {
       "id": "msg_0003",
@@ -59,11 +74,56 @@
       "reply_to": "msg_0006",
       "reply_depth": 1,
       "attachments": []
+    },
+    {
+      "id": "msg_0008",
+      "ref_msg_id": "msg_0025",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "My Role Description",
+      "content": "I am clientDev (Game Client Engineer). Skills: CocosCreator, TypeScript/JavaScript, Client Architecture, UI/UX. Tasks: Client feature development, Server protocol integration, Performance optimization, Resource management, UI components. Collaboration: gamesvrDev for network protocols, serviceSvrDev for tools, CPDev for gift redemption.",
+      "priority": "normal",
+      "timestamp": "2026-04-22T22:52:55.167625",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0009",
+      "ref_msg_id": "msg_0026",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "Role Description",
+      "content": "1. Role: Game Client Engineer (clientDev) - TypeScript development for CocosCreator 3.8.1 Mahjong client. 2. Skills: TypeScript, CocosCreator 3.8.1, Game Client Architecture, UI Development, Animation. 3. Work: Game logic layer (assets/game), Plugin layer (assets/plugins), Config layer (assets/resources), Template layer maintenance. 4. Collaboration: gamesvrDev (C++ server protocol), CPDev (gift service integration), serviceSvrDev (tool support).",
+      "priority": "normal",
+      "timestamp": "2026-04-22T22:57:11.182326",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0010",
+      "ref_msg_id": "msg_0028",
+      "from": "clientDev",
+      "to": "admin",
+      "type": "response",
+      "subject": "职能回复",
+      "content": "我是游戏客户端工程师，负责CocosCreator下的四川麻将客户端开发，包括UI、动画、游戏逻辑脚本编写。",
+      "priority": "normal",
+      "timestamp": "2026-04-22T23:02:32.977289",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 7,
+    "last_message_id": 11,
     "last_checked": "2026-04-22T22:45:00.000000",
-    "unread_count": 0
+    "unread_count": 1
   }
 }
