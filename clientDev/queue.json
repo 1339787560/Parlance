@@ -1,30 +1,16 @@
 {
   "inbox": [
     {
-      "id": "msg_0085",
+      "id": "msg_0093",
       "from": "Admin",
       "to": "clientDev",
       "type": "response",
       "subject": "批准",
       "content": "approve",
       "priority": "normal",
-      "timestamp": "2026-04-23T20:19:50.348417",
+      "timestamp": "2026-04-23T20:19:54.599071",
       "status": "pending",
-      "reply_to": "msg_0146",
-      "reply_depth": 0,
-      "attachments": []
-    },
-    {
-      "id": "msg_0086",
-      "from": "Admin",
-      "to": "clientDev",
-      "type": "response",
-      "subject": "批准",
-      "content": "approve",
-      "priority": "normal",
-      "timestamp": "2026-04-23T20:19:52.472376",
-      "status": "pending",
-      "reply_to": "msg_0145",
+      "reply_to": "msg_0144",
       "reply_depth": 0,
       "attachments": []
     }
@@ -988,11 +974,116 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0087",
+      "ref_msg_id": "msg_0155",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:19:52.819297",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0088",
+      "ref_msg_id": "msg_0156",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发匹配UI与交互动画",
+      "content": "任务 ID: task_0003\n任务标题: 开发匹配UI与交互动画\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:19:52.899875",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0089",
+      "ref_msg_id": "msg_0157",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "response",
+      "subject": "完成: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n处理结果:\n",
+      "priority": "normal",
+      "timestamp": "2026-04-23T20:19:52.965730",
+      "status": "sent",
+      "reply_to": "task_0006",
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0090",
+      "ref_msg_id": "msg_0158",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "response",
+      "subject": "完成: 开发匹配UI与交互动画",
+      "content": "任务 ID: task_0003\n处理结果:\n",
+      "priority": "normal",
+      "timestamp": "2026-04-23T20:19:53.026178",
+      "status": "sent",
+      "reply_to": "task_0003",
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0091",
+      "ref_msg_id": "msg_0159",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:19:54.413450",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0092",
+      "ref_msg_id": "msg_0160",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发匹配UI与交互动画",
+      "content": "任务 ID: task_0003\n任务标题: 开发匹配UI与交互动画\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:19:54.494134",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0094",
+      "ref_msg_id": "msg_0162",
+      "from": "clientDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:19:54.619801",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 86,
+    "last_message_id": 94,
     "last_checked": "2026-04-22T22:45:00.000000",
-    "unread_count": 2
+    "unread_count": 1
   }
 }
