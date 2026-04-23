@@ -1,16 +1,16 @@
 {
   "inbox": [
     {
-      "id": "msg_0014",
+      "id": "msg_0018",
       "from": "Admin",
       "to": "serviceSvrDev",
       "type": "response",
       "subject": "批准: 需要确认: 开发匹配管理后台与统计接口",
       "content": "approve",
       "priority": "normal",
-      "timestamp": "2026-04-23T20:15:16.594307",
+      "timestamp": "2026-04-23T20:15:27.210915",
       "status": "pending",
-      "reply_to": "msg_0060",
+      "reply_to": "msg_0055",
       "reply_depth": 0,
       "attachments": []
     }
@@ -165,10 +165,55 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0015",
+      "ref_msg_id": "msg_0076",
+      "from": "serviceSvrDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发匹配管理后台与统计接口",
+      "content": "任务 ID: task_0005\n任务标题: 开发匹配管理后台与统计接口\n请求原因: 此任务涉及危险操作，需要 Admin 确认\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:15:17.059011",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0016",
+      "ref_msg_id": "msg_0077",
+      "from": "serviceSvrDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发匹配管理后台与统计接口",
+      "content": "任务 ID: task_0005\n任务标题: 开发匹配管理后台与统计接口\n请求原因: 此任务涉及危险操作，需要 Admin 确认\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:15:17.389259",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0017",
+      "ref_msg_id": "msg_0090",
+      "from": "serviceSvrDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发匹配管理后台与统计接口",
+      "content": "任务 ID: task_0005\n任务标题: 开发匹配管理后台与统计接口\n请求原因: 此任务涉及危险操作，需要 Admin 确认\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:15:22.167804",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 14,
+    "last_message_id": 18,
     "last_checked": null,
     "unread_count": 1
   }
