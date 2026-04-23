@@ -13,6 +13,20 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0009",
+      "from": "Admin",
+      "to": "gamesvrDev",
+      "type": "question",
+      "subject": "询问服务端架构",
+      "content": "请介绍一下游戏服务端的架构设计",
+      "priority": "normal",
+      "timestamp": "2026-04-23T11:02:39.589094",
+      "status": "pending",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "outbox": [
@@ -63,8 +77,8 @@
     }
   ],
   "metadata": {
-    "last_message_id": 8,
+    "last_message_id": 9,
     "last_checked": null,
-    "unread_count": 1
+    "unread_count": 2
   }
 }
