@@ -1,16 +1,16 @@
 {
   "inbox": [
     {
-      "id": "msg_0072",
+      "id": "msg_0075",
       "from": "Admin",
       "to": "CPDev",
       "type": "response",
       "subject": "批准",
       "content": "approve",
       "priority": "normal",
-      "timestamp": "2026-04-23T20:20:05.212025",
+      "timestamp": "2026-04-23T20:20:07.342060",
       "status": "pending",
-      "reply_to": "msg_0136",
+      "reply_to": "msg_0135",
       "reply_depth": 0,
       "attachments": []
     }
@@ -825,10 +825,40 @@
       "reply_to": null,
       "reply_depth": 0,
       "attachments": []
+    },
+    {
+      "id": "msg_0073",
+      "ref_msg_id": "msg_0185",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 设计礼包兑换功能",
+      "content": "任务 ID: task_0006\n任务标题: 设计礼包兑换功能\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:20:06.800133",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
+    },
+    {
+      "id": "msg_0074",
+      "ref_msg_id": "msg_0186",
+      "from": "CPDev",
+      "to": "Admin",
+      "type": "confirmation_required",
+      "subject": "需要确认: 开发礼包匹配服务接口",
+      "content": "任务 ID: task_0004\n任务标题: 开发礼包匹配服务接口\n请求原因: 此任务较为复杂，建议 Admin 审核后执行\n\n请确认是否执行此任务。\n回复 'approve' 批准，回复 'reject' 拒绝。",
+      "priority": "high",
+      "timestamp": "2026-04-23T20:20:06.868619",
+      "status": "sent",
+      "reply_to": null,
+      "reply_depth": 0,
+      "attachments": []
     }
   ],
   "metadata": {
-    "last_message_id": 72,
+    "last_message_id": 75,
     "last_checked": null,
     "unread_count": 1
   }
