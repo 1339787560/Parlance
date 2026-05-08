@@ -42,21 +42,21 @@ CP-DEV 目录现有文档存在两个问题：
 1. **模块总览表** — 模块名 | 功能概要 | 脚本文件名 | L3 文档链接
 2. **模块分类** — 按功能分组（等级系统、月卡/充值、装饰、新手引导等）
 
-已有文档（cmquickrecharge_xzmp、cmnewplayerdailygift_xzmp）保持原路径不变，在总览表中链接到现有 doc/ 文件。
+已有文档（cmquickrecharge_xzmp、cmnewplayerdailygift_xzmp）在总览表中链接到对应 L3 文件。
 
 ### 4. 将 impl 文档改写为 L3 模块详情文档
 
-`doc/` 目录的定位：存放 `proto`（原型文档，用于溯源）和 `L3` 模块详情文档。
+`doc/` 目录仅存放 `proto`（原型文档，用于溯源）。L3 模块详情文档放在 CP-DEV 根目录（与 L0/L1/L2 同级）。
 
 改写规则：
 - 以现有 impl 文档为基础，参考 CP-DEV 工作目录下的实际代码进行重写
 - 严格遵循 L3 模板格式，确保所有模块的文档格式高度一致
 - 改写完成后删除原 impl 文档，仅保留 proto 用于溯源
-- L3 文档命名：`doc/L3_{模块名}.md`
+- L3 文档命名：`L3_{模块名}.md`（CP-DEV 根目录下）
 
 具体操作：
-- `doc/cmquickrecharge_xzmp_impl.md` → 参考代码重写为 `doc/L3_cmquickrecharge_xzmp.md`，删除 impl
-- `doc/cmnewplayerdailygift_xzmp_impl.md` → 参考代码重写为 `doc/L3_cmnewplayerdailygift_xzmp.md`，删除 impl
+- `doc/cmquickrecharge_xzmp_impl.md` → 参考代码重写为 `L3_cmquickrecharge_xzmp.md`，删除 impl
+- `doc/cmnewplayerdailygift_xzmp_impl.md` → 参考代码重写为 `L3_cmnewplayerdailygift_xzmp.md`，删除 impl
 
 L3 模板结构：
 
@@ -123,7 +123,7 @@ L3 模板结构：
 | 删除 | CP-DEV/CP-DEV.md |
 | 新建 | CP-DEV/L1_CommonInterface.md |
 | 新建 | CP-DEV/L2_ModuleIndex.md |
-| 重写→新建 | CP-DEV/doc/L3_cmquickrecharge_xzmp.md（从 impl 重写） |
-| 重写→新建 | CP-DEV/doc/L3_cmnewplayerdailygift_xzmp.md（从 impl 重写） |
+| 重写→新建 | CP-DEV/L3_cmquickrecharge_xzmp.md（从 impl 重写） |
+| 重写→新建 | CP-DEV/L3_cmnewplayerdailygift_xzmp.md（从 impl 重写） |
 | 删除 | CP-DEV/doc/cmquickrecharge_xzmp_impl.md |
 | 删除 | CP-DEV/doc/cmnewplayerdailygift_xzmp_impl.md |
