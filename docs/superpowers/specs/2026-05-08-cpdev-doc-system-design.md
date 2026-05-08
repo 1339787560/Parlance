@@ -44,11 +44,21 @@ CP-DEV 目录现有文档存在两个问题：
 
 已有文档（cmquickrecharge_xzmp、cmnewplayerdailygift_xzmp）保持原路径不变，在总览表中链接到现有 doc/ 文件。
 
-### 4. 设计 L3 模块详情模板
+### 4. 将 impl 文档改写为 L3 模块详情文档
 
-模板存放在 `doc/L3_{模块名}.md`，与现有 doc/ 文件共存。
+`doc/` 目录的定位：存放 `proto`（原型文档，用于溯源）和 `L3` 模块详情文档。
 
-模板结构：
+改写规则：
+- 以现有 impl 文档为基础，参考 CP-DEV 工作目录下的实际代码进行重写
+- 严格遵循 L3 模板格式，确保所有模块的文档格式高度一致
+- 改写完成后删除原 impl 文档，仅保留 proto 用于溯源
+- L3 文档命名：`doc/L3_{模块名}.md`
+
+具体操作：
+- `doc/cmquickrecharge_xzmp_impl.md` → 参考代码重写为 `doc/L3_cmquickrecharge_xzmp.md`，删除 impl
+- `doc/cmnewplayerdailygift_xzmp_impl.md` → 参考代码重写为 `doc/L3_cmnewplayerdailygift_xzmp.md`，删除 impl
+
+L3 模板结构：
 
 ```markdown
 # {模块名} 模块详情
@@ -102,8 +112,8 @@ CP-DEV 目录现有文档存在两个问题：
 
 - L2_DesignPatterns.md — 保持不变，仍包含设计模式的完整说明
 - L2_Context.md — 保持不变，仍包含目录结构和开发规范
-- doc/cmquickrecharge_xzmp_*.md — 保持原路径不变
-- doc/cmnewplayerdailygift_xzmp_*.md — 保持原路径不变
+- doc/cmquickrecharge_xzmp_proto.md — 保留，用于溯源
+- doc/cmnewplayerdailygift_xzmp_proto.md — 保留，用于溯源
 
 ## 文件变更汇总
 
@@ -113,4 +123,7 @@ CP-DEV 目录现有文档存在两个问题：
 | 删除 | CP-DEV/CP-DEV.md |
 | 新建 | CP-DEV/L1_CommonInterface.md |
 | 新建 | CP-DEV/L2_ModuleIndex.md |
-| 新建 | CP-DEV/doc/L3_template.md（模板） |
+| 重写→新建 | CP-DEV/doc/L3_cmquickrecharge_xzmp.md（从 impl 重写） |
+| 重写→新建 | CP-DEV/doc/L3_cmnewplayerdailygift_xzmp.md（从 impl 重写） |
+| 删除 | CP-DEV/doc/cmquickrecharge_xzmp_impl.md |
+| 删除 | CP-DEV/doc/cmnewplayerdailygift_xzmp_impl.md |
