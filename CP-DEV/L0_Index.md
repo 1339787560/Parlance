@@ -43,18 +43,12 @@
 
 ## 脚本开发规范
 
-1. 每个礼包脚本独立，不依赖其他礼包脚本
-2. 公用功能应放置在 `predefine` 目录
-3. 参考现有实现时，优先查找同类型游戏（如四川麻将优先看 `xzmp`）
-4. **禁止使用数组的高级函数式方法**（如 `filter`、`map`、`reduce`、`forEach`、`find`、`some`、`every` 等），应使用传统的 `for` 循环遍历
-5. 异步函数必须使用 async_ 标记，调用语句必须加上 await。CP脚本回调无需强加 async_标记，如 OnScriptReload、OnClientRequest、OnInternalCall、OnGameRequest、OnGameResult、OnSubGameResult、OnPayResult、OnCurrencyExchange、OnLogon、OnDistributedTimer
+详见 [L1_DevStandards.md](L1_DevStandards.md)。
 
 ## 服务实现细节
-1. 目前的 import 实现，是通过 CP 服务替换 脚本中的 import 内容实现的。CP服务不支持 分文件编写代码。
-2. 线上服务是分布式跑的，每个进程多线程并行，某个回调只会投递给其中一台机器的某个线程执行。因此，通过 async_internal_call 不能同时通知到所有的 目标模块线程，只有一个目标模块线程会进入回调。
-3. 数据库使用 MySQL，每个缩写有 2 张表。允许读任意表，不允许写其他 gameid 的表
-4. Redis 必须以 mod(cp):name(%s):appcode(%s):%s 格式命名key。允许读任意 key，不允许写其他 gameid 的 key。
-5. 因redis空间有限，总数量不为常数的 key 必须携带过期时间。
+
+1. 线上服务是分布式跑的，每个进程多线程并行，某个回调只会递交给其中一台机器的某个线程执行。因此，通过 async_internal_call 不能同时通知到所有的目标模块线程，只有一个目标模块线程会进入回调。
+2. 数据库和 Redis 命名规约详见 [L1_DevStandards.md — 数据存储规范](L1_DevStandards.md#2-数据存储规范)。
 
 ---
 
@@ -70,9 +64,12 @@
 | 文档 | 路径 | 说明 |
 |------|------|------|
 | 公共接口 | [L1_CommonInterface.md](L1_CommonInterface.md) | 发奖、通知、数据库等公共接口快速参考 |
+| 开发规范 | [L1_DevStandards.md](L1_DevStandards.md) | 编码规则、回调模式、数据存储规范、测试规范 |
+| AI 工作规范 | [AI_Tool_BestPractices.md](../common/AI_Tool_BestPractices.md) | 渐进式加载 — 仅在讨论原型/开始实现时读取 |
 | 模块索引 | [L2_ModuleIndex.md](L2_ModuleIndex.md) | 所有模块总览索引 |
 | 设计模式 | [L2_DesignPatterns.md](L2_DesignPatterns.md) | cpscript 设计模式、数据存储规范、模块通信 |
 | 项目上下文 | [L2_Context.md](L2_Context.md) | cpscript 目录结构、开发规范 |
+| 等级系统-详情 | [L3_leveldefine_xzmp.md](L3_leveldefine_xzmp.md) | 等级模块核心机制、降级/恢复、特权体系 |
 | 补充金币-原型 | [doc/cmquickrecharge_xzmp_proto.md](doc/cmquickrecharge_xzmp_proto.md) | 补充金币模块需求原型 |
 | 补充金币-详情 | [L3_cmquickrecharge_xzmp.md](L3_cmquickrecharge_xzmp.md) | 补充金币模块详情 |
 | 迎新礼包-原型 | [doc/cmnewplayerdailygift_xzmp_proto.md](doc/cmnewplayerdailygift_xzmp_proto.md) | 迎新礼包模块需求原型 |
