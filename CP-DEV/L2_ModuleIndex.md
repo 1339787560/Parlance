@@ -13,7 +13,7 @@
 | leveldefine | 等级系统 | leveldefine_xzmp.ts | — |
 | cmmonthcard | 月卡 | cmmonthcard_xzmp.ts | — |
 | cmdecoration | 装饰 | cmdecoration_xzmp.ts | — |
-| cmdailyquestion | 每日问答 | cmdailyquestion_xzmp.ts | — |
+| cmdailyquestion | 每日问答 | cmdailyquestion_xzmp.ts | [L3_cmdailyquestion_xzmp.md](L3_cmdailyquestion_xzmp.md) |
 | joyfulgift | 欢乐礼包 | joyfulgift_xzmp.ts | — |
 | goldbank | 金币银行 | goldbank_xzmp.ts | — |
 | luckyturntable | 幸运转盘 | luckyturntable_xzmp.ts | — |
