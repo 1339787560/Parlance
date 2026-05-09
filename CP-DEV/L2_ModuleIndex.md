@@ -8,9 +8,9 @@
 
 | 模块名 | 功能 | 脚本文件 | L3 详情 |
 |--------|------|----------|---------|
+| leveldefine | 等级系统 | leveldefine_xzmp.ts | [L3_leveldefine_xzmp.md](L3_leveldefine_xzmp.md) |
 | cmquickrecharge | 补充金币 | cmquickrecharge_xzmp.ts | [L3_cmquickrecharge_xzmp.md](L3_cmquickrecharge_xzmp.md) |
 | cmnewplayerdailygift | 迎新礼包 | cmnewplayerdailygift_xzmp.ts | [L3_cmnewplayerdailygift_xzmp.md](L3_cmnewplayerdailygift_xzmp.md) |
-| leveldefine | 等级系统 | leveldefine_xzmp.ts | — |
 | cmmonthcard | 月卡 | cmmonthcard_xzmp.ts | — |
 | cmdecoration | 装饰 | cmdecoration_xzmp.ts | — |
 | cmdailyquestion | 每日问答 | cmdailyquestion_xzmp.ts | [L3_cmdailyquestion_xzmp.md](L3_cmdailyquestion_xzmp.md) |
@@ -36,7 +36,7 @@
 - **joyfulgift** — 欢乐礼包
 
 ### 功能系统类
-- **leveldefine** — 等级系统，经验值与等级管理
+- **leveldefine** — 等级系统，经验值与等级管理、降级/恢复、一次性奖励、特权体系
 - **cmdecoration** — 装饰，桌布/头像框/聊天气泡等装扮管理
 - **division** — 段位系统
 - **goldbank** — 金币银行
