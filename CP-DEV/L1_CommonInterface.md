@@ -39,13 +39,9 @@ interface reward {
 }
 ```
 
-### 大额金币分批发奖
+### 大额金币
 
-```typescript
-await modsvr.async_sendGoldCoin_super(src, cxt, userid, totalAmount, guid);
-```
-
-- 超过 20 亿金币时必须使用分批发奖
+超过 20 亿金币时必须分批发奖，实现方式见 [L1_DevStandards.md — 大额金币分批发奖](L1_DevStandards.md#4-大额金币分批发奖)。
 
 ---
 
@@ -176,33 +172,9 @@ await redisTool.async_setData(data);
 - 过期时间：默认 7 天，总数量不为常数的 key 必须携带过期时间
 - 允许读任意 key，不允许写其他 gameid 的 key
 
-### 双写模式（标准查询/写入）
+### 双写模式
 
-```typescript
-// 查询：Redis 优先，miss 则查 MySQL 并回写 Redis
-async function async_QueryXxxInfo(cxt, userid) {
-    let redisTool = new RedisTool_XxxInfo(cxt, userid);
-    let res = await redisTool.async_getData();
-    if (!isEmpty_DBRes(res)) return res;
-
-    let mysqlTool = new MySqlTool_XxxInfo(cxt, userid);
-    res = await mysqlTool.async_query();
-    if (isEmpty_DBRes(res)) {
-        res = new DefaultData();
-        await mysqlTool.async_safeSave(res);
-    }
-    await redisTool.async_setData(res);
-    return res;
-}
-
-// 写入：MySQL + Redis 双写
-async function async_WriteXxxInfo(cxt, userid, data) {
-    let mysqlTool = new MySqlTool_XxxInfo(cxt, userid);
-    await mysqlTool.async_safeSave(data);
-    let redisTool = new RedisTool_XxxInfo(cxt, userid);
-    await redisTool.async_setData(data);
-}
-```
+标准查询/写入流程详见 [L1_DevStandards.md — 双写模式](L1_DevStandards.md#23-双写模式)。
 
 ---
 
