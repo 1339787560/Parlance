@@ -23,12 +23,12 @@
 
 | 角色 | 服务 | 项目目录 | .sln | .vcxproj | ProjectName | exe | Toolset |
 |------|------|----------|------|----------|-------------|-----|---------|
-| CPP-GameSVR-DEV | 金币血流血战 | `branches/douque/jinbi` | `jinbi.sln` | `gamesvr/gameSvr.vcxproj` | `xzmoSvr` | `Debug/xzmoSvr.exe` | v120 |
-| CPP-GameSVR-DEV | 银子血流血战 | `branches/douque/deposit` | `deposit.sln` | `gamesvr/gameSvr.vcxproj` | `xzmoSvr` | `Debug/xzmoSvr.exe` | v120 |
-| CPP-GameSVR-DEV | 金币六红中 | `branches/pve/zhong` | `zhong.sln` | `gamesvr/gameSvr.vcxproj` | `xzmsSvr` | `Debug/xzmsSvr.exe` | v120 |
-| CPP-GameSVR-DEV | 房间服 | `branches/pve/zhong` | — | `roomsvrxzms/roomsvrxzms.vcxproj` | `roomsvrxzms` | `Debug/roomsvrxzms.exe` | v120_xp |
-| CPP-GameSVR-DEV | 机器人工具 | `branches/pve/zhong` | — | `RobotTool/RobotTool.vcxproj` | `RobotTool` | `Debug/RobotTool.exe` | v120_xp |
-| CPP-GameSVR-DEV | 测试工程 | `branches/pve/zhong` | — | `test/test_GameSvr/test_GameSvr.vcxproj` | `test_GameSvr` | `Debug/test_GameSvr.exe` | v120 |
+| CPP-GameSVR-DEV-xzmp | 金币血流血战 | `branches/douque/jinbi` | `jinbi.sln` | `gamesvr/gameSvr.vcxproj` | `xzmoSvr` | `Debug/xzmoSvr.exe` | v120 |
+| CPP-GameSVR-DEV-xzmp | 银子血流血战 | `branches/douque/deposit` | `deposit.sln` | `gamesvr/gameSvr.vcxproj` | `xzmoSvr` | `Debug/xzmoSvr.exe` | v120 |
+| CPP-GameSVR-DEV-xzmp | 金币六红中 | `branches/pve/zhong` | `zhong.sln` | `gamesvr/gameSvr.vcxproj` | `xzmsSvr` | `Debug/xzmsSvr.exe` | v120 |
+| CPP-GameSVR-DEV-xzmp | 房间服 | `branches/pve/zhong` | — | `roomsvrxzms/roomsvrxzms.vcxproj` | `roomsvrxzms` | `Debug/roomsvrxzms.exe` | v120_xp |
+| CPP-GameSVR-DEV-xzmp | 机器人工具 | `branches/pve/zhong` | — | `RobotTool/RobotTool.vcxproj` | `RobotTool` | `Debug/RobotTool.exe` | v120_xp |
+| CPP-GameSVR-DEV-xzmp | 测试工程 | `branches/pve/zhong` | — | `test/test_GameSvr/test_GameSvr.vcxproj` | `test_GameSvr` | `Debug/test_GameSvr.exe` | v120 |
 
 > 注意：xvmoSvr 有两个工作区（jinbi 和 deposit），但 ProjectName 相同均为 `xzmoSvr`。
 > 房间服和机器人工具使用 `v120_xp`（支持 Windows XP 兼容），其他为 `v120`。

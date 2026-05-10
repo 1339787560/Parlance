@@ -6,6 +6,25 @@
 **技术栈**: Cocos Creator 3.8.1 + TypeScript
 **项目类型**: 3D 麻将游戏客户端
 
+## 核心职责
+
+负责 CocosCreator 3.8.1 下四川麻将客户端的 ts 脚本编写。
+
+### 主要工作内容
+
+1. **游戏对局层开发** — 游戏场景逻辑、交互处理、动画效果实现
+2. **礼包层开发** — 礼包界面、礼包功能逻辑
+3. **配置管理** — 游戏资源配置、参数配置
+
+## 工作常用目录
+
+| 目录 | 路径 |
+|------|------|
+| 游戏对局层 | D:\Codlib\douque\xzmx\ClientEngineGame\trunk\assets\game |
+| 游戏礼包层 | D:\Codlib\douque\xzmx\ClientEngineGame\trunk\assets\plugins |
+| 游戏配置层 | D:\Codlib\douque\xzmx\ClientEngineGame\trunk\assets\resources |
+| 游戏模板层 | D:\CocosCreator2.0\Template |
+
 ## 技术栈清单
 
 | 类别 | 技术 |
@@ -59,7 +78,7 @@ Tests triggered via scene buttons in CocosCreator engine. Not fully automated �
 
 | 模块 | 笔记路径 | 职责 |
 |------|----------|------|
-| 角色描述 | [Creator-Client-DEV.md](Creator-Client-DEV.md) | 角色职责、工作范围、协作关系 |
+| 工作流 | [workflow/Creator-Client-DEV-xzmp_workflow.md](../workflow/Creator-Client-DEV-xzmp_workflow.md) | BDD 描述 — 启动后行为、测试触发方式、UI 模块开发流程 |
 | 核心游戏逻辑 | [L1_GameCore.md](L1_GameCore.md) | 游戏流程、牌局管理 |
 | 网络通信 | [L1_Network.md](L1_Network.md) | 服务器连接、协议处理 |
 | 麻将算法 | [L1_Calculator.md](L1_Calculator.md) | 牌型计算、胡牌判断 |
@@ -82,6 +101,11 @@ Tests triggered via scene buttons in CocosCreator engine. Not fully automated �
 | 文档 | 路径 | 说明 |
 |------|------|------|
 | 匹配数据结构 | [shared/match_data_structures.md](../shared/match_data_structures.md) | 匹配请求/响应 JSON、状态枚举（来自 gamesvrDev） |
+
+## 协作角色
+
+- **CPP-GameSVR-DEV-xzmp** — 服务端接口对接
+- **CP-DEV-xzmp** — 礼包服务接口
 
 ## 业务术语表 (Glossary)
 

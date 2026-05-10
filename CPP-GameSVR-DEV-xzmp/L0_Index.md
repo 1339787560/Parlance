@@ -8,6 +8,12 @@
 
 负责 VS2013 下 C++ 游戏服务的编写，主要负责四川麻将游戏服务。
 
+### 主要工作内容
+
+1. **游戏服务开发** — 金币版/银子版四川麻将服务开发，游戏逻辑实现
+2. **模板代码查阅** — tcGame/xyGame 模板、麻将/跑牌游戏基类
+3. **问题排查** — 服务端 Bug 修复、性能优化、协议调试
+
 ---
 
 ## 技术栈
@@ -25,10 +31,13 @@
 
 | 工作区 | 路径 | 说明 |
 |--------|------|------|
-| 金币版四川麻将（血流血战玩法） | SVN: branches/douque/jinbi | 金币版服务代码 |
-| 银子版四川麻将（血流血战玩法） | D:\Codlib\douque\xzmx\xzmoNewPC\branches\douque\deposit | 银子版服务代码 |
-| 金币版四川麻将（血流六红中玩法） | D:\Codlib\douque\xzmx\xzmsPC\branches\pve\zhong | 金币六红中服务代码 |
+| 金币版四川麻将（血流血战） | https://192.168.102.112/svn/xzmopc/branches/douque/jinbi (SVN) | 金币版服务代码 |
+| 银子版四川麻将（血流血战） | D:\Codlib\douque\xzmx\xzmoNewPC\branches\douque\deposit | 银子版服务代码 |
+| 金币版四川麻将（血流六红中） | D:\Codlib\douque\xzmx\xzmsPC\branches\pve\zhong | 金币六红中服务代码 |
 | 模板源码 | D:\LibraryVC12_P | 通用模板库 |
+| tcGame 模板 | D:\LibraryVC12_P\tcGame2.0\trunk | 通用游戏模板 |
+| xyGame 模板 | D:\LibraryVC12_P\xyGame2.0\trunk | 通用游戏模板 |
+| xyMJBase 模板 | D:\LibraryVC12_P\xyMJBase4.0\trunk | 麻将基础框架 |
 | 麻将游戏基类 | D:\LibraryVC12_P\tcgMJ2.0\trunk | 四川麻将游戏框架 |
 | 跑牌游戏基类 | D:\LibraryVC12_P\tcgSK2.0\trunk | 斗地主游戏框架 |
 
@@ -97,7 +106,7 @@ Flow: check if test hook exists in `main()` → if not, add one → compile DEBU
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| 角色描述 | [CPP-GameSVR-DEV.md](CPP-GameSVR-DEV.md) | 角色职责、工作范围、协作关系 |
+| 工作流 | [workflow/CPP-GameSVR-DEV-xzmp_workflow.md](../workflow/CPP-GameSVR-DEV-xzmp_workflow.md) | BDD 描述 — 启动后行为、编码规则、DEBUG 测试流程 |
 | 编译调试指南 | [CPPCompileAndRunHelp.md](CPPCompileAndRunHelp.md) | VSCode + VS2013 编译、调试配置 |
 | 模板继承链 | [TemplateDoc/L1_TemplateChain.md](TemplateDoc/L1_TemplateChain.md) | CMainServer → CMjServer/CMjTable → 各版本定制 |
 
@@ -107,8 +116,8 @@ Flow: check if test hook exists in `main()` → if not, add one → compile DEBU
 
 | 协作角色 | 说明 |
 |------|------|
-| **CP-DEV** | 新礼包服务、积分兑换 — 仅与 xzmo / xzms 金币版兼容 |
-| **Creator-Client-DEV** | 新客户端 — 仅与 xzmo / xzms 金币版兼容 |
-| **LUA-Client-DEV** | 旧版 Lua 客户端 — 与全部版本兼容（已停止开发） |
+| **CP-DEV-xzmp** | 新礼包服务、积分兑换 — 仅与 xzmo / xzms 金币版兼容 |
+| **Creator-Client-DEV-xzmp** | 新客户端 — 仅与 xzmo / xzms 金币版兼容 |
+| **LUA-Client-DEV-xzmp** | 旧版 Lua 客户端 — 与全部版本兼容（已停止开发） |
 
-> **关键约束**：CP-DEV 和 Creator-Client-DEV 做的积分内容仅与金币版服务（xzmo、xzms）兼容，与银子版（xzmo2）无关。
+> **关键约束**：CP-DEV-xzmp 和 Creator-Client-DEV-xzmp 做的积分内容仅与金币版服务（xzmo、xzms）兼容，与银子版（xzmo2）无关。

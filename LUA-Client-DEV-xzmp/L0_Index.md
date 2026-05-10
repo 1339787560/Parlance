@@ -1,4 +1,4 @@
-# L0 Index - LUA-Client-DEV
+# L0 Index - LUA-Client-DEV-xzmp
 
 > Lua 客户端工程师工作区索引
 
@@ -37,6 +37,7 @@ Legacy maintenance only — no new development or test execution required. Query
 | 文档 | 路径 | 说明 |
 |------|------|------|
 | 角色描述 | [role_description.md](role_description.md) | 角色职责、技能范围、协作对象 |
+| 工作流 | [workflow/LUA-Client-DEV-xzmp_workflow.md](../workflow/LUA-Client-DEV-xzmp_workflow.md) | BDD 描述 — 启动后行为、历史查询、维护模式限制 |
 
 ---
 

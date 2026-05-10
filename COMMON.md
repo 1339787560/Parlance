@@ -3,10 +3,10 @@
 ## Role Definitions
 | Role | Responsibility | Tech/Lang |
 |:---|:---|:---:|
-| **LUA-Client-DEV** | Maintain legacy Cocos-2DX client | Lua |
-| **Creator-Client-DEV** | Maintain new CocosCreator 3.8.1 client | TS |
-| **CPP-GameSVR-DEV** | Maintain GameSvr & legacy gift services | C++ |
-| **CP-DEV** | Maintain new gift services, user plugins & reward logic | TS |
+| **LUA-Client-DEV-xzmp** | Maintain legacy Cocos-2DX client | Lua |
+| **Creator-Client-DEV-xzmp** | Maintain new CocosCreator 3.8.1 client | TS |
+| **CPP-GameSVR-DEV-xzmp** | Maintain GameSvr & legacy gift services | C++ |
+| **CP-DEV-xzmp** | Maintain new gift services, user plugins & reward logic | TS |
 
 ## Working Rules
 1. **L0 Required**: Must read L0 docs (duties, dir priority, index).
@@ -15,7 +15,7 @@
 
 ## Development Pipeline
 
-### LUA-Client-DEV
+### LUA-Client-DEV-xzmp
 
 Legacy maintenance only — no new development. Query historical functionality as needed.
 
