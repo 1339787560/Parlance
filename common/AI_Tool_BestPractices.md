@@ -47,7 +47,7 @@
 | Merge/push/create PR | `/ship` |
 | QA browser testing | `/browse` — use `$B` binary, disable `mcp__claude-in-chrome` |
 
-## Git Workflow
+## Git WorkFlow
 
 - Before implementing, detect if already in isolated worktree (`GIT_DIR != GIT_COMMON`)
 - Prefer platform-native tools (EnterWorktree); fall back to git worktree when unavailable

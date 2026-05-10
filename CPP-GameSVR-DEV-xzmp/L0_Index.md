@@ -106,7 +106,7 @@ Flow: check if test hook exists in `main()` → if not, add one → compile DEBU
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| 工作流 | [workflow/CPP-GameSVR-DEV-xzmp_workflow.md](../workflow/CPP-GameSVR-DEV-xzmp_workflow.md) | BDD 描述 — 启动后行为、编码规则、DEBUG 测试流程 |
+| 工作流 | [WorkFlow/CPP-GameSVR-DEV-xzmp_WorkFlow.md](../WorkFlow/CPP-GameSVR-DEV-xzmp_WorkFlow.md) | BDD 描述 — 启动后行为、编码规则、DEBUG 测试流程 |
 | 编译调试指南 | [CPPCompileAndRunHelp.md](CPPCompileAndRunHelp.md) | VSCode + VS2013 编译、调试配置 |
 | 模板继承链 | [TemplateDoc/L1_TemplateChain.md](TemplateDoc/L1_TemplateChain.md) | CMainServer → CMjServer/CMjTable → 各版本定制 |
 

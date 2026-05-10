@@ -20,4 +20,4 @@
 
 ## 新建角色
 
-参见 [workflow/new_role_onboarding.md](workflow/new_role_onboarding.md) — 五步流程：询问角色信息 → 创建文件夹和 L0 → 引导填充 workflow → 填充知识笔记 → 注册到 COMMON.md。
+参见 [WorkFlow/new_role_onboarding.md](WorkFlow/new_role_onboarding.md) — 五步流程：询问角色信息 → 创建文件夹和 L0 → 引导填充 WorkFlow → 填充知识笔记 → 注册到 COMMON.md。

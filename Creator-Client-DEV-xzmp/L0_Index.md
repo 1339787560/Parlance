@@ -78,13 +78,14 @@ Tests triggered via scene buttons in CocosCreator engine. Not fully automated �
 
 | 模块 | 笔记路径 | 职责 |
 |------|----------|------|
-| 工作流 | [workflow/Creator-Client-DEV-xzmp_workflow.md](../workflow/Creator-Client-DEV-xzmp_workflow.md) | BDD 描述 — 启动后行为、测试触发方式、UI 模块开发流程 |
+| 工作流 | [WorkFlow/Creator-Client-DEV-xzmp_WorkFlow.md](../WorkFlow/Creator-Client-DEV-xzmp_WorkFlow.md) | BDD 描述 — 启动后行为、测试触发方式、UI 模块开发流程 |
 | 核心游戏逻辑 | [L1_GameCore.md](L1_GameCore.md) | 游戏流程、牌局管理 |
 | 网络通信 | [L1_Network.md](L1_Network.md) | 服务器连接、协议处理 |
 | 麻将算法 | [L1_Calculator.md](L1_Calculator.md) | 牌型计算、胡牌判断 |
 | UI 组件 | [L1_UIComponents.md](L1_UIComponents.md) | 界面组件、交互逻辑（含 3D 子系统 L2 索引） |
 | 功能插件目录 | [L1_Plugins.md](L1_Plugins.md) | 40+ 插件目录索引、插槽与命名规范 |
 | 插件架构 | [L1_PluginArchitecture.md](L1_PluginArchitecture.md) | Plugin→ViewCtrl→Help→View→Def 五层模式、API 速查 |
+| 客户端模板 | [L1_ClientTemplate.md](L1_ClientTemplate.md) | 模板启动流程、插件工作流、数据中心、支付/行为树接口 |
 
 ## L2 详细解析索引
 

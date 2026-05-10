@@ -67,7 +67,7 @@
 | 公共接口 | [L1_CommonInterface.md](L1_CommonInterface.md) | 发奖、通知、数据库等公共接口快速参考 |
 | 开发规范 | [L1_DevStandards.md](L1_DevStandards.md) | 编码规则、回调模式、数据存储规范、测试规范 |
 | AI 工作规范 | [AI_Tool_BestPractices.md](../common/AI_Tool_BestPractices.md) | 渐进式加载 — 仅在讨论原型/开始实现时读取 |
-| 工作流 | [workflow/CP-DEV-xzmp_workflow.md](../workflow/CP-DEV-xzmp_workflow.md) | BDD 描述 — 启动后行为、任务分发、测试执行流程 |
+| 工作流 | [WorkFlow/CP-DEV-xzmp_WorkFlow.md](../WorkFlow/CP-DEV-xzmp_WorkFlow.md) | BDD 描述 — 启动后行为、任务分发、测试执行流程 |
 | 模块索引 | [L2_ModuleIndex.md](L2_ModuleIndex.md) | 所有模块总览索引 |
 | 设计模式 | [L2_DesignPatterns.md](L2_DesignPatterns.md) | cpscript 设计模式、数据存储规范、模块通信 |
 | 项目上下文 | [L2_Context.md](L2_Context.md) | cpscript 目录结构、开发规范 |
