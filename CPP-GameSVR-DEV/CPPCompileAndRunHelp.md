@@ -9,7 +9,7 @@
 
 | 项目 | 值 |
 |------|-----|
-| 环境变量 | `VS_CTLibPath=D:\LibraryVC12\`、`VS_CTNetlibPath=D:\LibraryVC12\UWL9.1;D:\LibraryVC12\t csvr1.0;` |
+| 环境变量 | `VS_CTLibPath=D:\LibraryVC12\`、`VS_CTNetlibPath=D:\LibraryVC12\UWL9.1;D:\LibraryVC12\tcsvr1.0;` |
 | 依赖库 | `LibraryVC12_P` 下的预编译静态库（tcgament, tcgmj, xygame, uwl 等） |
 | SDK/toolset | VS2013 v120（部分工程 v120_xp）通过 VS Installer 安装 |
 | MFC DLL | `mfc120d.dll` 等需在 PATH 或 exe 目录 |
@@ -68,18 +68,93 @@ powershell -Command "cmd.exe /c '_build_debug.bat'"
 ### 方案 B：devenv.com（更简洁，无 rsp 干扰）
 
 ```bash
-powershell -Command "devenv.com 'gamesvr/gameSvr.vcxproj' '/Build' 'Debug|Win32'"
+powershell -Command "& 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.com' 'gamesvr/gameSvr.vcxproj' '/Build' 'Debug|Win32'"
 ```
 
-`devenv.com` 路径：`C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.com`
+> **注意**：`devenv.com` 不在 PATH 中，必须使用完整路径。不要直接从 bash 调用 MSBuild.exe。
 
 ### 方案 C：VS2022 菜单打开 .sln 后 Ctrl+Shift+B
 
 直接在 VS2022 中打开对应 `.sln`，选择 Debug|Win32 配置，构建即可。
 
-### 坑：MSBuild.rsp 自动响应文件
+---
 
-`C:\Program Files\...\MSBuild\Current\Bin\MSBuild.rsp` 会自动追加参数。**从 bash 直接调用 `MSBuild.exe` 会触发 MSB1008 错误**。必须经过 VsDevCmd.bat 或 devenv.com 绕开此问题。
+## 构建前置检查
+
+在构建前按顺序排查：
+
+1. **确认环境变量**：`VS_CTLibPath` 和 `VS_CTNetlibPath` 已设置
+2. **确认 toolset 已安装**：VS2013 v120/v120_xp 通过 VS Installer 安装
+3. **杀掉残留进程**：如之前运行过 exe，先杀进程避免 LNK1104
+4. **选择构建模式**：
+   - **增量构建**（`/Build`）：仅修改单个 .cpp 时使用，约 0.3 秒
+   - **全量重建**（`/Rebuild`）：修改 PCH、头文件包含链、或遇 LNK2011 链接错误时使用，约 2 分钟
+
+---
+
+## 常见陷阱
+
+### 陷阱 1：exe 被锁定导致 LNK1104
+
+**症状**：
+```
+LINK : fatal error LNK1104: 无法打开文件 xxx.exe
+```
+
+**原因**：之前运行的 exe 实例未退出，占用了文件锁。
+
+**解决**：
+```bash
+# 查看进程
+tasklist | grep -i xzmsSvr
+
+# 杀掉进程（/F 在 bash 下会被解释为盘符，需包 powershell）
+powershell -Command "taskkill /F /IM xzmsSvr.exe"
+```
+
+### 陷阱 2：增量链接失败 LNK2011
+
+**症状**：
+```
+WinStreakModule.obj : error LNK2011: 未预先编译链接obj映像; 无法链接增量编译对象
+```
+
+**原因**：修改涉及 PCH 或头文件依赖链时，增量链接的预编译映像过期。
+
+**解决**：改用全量重建，将 `/Build` 替换为 `/Rebuild`：
+```bash
+powershell -Command "& 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.com' 'gamesvr/gameSvr.vcxproj' '/Rebuild' 'Debug|Win32'"
+```
+
+### 陷阱 3：devenv.com 不在 PATH 中
+
+**症状**：
+```
+devenv.com : 无法将"devenv.com"识别为 cmdlet...
+```
+
+**原因**：bash/powershell 会话未加载 VS 环境变量。
+
+**解决**：使用完整路径 `C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.com`。
+
+### 陷阱 4：测试模式误启动服务
+
+**症状**：DEBUG 构建后，测试日志后紧跟着 `server initialize` 日志，服务被启动。
+
+**原因**：`_tmain()` 中 `execAllTest()` 通过后没有 `return 0`，继续执行了 `mainServer.Initialize()`。
+
+**正确模式**（GameSvr.cpp _tmain）：
+```cpp
+#ifdef DEBUG
+    if (FALSE == execAllTest()) {
+        UwlTrace(_T("有未通过的测试项!!!退出!!!"));
+        return 0;
+    }
+    // 测试通过后必须 return，否则会继续启动服务
+    UwlTrace(_T("所有测试通过，退出测试模式"));
+    return 0;
+#endif // DEBUG
+```
 
 ---
 
@@ -88,10 +163,13 @@ powershell -Command "devenv.com 'gamesvr/gameSvr.vcxproj' '/Build' 'Debug|Win32'
 ### 通用步骤
 
 ```bash
-# 1. 启服务（以 xzmsSvr 为例）
+# 1. 先杀旧进程（如有）
+powershell -Command "taskkill /F /IM xzmsSvr.exe"
+
+# 2. 启动服务（以 xzmsSvr 为例）
 powershell -Command "cmd.exe /c 'gamesvr/Debug/xzmsSvr.exe'"
 
-# 2. 读取日志（GBK 编码，需 python 解码）
+# 3. 读取日志（GBK 编码，用 python 解码）
 python -c "import sys; print(open(sys.argv[1],'r',encoding='gbk').read())" <output_file>
 ```
 
@@ -110,6 +188,7 @@ python -c "import sys; print(open(sys.argv[1],'r',encoding='gbk').read())" <outp
 ### 运行行为
 
 - **游戏服**：调用 `execAllTest()` 运行测试 → 初始化 → 进入 `WatchInput()` 等待键盘
+- **纯测试模式**（DEBUG 下 `return 0`）：执行测试 → 退出，不启动服务
 - **房间服/机器人**：类似，但可能无测试逻辑
 - **测试工程**：纯测试，运行后退出
 - 端口占用（bind 10048）= 已有实例运行
@@ -122,7 +201,7 @@ python -c "import sys; print(open(sys.argv[1],'r',encoding='gbk').read())" <outp
 | 指标 | 值 |
 |------|-----|
 | 增量编译（仅改 1 个 .cpp） | ~0.3 秒 |
-| 全量重编 | 数分钟（链接大量静态库） |
+| 全量重建 | ~2 分钟（连接大量静态库） |
 | 优化 | PCH 加速编译；避免不必要的 Rebuild All |
 
 ---
