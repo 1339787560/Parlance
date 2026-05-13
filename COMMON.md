@@ -7,6 +7,7 @@
 | **Creator-Client-DEV-xzmp** | Maintain new CocosCreator 3.8.1 client | TS |
 | **CPP-GameSVR-DEV-xzmp** | Maintain GameSvr & legacy gift services | C++ |
 | **CP-DEV-xzmp** | Maintain new gift services, user plugins & reward logic | TS |
+| **ChangData-Seeker** | Query existing data tables & field descriptions | SQL / Hive |
 
 ## Working Rules
 1. **L0 Required**: Must read L0 docs (duties, dir priority, index).
