@@ -1,0 +1,3 @@
+启动时调用 `a2a_init` 指定 role 完成初始化。
+后续读写笔记使用 a2a_list / a2a_get / a2a_create / a2a_update / a2a_delete。
+Cache miss 时主动用 a2a_update 更新笔记。

@@ -39,6 +39,12 @@ Legacy maintenance only — no new development or test execution required. Query
 | 角色描述 | [role_description.md](role_description.md) | 角色职责、技能范围、协作对象 |
 | 工作流 | [WorkFlow/LUA-Client-DEV-xzmp_WorkFlow.md](../WorkFlow/LUA-Client-DEV-xzmp_WorkFlow.md) | BDD 描述 — 启动后行为、历史查询、维护模式限制 |
 
+## L2 详细解析索引
+
+| 模块 | 笔记路径 | 内容 |
+|------|----------|------|
+| 复活礼包 sectionid | [L2_BrokeRechargeNew_SectionId.md](L2_BrokeRechargeNew_SectionId.md) | sectionid 数据流、chunk 计算、宗师场无区分 |
+
 ---
 
 ## 协作角色
