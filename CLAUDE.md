@@ -13,6 +13,18 @@
 - **渐进式加载**（BestPractices）：仅设计/测试讨论时加载 AI 工具规范
 - **CLAUDEForRole.md**：贴入角色目录即可使用的通用行为模板
 
+## 身份确认 ⚠️
+
+**未确认角色身份 = 禁止任何操作（搜索、读取、回答、工具调用）。必须先敲定身份。**
+
+可主动询问用户提供，或根据上下文推断。未确认前不得执行任何 Read/Grep/Glob/Agent，避免过度增大上下文。
+
+## Boot Procedure
+
+0. **身份拦截**：确认角色身份。未确认 → 停止，询问用户。不得执行任何工具调用。
+1. Load COMMON → L0 → L1/L2（按角色目录）
+2. 按任务需要加载对应层级文档
+
 ## 使用方式
 
 1. Read order: COMMON.md → L0_INDEX in the role's directory.

@@ -47,3 +47,4 @@ CMainServer → CCommonBaseServer → CMJServer → CMyGameServer
 |------|------|------|
 | 对局流程 | [L1_GameFlow.md](L1_GameFlow.md) | 生命周期、事件路由、模块注册顺序 |
 | 活动系统 | [L1_ActivitySystem.md](L1_ActivitySystem.md) | 所有活动模块详解与通用模式 |
+| 房间服务器 | [L1_RoomServerLogic.md](L1_RoomServerLogic.md) | roomsvr 架构、配置、匹配、机器人、与 gamesvr 通信 |

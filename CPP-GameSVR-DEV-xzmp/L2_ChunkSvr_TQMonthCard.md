@@ -22,7 +22,7 @@
 
 | Key格式 | 类型 | 说明 |
 |---------|------|------|
-| tqmonthcard:{mainkey} | STRING | PB编码缓存 |
+| rdsas_tqmonthcard:{mainkey} | STRING | PB编码缓存 |
 | rdsdirtycachelist:sqlas_tqmonthcard | SET | 脏数据集合 |
 
 ---

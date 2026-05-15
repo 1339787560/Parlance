@@ -109,6 +109,9 @@ Flow: check if test hook exists in `main()` → if not, add one → compile DEBU
 | 工作流 | [WorkFlow/CPP-GameSVR-DEV-xzmp_WorkFlow.md](../WorkFlow/CPP-GameSVR-DEV-xzmp_WorkFlow.md) | BDD 描述 — 启动后行为、编码规则、DEBUG 测试流程 |
 | 编译调试指南 | [CPPCompileAndRunHelp.md](CPPCompileAndRunHelp.md) | VSCode + VS2013 编译、调试配置 |
 | 模板继承链 | [TemplateDoc/L1_TemplateChain.md](TemplateDoc/L1_TemplateChain.md) | CMainServer → CMjServer/CMjTable → 各版本定制 |
+| 礼包数据服务 | [L1_ChunkSvr.md](L1_ChunkSvr.md) | ChunkSvr — 金币版核心数据后端，管理活动配置/数据库更新/发奖 |
+| 活动模块索引 | [L1_ChunkSvr_ActivityModules.md](L1_ChunkSvr_ActivityModules.md) | ChunkSvr 16个线上活动模块总览（MySQL/Redis/PB/缓存方式/依赖关系） |
+| 构造原理 | [L2_ChunkSvr_Architecture.md](L2_ChunkSvr_Architecture.md) | ChunkSvr C++/Lua混合架构、C库导出、三级缓存、热重载、线程安全 |
 
 ---
 

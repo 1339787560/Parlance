@@ -22,7 +22,7 @@ VIP等级系统：RMB消费累积经验，经验达到阈值自动升级，不�
 
 | Key格式 | 类型 | 说明 |
 |---------|------|------|
-| tqvip:{mainkey} | STRING | PB编码缓存 |
+| rdsas_tqvip:{mainkey} | STRING | PB编码缓存 |
 | rdsdirtycachelist:sqlas_tqvip | SET | 脏数据集合 |
 
 ---

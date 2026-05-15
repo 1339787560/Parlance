@@ -46,6 +46,8 @@
 | 文档 | 路径 | 说明 |
 |------|------|------|
 | 角色描述 | [serviceSvrDev.md](serviceSvrDev.md) | 角色职责、工作范围、协作关系 |
+| roomsvr 故障验证 | [故障验证_roomsvr高级场开局失败.md](故障验证_roomsvr高级场开局失败.md) | 三个 Bug 的单元测试/集成测试规范，用于验证修复 |
+| 线上故障分析 | [onlineErrorBrief20260514.md](onlineErrorBrief20260514.md) | roomsvr 高级场开局失败线上日志分析 |
 
 ---
 

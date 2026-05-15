@@ -11,7 +11,7 @@ chunkSvr 是一个 C++ Windows 服务，内部嵌入了 Lua 虚拟机作为业�
 ```
 ┌─────────────────────── C++ 进程 ───────────────────────┐
 │                                                         │
-│  TcySockSvr (网络层)                                    │
+│  TcySockSvr (TCP网络层)                                 │
 │       │ TCP 收到消息                                    │
 │       ▼                                                 │
 │  TcyMsgCenter (消息中心)                                │
@@ -29,6 +29,10 @@ chunkSvr 是一个 C++ Windows 服务，内部嵌入了 Lua 虚拟机作为业�
 │       │                                                 │
 │       └─→ CmdScript lua_State (临时, 运行即销毁)        │
 │                                                         │
+│  HttpServerModule (HTTP网络层, libevent evhttp)         │
+│       │ POST /v1.0/chunkluareq                         │
+│       │ JSON → OnHttpLuaReq → MsgCenter lua_State      │
+│       ▼                                                 │
 │  C++ 导出库 (dbcore / core / msgcore / core_extern)    │
 │       ↑ Lua 通过这些库回调 C++                          │
 │                                                         │
@@ -37,6 +41,55 @@ chunkSvr 是一个 C++ Windows 服务，内部嵌入了 Lua 虚拟机作为业�
 │  TcyLuaTableValue (进程内缓存, 跨重载持久)              │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### 1.1 HTTP 服务
+
+chunkSvr 内嵌 `HttpServerModule`（基于 libevent evhttp），提供 HTTP → Lua 透传网关。仅一条路由，CP 脚本和外部工具可通过 HTTP 调用任意 Lua 模块的 `OnHttpLuaReq`。
+
+| 属性 | 值 |
+|------|-----|
+| 默认端口 | 9080（INI `[HttpServerModule] port` 可配） |
+| 线程数 | 1（INI `[HttpServerModule] threadcount` 可配） |
+| 源码 | `HttpServerModule.h/.cpp` (3K) |
+| 依赖 | libevent (evhttp) |
+
+#### 路由
+
+| Method | Path | 处理 |
+|--------|------|------|
+| POST | `/v1.0/chunkluareq` | JSON body → `MainServer::m_msgCenter.OnHttpLuaReq(strInput)` → Lua 消息分发 |
+| 其他 | 任意 | 404 Not Found |
+
+#### 请求格式
+
+```json
+POST /v1.0/chunkluareq
+Content-Type: application/json
+
+{
+  "nRequest": 450160,
+  "nUserID": 12345,
+  ...  // 其他字段按 Lua 模块要求传入
+}
+```
+
+#### 响应格式
+
+Lua 处理后的 JSON 结果，HTTP 200 返回。Lua 异常时返回 `{"err": "..."}`。
+
+#### 实测（本地部署）
+
+| 请求 | 结果 |
+|------|------|
+| `GET /` | 404 |
+| `GET /v1.0/chunkluareq` | 404（仅 POST 注册） |
+| `POST /v1.0/chunkluareq {}` | 200 `{"err":"attempt to call a nil value"}` |
+| `PUT/DELETE /v1.0/chunkluareq` | 404 |
+
+#### 注意
+
+- INI 未配置 `[HttpServerModule]` 段时，使用硬编码默认值（port=9080, threadcount=1）
+- HTTP 请求走独立线程池（evhttp），与 TCP 消息处理的 MsgCenter lua_State 不是同一个线程局部状态，需注意 Lua 全局变量的线程安全性
 
 ---
 
@@ -209,37 +262,38 @@ end
 
 ## 四、三级缓存机制 (lasyncache)
 
-### 4.1 三级层次
+### 4.1 两级缓存（实际生效）
+
+> **重要**：代码框架预留了三级缓存（C++内存→Redis→MySQL），但当前所有 lasynccache 模块的 `packCacheParams` 均硬编码 `key = nil`，导致 `getcache` 中 `if params.key then` 永远跳过 C++ 进程内缓存。实际生效的只有两级：Redis → MySQL。C++ 进程内缓存层未参与数据读取路径。
 
 ```
 L1: C++ 进程内缓存 (TcyLuaTableValue)
-    │ 命中 → 直接返回 (纳秒级)
-    │ 未命中 ↓
+    │ ⚠️ 所有模块 key=nil，此层被跳过
+    │
 L2: Redis
-    │ 命中 → PB解码 → 回填L1 → 返回 (毫秒级)
+    │ 命中 → PB解码 → 返回 (毫秒级)
     │ 未命中 ↓
 L3: MySQL (data BLOB)
-    │ 命中 → PB解码 → 回填L2+L1 → 返回 (十毫秒级)
+    │ 命中 → PB解码 → 回填L2 → 返回 (十毫秒级)
     │ 未命中 → 返回 nil
 ```
 
+这也解释了为什么 xzmpDB 等外部工具只需写 Redis + MySQL 即可生效——无需操作 C++ 缓存，因为它根本不参与读取路径。
+
 ### 4.2 读取流程 — getcache
+
+> 注意：`params.key` 始终为 nil，C++ 缓存层被跳过。
 
 ```lua
 function getcache(entry, params, pbname)
-    -- L1: C++ 进程内缓存
-    if params.key then
-        local cache = entry:getcache(params.key)
-        if cache then return cache end
-    end
+    -- L1: C++ 进程内缓存 (params.key=nil → 跳过)
 
-    -- L2: Redis
-    local redis_key = redistag .. ":" .. params.mainkey
+    -- L2: Redis (key由AsynCacheConfig.mysqlregeister定义: sqlas_xxx → rdsas_xxx)
+    local redis_key = Config.mysqlregeister[params.mysql] .. ":" .. params.mainkey
     local res = entry:rdscmd("GET %s", redis_key)
     if res then
         if pbname then
             local cache = protobuf.decode(pbname, res)  -- PB解码
-            if params.key then entry:setcache(params.key, cache) end  -- 回填L1
         end
         return cache
     end
@@ -254,8 +308,6 @@ function getcache(entry, params, pbname)
                 -- 回填L2 (Redis)
                 entry:rdscmd("SET %s %s", redis_key, protobuf.encode_1(pbname, cache))
                 entry:rdscmd("EXPIRE %s %d", redis_key, rediscachetimeout)
-                -- 回填L1
-                if params.key then entry:setcache(params.key, cache) end
                 return cache
             end
         end
@@ -272,16 +324,13 @@ function setcache(entry, params, cache, pbname)
 
     -- 2. 写入 Redis
     entry:rdscmd1argarry({
-        { "SET %s %b", pbdata }     -- %b = 二进制参数
+        { "SET %s %b", pbdata }
     })
 
     -- 3. 标脏 (加入脏数据集合，等待异步刷盘到MySQL)
     entry:rdscmd("SADD rdsdirtycachelist:%s %d", params.mysql, params.mainkey)
 
-    -- 4. 更新 C++ 进程内缓存
-    if params.key then
-        entry:setcache(params.key, cache)
-    end
+    -- 4. C++ 进程内缓存 (params.key=nil → 跳过)
 end
 ```
 
@@ -307,10 +356,10 @@ end
 
 | 模块 | MySQL表名 | Redis Key前缀 | PB缓存类型 |
 |------|----------|--------------|-----------|
-| TQDecorations | sqlas_tqdecoration | tqdecoration: | tqdecoration.DecorationCache |
-| TQMonthCard | sqlas_tqmonthcard | tqmonthcard: | tqmonthcard.Cache |
-| TQVip | sqlas_tqvip | tqvip: | tqvip.PlayerData |
-| QuickRechargeV2 | sqlas_quickrecharge | quickrecharge: | quickrecharge.Cache |
+| TQDecorations | sqlas_tqdecoration | rdsas_tqdecoration: | tqdecoration.DecorationCache |
+| TQMonthCard | sqlas_tqmonthcard | rdsas_tqmonthcard: | tqmonthcard.Cache |
+| TQVip | sqlas_tqvip | rdsas_tqvip: | tqvip.PlayerData |
+| QuickRechargeV2 | sqlas_quickrecharge | rdsas_quickrecharge: | quickrecharge.Cache |
 
 ---
 
