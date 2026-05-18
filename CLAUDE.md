@@ -25,6 +25,10 @@
 1. Load COMMON → L0 → L1/L2（按角色目录）
 2. 按任务需要加载对应层级文档
 
+## 压缩后重载
+
+当一次上下文压缩（提示词压缩或自动压缩）执行完毕后，必须重新加载当前角色的 COMMON.md 和 L0_Index.md，避免遗忘关键性设定。
+
 ## 使用方式
 
 1. Read order: COMMON.md → L0_INDEX in the role's directory.
