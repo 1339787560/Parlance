@@ -112,6 +112,7 @@ Flow: check if test hook exists in `main()` → if not, add one → compile DEBU
 | 礼包数据服务 | [L1_ChunkSvr.md](L1_ChunkSvr.md) | ChunkSvr — 金币版核心数据后端，管理活动配置/数据库更新/发奖 |
 | 活动模块索引 | [L1_ChunkSvr_ActivityModules.md](L1_ChunkSvr_ActivityModules.md) | ChunkSvr 16个线上活动模块总览（MySQL/Redis/PB/缓存方式/依赖关系） |
 | 构造原理 | [L2_ChunkSvr_Architecture.md](L2_ChunkSvr_Architecture.md) | ChunkSvr C++/Lua混合架构、C库导出、三级缓存、热重载、线程安全 |
+| 运行机制 | [L2_ChunkSvr_Runtime.md](L2_ChunkSvr_Runtime.md) | scripts 目录运作、启动流程、消息分发、配置加载、跨节点通信 |
 
 ---
 

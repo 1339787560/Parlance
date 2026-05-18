@@ -1,0 +1,430 @@
+{
+	// 模块：对局抽奖
+	// 功能：玩家在普通房间（经典/不洗牌/癞子）完成对局，累计局数完成任务阶段后获得抽奖券，
+	//       使用抽奖券参与抽奖获取奖励。5个场次档位（R1~R5）各自独立配置任务阶段与奖池。
+	//       阶段按顺序解锁，末段循环。每日0点重置对局进度与阶段，每周一0点重置抽奖券。
+
+	// 开关
+	"isenable": 1,
+	"continueCount":1,
+
+	// 发奖兑换ID
+	"guid": "JC188028300000200991776767612587",
+
+	// 抽奖券道具ID
+	"ticketPropId": 99999,
+
+	// 抽奖券库存上限
+	"ticketLimit": 999,
+
+	// 获奖记录最大保留条数
+	"recordMaxCount": 50,
+
+	// 每日重置时间（服务器时间，小时:分钟）
+	"dailyResetTime": "00:00",
+
+	// 每周重置日（1=周一）
+	"weeklyResetDay": 1,
+
+	// 新手任务配置：新用户首次任务所需局数，完成一次后失效，不重置最多保留3个月
+	"newbieTask": {
+		"enabled": 1,
+		"targetWins": 1,
+		"ticketPerComplete": 1,
+		"rewardPoolId": "NEWBIE_POOL",
+		"maxRetainDays": 90
+	},
+
+	// 场次配置：R1~R5 各自独立
+	"rooms": [
+		{
+			// 初级场（经典·不洗牌·癞子）
+			"roomCode": "R1",
+			"roomSwitch": 1,
+			"roomLabel": "初级场",
+			"gameTypes": ["经典", "不洗牌", "癞子"],
+			"maxDrawCount": 100,
+			"stages": [
+				{
+					"stageCode": "A",
+					"order": 1,
+					"targetWins": 3,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R1_STD_POOL_A"
+				},
+				{
+					"stageCode": "B",
+					"order": 2,
+					"targetWins": 7,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R1_STD_POOL_B"
+				},
+				{
+					"stageCode": "C",
+					"order": 3,
+					"targetWins": 10,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R1_STD_POOL_C"
+				},
+				{
+					"stageCode": "D",
+					"order": 4,
+					"targetWins": 10,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R1_STD_POOL_D"
+				}
+			]
+		},
+		{
+			// 中级场（经典·不洗牌·癞子）
+			"roomCode": "R2",
+			"roomSwitch": 1,
+			"roomLabel": "中级场",
+			"gameTypes": ["经典", "不洗牌", "癞子"],
+			"maxDrawCount": 80,
+			"stages": [
+				{
+					"stageCode": "A",
+					"order": 1,
+					"targetWins": 3,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R2_STD_POOL_A"
+				},
+				{
+					"stageCode": "B",
+					"order": 2,
+					"targetWins": 5,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R2_STD_POOL_B"
+				},
+				{
+					"stageCode": "C",
+					"order": 3,
+					"targetWins": 8,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R2_STD_POOL_C"
+				},
+				{
+					"stageCode": "D",
+					"order": 4,
+					"targetWins": 8,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R2_STD_POOL_D"
+				}
+			]
+		},
+		{
+			// 高级场（经典·不洗牌）
+			"roomCode": "R3",
+			"roomSwitch": 1,
+			"roomLabel": "高级场",
+			"gameTypes": ["经典", "不洗牌"],
+			"maxDrawCount": 60,
+			"stages": [
+				{
+					"stageCode": "A",
+					"order": 1,
+					"targetWins": 2,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R3_STD_POOL_A"
+				},
+				{
+					"stageCode": "B",
+					"order": 2,
+					"targetWins": 4,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R3_STD_POOL_B"
+				},
+				{
+					"stageCode": "C",
+					"order": 3,
+					"targetWins": 6,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R3_STD_POOL_C"
+				},
+				{
+					"stageCode": "D",
+					"order": 4,
+					"targetWins": 6,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R3_STD_POOL_D"
+				}
+			]
+		},
+		{
+			// 大师场（经典·不洗牌）
+			"roomCode": "R4",
+			"roomSwitch": 1,
+			"roomLabel": "大师场",
+			"gameTypes": ["经典", "不洗牌"],
+			"maxDrawCount": 50,
+			"stages": [
+				{
+					"stageCode": "A",
+					"order": 1,
+					"targetWins": 2,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R4_STD_POOL_A"
+				},
+				{
+					"stageCode": "B",
+					"order": 2,
+					"targetWins": 3,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R4_STD_POOL_B"
+				},
+				{
+					"stageCode": "C",
+					"order": 3,
+					"targetWins": 5,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R4_STD_POOL_C"
+				},
+				{
+					"stageCode": "D",
+					"order": 4,
+					"targetWins": 5,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R4_STD_POOL_D"
+				}
+			]
+		},
+		{
+			// 宗师场（经典）
+			"roomCode": "R5",
+			"roomSwitch": 1,
+			"roomLabel": "宗师场",
+			"gameTypes": ["经典"],
+			"maxDrawCount": 50,
+			"stages": [
+				{
+					"stageCode": "A",
+					"order": 1,
+					"targetWins": 2,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R5_STD_POOL_A"
+				},
+				{
+					"stageCode": "B",
+					"order": 2,
+					"targetWins": 3,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R5_STD_POOL_B"
+				},
+				{
+					"stageCode": "C",
+					"order": 3,
+					"targetWins": 5,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R5_STD_POOL_C"
+				},
+				{
+					"stageCode": "D",
+					"order": 4,
+					"targetWins": 5,
+					"ticketPerComplete": 1,
+					"rewardPoolId": "R5_STD_POOL_D"
+				}
+			]
+		}
+	],
+
+	// 奖池配置：每个 rewardPoolId 一条，各阶段独立概率
+	"rewardPools": [
+		// ---- 新手奖池 ----
+		{
+			"rewardPoolId": "NEWBIE_POOL",
+			"slots": [
+				{"propid": 21330, "count": 1000,  "p": 60},
+				{"propid": 50469, "count": 1,     "p": 25},
+				{"propid": 51597, "count": 1,     "p": 5},
+				{"propid": 50649, "count": 1,     "p": 10}
+			]
+		},
+		// ---- R1 初级场 ----
+		{
+			"rewardPoolId": "R1_STD_POOL_A",
+			"slots": [
+				{"propid": 21330, "count": 1000,  "p": 55},
+				{"propid": 50469, "count": 1,     "p": 25},
+				{"propid": 51597, "count": 1,     "p": 5},
+				{"propid": 50649, "count": 1,     "p": 15}
+			]
+		},
+		{
+			"rewardPoolId": "R1_STD_POOL_B",
+			"slots": [
+				{"propid": 21330, "count": 1000,  "p": 45},
+				{"propid": 50469, "count": 1,     "p": 30},
+				{"propid": 51597, "count": 1,     "p": 10},
+				{"propid": 50649, "count": 1,     "p": 15}
+			]
+		},
+		{
+			"rewardPoolId": "R1_STD_POOL_C",
+			"slots": [
+				{"propid": 21330, "count": 1000,  "p": 40},
+				{"propid": 50469, "count": 1,     "p": 28},
+				{"propid": 51597, "count": 1,     "p": 12},
+				{"propid": 50649, "count": 1,     "p": 20}
+			]
+		},
+		{
+			"rewardPoolId": "R1_STD_POOL_D",
+			"slots": [
+				{"propid": 21330, "count": 1000,  "p": 35},
+				{"propid": 50469, "count": 1,     "p": 25},
+				{"propid": 51597, "count": 1,     "p": 15},
+				{"propid": 50649, "count": 1,     "p": 25}
+			]
+		},
+		// ---- R2 中级场 ----
+		{
+			"rewardPoolId": "R2_STD_POOL_A",
+			"slots": [
+				{"propid": 21330, "count": 2000,  "p": 55},
+				{"propid": 50469, "count": 1,     "p": 25},
+				{"propid": 51597, "count": 1,     "p": 5},
+				{"propid": 50649, "count": 1,     "p": 15}
+			]
+		},
+		{
+			"rewardPoolId": "R2_STD_POOL_B",
+			"slots": [
+				{"propid": 21330, "count": 2000,  "p": 45},
+				{"propid": 50469, "count": 1,     "p": 28},
+				{"propid": 51597, "count": 1,     "p": 10},
+				{"propid": 50649, "count": 1,     "p": 17}
+			]
+		},
+		{
+			"rewardPoolId": "R2_STD_POOL_C",
+			"slots": [
+				{"propid": 21330, "count": 2000,  "p": 40},
+				{"propid": 50469, "count": 1,     "p": 26},
+				{"propid": 51597, "count": 1,     "p": 14},
+				{"propid": 50649, "count": 1,     "p": 20}
+			]
+		},
+		{
+			"rewardPoolId": "R2_STD_POOL_D",
+			"slots": [
+				{"propid": 21330, "count": 2000,  "p": 35},
+				{"propid": 50469, "count": 1,     "p": 24},
+				{"propid": 51597, "count": 1,     "p": 16},
+				{"propid": 50649, "count": 1,     "p": 25}
+			]
+		},
+		// ---- R3 高级场 ----
+		{
+			"rewardPoolId": "R3_STD_POOL_A",
+			"slots": [
+				{"propid": 21330, "count": 5000,  "p": 52},
+				{"propid": 50469, "count": 1,     "p": 24},
+				{"propid": 51597, "count": 1,     "p": 8},
+				{"propid": 50649, "count": 1,     "p": 16}
+			]
+		},
+		{
+			"rewardPoolId": "R3_STD_POOL_B",
+			"slots": [
+				{"propid": 21330, "count": 5000,  "p": 46},
+				{"propid": 50469, "count": 1,     "p": 24},
+				{"propid": 51597, "count": 1,     "p": 12},
+				{"propid": 50649, "count": 1,     "p": 18}
+			]
+		},
+		{
+			"rewardPoolId": "R3_STD_POOL_C",
+			"slots": [
+				{"propid": 21330, "count": 5000,  "p": 42},
+				{"propid": 50469, "count": 2,     "p": 22},
+				{"propid": 51597, "count": 1,     "p": 14},
+				{"propid": 50649, "count": 1,     "p": 22}
+			]
+		},
+		{
+			"rewardPoolId": "R3_STD_POOL_D",
+			"slots": [
+				{"propid": 21330, "count": 5000,  "p": 38},
+				{"propid": 50469, "count": 2,     "p": 20},
+				{"propid": 51597, "count": 1,     "p": 18},
+				{"propid": 50649, "count": 2,     "p": 24}
+			]
+		},
+		// ---- R4 大师场 ----
+		{
+			"rewardPoolId": "R4_STD_POOL_A",
+			"slots": [
+				{"propid": 21330, "count": 8000,  "p": 50},
+				{"propid": 50469, "count": 1,     "p": 25},
+				{"propid": 51597, "count": 1,     "p": 10},
+				{"propid": 50649, "count": 1,     "p": 15}
+			]
+		},
+		{
+			"rewardPoolId": "R4_STD_POOL_B",
+			"slots": [
+				{"propid": 21330, "count": 8000,  "p": 48},
+				{"propid": 50469, "count": 2,     "p": 22},
+				{"propid": 51597, "count": 1,     "p": 12},
+				{"propid": 50649, "count": 1,     "p": 18}
+			]
+		},
+		{
+			"rewardPoolId": "R4_STD_POOL_C",
+			"slots": [
+				{"propid": 21330, "count": 8000,  "p": 44},
+				{"propid": 50469, "count": 2,     "p": 20},
+				{"propid": 51597, "count": 1,     "p": 16},
+				{"propid": 50649, "count": 2,     "p": 20}
+			]
+		},
+		{
+			"rewardPoolId": "R4_STD_POOL_D",
+			"slots": [
+				{"propid": 21330, "count": 8000,  "p": 40},
+				{"propid": 50469, "count": 2,     "p": 18},
+				{"propid": 51597, "count": 1,     "p": 18},
+				{"propid": 50649, "count": 2,     "p": 24}
+			]
+		},
+		// ---- R5 宗师场 ----
+		{
+			"rewardPoolId": "R5_STD_POOL_A",
+			"slots": [
+				{"propid": 21330, "count": 10000, "p": 50},
+				{"propid": 50469, "count": 2,     "p": 25},
+				{"propid": 51597, "count": 1,     "p": 10},
+				{"propid": 50649, "count": 2,     "p": 15}
+			]
+		},
+		{
+			"rewardPoolId": "R5_STD_POOL_B",
+			"slots": [
+				{"propid": 21330, "count": 10000, "p": 48},
+				{"propid": 50469, "count": 2,     "p": 22},
+				{"propid": 51597, "count": 1,     "p": 12},
+				{"propid": 50649, "count": 2,     "p": 18}
+			]
+		},
+		{
+			"rewardPoolId": "R5_STD_POOL_C",
+			"slots": [
+				{"propid": 21330, "count": 10000, "p": 45},
+				{"propid": 50469, "count": 2,     "p": 20},
+				{"propid": 51597, "count": 1,     "p": 15},
+				{"propid": 50649, "count": 2,     "p": 20}
+			]
+		},
+		{
+			"rewardPoolId": "R5_STD_POOL_D",
+			"slots": [
+				{"propid": 21330, "count": 10000, "p": 42},
+				{"propid": 50469, "count": 2,     "p": 18},
+				{"propid": 51597, "count": 1,     "p": 18},
+				{"propid": 50649, "count": 2,     "p": 22}
+			]
+		}
+	]
+}

@@ -400,27 +400,138 @@ MsgCenter 的 Lua 上下文可以通过 `core_extern1.read_config(module_name)` 
 
 ## 六、热重载机制
 
+chunkSvr 有两套 lua_State，对应两套热重载机制：
+
+```
+MsgCenter lua_State (per-thread, 多实例) ←── 版本号检测，渐进式重建
+Module  lua_State   (全局单实例)         ←── 命令式重启，原子切换
+```
+
 ### 6.1 MsgCenter 热重载
 
-INI 文件中 `msgcenterversion` 递增时，每个线程下次访问 MsgCenter lua_State 会检测版本号变化，自动关闭旧状态、创建新状态、重新加载 `scripts/msgcenter/main.lua`。
+#### 检测机制
+
+每条 TCP 消息处理前，`getMsgCenterLuaState()` 检查版本号：
+
+```cpp
+int version = GetLuaMsgCenterVersion();  // 读 INI [luascripts] msgcenterversion
+if (version != tL->version || !tL->L) {
+    // 版本变化 → 重建当前线程的 lua_State
+}
+```
+
+- 版本号来自 INI 文件，每次热更时递增
+- 检测在消息处理路径中，不占用额外线程或定时器
+
+#### 重建流程
+
+```
+getMsgCenterLuaState() 检测版本变化
+  │
+  ├─ lua_close(old_L)           // 销毁旧 lua_State（所有全局变量、注册函数释放）
+  ├─ lua_open()                  // 创建新 lua_State
+  ├─ luaopen_dbcore/core/msgcore/core_extern1/cjson  // 注册 C++ 导出库
+  ├─ luaL_loadfile("scripts/msgcenter/main.lua")     // 加载入口脚本
+  ├─ lua_pcall(L, 0, 0, 0)      // 执行入口脚本（require 所有子脚本）
+  ├─ lua_setglobal("_TcyMsg2LuaScripts_", this)      // 存储 C++ 指针
+  └─ 更新 tL->version = version  // 缓存新版本号
+```
+
+**渐进式生效**：每个工作线程独立检测、独立重建。线程 A 重建完用新脚本，线程 B 可能还在用旧脚本——直到 B 处理下一条消息时触发检测。不是原子切换，而是逐线程过渡。
+
+**失败保护**：加载失败时丢弃新 lua_State，保留旧 lua_State 继续服务。
+
+**注意**：MsgCenter 无 TcyLuaTableValue 缓存——重建后所有 Lua 全局变量从 `main.lua` 重新初始化，之前运行时动态修改的 Lua 变量丢失。
 
 ### 6.2 Module 热重载
 
-通过 `cmdcore.cmdcore_restart(name, path)`：
-1. 创建新 Module 和新 lua_State
-2. 将旧 Module 的 `m_cahce` (TcyLuaTableValue) 交换到新 Module
-3. 注册新 Module，关闭旧 Module
-4. 执行新脚本
+#### 触发方式
 
-模块的缓存数据跨重载保留，代码逻辑替换。
+通过运维命令（CmdScript）执行 `serverupdate.lua`：
 
-### 6.3 配置热更新
+```lua
+-- serverupdate.lua 核心逻辑
+cmdcore.cmdcore_restart("TQVip", "scripts/luamodules/TQVip.lua")
+-- restart 失败时降级：
+-- cmdcore.cmdcore_stop("TQVip")
+-- cmdcore.cmdcore_start("TQVip", "scripts/luamodules/TQVip.lua")
+```
+
+CmdScript 由 TCP 运维命令触发，C++ 创建临时 lua_State 执行脚本，执行后销毁。
+
+#### C++ 实现 — `cmdcore_restart`
+
+```cpp
+l_cmdcore_restart(lua_State* L)
+  │
+  ├─ 从 m_data->luaModules 查找旧 Module
+  ├─ 创建新 Module + 新 lua_State
+  │     lua_open()
+  │     luaopen_dbcore/core/msgcore/core_extern/cjson  // extern, 非 extern1
+  │     luaL_loadfile(script)  // 仅加载，未执行
+  │
+  ├─ 写锁保护下替换模块映射
+  │     RWTYPE_GETWRITEVAL(m_data, data)
+  │     data->luaModules[name] = newm  // 新请求立即路由到新 Module
+  │
+  ├─ 缓存数据迁移（关键步骤）
+  │     auto wcacheold = m->m_cahce.writeGuard()
+  │     auto wcachenew = newm->m_cahce.writeGuard()
+  │     wcachenew->m_data.swap(wcacheold->m_data)  // std::map swap，O(1)
+  │
+  ├─ 异步销毁旧 Module
+  │     m->clearLuaModule()  // post async task: lua_close(old_L)
+  │
+  ├─ 设置新 Module 全局环境
+  │     lua_setglobal("_TcyMsg2LuaScripts_", this)
+  │     lua_setglobal("_ModuleName_", name)
+  │
+  └─ lua_pcall(L, 0, 0, 0)  // 执行新脚本
+       │ 失败 → eraseLuaModule + clearLuaModule → 返回 nil
+```
+
+**原子切换**：Module lua_State 全局单实例，写锁保护替换，重启立即对所有线程生效。
+
+**缓存持久化**：`m_cahce` (TcyLuaTableValue) 存储在 C++ 进程内存中，不属于任何 lua_State。重启时通过 `std::map::swap` 从旧 Module 转移到新 Module，数据零丢失。
+
+**降级方案**：`restart` 失败时回退到 `stop + start`。`start` 不迁移缓存，`stop` 销毁缓存——降级方案会导致缓存数据丢失。
+
+### 6.3 TcyLuaTableValue — 跨重载的数据持久层
+
+```cpp
+struct TcyLuaTableValue {
+    using Key = boost::variant<double, SStr>;  // SStr = shared_ptr<string>，字符串驻留
+    using Var  = boost::variant<double, string, bool, TcyLuaTableValue>;
+    using Type = std::map<Key, Var>;
+    Type m_data;  // C++ 进程内存，不受 lua_State 生命周期影响
+};
+```
+
+- Lua 通过 `core_extern.write_config(key, val)` 写入，`core_extern.read_config(key)` 读取
+- 数据存储在 C++ 侧的 `std::map` 中，lua_State 只是引用
+- lua_State 销毁重建后，通过相同 key 重新访问同一份数据
+- 读写受 `TcyRWType<TcyLuaTableValue>` (读写锁) 保护，线程安全
+
+### 6.4 配置热更新
 
 Module 通过 `core_extern.listenfilemod(path, seconds, callback_id)` 监听配置文件变更，变更时触发 callback 重新加载配置：
 ```lua
 config = lconfigdata.createconfigdata("TQCheckinConfig.lua", function()
     lcoreex.mergeconfig("config", config.data)  -- 配置变更回调
 end)
+```
+
+### 6.5 完整热更操作步骤
+
+```
+1. 部署新 Lua 文件到 server_chunk/scripts/
+2. 打包 scripts.zip（如使用 scriptupdate=true 模式）
+3. 执行运维命令 serverupdate.lua：
+   a. 解压 scripts.zip（如 scriptupdate=true）
+   b. cmdcore_restart 每个 Module（moduleupdatemap 列表）
+   c. 递增 INI [luascripts] msgcenterversion
+4. 各工作线程处理下条消息时自动重建 MsgCenter lua_State
+5. 无需停服、无需重编 C++
 ```
 
 ---
