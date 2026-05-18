@@ -57,6 +57,7 @@
 1. ts 脚本在 C++ 协程服务器中执行
 2. 仅能通过 HTTP 接口阅览 A2AFile 下的内容
 3. 测试入口: `TestTool.async_execAllTest()` (from `main()`)；运行: `NODE_TLS_REJECT_UNAUTHORIZED=0 node --loader ts-node/esm node_modules/ts-node/dist/bin.js src/xzmp/<module>.ts`
+4. async 函数必须以 async_ 开头，否则无法通过 CP服务器的编译。async 函数的调用必须使用 await。
 
 ---
 
