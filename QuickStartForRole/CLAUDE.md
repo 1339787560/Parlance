@@ -1,4 +1,4 @@
-# Role: {Role} — Docs Server: http://192.168.41.158:5000/
+# Role: {Role} — Docs Server: http://192.168.41.158:5080/
 
 If `{Role}` is still the placeholder (not replaced with a real role name):
 → Ask user: "当前未指定角色。你想用哪个角色？" Options: CP-DEV-xzmp, CPP-GameSVR-DEV-xzmp, Creator-Client-DEV-xzmp, LUA-Client-DEV-xzmp

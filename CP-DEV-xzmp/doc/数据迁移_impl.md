@@ -1,6 +1,6 @@
 # 数据迁移实现文档 — chunkSvr → CP
 
-> 基于: [数据迁移.md](数据迁移.md) v4.0 产品设计文档
+> 基于: [数据迁移.md](数据迁移.md) v5.0 产品设计文档
 
 ***
 
@@ -13,6 +13,8 @@
                     │                     │
                     │  OnLogon 入口        │
                     │  检查迁移标记          │
+                    │  积分补偿(直接发放)    │
+                    │  金币迁移(HTTP+发放)  │
                     │  HTTP 拉取 chunkSvr  │
                     │  数据格式转换          │
                     │  递交数据给目标模块     │
@@ -27,8 +29,8 @@
      │            │ │            │  │                    │
      │ 新增消息:   │ │ 新增消息:   │  │ 新增消息:           │
      │ MIGRATION_ │ │ MIGRATION_ │  │ MIGRATION_WRITE_  │
-     │ RESET_AND_ │ │ WRITE_CARD │  │ GIFT_INFO         │
-     │ WRITE_INFO │ │ _INFO      │  │                    │
+     │ WRITE_VIP_ │ │ WRITE_CARD │  │ GIFT_INFO         │
+     │ INFO       │ │ _INFO      │  │                    │
      └────────────┘ └────────────┘  └────────────────────┘
 ```
 
@@ -38,7 +40,8 @@
 - OnLogon 入口，检查迁移标记（Redis + MySQL）
 - HTTP 请求 chunkSvr 拉取 4 模块数据
 - chunkSvr JSON → CP 数据结构转换
-- 积分清零 + `async_sendGoldCoin_super` 发放
+- 积分补偿：`async_sendGoldCoin_super` 发放 |score| 抵消负数
+- 金币迁移：`async_sendGoldCoin_super` 发放 newdeposit 等量积分
 - 将转换后数据通过 `async_internal_call` 递交给各目标模块
 - 接收目标模块返回结果，置位迁移标记
 - 全部模块处理完毕后返回结果给客户端
@@ -47,8 +50,7 @@
 ### leveldefine_xzmp（目标模块）
 
 **新增职责**：
-- 接收 `MIGRATION_RESET_AND_WRITE_INFO` 内部调用
-- 先清零 `totalAcquireNum / totalConsumeNum / userDegradeNum`
+- 接收 `MIGRATION_WRITE_VIP_INFO` 内部调用
 - 写入 VIP 等级 + rewardstatus 数据
 - 执行 `updateRewardList()` 自动填充 CAN_RECEIVED 状态
 - 写入 MySQL + Redis
@@ -138,7 +140,7 @@ const CONST_VAR = {
 
 const REQ_NAME = {
     // 内部调用 → 目标模块
-    MIGRATION_RESET_AND_WRITE_LEVEL: 'migrationResetAndWriteInfo',
+    MIGRATION_WRITE_VIP_INFO: 'migrationWriteVipInfo',
     MIGRATION_WRITE_CARD_INFO: 'migrationWriteCardInfo',
     MIGRATION_WRITE_GIFT_INFO: 'migrationWriteGiftInfo',
     // 推送 → 客户端
@@ -147,11 +149,12 @@ const REQ_NAME = {
 
 // 迁移标记位
 const MIGRATION_BIT = {
-    TQVIP: 0x01,            // bit 0
-    TQMONTHCARD: 0x02,      // bit 1
+    TQVIP: 0x01,                // bit 0
+    TQMONTHCARD: 0x02,          // bit 1
     TQNEWPLAYERDAILYGIFT: 0x04, // bit 2
-    NEWDEPOSIT: 0x08,       // bit 3
-    ALL_DONE: 0x0F,         // 15
+    SCORE_COMPENSATE: 0x08,     // bit 3 — 积分补偿
+    GOLD_COIN: 0x10,            // bit 4 — 金币迁移
+    ALL_DONE: 0x1F,             // 31
 };
 
 // chunkSvr 返回数据接口
@@ -182,38 +185,51 @@ async function OnLogon(logon: modsvr.logon, cxt: modsvr.context): Promise<void> 
         giftInfo: null as any,
     };
 
-    // 2. 积分补偿（bit 3）
-    if ((flags & MIGRATION_BIT.NEWDEPOSIT) === 0) {
-        let bout = logon.usergameinfo?.bout ?? 0;
-        if (bout >= 1) {
-            let result = await migrateNewDeposit(src, cxt, userid, flags, config);
-            if (result) { flags = result.flags; migrationResult.levelInfo = result.levelInfo; }
+    // 2. 积分补偿（bit 3）— 先行
+    if ((flags & MIGRATION_BIT.SCORE_COMPENSATE) === 0) {
+        let score = logon.usergameinfo?.score ?? 0;
+        if (score < 0) {
+            let result = await migrateScoreCompensate(src, cxt, userid, flags, score);
+            if (result) { flags = result.flags; }
         } else {
-            // 无局数玩家直接置位 bit 3
-            flags = flags | MIGRATION_BIT.NEWDEPOSIT;
+            // 积分 ≥ 0 直接置位
+            flags = flags | MIGRATION_BIT.SCORE_COMPENSATE;
             CommonFuncs.setMigrationFlags(cxt, userid, flags);
         }
     }
 
-    // 3. VIP 迁移（bit 0）
+    // 3. 金币迁移（bit 4）— 随后
+    if ((flags & MIGRATION_BIT.GOLD_COIN) === 0) {
+        let bout = logon.usergameinfo?.bout ?? 0;
+        if (bout >= 1) {
+            let result = await migrateGoldCoin(src, cxt, userid, flags, config);
+            if (result) { flags = result.flags; }
+        } else {
+            // 无局数玩家直接置位 bit 4
+            flags = flags | MIGRATION_BIT.GOLD_COIN;
+            CommonFuncs.setMigrationFlags(cxt, userid, flags);
+        }
+    }
+
+    // 4. VIP 迁移（bit 0）
     if ((flags & MIGRATION_BIT.TQVIP) === 0) {
         let result = await migrateTQVip(src, cxt, userid, flags, config);
         if (result) { flags = result.flags; migrationResult.levelInfo = result.levelInfo; }
     }
 
-    // 4. 月卡迁移（bit 1）
+    // 5. 月卡迁移（bit 1）
     if ((flags & MIGRATION_BIT.TQMONTHCARD) === 0) {
         let result = await migrateTQMonthCard(src, cxt, userid, flags, config);
         if (result) { flags = result.flags; migrationResult.monthCardInfo = result.monthCardInfo; }
     }
 
-    // 5. 迎新礼包迁移（bit 2）
+    // 6. 迎新礼包迁移（bit 2）
     if ((flags & MIGRATION_BIT.TQNEWPLAYERDAILYGIFT) === 0) {
         let result = await migrateNewPlayerDailyGift(src, cxt, userid, flags, config);
         if (result) { flags = result.flags; migrationResult.giftInfo = result.giftInfo; }
     }
 
-    // 6. 推送迁移结果给客户端
+    // 7. 推送迁移结果给客户端
     migrationResult.flags = flags;
     modsvr.notify_client(src, cxt, REQ_NAME.MIGRATION_RESULT, migrationResult);
 }
@@ -221,33 +237,40 @@ async function OnLogon(logon: modsvr.logon, cxt: modsvr.context): Promise<void> 
 
 ### 4.3 核心迁移函数
 
-#### 积分补偿 migrateNewDeposit
+#### 积分补偿 migrateScoreCompensate
 
 ```typescript
-async function migrateNewDeposit(src, cxt, userid, flags, config): Promise<{flags: number, levelInfo: any} | null> {
+async function migrateScoreCompensate(src, cxt, userid, flags, score: number): Promise<{flags: number} | null> {
+    // 发放 |score| 积分抵消负数
+    let compensateAmount = Math.abs(score);
+    let success = await Business.async_sendGoldCoin_super(src, cxt, userid, compensateAmount);
+    if (!success) return null; // 发放失败，不置位，下次重试
+
+    // 置位 bit 3
+    let newFlags = flags | MIGRATION_BIT.SCORE_COMPENSATE;
+    CommonFuncs.setMigrationFlags(cxt, userid, newFlags);
+
+    return { flags: newFlags };
+}
+```
+
+#### 金币迁移 migrateGoldCoin
+
+```typescript
+async function migrateGoldCoin(src, cxt, userid, flags, config): Promise<{flags: number} | null> {
     // HTTP 拉取
     let data = await chunkSvrHttp<ChunkSvrNewDeposit>(cxt, config, 'newdeposit', userid);
     if (!data) return null; // chunkSvr 不可达，不置位，下次重试
 
-    // 清零旧积分（通过 leveldefine 内部调用）
-    let resp = await CommonFuncs.async_internal_call(
-        src, cxt, REQ_NAME.MIGRATION_RESET_AND_WRITE_LEVEL,
-        config.targetModules.leveldefine,
-        {
-            resetOnly: true,  // 仅清零，不写 VIP 数据
-            resetFields: { totalAcquireNum: 0, totalConsumeNum: 0, userDegradeNum: 0 },
-        }
-    );
-    if (resp.resp.id !== 1) return null; // 清零失败，不置位
+    // 发放等量积分
+    let success = await Business.async_sendGoldCoin_super(src, cxt, userid, data.newdeposit);
+    if (!success) return null; // 发放失败，不置位，下次重试
 
-    // 发放积分
-    await Business.async_sendGoldCoin_super(src, cxt, userid, data.newdeposit);
-
-    // 置位 bit 3
-    let newFlags = flags | MIGRATION_BIT.NEWDEPOSIT;
+    // 置位 bit 4
+    let newFlags = flags | MIGRATION_BIT.GOLD_COIN;
     CommonFuncs.setMigrationFlags(cxt, userid, newFlags);
 
-    return { flags: newFlags, levelInfo: resp.resp.data.data };
+    return { flags: newFlags };
 }
 ```
 
@@ -263,10 +286,9 @@ async function migrateTQVip(src, cxt, userid, flags, config): Promise<{flags: nu
 
     // 通过 leveldefine 内部调用写入
     let resp = await CommonFuncs.async_internal_call(
-        src, cxt, REQ_NAME.MIGRATION_RESET_AND_WRITE_LEVEL,
+        src, cxt, REQ_NAME.MIGRATION_WRITE_VIP_INFO,
         config.targetModules.leveldefine,
         {
-            resetOnly: false,
             grade: data.grade,
             totalConsumeNum: data.experience,
             totalAcquireNum: data.experience,
@@ -445,38 +467,28 @@ namespace CommonFuncs {
 **REQ_NAME 新增**：
 
 ```typescript
-MIGRATION_RESET_AND_WRITE_INFO: 'migrationResetAndWriteInfo',
+MIGRATION_WRITE_VIP_INFO: 'migrationWriteVipInfo',
 ```
 
 **OnInternalCall 新增分支**：
 
 ```typescript
-else if (req_name == REQ_NAME.MIGRATION_RESET_AND_WRITE_INFO) {
+else if (req_name == REQ_NAME.MIGRATION_WRITE_VIP_INFO) {
     let reqData = req_data.data;
     let redisTool = new RedisTool_PlayerLevelInfo(cxt, userid);
     let currentData = await redisTool.async_getData();
 
     if (!currentData) {
         currentData = new interf.UserData_PlayerLevelInfo();
-        // 默认初始化 oneOffRewardStatusArray 为 16 项
         currentData.oneOffRewardStatusArray = Array.from({length: 16}, () => ({status: 0, gotTime: 0}));
     }
 
-    // 清零字段
-    if (reqData.resetFields) {
-        currentData.totalAcquireNum = reqData.resetFields.totalAcquireNum ?? 0;
-        currentData.totalConsumeNum = reqData.resetFields.totalConsumeNum ?? 0;
-        currentData.userDegradeNum = reqData.resetFields.userDegradeNum ?? 0;
-    }
-
-    // 写入 VIP 数据（非 resetOnly 时）
-    if (!reqData.resetOnly) {
-        currentData.totalConsumeNum = reqData.totalConsumeNum;
-        currentData.totalAcquireNum = reqData.totalAcquireNum;
-        currentData.oneOffRewardStatusArray = reqData.oneOffRewardStatusArray;
-        // updateRewardList 自动填充 CAN_RECEIVED 状态
-        Business.updateRewardList(currentData);
-    }
+    // 写入 VIP 数据
+    currentData.totalConsumeNum = reqData.totalConsumeNum;
+    currentData.totalAcquireNum = reqData.totalAcquireNum;
+    currentData.oneOffRewardStatusArray = reqData.oneOffRewardStatusArray;
+    // updateRewardList 自动填充 CAN_RECEIVED 状态
+    Business.updateRewardList(currentData);
 
     // 写入 MySQL + Redis
     let ret = await Business.async_WritePlayerLevelInfo(cxt, userid, currentData);
@@ -571,7 +583,7 @@ else if (req_name == REQ_NAME.MIGRATION_WRITE_GIFT_INFO) {
 表名: tblcpuserdata_xzmp
 字段: userid, name, data
 name = 'ChunksvrMigrationFlag'
-data = '{"flags": 15}'  // JSON 存储位掩码整数
+data = '{"flags": 31}'  // JSON 存储位掩码整数
 ```
 
 **写入时机**：每次 `setMigrationFlags` 时，同时写入 Redis + MySQL。
@@ -615,7 +627,7 @@ convert 模块 OnLogon
 
 ```typescript
 {
-    flags: number,               // 当前迁移标记位掩码 (0-15)
+    flags: number,               // 当前迁移标记位掩码 (0-31)
     levelInfo: UserData_PlayerLevelInfo | null,
     monthCardInfo: CMMONTHCARD_INFO | null,
     giftInfo: UserData_NewPlayerDailyGiftInfo | null,
@@ -631,18 +643,18 @@ convert 模块 OnLogon
 
 ## 八、关键实现细节
 
-### 8.1 积分清零与发放的顺序
+### 8.1 积分补偿与金币迁移的顺序
 
-1. `async_internal_call(MIGRATION_RESET_AND_WRITE_INFO, { resetOnly: true })` — 清零
-2. `async_sendGoldCoin_super(newdeposit)` — 发放
-3. 置位 bit 3
+1. 积分补偿（bit 3）：`async_sendGoldCoin_super(|score|)` — 抵消负积分
+2. 金币迁移（bit 4）：HTTP 拉取 newdeposit → `async_sendGoldCoin_super(newdeposit)` — 发放等量积分
+3. 各自独立置位，失败不置位，下次登录重试
 
-清零幂等（重复清零为 0），发放幂等（bit 3 不置位则下次重试全流程）。
+积分补偿先行确保玩家积分归零后，金币迁移发放的积分不会与负积分冲突。
 
 ### 8.2 chunkSvr 返回空数据的处理
 
 chunkSvr 对不存在用户返回零值/空表（不报错）。此时：
-- newdeposit=0 → 发放 0 积分，置位 bit 3
+- newdeposit=0 → 发放 0 积分，置位 bit 4
 - rewardstatus=[] → 空数组转换后全为 `{status:0, gotTime:0}`，置位 bit 0
 - monthcard/weekcard={} → 空表，不写入月卡数据，置位 bit 1
 - newplayer=0 → 未充值，置位 bit 2
@@ -689,6 +701,7 @@ function convertRewardStatus(rewardstatus: any): { status: number; gotTime: numb
 
 ***
 
-*文档版本: v1.0*
+*文档版本: v2.0*
 *创建日期: 2026/05/18*
-*基于: 数据迁移.md v4.0*
+*更新日期: 2026/05/19*
+*基于: 数据迁移.md v5.0*

@@ -59,6 +59,7 @@
 3. 测试入口: `TestTool.async_execAllTest()` (from `main()`)；运行: `NODE_TLS_REJECT_UNAUTHORIZED=0 node --loader ts-node/esm node_modules/ts-node/dist/bin.js src/xzmp/<module>.ts`
 4. async 函数必须以 async_ 开头，否则无法通过 CP服务器的编译。async 函数的调用必须使用 await。
 5. Redis 键命名格式：`mod(cp):name(${MODULE_NAME}):appcode(${APP_CODE}):uid(${uid}):${FUNC_INFO}`，锁 key 后缀 `:lock`。MySQL 表命名格式：`tblcpuserdata_${MODULE_NAME}_${GAME_CODE}`，字段名使用描述性名称（如 `CMMonthCardInfo`）。不得使用裸 redis/mysql 调用，必须封装为 RedisTool/MySqlTool 类。
+6. 各个CP业务模块之间不能互相访问，只能访问公共的接口（predefine）。
 
 ---
 
