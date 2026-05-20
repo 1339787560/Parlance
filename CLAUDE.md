@@ -1,4 +1,4 @@
-# A2AFile — AI 角色开发指南仓库
+# roleManager — AI 角色开发指南仓库
 
 集中管理多角色（CP-DEV-xzmp / CPP-GameSVR-DEV-xzmp / Creator-Client-DEV-xzmp / LUA-Client-DEV-xzmp）的开发规范、知识笔记和工作流文档。作为 AI 与人类开发的统一导航入口。
 
@@ -21,9 +21,13 @@
 
 ## Boot Procedure
 
-0. **身份拦截**：确认角色身份。未确认 → 停止，询问用户。不得执行任何工具调用。
-1. Load COMMON → L0 → L1/L2（按角色目录）
-2. 按任务需要加载对应层级文档
+0. **启动并验证 RoleManager**：
+   - 验证：`curl -s http://127.0.0.1:5080/api/a2a/health` → 应返回 `{"service":"RoleManager","success":true,...}`
+   - 若未运行：`cd <roleManager目录> && ./RoleManager.exe &`（注意：bash 环境下用 `./xxx &`，**不要**用 Windows 的 `start /B`）
+   - 启动后再执行 curl 验证，确认 `success: true` 后继续
+1. **身份拦截**：确认角色身份。未确认 → 停止，询问用户。不得执行任何工具调用。
+2. Load COMMON → L0 → L1/L2（按角色目录）
+3. 按任务需要加载对应层级文档
 
 ## 压缩后重载
 

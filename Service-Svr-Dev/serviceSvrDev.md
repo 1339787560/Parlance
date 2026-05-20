@@ -38,7 +38,7 @@
 | 目录名称 | 路径 |
 |---------|------|
 | 工作区 | D:\Codlib\VscodeCodlib\Python\serviceServer |
-| A2A工作区 | D:\Codlib\VscodeCodlib\Python\serviceServer\src\A2AFile |
+| A2A工作区 | D:\Codlib\VscodeCodlib\Python\serviceServer\src\roleManager |
 | 路由部分 | D:\Codlib\VscodeCodlib\Python\serviceServer\CustomRoute |
 | Flask模板 | D:\Codlib\VscodeCodlib\Python\serviceServer\CustomRoute\templates |
 | 通用工具 | D:\Codlib\VscodeCodlib\Python\serviceServer\CommonTools |
@@ -70,4 +70,4 @@ serviceSvrDev/
 ## 注意事项
 
 - 负责维护 A2A Agent 协作系统
-- 仅能通过 HTTP 接口阅览 A2AFile 下的内容
+- 仅能通过 HTTP 接口阅览 roleManager 下的内容

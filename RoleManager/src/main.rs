@@ -13,15 +13,15 @@ fn a2a_dir_from_exe() -> PathBuf {
         .ok()
         .and_then(|e| e.parent().map(|p| p.to_path_buf()))
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    exe_dir.join("src").join("A2AFile")
+    exe_dir.join("src").join("roleManager")
 }
 
 fn a2a_dir_from_cwd() -> PathBuf {
     let cwd = std::env::current_dir().unwrap_or_default();
-    if cwd.file_name().map(|n| n == "A2AFile").unwrap_or(false) {
+    if cwd.file_name().map(|n| n == "roleManager").unwrap_or(false) {
         cwd.clone()
     } else {
-        cwd.join("src").join("A2AFile")
+        cwd.join("src").join("roleManager")
     }
 }
 

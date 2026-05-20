@@ -26,7 +26,7 @@
 | 工作区 | 路径 | 说明 |
 |--------|------|------|
 | 工作区 | D:\Codlib\VscodeCodlib\Python\serviceServer | 主目录 |
-| A2A工作区 | D:\Codlib\VscodeCodlib\Python\serviceServer\src\A2AFile | Agent 协作系统 |
+| A2A工作区 | D:\Codlib\VscodeCodlib\Python\serviceServer\src\roleManager | Agent 协作系统 |
 | 路由部分 | D:\Codlib\VscodeCodlib\Python\serviceServer\CustomRoute | Flask 路由 |
 | Flask模板 | D:\Codlib\VscodeCodlib\Python\serviceServer\CustomRoute\templates | HTML 模板 |
 | 通用工具 | D:\Codlib\VscodeCodlib\Python\serviceServer\CommonTools | 工具库 |

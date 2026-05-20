@@ -10,9 +10,9 @@
 
 ## 第二步：创建文件夹和 L0
 
-1. 在 `A2AFile/` 下创建 `{Role}/` 目录
+1. 在 `roleManager/` 下创建 `{Role}/` 目录
 2. 在 `{Role}/` 下创建默认 `L0_Index.md`
-3. 将 `A2AFile/CLAUDEForRole.md` 复制到 `{Role}/` 目录，将 `{Role}` 占位符替换为实际角色名
+3. 将 `roleManager/CLAUDEForRole.md` 复制到 `{Role}/` 目录，将 `{Role}` 占位符替换为实际角色名
 4. 在 `workflow/` 下创建 `{Role}_workflow.md`
 
 ### 默认 L0_Index.md 模板
@@ -114,6 +114,6 @@
 
 ## 完成标志
 
-- `A2AFile/{Role}/L0_Index.md` — 职责、技术栈、工作区、协作关系完整
-- `A2AFile/workflow/{Role}_workflow.md` — 启动、修改、测试、设计四个场景完整
-- `A2AFile/COMMON.md` 角色定义表已更新
+- `roleManager/{Role}/L0_Index.md` — 职责、技术栈、工作区、协作关系完整
+- `roleManager/workflow/{Role}_workflow.md` — 启动、修改、测试、设计四个场景完整
+- `roleManager/COMMON.md` 角色定义表已更新
