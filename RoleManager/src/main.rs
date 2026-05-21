@@ -8,7 +8,7 @@ use std::process::Command;
 
 const ALLOWED_EXTENSIONS: &[&str] = &["md", "py", "json"];
 const SKIP_DIRS: &[&str] = &[".git", "QuickStartForRole", "WorkFlow", "common", "shared"];
-const MCP_VERSION: &str = "0.1.0";
+const MCP_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "a2a-file-manager";
 
 // ── 路径工具 ──

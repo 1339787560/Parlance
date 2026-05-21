@@ -1,7 +1,11 @@
 [package]
-name = "role-manager"
+name = "RoleManager"
 version = "0.2.0"
 edition = "2021"
+
+[[bin]]
+name = "RoleManager"
+path = "src/main.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
