@@ -80,6 +80,8 @@
 | 补充金币-详情 | [L3_cmquickrecharge_xzmp.md](L3_cmquickrecharge_xzmp.md) | 补充金币模块详情 |
 | 迎新礼包-原型 | [doc/cmnewplayerdailygift_xzmp_proto.md](doc/cmnewplayerdailygift_xzmp_proto.md) | 迎新礼包模块需求原型 |
 | 迎新礼包-详情 | [L3_cmnewplayerdailygift_xzmp.md](L3_cmnewplayerdailygift_xzmp.md) | 迎新礼包模块详情 |
+| 数据迁移-详情 | [L3_convert_xzmp.md](L3_convert_xzmp.md) | chunkSvr→CP 迁移协调模块 |
+| 迁移推送消息 | [doc/迁移结果推送消息文档.md](doc/迁移结果推送消息文档.md) | MIGRATION_RESULT 客户端推送格式与处理建议 |
 
 ---
 
