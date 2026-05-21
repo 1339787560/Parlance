@@ -52,7 +52,7 @@
 **新增职责**：
 - 接收 `MIGRATION_WRITE_VIP_INFO` 内部调用
 - 写入 VIP 等级 + rewardstatus 数据
-- 填充 CAN_RECEIVED 状态（grade ≤ reqData.grade 的 status=0 → 1）
+- 执行 `updateRewardList()` 自动填充 CAN_RECEIVED 状态
 - 写入 MySQL + Redis
 - 返回成功/失败
 
@@ -82,17 +82,17 @@
 | 文件 | 说明 | 预估行数 |
 |------|------|---------|
 | `convert_xzmp.jsonc` | 迁移模块配置（chunkSvr URL、超时、迁移标记 key 等） | ~20 |
-| `convert_xzmp.ts` | 迁移协调脚本（OnLogon + HTTP + 数据转换 + 分发 + 标记） | ~480 |
+| `convert_xzmp.ts` | 迁移协调脚本（OnLogon + HTTP + 数据转换 + 分发 + 标记） | ~350 |
 
 ### 2.2 修改文件
 
 | 文件 | 改动 | 预估行数 |
 |------|------|---------|
-| `leveldefine_xzmp.ts` | OnInternalCall 新增 `MIGRATION_WRITE_VIP_INFO` 分支；REQ_NAME 新增常量；TestTool 新增迁移单元测试 | ~105 |
-| `cmmonthcard_xzmp.ts` | OnInternalCall 新增 `MIGRATION_WRITE_CARD_INFO` 分支；REQ_NAME 新增常量；TestTool 新增迁移单元测试 | ~70 |
-| `cmnewplayerdailygift_xzmp.ts` | OnInternalCall 新增 `MIGRATION_WRITE_GIFT_INFO` 分支；REQ_NAME 新增常量；TestTool 新增迁移单元测试 | ~70 |
+| `leveldefine_xzmp.ts` | OnInternalCall 新增 `MIGRATION_RESET_AND_WRITE_INFO` 分支；REQ_NAME 新增常量；返回写入后最新数据 | ~45 |
+| `cmmonthcard_xzmp.ts` | OnInternalCall 新增 `MIGRATION_WRITE_CARD_INFO` 分支；REQ_NAME 新增常量；返回写入后最新数据 | ~35 |
+| `cmnewplayerdailygift_xzmp.ts` | OnInternalCall 新增 `MIGRATION_WRITE_GIFT_INFO` 分支；REQ_NAME 新增常量；返回写入后最新数据 | ~30 |
 
-### 总增量：~520 行
+### 总增量：~470 行
 
 ***
 
@@ -145,14 +145,6 @@ const REQ_NAME = {
     MIGRATION_WRITE_GIFT_INFO: 'migrationWriteGiftInfo',
     // 推送 → 客户端
     MIGRATION_RESULT: 'migrationResult_convert_xzmp',
-    // 测试工具
-    TEST_MIGRATION: 'testMigration',
-    TEST_CHUNKSVR_HTTP: 'testChunkSvrHttp',
-    TEST_CLEAR_MIGRATION_FLAG: 'testClearMigrationFlag',
-    // 跨模块查询接口（其他模块获取迁移数据用）
-    QUERY_MIGRATION_VIP_DATA: 'queryMigrationVipData',
-    QUERY_MIGRATION_CARD_DATA: 'queryMigrationCardData',
-    QUERY_MIGRATION_GIFT_DATA: 'queryMigrationGiftData',
 };
 
 // 迁移标记位
@@ -495,14 +487,8 @@ else if (req_name == REQ_NAME.MIGRATION_WRITE_VIP_INFO) {
     currentData.totalConsumeNum = reqData.totalConsumeNum;
     currentData.totalAcquireNum = reqData.totalAcquireNum;
     currentData.oneOffRewardStatusArray = reqData.oneOffRewardStatusArray;
-    // 填充 CAN_RECEIVED: grade ≤ reqData.grade 的 status=0 → 1
-    let grade = reqData.grade ?? 0;
-    let minLen = Math.min(grade + 1, currentData.oneOffRewardStatusArray.length);
-    for (let i = 0; i < minLen; i++) {
-        if (currentData.oneOffRewardStatusArray[i].status === 0) {
-            currentData.oneOffRewardStatusArray[i].status = 1; // CAN_RECEIVED
-        }
-    }
+    // updateRewardList 自动填充 CAN_RECEIVED 状态
+    Business.updateRewardList(currentData);
 
     // 写入 MySQL + Redis
     let ret = await Business.async_WritePlayerLevelInfo(cxt, userid, currentData);
@@ -518,29 +504,7 @@ else if (req_name == REQ_NAME.MIGRATION_WRITE_VIP_INFO) {
 }
 ```
 
-**TestTool 新增**：
-
-```typescript
-export async function async_testMigrationWriteVipInfo(cxt, userID) {
-    // 1. 调用 convert_xzmp 查询接口获取迁移数据
-    let src = { client: { appcode, gameid, userid: userID }, mods: [] };
-    let queryReq = { id: 0, data: { req: 'queryMigrationVipData' } };
-    let queryResp = { errs: [], resp: { id: 0, data: {} } };
-    await modsvr.async_internal_call(src, cxt, 'convert', queryReq, queryResp, 5);
-    
-    let migrationData = queryResp.resp.data;
-    // 2. 用获取到的数据调用本模块 OnInternalCall
-    let ireq = {
-        src: { client: { appcode, userid: userID, channelkey: 'tcyan', gameid } },
-        req: { id: 0, data: { req: REQ_NAME.MIGRATION_WRITE_VIP_INFO, data: migrationData } },
-        info: '',
-    };
-    let iresp = { errs: [], resp: { id: 0, data: {} } };
-    await OnInternalCall(ireq, iresp, cxt ?? null);
-    // 3. 验证处理结果
-    // ...
-}
-```
+**预估增量**: ~40 行（REQ_NAME 常量 + OnInternalCall 分支）
 
 ### 5.2 cmmonthcard_xzmp.ts
 
@@ -580,15 +544,7 @@ else if (req_name == REQ_NAME.MIGRATION_WRITE_CARD_INFO) {
 }
 ```
 
-**TestTool 新增**：
-
-```typescript
-export async function async_testMigrationWriteCardInfo(cxt, userID) {
-    // 1. 调用 convert_xzmp 查询接口获取迁移数据
-    // 2. 用获取到的数据调用本模块 OnInternalCall
-    // 3. 验证处理结果
-}
-```
+**预估增量**: ~30 行
 
 ### 5.3 cmnewplayerdailygift_xzmp.ts
 
@@ -615,15 +571,7 @@ else if (req_name == REQ_NAME.MIGRATION_WRITE_GIFT_INFO) {
 }
 ```
 
-**TestTool 新增**：
-
-```typescript
-export async function async_testMigrationWriteGiftInfo(cxt, userID) {
-    // 1. 调用 convert_xzmp 查询接口获取迁移数据
-    // 2. 用获取到的数据调用本模块 OnInternalCall
-    // 3. 验证处理结果
-}
-```
+**预估增量**: ~25 行
 
 ***
 
@@ -734,160 +682,26 @@ function convertRewardStatus(rewardstatus: any): { status: number; gotTime: numb
 
 ***
 
-## 九、测试架构设计
+## 九、实现顺序建议
 
-### 9.1 总体架构
+| 步骤 | 内容 | 依赖 |
+|------|------|------|
+| 1 | 创建 `convert_xzmp.jsonc` 配置文件 | 无 |
+| 2 | 创建 `convert_xzmp.ts` 骨架（常量、类型、OnLogon 空壳） | 步骤 1 |
+| 3 | 修改 `leveldefine_xzmp.ts` OnInternalCall | 无 |
+| 4 | 修改 `cmmonthcard_xzmp.ts` OnInternalCall | 无 |
+| 5 | 修改 `cmnewplayerdailygift_xzmp.ts` OnInternalCall | 无 |
+| 6 | 实现 `convert_xzmp.ts` 迁移标记读写 | 步骤 2 |
+| 7 | 实现 `convert_xzmp.ts` HTTP 拉取 + 数据转换 | 步骤 6 |
+| 8 | 实现 `convert_xzmp.ts` 各模块迁移函数 | 步骤 7 |
+| 9 | 集成测试（单玩家全流程验证） | 步骤 3-8 |
+| 10 | 迁移完成后 `convert_xzmp.ts` 可删除（一次性逻辑） | 步骤 9 |
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                   测试流程总览                              │
-│                                                          │
-│  目标模块 (leveldefine/cmmonthcard/cmnewplayerdailygift)    │
-│    │ 1. async_internal_call → convert.QUERY_MIGRATION_*   │
-│    ▼                                                     │
-│  convert_xzmp (查询接口)                                    │
-│    │ 2. 尝试 chunkSvr HTTP 获取真实数据                     │
-│    │ 3. 不可用时返回 mock 数据                              │
-│    │ 4. 返回转换后数据（即 async_internal_call 的 payload）  │
-│    ▼                                                     │
-│  目标模块 (TestTool)                                       │
-│    │ 5. 用获取到的数据构造 ireq，调用本模块 OnInternalCall   │
-│    │ 6. 验证写入结果（resp.id=1 + 字段值匹配 + 逻辑正确）   │
-│    │ 7. 本地调试通过后部署到 CP 服务                        │
-│    ▼                                                     │
-│  本地独立运行 (ts-node) 或 CP 内触发 (server.exec())        │
-└──────────────────────────────────────────────────────────┘
-```
-
-### 9.2 convert_xzmp 查询接口
-
-convert_xzmp 通过 `OnInternalCall` 暴露以下 3 个查询接口，供目标模块获取迁移数据：
-
-| 接口名 | 消息名 | 返回数据结构 | 说明 |
-|--------|--------|-------------|------|
-| VIP 数据 | `queryMigrationVipData` | `{data:{grade,totalConsumeNum,totalAcquireNum,oneOffRewardStatusArray}, source}` | leveldefine 需要用到的等级/经验/奖励状态 |
-| 月卡数据 | `queryMigrationCardData` | `{data:{monthCardInfo,weekCardInfo,redressUseTime}, source}` | cmmonthcard 需要用到的月卡/周卡/包赔数据 |
-| 礼包数据 | `queryMigrationGiftData` | `{data:{giftInfo,skipReason}, source}` | cmnewplayerdailygift 需要用到的签到数据，含跳过原因 |
-
-**数据来源策略**：
-
-```typescript
-// 伪代码逻辑
-async function handleQuery(cxt, userid, moduleKey) {
-    let config = loadConfig();
-    let data = await async_chunkSvrHttp(cxt, config, moduleKey, userid);
-    if (data !== null) {
-        // chunkSvr 可用 → 返回真实转换数据
-        let converted = convertData(data);
-        return { data: converted, source: 'chunksvr' };
-    } else {
-        // chunkSvr 不可用 → 返回 mock 数据
-        let mockData = generateMockData(moduleKey);
-        return { data: mockData, source: 'mock' };
-    }
-}
-```
-
-**Mock 数据规格**：
-
-| 模块 | 字段 | mock 值 | 说明 |
-|------|------|---------|------|
-| VIP | grade | 3 | 假设玩家等级 3 |
-| VIP | totalConsumeNum | 5000 | 累计消耗 5000 |
-| VIP | totalAcquireNum | 5000 | 累计获得 5000 |
-| VIP | oneOffRewardStatusArray[0] | `{status:2, gotTime:now-1d}` | 首级已领取 |
-| VIP | oneOffRewardStatusArray[1-15] | `{status:0, gotTime:0}` | 其余未领取 |
-| 月卡 | monthCardInfo | `{BuyTime:now, EndTime:now+31d, type:1}` | 月卡 |
-| 月卡 | weekCardInfo | `{BuyTime:now, EndTime:now+7d, type:2}` | 周卡 |
-| 月卡 | redressUseTime | 20260518 | 上次包赔日期 |
-| 礼包 | giftInfo | `{buyTime:now-2d, lastClaimDay:3, lastClaimDate:20260518}` | 已签到 3 天，未过期 |
-
-### 9.3 目标模块测试流程
-
-**步骤 1：调用 convert_xzmp 查询接口**
-
-目标模块通过 `CommonFuncs.async_internal_call` 或 `modsvr.async_internal_call` 向 convert 模块发送查询消息：
-
-```typescript
-let src = {
-    client: { appcode: 'xzmp', gameid: 283, userid: testUserID },
-    mods: [],
-};
-let queryReq = {
-    id: 0,
-    data: { req: 'queryMigrationVipData' },
-};
-let queryResp = { errs: [], resp: { id: 0, data: {} } };
-await modsvr.async_internal_call(src, cxt, 'convert', queryReq, queryResp, 5);
-
-let migrationData = queryResp.resp.data;
-// migrationData = { data: { grade, totalConsumeNum, ... }, source: 'chunksvr'|'mock' }
-```
-
-**步骤 2：用获取的数据构造 ireq 并调用 OnInternalCall**
-
-```typescript
-let ireq = {
-    src: { client: { appcode, userid: testUserID, channelkey: 'tcyan', gameid } },
-    req: { id: 0, data: { req: REQ_NAME.MIGRATION_WRITE_VIP_INFO, data: migrationData.data } },
-    info: '',
-};
-let iresp = { errs: [], resp: { id: 0, data: {} } };
-await OnInternalCall(ireq, iresp, cxt ?? null);
-```
-
-**步骤 3：验证处理结果**
-
-验证内容：
-- `iresp.resp.id === 1`：写入成功
-- `iresp.resp.data.data` 中各字段值正确
-- CAN_RECEIVED 填充逻辑正确（VIP 模块特有）
-- `source` 字段区分数据来源（方便 debug）
-
-### 9.4 本地调试流程
-
-```
-开发环境 (本地 PC)
-  │
-  ├── 可能没有 chunkSvr → mock 数据降级
-  ├── 可能没有 Redis/MySQL → OnInternalCall 用 null context
-  │
-  ├── 1. cd cpscript/src/xzmp
-  ├── 2. 修改测试 userID
-  ├── 3. 运行: npx ts-node leveldefine_xzmp.ts
-  │      （测试函数通过 main() 入口调用）
-  │
-  ├── 4. 观察日志输出 PASS/FAIL
-  ├── 5. 修复问题 → 重复 3-4
-  │
-  └── 6. 本地通过后 → 部署到 CP 服务
-       （在 CP 服务中验证真实 chunkSvr 数据）
-```
-
-**注意事项**：
-
-1. 本地 debug 时 `cxt = null`，Redis/MySQL 操作使用 `null context`。CP 服务的 C++ 绑定在 `cxt = null` 时使用默认上下文，不影响基本读写测试。
-2. 目标模块的测试函数不依赖 convert_xzmp 的集成测试结果，可以独立运行。
-3. `source` 字段帮助区分当前测试使用的是真实数据还是 mock 数据。
-4. 所有测试函数均放在各模块的 `TestTool` namespace 中，通过 `main()` 入口或 `OnInternalCall` 触发。
-
-### 9.5 测试独立性保证
-
-| 模块 | 测试函数 | 依赖 |
-|------|----------|------|
-| convert_xzmp | `async_testMigration` | chunkSvr HTTP (不可用则跳过) |
-| convert_xzmp | `async_testChunkSvrHttp` | chunkSvr HTTP (不可用则跳过) |
-| convert_xzmp | `async_testOnLogon` | chunkSvr HTTP |
-| convert_xzmp | `async_clearMigrationFlag` | Redis |
-| **leveldefine** | **`async_testMigrationWriteVipInfo`** | **convert_xzmp (查询接口) — 不可用时 mock 降级** |
-| **cmmonthcard** | **`async_testMigrationWriteCardInfo`** | **convert_xzmp (查询接口) — 不可用时 mock 降级** |
-| **cmnewplayerdailygift** | **`async_testMigrationWriteGiftInfo`** | **convert_xzmp (查询接口) — 不可用时 mock 降级** |
-
-每个目标模块的测试先通过 `async_internal_call` 尝试从 convert_xzmp 获取数据。如果 convert_xzmp 不可达或无法提供数据，则使用本地的 mock 数据作为降级方案，确保测试在任何环境下都能运行。
+步骤 3-5 可并行开发，互不依赖。
 
 ***
 
-*文档版本: v2.1*
+*文档版本: v2.0*
 *创建日期: 2026/05/18*
 *更新日期: 2026/05/19*
 *基于: 数据迁移.md v5.0*

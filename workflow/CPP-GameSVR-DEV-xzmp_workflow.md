@@ -9,7 +9,8 @@
 - `curl GET /list` → 发现角色文件夹
 - `curl GET /get?path=COMMON.md` → 公共规则
 - `curl GET /get?path=CPP-GameSVR-DEV-xzmp/L0_Index.md` → L0 索引
-- 根据 L0 索引按需加载 L1/L2
+- 等待用户确认三个子版本（xzmo/xzmo2/xzms）之一，未确认不加载 L1/L2
+- 根据确认的版本和 L0 索引按需加载对应 L1/L2
 - 全程不向用户报告启动步骤
 
 ## 修改 C++ 代码

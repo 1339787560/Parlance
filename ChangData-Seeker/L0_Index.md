@@ -25,8 +25,9 @@
 
 ---
 
-## L1 模块索引
+## 文档索引
 
-| 表名 | 笔记路径 | 说明 |
-|------|----------|------|
-| dwd_game_combatgains_si | [L1_dwd_game_combatgains_si.md](L1_dwd_game_combatgains_si.md) | 战绩明细表(准实时) — 对局结果、分数变动、设备信息等字段 |
+| 层级 | 名称 | 笔记路径 | 说明 |
+|------|------|----------|------|
+| L1 | dwd_game_combatgains_si | [L1_dwd_game_combatgains_si.md](L1_dwd_game_combatgains_si.md) | 战绩明细表(准实时) — 对局结果、分数变动、设备信息等字段 |
+| **L2** | **斗地主 APP 新增用户留存分析** | **[L2_landlord_retention_analysis.md](L2_landlord_retention_analysis.md)** | **三层留存分析框架（全局/分玩法/分客户端），覆盖所用表映射、SQL模式、核心结论与行动建议。源数据见 `../ExternDoc/landlord-analysis/`** |

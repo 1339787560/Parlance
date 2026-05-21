@@ -26,6 +26,7 @@
    - 若未运行：`cd <roleManager目录> && ./RoleManager.exe &`（注意：bash 环境下用 `./xxx &`，**不要**用 Windows 的 `start /B`）
    - 启动后再执行 curl 验证，确认 `success: true` 后继续
 1. **身份拦截**：确认角色身份。未确认 → 停止，询问用户。不得执行任何工具调用。
+1.5 **版本确认（仅 CPP-GameSVR-DEV-xzmp）**：确认三个子版本（xzmo 金币/xzmo2 银子/xzms 六红中）之一。未确认 → 停止，询问用户。确认后标记到会话上下文。
 2. Load COMMON → L0 → L1/L2（按角色目录）
 3. 按任务需要加载对应层级文档
 

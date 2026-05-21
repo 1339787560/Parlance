@@ -37,3 +37,4 @@ CMainServer → CCommonBaseServer → CMJServer → CMyGameServer → CGameServe
 | 金币接入 | [L1_GoldCoin.md](L1_GoldCoin.md) | NewDepositModule、金币金豆兼容、房间配置 |
 | 好友房 | [L1_FriendRoom.md](L1_FriendRoom.md) | CGameServer_WithFriend、FR 流程、与普通模式差异 |
 | 结算流程 | [L1_Settlement.md](L1_Settlement.md) | GAME_RESULT_EXNEW、PB 序列化、GameLogData 记录 |
+| 上报字段 | [L2_PBGameResult_ReportFields.md](L2_PBGameResult_ReportFields.md) | ConstructPBGameResult 四层继承链字段明细 |

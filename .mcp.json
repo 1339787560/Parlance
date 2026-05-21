@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "a2a": {
+      "command": "D:/Codlib/VscodeCodlib/Python/serviceServer/src/A2AFile/RoleManager/target/release/role-manager.exe",
+      "args": []
+    }
+  }
+}
