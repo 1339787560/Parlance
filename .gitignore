@@ -1,5 +1,5 @@
 __pycache__
 .deepseek
-data
-style/
-uploads/
+data/*
+style/*
+uploads/*

@@ -1,0 +1,1160 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ── Chinese Classical Design System ────────────────────────────────── */
+  :root {
+    --cn-paper:       #F4E8D3;   /* 宣纸黄 — page background */
+    --cn-bubble:      #FDFBF7;   /* 信笺白 — message bubble */
+    --cn-ink:         #2C251F;   /* 浓墨 — primary text */
+    --cn-ink-light:   #5C4B3C;   /* 淡墨 — secondary text */
+    --cn-ink-faint:   #8B7355;   /* 枯木褐 — borders, subtle text */
+    --cn-red:         #B32A26;   /* 朱砂红 — primary accent */
+    --cn-red-hover:   #8A1F1B;   /* 朱砂深 — hover state */
+    --cn-red-light:   rgba(179, 42, 38, 0.08); /* 朱砂晕 — tint */
+    --cn-gold:        #C39A5B;   /* 暗金 — decorative accents */
+    --cn-wood:        #D4C4A9;   /* 檀木色 — soft borders */
+    --cn-overlay:     rgba(44, 37, 31, 0.5); /* 墨色遮罩 */
+  }
+
+  html, body {
+    height: 100%;
+    font-family: 'Kaiti SC', 'STKaiti', 'AR PL UKai CN', 'KaiTi', 'Noto Serif SC', 'Source Han Serif SC', serif;
+    background: var(--cn-paper);
+    color: var(--cn-ink);
+    letter-spacing: 0.8px;
+    line-height: 1.8;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    display: flex; flex-direction: column;
+    max-width: 1600px; width: 92%; margin: 0 auto;
+    /* Subtle paper texture via CSS */
+    background-image:
+      repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        color-mix(in srgb, var(--cn-ink-faint) 5%, transparent) 3px,
+        color-mix(in srgb, var(--cn-ink-faint) 5%, transparent) 4px
+      ),
+      repeating-linear-gradient(
+        90deg, transparent, transparent 3px,
+        color-mix(in srgb, var(--cn-ink-faint) 3%, transparent) 3px,
+        color-mix(in srgb, var(--cn-ink-faint) 3%, transparent) 4px
+      ),
+      linear-gradient(180deg, var(--cn-paper), color-mix(in srgb, var(--cn-paper) 85%, var(--cn-ink) 2%));
+  }
+
+  /* ── Header: 牌匾风格 ────────────────────────────────────────────────── */
+  .header {
+    padding: 14px 20px;
+    background: linear-gradient(135deg, var(--cn-paper) 0%, color-mix(in srgb, var(--cn-paper) 90%, var(--cn-ink) 5%) 100%);
+    border-bottom: 3px solid var(--cn-red);
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--cn-ink) 10%, transparent);
+  }
+  .header h1 {
+    font-size: 20px; font-weight: 400; letter-spacing: 4px; flex: 1;
+    color: var(--cn-ink); text-shadow: 1px 1px 0 rgba(195, 154, 91, 0.15);
+  }
+  .server-url {
+    font-size: 12px; color: var(--cn-ink-light);
+    letter-spacing: 1px;
+  }
+  .sse-status {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    border: 1px solid var(--cn-ink-faint);
+  }
+  .sse-status.connected {
+    background: #4a7c59; border-color: #3a6a49;
+    box-shadow: 0 0 6px rgba(74, 124, 89, 0.3);
+  }
+  .sse-status.disconnected {
+    background: var(--cn-red); border-color: var(--cn-red-hover);
+  }
+
+  /* ── Messages area ───────────────────────────────────────────────────── */
+  .msg-area {
+    flex: 1; overflow-y: auto; padding: 20px 24px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .msg-area:empty::after {
+    content: '暂无消息，发送第一条吧';
+    color: var(--cn-ink-faint); text-align: center;
+    padding: 60px 20px; font-size: 15px;
+    letter-spacing: 2px;
+  }
+
+  /* ── Message bubble: 信笺 ─────────────────────────────────────────────── */
+  .msg {
+    max-width: 75%;
+    padding: 18px 24px;
+    background: var(--cn-bubble);
+    border: 1px solid var(--cn-wood);
+    border-radius: 3px;
+    position: relative;
+    line-height: 1.8;
+    box-shadow: 1px 2px 4px rgba(92, 75, 60, 0.06);
+    transition: box-shadow 0.2s;
+  }
+  .msg:hover { box-shadow: 2px 3px 8px color-mix(in srgb, var(--cn-ink) 15%, transparent); }
+  .msg.self {
+    align-self: flex-end;
+    border-left: 3px solid var(--cn-red);
+    background: linear-gradient(135deg, var(--cn-bubble), color-mix(in srgb, var(--cn-bubble) 90%, var(--cn-paper) 20%));
+  }
+  .msg.other {
+    align-self: flex-start;
+    border-left: 3px solid var(--cn-gold);
+  }
+
+  .msg-header {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; margin-bottom: 8px;
+  }
+
+  /* 朱文印章 — IP badge */
+  .msg-ip {
+    font-family: 'SimSun', 'Songti SC', 'Noto Serif SC', serif;
+    font-size: 13px; font-weight: 500; letter-spacing: 1px;
+    color: var(--cn-red);
+    border: 1px solid var(--cn-red);
+    padding: 2px 10px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  .msg-time {
+    font-size: 13px; color: var(--cn-ink-faint); white-space: nowrap;
+    letter-spacing: 0.5px;
+  }
+
+  .msg-content {
+    font-size: 20px; word-break: break-word; white-space: pre-wrap;
+    color: var(--cn-ink);
+    line-height: 1.9;
+  }
+
+  /* ── File message ────────────────────────────────────────────────────── */
+  .msg-file {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 0; flex-wrap: wrap;
+  }
+  .msg-file-icon {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px;
+    border: 1px solid var(--cn-wood);
+    border-radius: 3px;
+    background: rgba(212, 196, 169, 0.15);
+    color: var(--cn-red);
+  }
+  .msg-file-info { flex: 1; min-width: 0; }
+  .msg-file-name { font-size: 16px; font-weight: 500; word-break: break-all; }
+  .msg-file-size { font-size: 13px; color: var(--cn-ink-light); margin-top: 2px; }
+
+  .btn-download {
+    padding: 6px 20px;
+    border: 1px solid var(--cn-red);
+    background: transparent; color: var(--cn-red);
+    cursor: pointer; font-size: 14px; letter-spacing: 1px;
+    border-radius: 2px;
+    font-family: inherit;
+    transition: all 0.25s;
+    white-space: nowrap;
+  }
+  .btn-download:hover {
+    background: var(--cn-red); color: var(--cn-bubble);
+  }
+
+  /* ── Input area ──────────────────────────────────────────────────────── */
+  .input-area {
+    padding: 12px 16px;
+    background: linear-gradient(0deg, color-mix(in srgb, var(--cn-paper) 90%, var(--cn-ink) 5%), var(--cn-paper));
+    border-top: 1px solid var(--cn-wood);
+    display: flex; gap: 10px; align-items: flex-end;
+  }
+  .input-area textarea {
+    flex: 1;
+    background: var(--cn-bubble);
+    border: 1px solid var(--cn-wood);
+    border-radius: 3px;
+    padding: 12px 16px;
+    color: var(--cn-ink);
+    font-size: 16px; font-family: inherit; letter-spacing: 0.5px;
+    resize: none; min-height: 48px; max-height: 140px; outline: none;
+    line-height: 1.7;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .input-area textarea:focus {
+    border-color: var(--cn-gold);
+    box-shadow: 0 0 0 2px rgba(195, 154, 91, 0.15);
+  }
+  .input-area textarea::placeholder { color: var(--cn-ink-faint); }
+
+  .input-actions { display: flex; gap: 6px; }
+
+  .btn-icon {
+    width: 40px; height: 40px;
+    border: 1px solid var(--cn-wood);
+    background: var(--cn-bubble);
+    color: var(--cn-ink-light);
+    cursor: pointer;
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.25s;
+  }
+  .btn-icon:hover {
+    border-color: var(--cn-red);
+    color: var(--cn-red);
+    background: var(--cn-red-light);
+  }
+  .btn-icon svg { width: 20px; height: 20px; }
+
+  /* 朱砂印章 — send button */
+  .btn-send {
+    padding: 0 24px; height: 40px;
+    border: none;
+    background: var(--cn-red);
+    color: var(--cn-bubble);
+    cursor: pointer;
+    font-size: 15px; font-family: inherit; letter-spacing: 3px;
+    border-radius: 2px;
+    transition: background 0.25s, box-shadow 0.25s;
+    box-shadow: 1px 2px 4px rgba(179, 42, 38, 0.2);
+  }
+  .btn-send:hover {
+    background: var(--cn-red-hover);
+    box-shadow: 2px 3px 6px rgba(179, 42, 38, 0.3);
+  }
+
+  /* ── Zip modal ───────────────────────────────────────────────────────── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: var(--cn-overlay); z-index: 100;
+    align-items: center; justify-content: center;
+    backdrop-filter: blur(2px);
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--cn-bubble);
+    border: 1px solid var(--cn-wood);
+    border-radius: 4px;
+    padding: 28px; width: 90%; max-width: 480px; max-height: 80vh; overflow-y: auto;
+    box-shadow: 4px 6px 20px rgba(44, 37, 31, 0.15);
+  }
+  .modal h2 {
+    font-size: 18px; font-weight: 400; letter-spacing: 3px;
+    color: var(--cn-ink); margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--cn-wood);
+  }
+  .modal input[type="text"] {
+    width: 100%; padding: 10px 14px;
+    border: 1px solid var(--cn-wood); border-radius: 3px;
+    background: var(--cn-paper); color: var(--cn-ink);
+    font-size: 14px; font-family: inherit; letter-spacing: 0.5px;
+    outline: none; margin-bottom: 14px;
+    transition: border-color 0.2s;
+  }
+  .modal input[type="text"]:focus { border-color: var(--cn-gold); }
+  .modal input[type="text"]::placeholder { color: var(--cn-ink-faint); }
+
+  .drop-zone {
+    border: 1.5px dashed var(--cn-wood);
+    border-radius: 3px; padding: 32px 20px;
+    text-align: center; cursor: pointer;
+    transition: all 0.3s; margin-bottom: 14px;
+    background: rgba(212, 196, 169, 0.08);
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--cn-red);
+    background: var(--cn-red-light);
+  }
+  .drop-zone p { color: var(--cn-ink-faint); font-size: 14px; letter-spacing: 1px; }
+
+  .file-list { margin-bottom: 14px; }
+  .file-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    background: var(--cn-paper);
+    border: 1px solid var(--cn-wood);
+    border-radius: 2px; margin-bottom: 4px; font-size: 13px;
+  }
+  .file-item .name { flex: 1; word-break: break-all; }
+  .file-item .size { color: var(--cn-ink-light); font-size: 11px; white-space: nowrap; }
+  .file-item .remove { cursor: pointer; color: var(--cn-red); font-size: 14px; }
+
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .modal-actions button {
+    padding: 8px 22px;
+    border-radius: 2px; border: none; cursor: pointer;
+    font-size: 14px; font-family: inherit; letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+  .btn-cancel {
+    background: transparent;
+    color: var(--cn-ink-light);
+    border: 1px solid var(--cn-wood) !important;
+  }
+  .btn-cancel:hover { border-color: var(--cn-ink-faint) !important; color: var(--cn-ink); }
+  .btn-upload { background: var(--cn-red); color: var(--cn-bubble); }
+  .btn-upload:hover { background: var(--cn-red-hover); }
+  .btn-upload:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Toast ───────────────────────────────────────────────────────────── */
+  .toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--cn-ink);
+    color: var(--cn-paper);
+    padding: 10px 24px;
+    border-radius: 2px;
+    font-size: 13px; letter-spacing: 1px; font-family: inherit;
+    z-index: 200; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ── Mobile ──────────────────────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    .msg { max-width: 92%; padding: 12px 14px; }
+    .modal { width: 95%; padding: 20px; }
+    .header h1 { font-size: 17px; letter-spacing: 2px; }
+  }
+
+  /* ── Classical scrollbar ─────────────────────────────────────────────── */
+  .msg-area::-webkit-scrollbar { width: 5px; }
+  .msg-area::-webkit-scrollbar-track { background: transparent; }
+  .msg-area::-webkit-scrollbar-thumb {
+    background: var(--cn-wood);
+    border-radius: 2px;
+  }
+  .msg-area::-webkit-scrollbar-thumb:hover { background: var(--cn-ink-faint); }
+
+  /* ── Date separator ──────────────────────────────────────────────────── */
+  .date-sep {
+    display: flex; align-items: center; gap: 16px;
+    padding: 8px 0; align-self: center; width: 80%;
+  }
+  .date-sep::before, .date-sep::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cn-wood), transparent);
+  }
+  .date-sep span {
+    font-size: 11px; color: var(--cn-ink-faint);
+    letter-spacing: 2px; white-space: nowrap;
+    font-family: 'SimSun', 'Songti SC', serif;
+  }
+
+  /* ── Upload progress overlay ─────────────────────────────────────────── */
+  .msg-file-progress {
+    margin-top: 4px; height: 3px; border-radius: 1px;
+    background: var(--cn-wood); overflow: hidden;
+  }
+  .msg-file-progress-bar {
+    height: 100%; background: var(--cn-red);
+  }
+
+  /* ── Theme system ────────────────────────────────────────────────── */
+  .theme-select {
+    padding: 4px 8px;
+    border: 1px solid var(--cn-wood);
+    background: var(--cn-bubble);
+    color: var(--cn-ink);
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: inherit;
+    letter-spacing: 0.5px;
+    line-height: 1.4;
+    outline: none;
+  }
+  .theme-select:hover,
+  .theme-select:focus {
+    border-color: var(--cn-red);
+  }
+
+  /* Default theme (clean/modern placeholder) */
+  html[data-theme="default"] {
+    --cn-paper:       #f5f5f5;
+    --cn-bubble:      #ffffff;
+    --cn-ink:         #1a1a1a;
+    --cn-ink-light:   #555555;
+    --cn-ink-faint:   #999999;
+    --cn-red:         #1a73e8;
+    --cn-red-hover:   #1557b0;
+    --cn-red-light:   rgba(26, 115, 232, 0.08);
+    --cn-gold:        #5f6368;
+    --cn-wood:        #dadce0;
+    --cn-overlay:     rgba(0, 0, 0, 0.4);
+  }
+  /* Red theme (classic Chinese) — matches the default variables */
+  html[data-theme="red"] {
+    --cn-paper:       #F4E8D3;
+    --cn-bubble:      #FDFBF7;
+    --cn-ink:         #2C251F;
+    --cn-ink-light:   #5C4B3C;
+    --cn-ink-faint:   #8B7355;
+    --cn-red:         #B32A26;
+    --cn-red-hover:   #8A1F1B;
+    --cn-red-light:   rgba(179, 42, 38, 0.08);
+    --cn-gold:        #C39A5B;
+    --cn-wood:        #D4C4A9;
+    --cn-overlay:     rgba(44, 37, 31, 0.5);
+  }
+
+  /* Kokomi theme (Sangonomiya Kokomi — 心海/珊瑚宫) */
+  html[data-theme="kokomi"] {
+    --cn-paper:       #E1F0FF;
+    --cn-bubble:      rgba(255, 255, 255, 0.65);
+    --cn-ink:         #2A4365;
+    --cn-ink-light:   #718096;
+    --cn-ink-faint:   #A0AEC0;
+    --cn-red:         #F29CB2;
+    --cn-red-hover:   #E0859E;
+    --cn-red-light:   rgba(242, 156, 178, 0.15);
+    --cn-gold:        #8CB9D6;
+    --cn-wood:        rgba(255, 255, 255, 0.8);
+    --cn-overlay:     rgba(42, 67, 101, 0.5);
+  }
+
+  /* ── Kokomi 主题专属样式（毛玻璃、圆角、渐变背景） ────────── */
+  html[data-theme="kokomi"] {
+    background-image:
+      linear-gradient(135deg, rgba(225, 240, 255, 0.55), rgba(252, 232, 240, 0.55)),
+      url('/style/kokomi/kokomi.png');
+    background-size: cover;
+    background-attachment: fixed;
+  }
+  html[data-theme="kokomi"] body {
+    background: none;
+    font-family: 'Nunito', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  html[data-theme="kokomi"] .header {
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 2px 10px rgba(242, 156, 178, 0.1);
+  }
+  /* ── 心海聊天框配色：深海静谧 × 真珠泡影 ──────────────────── */
+
+  /* [我方] 真珠泡影：天蓝→樱花紫渐变 + 珍珠光泽 */
+  html[data-theme="kokomi"] .msg.self {
+    background: linear-gradient(135deg, rgba(224, 242, 254, 0.85) 0%, rgba(245, 214, 235, 0.85) 100%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 18px 18px 4px 18px;
+    color: #2F2643;
+    box-shadow:
+      0 4px 12px rgba(177, 159, 251, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    position: relative;
+  }
+  /* 底部羽衣飘带：珊瑚紫→樱花粉渐变 */
+  html[data-theme="kokomi"] .msg.self::after {
+    content: "";
+    position: absolute;
+    bottom: -1px;
+    right: 20px;
+    width: 40px;
+    height: 2px;
+    background: linear-gradient(90deg, #B19FFB, #F5D6EB);
+    border-radius: 0 0 4px 4px;
+  }
+
+  /* [对方] 深海静谧：深海蓝毛玻璃 + 水光银边 + 珊瑚紫荧光 */
+  html[data-theme="kokomi"] .msg.other {
+    background: rgba(16, 28, 48, 0.75);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(220, 227, 236, 0.5);
+    border-radius: 18px 18px 18px 4px;
+    color: #E2E8F0;
+    box-shadow:
+      0 4px 15px rgba(142, 124, 195, 0.2),
+      inset 0 0 10px rgba(142, 124, 195, 0.15);
+    position: relative;
+  }
+  /* 顶部水流装饰线：银色→珊瑚紫渐变 */
+  html[data-theme="kokomi"] .msg.other::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 20px;
+    width: 40px;
+    height: 2px;
+    background: linear-gradient(90deg, #DCE3EC, #8E7CC3);
+  }
+
+  /* 我方气泡文本颜色 */
+  html[data-theme="kokomi"] .msg.self .msg-content,
+  html[data-theme="kokomi"] .msg.self .msg-header {
+    color: #2F2643;
+  }
+  html[data-theme="kokomi"] .msg.self .msg-time {
+    color: #9A8BAD;
+  }
+  html[data-theme="kokomi"] .msg.self .msg-file-name {
+    color: #2F2643;
+  }
+
+  /* 对方深色气泡文本颜色 */
+  html[data-theme="kokomi"] .msg.other .msg-content,
+  html[data-theme="kokomi"] .msg.other .msg-header {
+    color: #E2E8F0;
+  }
+  html[data-theme="kokomi"] .msg.other .msg-time {
+    color: #8E9AAF;
+  }
+  html[data-theme="kokomi"] .msg.other .msg-file-name {
+    color: #E2E8F0;
+  }
+  html[data-theme="kokomi"] .msg.other .msg-file-size {
+    color: #8E9AAF;
+  }
+
+  /* IP 标签 — 我方（浅底） */
+  html[data-theme="kokomi"] .msg.self .msg-ip {
+    background: rgba(47, 38, 67, 0.08);
+    border-left: 3px solid #B19FFB;
+    color: #2F2643;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+  /* IP 标签 — 对方（深底） */
+  html[data-theme="kokomi"] .msg.other .msg-ip {
+    background: rgba(226, 232, 240, 0.1);
+    border-left: 3px solid #8E7CC3;
+    color: #E2E8F0;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+
+  /* 对方深色气泡的下载按钮：水光银色 */
+  html[data-theme="kokomi"] .msg.other .btn-download {
+    background: transparent;
+    color: #DCE3EC;
+    border: 1px solid rgba(220, 227, 236, 0.5);
+    border-radius: 20px;
+    padding: 6px 16px;
+  }
+  html[data-theme="kokomi"] .msg.other .btn-download:hover {
+    background: rgba(142, 124, 195, 0.3);
+    border-color: #8E7CC3;
+    color: #E2E8F0;
+    box-shadow: 0 0 10px rgba(142, 124, 195, 0.3);
+  }
+
+  /* 我方气泡的下载按钮保持原来的蓝粉渐变 */
+  html[data-theme="kokomi"] .msg.self .btn-download {
+    background: linear-gradient(135deg, #8CB9D6, #F29CB2);
+    color: white;
+    border: none;
+    border-radius: 20px;
+    padding: 6px 16px;
+    box-shadow: 0 4px 10px rgba(242, 156, 178, 0.3);
+  }
+  html[data-theme="kokomi"] .msg.self .btn-download:hover {
+    box-shadow: 0 6px 15px rgba(242, 156, 178, 0.5);
+    filter: brightness(1.1);
+  }
+  html[data-theme="kokomi"] .input-area {
+    background: transparent;
+    padding: 15px 16px;
+    border-top: none;
+  }
+  html[data-theme="kokomi"] .input-area textarea {
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    border-radius: 24px;
+    padding: 12px 20px;
+    box-shadow: 0 8px 32px rgba(140, 185, 214, 0.15);
+  }
+  html[data-theme="kokomi"] .input-area textarea:focus {
+    border-color: var(--cn-red);
+    background: rgba(255, 255, 255, 0.9);
+  }
+  html[data-theme="kokomi"] .btn-download {
+    background: linear-gradient(135deg, var(--cn-gold), var(--cn-red));
+    color: white;
+    border: none;
+    border-radius: 20px;
+    padding: 6px 16px;
+    box-shadow: 0 4px 10px rgba(242, 156, 178, 0.3);
+  }
+  html[data-theme="kokomi"] .btn-download:hover {
+    box-shadow: 0 6px 15px rgba(242, 156, 178, 0.5);
+    filter: brightness(1.1);
+    background: linear-gradient(135deg, var(--cn-gold), var(--cn-red));
+    color: white;
+  }
+  html[data-theme="kokomi"] .btn-send {
+    background: var(--cn-red);
+    border-radius: 24px;
+    box-shadow: 0 4px 12px rgba(242, 156, 178, 0.4);
+  }
+  html[data-theme="kokomi"] .btn-send:hover {
+    background: var(--cn-red-hover);
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(242, 156, 178, 0.6);
+  }
+  html[data-theme="kokomi"] .btn-icon {
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  html[data-theme="kokomi"] .msg-area:empty::after {
+    color: var(--cn-ink-faint);
+  }
+  html[data-theme="kokomi"] #pageTitle {
+    background: linear-gradient(135deg, #F29CB2, #8CB9D6);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Firefly / SAM theme (流萤·萨姆) */
+  html[data-theme="firefly"] {
+    --cn-paper:       #E5F3F1;
+    --cn-bubble:      rgba(221, 244, 240, 0.75);
+    --cn-ink:         #16463C;
+    --cn-ink-light:   #8E8D9F;
+    --cn-ink-faint:   rgba(140, 209, 197, 0.6);
+    --cn-red:         #FF5E3A;
+    --cn-red-hover:   #E04A2A;
+    --cn-red-light:   rgba(255, 94, 58, 0.12);
+    --cn-gold:        #FFBF00;
+    --cn-wood:        rgba(200, 205, 212, 0.8);
+    --cn-overlay:     rgba(22, 70, 60, 0.5);
+  }
+
+  /* ── Firefly 主题专属样式 ──────────────────────────────────── */
+  html[data-theme="firefly"] {
+    background-image:
+      linear-gradient(135deg, rgba(229, 243, 241, 0.55), rgba(236, 233, 242, 0.55), rgba(245, 235, 240, 0.55)),
+      url('/style/firefly/firefly.png');
+    background-size: cover;
+    background-attachment: fixed;
+  }
+  html[data-theme="firefly"] body {
+    background: none;
+    font-family: 'PingFang SC', 'MiSans', 'Microsoft YaHei', sans-serif;
+  }
+  html[data-theme="firefly"] .header {
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-bottom: 2px solid var(--cn-ink-faint);
+    box-shadow: inset 0 2px 0 #E8DFF5;
+  }
+  /* ── 流萤衣服配色聊天框 ────────────────────────────────── */
+
+  /* [通用] 我方气泡：渐变长裙款（浅薄荷绿→淡黄 + 金色刺绣滚边） */
+  html[data-theme="firefly"] .msg.self {
+    background: linear-gradient(135deg, #CBEFE7 0%, #E8F5D8 100%);
+    border: 1px solid #D4B26F;
+    border-radius: 16px 2px 16px 16px;
+    color: #12332B;
+    box-shadow:
+      0 4px 12px rgba(212, 178, 111, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    position: relative;
+  }
+  /* 粉色发带饰条（右上角） */
+  html[data-theme="firefly"] .msg.self::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 15px;
+    width: 30px;
+    height: 3px;
+    background: #F2B0C1;
+    border-radius: 0 0 4px 4px;
+  }
+
+  /* [对方] 深色外套款：黛黑炭灰 + 金丝刺绣 + 粉紫微光 */
+  html[data-theme="firefly"] .msg.other {
+    background: linear-gradient(135deg, #252835 0%, #1A1C24 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 2px 16px 16px 16px;
+    color: #F3F4F6;
+    box-shadow:
+      0 4px 15px rgba(232, 223, 245, 0.08),
+      inset 0 0 8px rgba(232, 223, 245, 0.1);
+    position: relative;
+  }
+  /* 金色刺绣饰条（左上角） */
+  html[data-theme="firefly"] .msg.other::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 15px;
+    width: 30px;
+    height: 3px;
+    background: #E5C17B;
+    border-radius: 0 0 4px 4px;
+  }
+
+  /* 我方气泡内的文本颜色从渐变继承，使用深色文字 */
+  html[data-theme="firefly"] .msg.self .msg-content,
+  html[data-theme="firefly"] .msg.self .msg-header,
+  html[data-theme="firefly"] .msg.self .msg-file-name {
+    color: #12332B;
+  }
+  html[data-theme="firefly"] .msg.self .msg-time {
+    color: #7A9E8B;
+  }
+
+  /* 对方深色气泡内的文本强制象牙白 */
+  html[data-theme="firefly"] .msg.other .msg-content,
+  html[data-theme="firefly"] .msg.other .msg-header,
+  html[data-theme="firefly"] .msg.other .msg-file-name {
+    color: #F3F4F6;
+  }
+  html[data-theme="firefly"] .msg.other .msg-time {
+    color: #9A9BB0;
+  }
+  html[data-theme="firefly"] .msg.other .msg-file-size {
+    color: #B0B1C5;
+  }
+
+  /* 对方深色气泡的下载按钮：金丝色 */
+  html[data-theme="firefly"] .msg.other .btn-download {
+    background: transparent;
+    color: #E5C17B;
+    border: 1px solid #E5C17B;
+  }
+  html[data-theme="firefly"] .msg.other .btn-download:hover {
+    background: #4AA391;
+    color: #FFF;
+    border-color: #4AA391;
+    box-shadow: 0 0 10px rgba(74, 163, 145, 0.4);
+  }
+
+  /* IP 标签 — 我方浅色底用深绿 */
+  html[data-theme="firefly"] .msg.self .msg-ip {
+    background: rgba(18, 51, 43, 0.08);
+    border-left: 3px solid #4AA391;
+    color: #12332B;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+  /* IP 标签 — 对方深色底用浅色 */
+  html[data-theme="firefly"] .msg.other .msg-ip {
+    background: rgba(243, 244, 246, 0.1);
+    border-left: 3px solid #E5C17B;
+    color: #F3F4F6;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+  html[data-theme="firefly"] .input-area {
+    background: transparent;
+    border-top: 1px solid rgba(22, 70, 60, 0.1);
+  }
+  html[data-theme="firefly"] .input-area textarea {
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid var(--cn-ink-faint);
+    border-radius: 8px;
+    color: var(--cn-ink);
+  }
+  html[data-theme="firefly"] .input-area textarea:focus {
+    background: #FFF;
+    border-color: var(--cn-gold);
+    box-shadow: 0 0 8px rgba(255, 191, 0, 0.2);
+  }
+  html[data-theme="firefly"] .btn-download {
+    background: transparent;
+    color: var(--cn-ink);
+    border: 1.5px solid var(--cn-ink);
+    border-radius: 4px;
+  }
+  html[data-theme="firefly"] .btn-download:hover {
+    background: linear-gradient(135deg, var(--cn-red), var(--cn-gold));
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 0 12px rgba(255, 94, 58, 0.5);
+  }
+  html[data-theme="firefly"] .btn-send {
+    background: linear-gradient(135deg, var(--cn-red), var(--cn-gold));
+    border-radius: 4px;
+    transform: skewX(-6deg);
+    box-shadow: 0 0 12px rgba(255, 94, 58, 0.5);
+  }
+  html[data-theme="firefly"] .btn-send span {
+    display: block;
+    transform: skewX(6deg);
+  }
+  html[data-theme="firefly"] .btn-send:hover {
+    filter: brightness(1.15);
+    background: linear-gradient(135deg, var(--cn-red), var(--cn-gold));
+    box-shadow: 0 0 18px rgba(255, 94, 58, 0.8);
+  }
+  html[data-theme="firefly"] .btn-icon {
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.6);
+  }
+  html[data-theme="firefly"] .btn-icon:hover {
+    background: linear-gradient(135deg, var(--cn-red), var(--cn-gold));
+    color: #fff;
+    border-color: transparent;
+  }
+  html[data-theme="firefly"] #pageTitle {
+    background: linear-gradient(135deg, var(--cn-red), var(--cn-gold));
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* ── Kokomi 水泡浮动动画 ──────────────────────────────────── */
+  @keyframes koko-bubble-fast {
+    0%   { transform: translateY(0) scale(1);   opacity: 0; }
+    8%   { opacity: 0.7; }
+    80%  { opacity: 0.3; }
+    100% { transform: translateY(-105vh) scale(0.3); opacity: 0; }
+  }
+  @keyframes koko-bubble-slow {
+    0%   { transform: translateY(0) scale(1);   opacity: 0; }
+    8%   { opacity: 0.55; }
+    75%  { opacity: 0.25; }
+    100% { transform: translateY(-105vh) scale(0.2); opacity: 0; }
+  }
+  @keyframes koko-bubble-drift {
+    0%   { transform: translateY(0) translateX(0) scale(1);   opacity: 0; }
+    10%  { opacity: 0.5; }
+    70%  { opacity: 0.2; }
+    100% { transform: translateY(-105vh) translateX(30px) scale(0.15); opacity: 0; }
+  }
+  html[data-theme="kokomi"] .bubble-layer {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+  html[data-theme="kokomi"] .bubble-g {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 50%;
+  }
+  /* 组1：左侧小气泡群 — 快速上浮 */
+  html[data-theme="kokomi"] .bubble-fast {
+    width: 14px; height: 14px;
+    left: 5%;
+    bottom: -15px;
+    background: rgba(255, 255, 255, 0.22);
+    animation: koko-bubble-fast 11s linear 0s infinite;
+    box-shadow:
+       0  80px  0 -2px rgba(255,255,255,0.10),
+     250 180px  0 -5px rgba(255,255,255,0.07),
+     100 320px  0 -1px rgba(255,255,255,0.12),
+     300 450px  0 -4px rgba(255,255,255,0.06),
+     180 600px  0 -3px rgba(177,159,251,0.09),
+      50 780px  0 -2px rgba(255,255,255,0.08),
+     200 920px  0 -6px rgba(255,255,255,0.05);
+  }
+  /* 组2：右侧大气泡群 — 慢速上浮 */
+  html[data-theme="kokomi"] .bubble-slow {
+    width: 22px; height: 22px;
+    left: 75%;
+    bottom: -25px;
+    background: rgba(255, 255, 255, 0.15);
+    animation: koko-bubble-slow 18s linear 2s infinite;
+    box-shadow:
+       0 120px  0 -6px rgba(255,255,255,0.08),
+    -180 280px  0 -3px rgba(177,159,251,0.10),
+     150 400px  0 -8px rgba(255,255,255,0.06),
+     -80 580px  0 -4px rgba(255,255,255,0.09),
+     100 750px  0 -2px rgba(242,156,178,0.07),
+     -50 900px  0 -7px rgba(255,255,255,0.05),
+     200 1050px 0 -5px rgba(177,159,251,0.06);
+  }
+  /* 组3：中部飘移气泡群 — 横向漂移 */
+  html[data-theme="kokomi"] .bubble-drift {
+    width: 10px; height: 10px;
+    left: 40%;
+    bottom: -10px;
+    background: rgba(255, 255, 255, 0.18);
+    animation: koko-bubble-drift 22s linear 5s infinite;
+    box-shadow:
+       0  60px  0 -3px rgba(255,255,255,0.08),
+     120 200px  0 -2px rgba(255,255,255,0.06),
+     -80 350px  0 -4px rgba(177,159,251,0.07),
+      60 500px  0 -1px rgba(255,255,255,0.10),
+    -100 650px  0 -5px rgba(255,255,255,0.05),
+     150 800px  0 -2px rgba(242,156,178,0.08);
+  }
+  /* 组4：散布微小泡 — 最慢 */
+  html[data-theme="kokomi"] .bubble-tiny {
+    width: 6px; height: 6px;
+    left: 15%;
+    bottom: -8px;
+    background: rgba(255, 255, 255, 0.10);
+    animation: koko-bubble-slow 25s linear 8s infinite;
+    box-shadow:
+       0  90px  0 -1px rgba(255,255,255,0.06),
+     300 220px  0 -2px rgba(255,255,255,0.05),
+     180 380px  0 -1px rgba(177,159,251,0.07),
+     400 520px  0 -3px rgba(255,255,255,0.04),
+      80 680px  0 -1px rgba(255,255,255,0.06),
+     250 850px  0 -2px rgba(242,156,178,0.05);
+  }
+  /* 气泡层不遮挡交互 */
+  html[data-theme="kokomi"] .header,
+  html[data-theme="kokomi"] .msg-area,
+  html[data-theme="kokomi"] .input-area {
+    position: relative;
+    z-index: 1;
+  }
+  html[data-theme="kokomi"] .modal-overlay {
+    z-index: 100;
+  }
+
+  /* ── Firefly 火焰呼吸脉动动画 ──────────────────────────────── */
+  @keyframes firefly-pulse {
+    0%, 100% {
+      box-shadow:
+        0 0 8px  rgba(255, 94, 58, 0.3),
+        0 0 0px  rgba(255, 191, 0, 0);
+      transform: skewX(-6deg) scale(1);
+    }
+    50% {
+      box-shadow:
+        0 0 20px rgba(255, 94, 58, 0.8),
+        0 0 40px rgba(255, 191, 0, 0.4);
+      transform: skewX(-6deg) scale(1.06);
+    }
+  }
+  html[data-theme="firefly"] .btn-send {
+    animation: firefly-pulse 2s ease-in-out infinite;
+  }
+  /* 悬停期间暂停脉动，悬停效果更醒目 */
+  html[data-theme="firefly"] .btn-send:hover {
+    animation: none;
+    filter: brightness(1.2);
+    box-shadow:
+      0 0 30px rgba(255, 94, 58, 0.9),
+      0 0 60px rgba(255, 191, 0, 0.5);
+  }
+
+  /* ── Furina 芙宁娜 · 欧庇克莱歌剧院 ────────────────────────── */
+  html[data-theme="furina"] {
+    --cn-paper:       #120B0B;
+    --cn-bubble:      #1C1212;
+    --cn-ink:         #E2E8F0;
+    --cn-ink-light:   #9CA3AF;
+    --cn-ink-faint:   #6B7280;
+    --cn-red:         #D9B36C;
+    --cn-red-hover:   #C4A058;
+    --cn-red-light:   rgba(217, 179, 108, 0.12);
+    --cn-gold:        #E6C57E;
+    --cn-wood:        rgba(234, 236, 239, 0.2);
+    --cn-overlay:     rgba(0, 0, 0, 0.7);
+  }
+  html[data-theme="furina"] {
+    background-color: #120B0B;
+    background-image:
+      radial-gradient(circle 900px at top center, rgba(255, 235, 190, 0.15) 0%, rgba(255, 250, 230, 0.03) 50%, rgba(18, 11, 11, 0.7) 100%),
+      linear-gradient(135deg, rgba(18, 11, 11, 0.45), rgba(18, 11, 11, 0.25)),
+      url('/style/furina/furina.png');
+    background-size: cover;
+    background-attachment: fixed;
+  }
+  html[data-theme="furina"] body {
+    background: none;
+    font-family: 'Times New Roman', 'PingFang SC', 'Noto Serif SC', serif;
+  }
+  html[data-theme="furina"] .header {
+    background: rgba(20, 15, 15, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 235, 190, 0.12);
+    box-shadow: 0 0 30px rgba(255, 235, 190, 0.03);
+  }
+  html[data-theme="furina"] .header h1 { color: var(--cn-ink); text-shadow: none; }
+
+  /* [我方·白芙] 浅蓝白渐变 + 金色镶边 + 星轨 */
+  html[data-theme="furina"] .msg.self {
+    background: linear-gradient(135deg, #F0F6FC 0%, #DCE8F5 100%);
+    border: 1.5px solid #D9B36C;
+    border-radius: 16px 16px 2px 16px;
+    color: #1A335B;
+    box-shadow: 0 4px 15px rgba(59, 98, 155, 0.15), inset 0 1px 0 #FFFFFF;
+    position: relative;
+  }
+  html[data-theme="furina"] .msg.self::before {
+    content: "✦";
+    position: absolute;
+    top: -8px;
+    right: 15px;
+    color: #D9B36C;
+    font-size: 14px;
+    text-shadow: 0 0 5px rgba(217, 179, 108, 0.8);
+  }
+
+  /* [对方·黑芙] 水质感礼服蓝 + 银白冷光 + 蕾丝袜边 */
+  html[data-theme="furina"] .msg.other {
+    background: linear-gradient(135deg, rgba(42, 82, 132, 0.85) 0%, rgba(30, 52, 85, 0.88) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(234, 236, 239, 0.3);
+    border-radius: 16px 16px 16px 2px;
+    color: #EAECEF;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3), inset 0 0 8px rgba(234, 236, 239, 0.08);
+    position: relative;
+  }
+  html[data-theme="furina"] .msg.other::after {
+    content: "";
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 4px;
+    background-image: repeating-linear-gradient(45deg,
+      rgba(234, 236, 239, 0.2) 0px, rgba(234, 236, 239, 0.2) 1px,
+      transparent 1px, transparent 4px);
+    border-top: 1px dashed rgba(234, 236, 239, 0.3);
+  }
+
+  /* 白芙文本 */ html[data-theme="furina"] .msg.self .msg-content,
+  html[data-theme="furina"] .msg.self .msg-header { color: #1A335B; }
+  html[data-theme="furina"] .msg.self .msg-time { color: #7A8FA5; }
+  html[data-theme="furina"] .msg.self .msg-file-name { color: #1A335B; }
+  /* 黑芙文本 */ html[data-theme="furina"] .msg.other .msg-content,
+  html[data-theme="furina"] .msg.other .msg-header { color: #EAECEF; }
+  html[data-theme="furina"] .msg.other .msg-time { color: #8E9AAF; }
+  html[data-theme="furina"] .msg.other .msg-file-name { color: #EAECEF; }
+  html[data-theme="furina"] .msg.other .msg-file-size { color: #8E9AAF; }
+
+  /* IP 标签 */ html[data-theme="furina"] .msg.self .msg-ip {
+    background: rgba(26, 51, 91, 0.08); border-left: 3px solid #D9B36C;
+    color: #1A335B; border-radius: 2px; font-weight: 700;
+    padding: 2px 8px; border-top: none; border-right: none; border-bottom: none;
+  }
+  html[data-theme="furina"] .msg.other .msg-ip {
+    background: rgba(234, 236, 239, 0.08); border-left: 3px solid #D9B36C;
+    color: #EAECEF; border-radius: 2px; font-weight: 700;
+    padding: 2px 8px; border-top: none; border-right: none; border-bottom: none;
+  }
+
+  /* 发送按钮 */ html[data-theme="furina"] .btn-send {
+    background: #1C2E4A; color: #E6C57E;
+    border: 1px solid #D9B36C; border-radius: 4px; box-shadow: none;
+  }
+  html[data-theme="furina"] .btn-send:hover {
+    background: #D9B36C; color: #120B0B;
+    box-shadow: 0 0 15px rgba(217, 179, 108, 0.6); transform: scale(1.02);
+  }
+
+  html[data-theme="furina"] .input-area { background: transparent; border-top: 1px solid rgba(255, 235, 190, 0.08); }
+  html[data-theme="furina"] .input-area textarea {
+    background: rgba(20, 15, 15, 0.7); backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 235, 190, 0.15); border-radius: 4px; color: #E2E8F0;
+  }
+  html[data-theme="furina"] .input-area textarea:focus {
+    border-color: #D9B36C; background: rgba(20, 15, 15, 0.85);
+    box-shadow: 0 0 10px rgba(217, 179, 108, 0.1);
+  }
+  html[data-theme="furina"] .input-area textarea::placeholder { color: #6B7280; }
+
+  html[data-theme="furina"] .btn-download {
+    background: transparent; color: #D9B36C; border: 1px solid #D9B36C; border-radius: 4px;
+  }
+  html[data-theme="furina"] .btn-download:hover {
+    background: #D9B36C; color: #120B0B; box-shadow: 0 0 10px rgba(217, 179, 108, 0.4);
+  }
+  html[data-theme="furina"] .msg.other .btn-download {
+    color: rgba(234, 236, 239, 0.8); border: 1px solid rgba(234, 236, 239, 0.3);
+  }
+  html[data-theme="furina"] .msg.other .btn-download:hover {
+    background: #D9B36C; color: #120B0B; border-color: #D9B36C;
+  }
+
+  html[data-theme="furina"] .btn-icon {
+    background: rgba(20, 15, 15, 0.6); border: 1px solid rgba(255, 235, 190, 0.1);
+    color: #D9B36C;
+  }
+  html[data-theme="furina"] .btn-icon:hover {
+    background: #D9B36C; color: #120B0B; border-color: #D9B36C;
+  }
+
+  html[data-theme="furina"] #pageTitle {
+    background: linear-gradient(135deg, #D9B36C, #E6C57E);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+
+  /* User features */
+  .name-input { width: 90px; padding: 3px 6px; border: 1px solid var(--cn-wood); background: var(--cn-bubble); color: var(--cn-ink); border-radius: 2px; font-size: 11px; font-family: inherit; outline: none; }
+  .name-input:focus { border-color: var(--cn-red); }
+  .btn-name-set { padding: 3px 6px; border: 1px solid var(--cn-wood); background: transparent; color: var(--cn-ink-light); cursor: pointer; border-radius: 2px; font-size: 11px; font-family: inherit; line-height: 1; }
+  .btn-name-set:hover { border-color: var(--cn-red); color: var(--cn-red); }
+  .btn-recall { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border: none; background: transparent; color: var(--cn-ink-faint); cursor: pointer; opacity: 0; transition: opacity 0.15s; font-size: 12px; line-height: 20px; text-align: center; padding: 0; border-radius: 2px; z-index: 2; }
+  .msg:hover .btn-recall { opacity: 0.6; }
+  .btn-recall:hover { opacity: 1 !important; color: var(--cn-red); }
+  .btn-clear { padding: 3px 6px; border: 1px solid var(--cn-wood); background: transparent; color: var(--cn-ink-faint); cursor: pointer; border-radius: 2px; font-size: 11px; font-family: inherit; line-height: 1; }
+  .btn-clear:hover { border-color: var(--cn-red); color: var(--cn-red); }
+  .btn-clear.confirming { background: var(--cn-red); color: var(--cn-bubble); border-color: var(--cn-red); }
+  .filter-tag { padding: 2px 8px; border: 1px solid var(--cn-wood); background: transparent; color: var(--cn-ink-light); cursor: pointer; border-radius: 2px; font-size: 11px; font-family: inherit; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  .filter-tag:hover { border-color: var(--cn-red); color: var(--cn-red); }
+  .filter-tag.active { background: var(--cn-red-light); border-color: var(--cn-red); color: var(--cn-red); }
+
+/* ── Mobile adaptations ──────────────────────────────────── */
+@media (max-width: 768px) {
+  body { width: 100%; max-width: 100%; }
+  
+  .header {
+    flex-wrap: wrap; gap: 6px; padding: 8px 10px;
+  }
+  .header h1 { font-size: 16px; letter-spacing: 2px; min-width: 100%; }
+  .header h1 svg { width: 18px; height: 18px; }
+  .server-url { display: none; }
+  
+  .name-input { width: 60px; font-size: 10px; }
+  .btn-name-set, .btn-clear { font-size: 10px; padding: 2px 4px; }
+  .theme-select { font-size: 10px; padding: 2px 4px; max-width: 80px; }
+  #filterSelect { max-width: 80px !important; }
+  
+  .msg-area { padding: 12px; gap: 10px; }
+  .msg { max-width: 88%; padding: 12px 14px; }
+  .msg-content { font-size: 17px; }
+  .msg-ip { font-size: 11px; }
+  .msg-time { font-size: 11px; }
+  
+  .input-area { padding: 8px 10px; gap: 6px; }
+  .input-area textarea { font-size: 14px; padding: 10px 12px; min-height: 40px; }
+  .btn-send { padding: 0 16px; height: 36px; font-size: 13px; }
+  .btn-icon { width: 36px; height: 36px; }
+  .btn-icon svg { width: 18px; height: 18px; }
+  
+  .modal { width: 94%; padding: 20px; }
+  .drop-zone { padding: 24px 16px; }
+  
+  .toast { font-size: 12px; padding: 8px 16px; bottom: 70px; }
+}
+
+@media (max-width: 480px) {
+  .header h1 { font-size: 14px; }
+  .header h1 svg { width: 16px; height: 16px; }
+  #pageTitle { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+  #filterSelect { max-width: 60px !important; }
+  .name-input { width: 50px; }
+  
+  .msg { max-width: 92%; padding: 10px 12px; }
+  .msg-content { font-size: 15px; }
+  .msg-header { flex-wrap: wrap; gap: 4px; }
+  
+  .input-area textarea { font-size: 13px; }
+  .btn-send { padding: 0 12px; font-size: 12px; }
+}
