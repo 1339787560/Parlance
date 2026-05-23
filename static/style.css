@@ -1095,6 +1095,424 @@
   }
 
 
+  /* ── Hysilens 海瑟音 · 深海潮汐 ──────────────────────── */
+  html[data-theme="hysilens"] {
+    --cn-paper:       #0E1826;
+    --cn-bubble:      rgba(14, 24, 38, 0.75);
+    --cn-ink:         #E6F3FF;
+    --cn-ink-light:   #A3C6D6;
+    --cn-ink-faint:   #6B8A9E;
+    --cn-red:         #D12E6B;
+    --cn-red-hover:   #E91E63;
+    --cn-red-light:   rgba(209, 46, 107, 0.12);
+    --cn-gold:        #70C3FC;
+    --cn-wood:        rgba(163, 198, 214, 0.2);
+    --cn-overlay:     rgba(14, 24, 38, 0.7);
+  }
+  html[data-theme="hysilens"] {
+    background:
+      radial-gradient(ellipse 80% 35% at 50% 0%, rgba(112, 195, 252, 0.12) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 30% at 10% 100%, rgba(209, 46, 107, 0.10) 0%, transparent 70%),
+      linear-gradient(135deg, rgba(14, 24, 38, 0.4), rgba(45, 15, 63, 0.3), rgba(21, 42, 66, 0.4)),
+      url('/style/Hysilens/Hysilens.jpg');
+    background-size: cover;
+    background-attachment: fixed;
+  }
+  html[data-theme="hysilens"] body {
+    background: none;
+    font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  html[data-theme="hysilens"] .header {
+    background: rgba(14, 24, 38, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(163, 198, 214, 0.15);
+  }
+  html[data-theme="hysilens"] .header h1 {
+    color: var(--cn-ink);
+    text-shadow: none;
+  }
+
+  /* [我方] 高透明水质感气泡 */
+  html[data-theme="hysilens"] .msg.self {
+    background: linear-gradient(135deg, rgba(112, 195, 252, 0.35) 0%, rgba(14, 24, 38, 0.75) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(163, 198, 214, 0.5);
+    border-radius: 16px 16px 2px 16px;
+    color: #FFFFFF;
+    box-shadow:
+      inset 0 0 12px rgba(255, 255, 255, 0.25),
+      0 4px 15px rgba(14, 24, 38, 0.4);
+    position: relative;
+  }
+  html[data-theme="hysilens"] .msg.self::after {
+    content: "";
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    width: 6px;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+  }
+
+  /* [对方] 洋红深蓝渐变气泡 */
+  html[data-theme="hysilens"] .msg.other {
+    background: linear-gradient(135deg, rgba(209, 46, 107, 0.85) 0%, rgba(14, 24, 38, 0.9) 100%);
+    border: 1px solid rgba(209, 46, 107, 0.4);
+    border-radius: 2px 16px 16px 16px;
+    color: #EBF5FA;
+    box-shadow: 0 4px 15px rgba(45, 15, 63, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    position: relative;
+  }
+  html[data-theme="hysilens"] .msg.other::before {
+    content: "";
+    position: absolute;
+    top: 15px;
+    left: -4px;
+    width: 3px;
+    height: 16px;
+    background: #70C3FC;
+    border-radius: 2px;
+  }
+
+  /* 我方文本 */
+  html[data-theme="hysilens"] .msg.self .msg-content,
+  html[data-theme="hysilens"] .msg.self .msg-header {
+    color: #FFFFFF;
+  }
+  html[data-theme="hysilens"] .msg.self .msg-time {
+    color: rgba(163, 198, 214, 0.7);
+  }
+  html[data-theme="hysilens"] .msg.self .msg-file-name {
+    color: #FFFFFF;
+  }
+
+  /* 对方文本 */
+  html[data-theme="hysilens"] .msg.other .msg-content,
+  html[data-theme="hysilens"] .msg.other .msg-header {
+    color: #EBF5FA;
+  }
+  html[data-theme="hysilens"] .msg.other .msg-time {
+    color: rgba(163, 198, 214, 0.6);
+  }
+  html[data-theme="hysilens"] .msg.other .msg-file-name {
+    color: #EBF5FA;
+  }
+  html[data-theme="hysilens"] .msg.other .msg-file-size {
+    color: rgba(163, 198, 214, 0.6);
+  }
+
+  /* IP 标签 */
+  html[data-theme="hysilens"] .msg.self .msg-ip {
+    background: rgba(255, 255, 255, 0.08);
+    border-left: 3px solid rgba(112, 195, 252, 0.6);
+    color: #FFFFFF;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+  html[data-theme="hysilens"] .msg.other .msg-ip {
+    background: rgba(235, 245, 250, 0.08);
+    border-left: 3px solid #D12E6B;
+    color: #EBF5FA;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+
+  /* 下载按钮 */
+  html[data-theme="hysilens"] .msg.other .btn-download {
+    background: transparent;
+    color: #70C3FC;
+    border: 1px solid rgba(112, 195, 252, 0.4);
+  }
+  html[data-theme="hysilens"] .msg.other .btn-download:hover {
+    background: rgba(112, 195, 252, 0.15);
+    border-color: #70C3FC;
+    color: #FFFFFF;
+    box-shadow: 0 0 10px rgba(112, 195, 252, 0.3);
+  }
+  html[data-theme="hysilens"] .msg.self .btn-download {
+    background: transparent;
+    color: #A3C6D6;
+    border: 1px solid rgba(163, 198, 214, 0.4);
+  }
+  html[data-theme="hysilens"] .msg.self .btn-download:hover {
+    background: rgba(163, 198, 214, 0.15);
+    border-color: #A3C6D6;
+    color: #FFFFFF;
+  }
+
+  /* 输入区 */
+  html[data-theme="hysilens"] .input-area {
+    background: transparent;
+    border-top: 1px solid rgba(163, 198, 214, 0.1);
+  }
+  html[data-theme="hysilens"] .input-area textarea {
+    background: rgba(14, 24, 38, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(163, 198, 214, 0.3);
+    border-radius: 8px;
+    color: #FFFFFF;
+  }
+  html[data-theme="hysilens"] .input-area textarea:focus {
+    border-color: #70C3FC;
+    box-shadow: 0 0 10px rgba(112, 195, 252, 0.3);
+  }
+  html[data-theme="hysilens"] .input-area textarea::placeholder {
+    color: #6B8A9E;
+  }
+
+  /* 发送按钮 */
+  html[data-theme="hysilens"] .btn-send {
+    background: #D12E6B;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    box-shadow: 0 4px 10px rgba(209, 46, 107, 0.4);
+  }
+  html[data-theme="hysilens"] .btn-send:hover {
+    background: #E91E63;
+    box-shadow: 0 0 15px rgba(209, 46, 107, 0.7);
+    transform: translateY(-1px);
+  }
+
+  /* 图标按钮 */
+  html[data-theme="hysilens"] .btn-icon {
+    background: rgba(14, 24, 38, 0.5);
+    border: 1px solid rgba(163, 198, 214, 0.2);
+    color: #A3C6D6;
+  }
+  html[data-theme="hysilens"] .btn-icon:hover {
+    background: rgba(112, 195, 252, 0.15);
+    border-color: #70C3FC;
+    color: #70C3FC;
+  }
+
+  /* 标题 */
+  html[data-theme="hysilens"] #pageTitle {
+    background: linear-gradient(135deg, #D12E6B, #70C3FC);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* ── Genius Club 天才俱乐部 · 智识星空 & 梅染青花 ────── */
+  html[data-theme="geniusclub"] {
+    --cn-paper:       #0F121F;
+    --cn-bubble:      rgba(20, 26, 41, 0.9);
+    --cn-ink:         #F3EEF9;
+    --cn-ink-light:   #D3B6F3;
+    --cn-ink-faint:   #8A7A9A;
+    --cn-red:         #8A4FFF;
+    --cn-red-hover:   #7A3FEF;
+    --cn-red-light:   rgba(138, 79, 255, 0.12);
+    --cn-gold:        #E5C17B;
+    --cn-wood:        rgba(211, 182, 243, 0.15);
+    --cn-overlay:     rgba(15, 18, 31, 0.7);
+  }
+  html[data-theme="geniusclub"] {
+    background:
+      radial-gradient(ellipse 70% 40% at 50% 0%, rgba(138, 79, 255, 0.08) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 25% at 80% 100%, rgba(229, 193, 123, 0.06) 0%, transparent 60%),
+      linear-gradient(135deg, rgba(15, 18, 31, 0.5), rgba(34, 18, 48, 0.4)),
+      url('/style/geniusclub/geniusclub.png');
+    background-size: cover;
+    background-attachment: fixed;
+  }
+  html[data-theme="geniusclub"] body {
+    background: none;
+    font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  html[data-theme="geniusclub"] .header {
+    background: rgba(15, 18, 31, 0.65);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(211, 182, 243, 0.12);
+  }
+  html[data-theme="geniusclub"] .header h1 {
+    color: var(--cn-ink);
+    text-shadow: none;
+  }
+
+  /* [我方·大黑塔] 魔女丝绒质感 + 紫罗兰星光 */
+  html[data-theme="geniusclub"] .msg.self {
+    background: linear-gradient(135deg, rgba(20, 26, 41, 0.9) 0%, rgba(58, 21, 78, 0.8) 100%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1.5px solid #8A4FFF;
+    border-radius: 16px 16px 2px 16px;
+    color: #F3EEF9;
+    box-shadow: 0 4px 20px rgba(138, 79, 255, 0.2),
+                inset 0 0 10px rgba(211, 182, 243, 0.15);
+    position: relative;
+  }
+  html[data-theme="geniusclub"] .msg.self::before {
+    content: "❖";
+    position: absolute;
+    top: -8px;
+    right: 15px;
+    color: #D3B6F3;
+    font-size: 12px;
+    text-shadow: 0 0 8px #8A4FFF;
+  }
+
+  /* [对方·阮梅] 深青丝绸质感 + 梅花金丝 */
+  html[data-theme="geniusclub"] .msg.other {
+    background: rgba(19, 56, 53, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #E5C17B;
+    border-radius: 12px;
+    color: #F4EFEB;
+    box-shadow: 0 4px 15px rgba(191, 48, 111, 0.15),
+                inset 0 0 8px rgba(229, 193, 123, 0.1);
+    position: relative;
+  }
+  html[data-theme="geniusclub"] .msg.other::after {
+    content: "✿";
+    position: absolute;
+    top: 6px;
+    left: -8px;
+    color: #BF306F;
+    font-size: 14px;
+    text-shadow: 0 0 6px #BF306F;
+  }
+
+  /* 我方文本 */
+  html[data-theme="geniusclub"] .msg.self .msg-content,
+  html[data-theme="geniusclub"] .msg.self .msg-header {
+    color: #F3EEF9;
+  }
+  html[data-theme="geniusclub"] .msg.self .msg-time {
+    color: rgba(211, 182, 243, 0.6);
+  }
+  html[data-theme="geniusclub"] .msg.self .msg-file-name {
+    color: #F3EEF9;
+  }
+  html[data-theme="geniusclub"] .msg.self .msg-file-size {
+    color: rgba(211, 182, 243, 0.5);
+  }
+
+  /* 对方文本 */
+  html[data-theme="geniusclub"] .msg.other .msg-content,
+  html[data-theme="geniusclub"] .msg.other .msg-header {
+    color: #F4EFEB;
+  }
+  html[data-theme="geniusclub"] .msg.other .msg-time {
+    color: rgba(229, 193, 123, 0.6);
+  }
+  html[data-theme="geniusclub"] .msg.other .msg-file-name {
+    color: #F4EFEB;
+  }
+  html[data-theme="geniusclub"] .msg.other .msg-file-size {
+    color: rgba(229, 193, 123, 0.5);
+  }
+
+  /* IP 标签 */
+  html[data-theme="geniusclub"] .msg.self .msg-ip {
+    background: rgba(243, 238, 249, 0.08);
+    border-left: 3px solid #8A4FFF;
+    color: #F3EEF9;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+  html[data-theme="geniusclub"] .msg.other .msg-ip {
+    background: rgba(244, 239, 235, 0.08);
+    border-left: 3px solid #E5C17B;
+    color: #F4EFEB;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+
+  /* 下载按钮 */
+  html[data-theme="geniusclub"] .msg.self .btn-download {
+    background: transparent;
+    color: #D3B6F3;
+    border: 1px solid rgba(211, 182, 243, 0.4);
+  }
+  html[data-theme="geniusclub"] .msg.self .btn-download:hover {
+    background: rgba(138, 79, 255, 0.2);
+    border-color: #8A4FFF;
+    color: #FFFFFF;
+    box-shadow: 0 0 12px rgba(138, 79, 255, 0.3);
+  }
+  html[data-theme="geniusclub"] .msg.other .btn-download {
+    background: transparent;
+    color: #E5C17B;
+    border: 1px solid rgba(229, 193, 123, 0.4);
+  }
+  html[data-theme="geniusclub"] .msg.other .btn-download:hover {
+    background: rgba(191, 48, 111, 0.2);
+    border-color: #BF306F;
+    color: #FFFFFF;
+    box-shadow: 0 0 10px rgba(191, 48, 111, 0.3);
+  }
+
+  /* 输入区 */
+  html[data-theme="geniusclub"] .input-area {
+    background: transparent;
+    border-top: 1px solid rgba(211, 182, 243, 0.08);
+  }
+  html[data-theme="geniusclub"] .input-area textarea {
+    background: rgba(15, 18, 31, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(211, 182, 243, 0.2);
+    border-radius: 8px;
+    color: #F3EEF9;
+  }
+  html[data-theme="geniusclub"] .input-area textarea:focus {
+    border-color: #8A4FFF;
+    box-shadow: 0 0 10px rgba(138, 79, 255, 0.2);
+  }
+  html[data-theme="geniusclub"] .input-area textarea::placeholder {
+    color: #8A7A9A;
+  }
+
+  /* 发送按钮 */
+  html[data-theme="geniusclub"] .btn-send {
+    background: #8A4FFF;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 20px;
+    box-shadow: 0 4px 12px rgba(138, 79, 255, 0.4);
+  }
+  html[data-theme="geniusclub"] .btn-send:hover {
+    background: #D3B6F3;
+    color: #3A154E;
+    box-shadow: 0 0 15px #D3B6F3;
+  }
+
+  /* 图标按钮 */
+  html[data-theme="geniusclub"] .btn-icon {
+    background: rgba(15, 18, 31, 0.5);
+    border: 1px solid rgba(211, 182, 243, 0.15);
+    color: #D3B6F3;
+  }
+  html[data-theme="geniusclub"] .btn-icon:hover {
+    background: rgba(138, 79, 255, 0.15);
+    border-color: #8A4FFF;
+    color: #8A4FFF;
+  }
+
+  /* 标题 */
+  html[data-theme="geniusclub"] #pageTitle {
+    background: linear-gradient(135deg, #8A4FFF, #E5C17B);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
   /* User features */
   .name-input { width: 90px; padding: 3px 6px; border: 1px solid var(--cn-wood); background: var(--cn-bubble); color: var(--cn-ink); border-radius: 2px; font-size: 11px; font-family: inherit; outline: none; }
   .name-input:focus { border-color: var(--cn-red); }
