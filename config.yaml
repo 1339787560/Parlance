@@ -1,0 +1,19 @@
+server:
+  host: 192.168.10.28
+  port: 5000
+  upload_dir: ./uploads
+  max_upload_size: 1073741824  # 1GB
+  zip_chunk_size: 67108864     # 64MB chunks for streaming zip
+
+database:
+  path: ./data/chat.db
+
+# Friendship Python services - launched as subprocesses, killed on main shutdown
+friendship_services: []
+  # - name: my-service
+  #   command: python
+  #   args: ["-m", "http.server", "8081"]
+  #   cwd: ./
+  #   env:
+  #     MY_VAR: value
+  #   auto_restart: false
