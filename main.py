@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, Body
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     _friendship_mgr = FriendshipManager(_config.get("friendship_services", []))
     _friendship_mgr.start_all()
 
-    logger.info("Server started — http://%s:%d", svr.get("host", "0.0.0.0"), svr.get("port", 8080))
+    logger.info("Server started \u2014 http://%s:%d", svr.get("host", "0.0.0.0"), svr.get("port", 8080))
     yield
 
     # Shutdown
@@ -91,11 +91,27 @@ if style_dir.exists():
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
     host = request.client.host if request.client else "0.0.0.0"
     return host
+
+
+def _check_origin(request: Request):
+    """Reject cross-origin state-changing requests (CSRF)."""
+    origin = request.headers.get("origin")
+    if origin:
+        host = request.headers.get("host", "")
+        allowed = [f"http://{host}", f"https://{host}"]
+        if origin not in allowed:
+            raise HTTPException(403, "Cross-origin requests not allowed")
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────
@@ -115,15 +131,24 @@ async def get_messages(limit: int = 100, before_id: Optional[int] = None,
 
 
 @app.post("/api/messages/text")
-async def send_text(request: Request, content: str = Form(...), sender: str = Form("")):
+async def send_text(request: Request):
     assert _chat
     ip = get_client_ip(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+    content = (data.get("content") or "").strip()
+    sender = (data.get("sender") or "")
+    if not content:
+        raise HTTPException(400, "Content cannot be empty")
     msg = await _chat.add_text_message(ip, sender, content)
     return msg
 
 
 @app.post("/api/messages/file")
 async def upload_file(request: Request, file: UploadFile, sender: str = Form("")):
+    _check_origin(request)
     assert _chat and _fh
     ip = get_client_ip(request)
     data = await file.read()
@@ -140,7 +165,8 @@ async def upload_file(request: Request, file: UploadFile, sender: str = Form("")
 @app.post("/api/messages/zip")
 async def upload_zip(request: Request, sender: str = Form(""),
                      zip_name: str = Form("files"), files: list[UploadFile] = ...):
-    """Upload multiple files → server creates ZIP."""
+    """Upload multiple files \u2192 server creates ZIP."""
+    _check_origin(request)
     assert _chat and _fh
     ip = get_client_ip(request)
 
@@ -205,9 +231,10 @@ async def get_theme(request: Request):
 
 
 @app.post("/api/theme")
-async def set_theme(request: Request, theme: str = Form(...)):
+async def set_theme(request: Request, data: dict = Body(...)):
     assert _db
     ip = get_client_ip(request)
+    theme = data.get("theme", "")
     _db.set_theme(ip, theme)
     return {"status": "ok", "theme": theme}
 
@@ -221,13 +248,14 @@ async def get_profile(request: Request):
 
 
 @app.post("/api/profile")
-async def set_profile(request: Request, display_name: str = Form(...)):
+async def set_profile(request: Request, data: dict = Body(...)):
     assert _db
     ip = get_client_ip(request)
+    display_name = data.get("display_name", "").strip()[:30]
     _db.set_profile(ip, display_name)
     # Broadcast profile update
-    await _chat.sse.broadcast("profile_update", {"ip": ip, "display_name": display_name.strip()[:30]})
-    return {"status": "ok", "display_name": display_name.strip()[:30]}
+    await _chat.sse.broadcast("profile_update", {"ip": ip, "display_name": display_name})
+    return {"status": "ok", "display_name": display_name}
 
 
 @app.get("/api/users")
@@ -258,11 +286,16 @@ async def delete_message(msg_id: int, request: Request):
 
 @app.delete("/api/messages")
 async def clear_all_messages(request: Request):
-    """Clear ALL messages and uploaded files. Requires confirm=true."""
+    """Clear ALL messages and uploaded files. Requires confirm=true and active user."""
     assert _db and _fh
     confirm = request.query_params.get("confirm", "")
     if confirm != "true":
         raise HTTPException(400, "Must confirm with ?confirm=true")
+    ip = get_client_ip(request)
+    # Require requester to be an active user (has sent at least one message)
+    own = _db.get_messages(limit=1, sender_ip=ip)
+    if not own:
+        raise HTTPException(403, "Must be an active user to clear all messages")
     files = _db.clear_all_messages()
     # Delete associated files from database records
     for rel_path in files:
@@ -287,7 +320,7 @@ async def health():
 
 # ── Entry point ────────────────────────────────────────────────────────────
 def main():
-    # Load config here too — lifespan runs when uvicorn imports the module
+    # Load config here too \u2014 lifespan runs when uvicorn imports the module
     cfg = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8")) if Path("config.yaml").exists() else {}
     svr = cfg.get("server", {})
     host = svr.get("host", "0.0.0.0")

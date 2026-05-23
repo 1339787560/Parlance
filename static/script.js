@@ -254,16 +254,20 @@
 
   // ── Send message ───────────────────────────────────────────────────────
   async function sendText(text) {
-    if (!text.trim()) return;
-    const fd = new FormData();
-    fd.set('content', text.trim());
-    fd.set('sender', '');
+    if (!text || !text.trim()) return;
+    const payload = JSON.stringify({ content: text.trim(), sender: '' });
     try {
-      await fetchJSON(MSG_API + '/text', { method: 'POST', body: fd });
+      await fetchJSON(MSG_API + '/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload
+      });
       msgInput.value = '';
       msgInput.style.height = 'auto';
     } catch (e) {
-      showToast('发送失败: ' + e.message);
+      const detail = e.message;
+      const match = detail.match(/"msg":"([^"]+)"/);
+      showToast('发送失败: ' + (match ? match[1] : detail));
     }
   }
 
@@ -440,7 +444,7 @@
       item.innerHTML = `
         <span class="name">${escapeHtml(f.name)}</span>
         <span class="size">${formatSize(f.size)}</span>
-        <span class="remove" data-idx="${i}">✕</span>`;
+        <span class="remove" data-idx="${i}">\u2715</span>`;
       item.querySelector('.remove').addEventListener('click', () => {
         zipFiles.splice(i, 1);
         updateZipFileList();
@@ -499,9 +503,11 @@
 
   async function saveThemeToServer(theme) {
     try {
-      const fd = new FormData();
-      fd.set('theme', theme);
-      await fetch('/api/theme', { method: 'POST', body: fd });
+      await fetch('/api/theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme })
+      });
     } catch (_) { /* offline-safe */ }
   }
 
@@ -554,9 +560,11 @@
     const name = nameInput.value.trim();
     if (!name) return;
     try {
-      const fd = new FormData();
-      fd.set('display_name', name);
-      await fetch('/api/profile', { method: 'POST', body: fd });
+      await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: name })
+      });
       showToast('昵称已设置为: ' + name);
       // Refresh user list and re-render
       await refreshUsers();

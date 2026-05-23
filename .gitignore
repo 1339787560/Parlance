@@ -3,4 +3,8 @@ __pycache__
 data/*
 style/*
 uploads/*
+.gstack/
+.env
+.env.*
+.env.local
 %SystemDrive%
