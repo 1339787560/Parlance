@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
     state.chat = ChatManager(state.db, _config)
 
     # Launch managed services
-    state.svc_mgr = ServiceGroupManager(_config.get("services", []))
+    state.svc_mgr = ServiceGroupManager(_config.get("services") or [])
     state.svc_mgr.start_all()
 
     logger.info("Server started — http://%s:%d", svr.get("host", "0.0.0.0"), svr.get("port", 8080))

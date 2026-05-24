@@ -176,11 +176,11 @@ class ManagedService:
 class ServiceGroupManager:
     """Manage group of external services (subprocesses)."""
 
-    def __init__(self, services_config: list):
+    def __init__(self, services_config: Optional[list] = None):
         self.services: List[ManagedService] = []
         self._name_map: Dict[str, ManagedService] = {}
 
-        for cfg in services_config:
+        for cfg in (services_config or []):
             svc = ManagedService(
                 name=cfg.get("name", "unnamed"),
                 command=cfg["command"],
