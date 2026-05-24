@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(Get-ChildItem *)"
+      "Bash(Get-ChildItem *)",
+      "Read(//c/codelib/HttpPhotoServer/src/**)"
     ]
   }
 }

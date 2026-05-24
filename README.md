@@ -1,6 +1,6 @@
 # LAN InfoShare · 兰亭信传
 
-局域网群聊式文件共享服务器，支持多设备实时聊天、文件传输、自定义主题。
+局域网群聊式文件共享服务器，支持多设备实时聊天、文件传输、自定义主题、外部服务托管。
 
 ## 功能
 
@@ -11,6 +11,7 @@
 - **用户筛选** — 按下拉筛选特定用户的发言和文件
 - **多主题切换** — 内置 5 套视觉主题，下拉即切，按 IP 持久化
 - **手机适配** — 响应式布局，支持触摸操作
+- **外部服务托管** — 通过子进程管理启动/停止附属服务（如 HttpPhotoServer）
 
 ## 快速开始
 
@@ -45,6 +46,45 @@ server:
 
 database:
   path: ./data/chat.db
+
+# 托管的外部服务（子进程），随主服务启停
+services:
+  - name: http-photo-server
+    command: python
+    args: ["C:\\codelib\\HttpPhotoServer\\src\\main.py"]
+    cwd: C:\codelib\HttpPhotoServer\src
+    auto_restart: false
+    tags: [media, gallery]
+    enabled: true
+```
+
+### 托管服务字段说明
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `name` | 是 | 服务名称，用作标识 |
+| `command` | 是 | 可执行文件路径 |
+| `args` | 否 | 命令行参数列表 |
+| `cwd` | 否 | 工作目录 |
+| `env` | 否 | 额外环境变量键值对 |
+| `auto_restart` | 否 | 崩溃后自动重启（默认 false） |
+| `tags` | 否 | 标签分类 |
+| `enabled` | 否 | 是否启用（默认 true） |
+| `health_check` | 否 | 健康检查配置 `{url, timeout}` |
+
+## 项目结构
+
+```
+main.py              # 入口：app 创建、lifespan、中间件
+routes.py            # 所有 API 路由
+state.py             # 共享应用状态（db/fh/chat/svc_mgr）
+chat_manager.py      # 聊天逻辑 + SSE 事件管理器
+database.py          # SQLite 封装（消息/主题/昵称）
+file_handler.py      # 文件存储、ZIP 打包、流式下载
+service_manager.py   # 外部服务子进程管理
+config.yaml          # 配置文件
+static/              # 前端资源（index.html / script.js / style.css）
+style/               # 主题背景图片
 ```
 
 ## 主题系统
@@ -96,6 +136,8 @@ html[data-theme="your_theme"] {
 
 ## API 接口
 
+### 聊天相关
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/` | 页面 |
@@ -103,15 +145,47 @@ html[data-theme="your_theme"] {
 | POST | `/api/messages/text` | 发送文本消息 |
 | POST | `/api/messages/file` | 上传文件 |
 | POST | `/api/messages/zip` | 上传多文件打包为 ZIP |
+| POST | `/api/messages/files` | 批量上传多文件 |
 | DELETE | `/api/messages/{id}` | 撤回自己的消息 |
 | DELETE | `/api/messages` | 清空所有消息（需 `?confirm=true`） |
+
+### 文件相关
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | GET | `/api/download/{id}` | 下载文件（支持断点续传） |
+| GET | `/api/download-batch/{id}` | 下载批量文件夹为 ZIP |
+
+### 实时通信
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | GET | `/api/events` | SSE 实时事件推送 |
+
+### 用户与主题
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | GET | `/api/theme` | 获取当前 IP 的主题偏好 |
 | POST | `/api/theme` | 保存主题偏好 |
 | GET | `/api/profile` | 获取当前 IP 的昵称 |
 | POST | `/api/profile` | 设置昵称 |
 | GET | `/api/users` | 获取活跃用户列表 |
+| GET | `/api/whoami` | 获取当前 IP |
+
+### 服务管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/services` | 列出所有托管服务状态 |
+| POST | `/api/services/{name}/start` | 启动服务 |
+| POST | `/api/services/{name}/stop` | 停止服务 |
+| POST | `/api/services/{name}/restart` | 重启服务 |
+
+### 其他
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | GET | `/api/health` | 健康检查 |
 
 ## 技术栈
@@ -121,3 +195,4 @@ html[data-theme="your_theme"] {
 - **存储**：SQLite（消息、主题偏好、用户昵称）
 - **实时**：Server-Sent Events（SSE）
 - **文件流**：aiofiles 异步流式传输，支持 HTTP Range
+- **服务管理**：subprocess 子进程管理，支持进程树清理
