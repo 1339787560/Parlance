@@ -1,6 +1,10 @@
-# LAN InfoShare · 兰亭信传
+# Parlance · 局域网即时通讯与文件共享
 
-局域网群聊式文件共享服务器，支持多设备实时聊天、文件传输、自定义主题、外部服务托管。
+> 在局域网中点亮一个交谈与分享的空间。
+
+Parlance 是一个纯 Python 构建的局域网群聊式文件共享服务器。设备在同一局域网内打开浏览器即可收发消息、传输文件，无需互联网、无需注册账号、无需安装客户端。
+
+---
 
 ## 功能
 
@@ -11,7 +15,6 @@
 - **用户筛选** — 按下拉筛选特定用户的发言和文件
 - **多主题切换** — 内置 5 套视觉主题，下拉即切，按 IP 持久化
 - **手机适配** — 响应式布局，支持触摸操作
-- **外部服务托管** — 通过子进程管理启动/停止附属服务（如 HttpPhotoServer）
 
 ## 快速开始
 
@@ -27,11 +30,11 @@ pip install fastapi uvicorn pyyaml python-multipart aiofiles
 python main.py
 ```
 
-默认地址 `http://192.168.10.28:5000`（可在 `config.yaml` 中修改）。
+默认地址 `http://192.168.10.28:5000`（IP 和端口可在 `config.yaml` 中修改）。
 
 ### 局域网访问
 
-同局域网设备浏览器打开 `http://<你的IP>:5000` 即可。
+同局域网设备打开 `http://<服务端IP>:5000` 即可，无需任何配置。
 
 ## 配置
 
@@ -39,55 +42,18 @@ python main.py
 
 ```yaml
 server:
-  host: 0.0.0.0       # 监听地址
-  port: 5000           # 端口
-  upload_dir: ./uploads # 上传文件存储路径
+  host: 0.0.0.0           # 监听地址，0.0.0.0 代表所有网络接口
+  port: 5000               # 端口
+  upload_dir: ./uploads     # 上传文件存储路径
   max_upload_size: 1073741824  # 单文件上限（默认 1GB）
 
 database:
   path: ./data/chat.db
-
-# 托管的外部服务（子进程），随主服务启停
-services:
-  - name: http-photo-server
-    command: python
-    args: ["C:\\codelib\\HttpPhotoServer\\src\\main.py"]
-    cwd: C:\codelib\HttpPhotoServer\src
-    auto_restart: false
-    tags: [media, gallery]
-    enabled: true
-```
-
-### 托管服务字段说明
-
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `name` | 是 | 服务名称，用作标识 |
-| `command` | 是 | 可执行文件路径 |
-| `args` | 否 | 命令行参数列表 |
-| `cwd` | 否 | 工作目录 |
-| `env` | 否 | 额外环境变量键值对 |
-| `auto_restart` | 否 | 崩溃后自动重启（默认 false） |
-| `tags` | 否 | 标签分类 |
-| `enabled` | 否 | 是否启用（默认 true） |
-| `health_check` | 否 | 健康检查配置 `{url, timeout}` |
-
-## 项目结构
-
-```
-main.py              # 入口：app 创建、lifespan、中间件
-routes.py            # 所有 API 路由
-state.py             # 共享应用状态（db/fh/chat/svc_mgr）
-chat_manager.py      # 聊天逻辑 + SSE 事件管理器
-database.py          # SQLite 封装（消息/主题/昵称）
-file_handler.py      # 文件存储、ZIP 打包、流式下载
-service_manager.py   # 外部服务子进程管理
-config.yaml          # 配置文件
-static/              # 前端资源（index.html / script.js / style.css）
-style/               # 主题背景图片
 ```
 
 ## 主题系统
+
+所有主题通过 CSS 自定义属性实现，`html[data-theme="..."]` 切换，无需加载额外样式文件。
 
 ### 内置主题
 
@@ -98,10 +64,12 @@ style/               # 主题背景图片
 | 珊瑚宫心海 | 原神·珊瑚宫心海 | 深海蓝、珊瑚粉、毛玻璃、气泡动画 |
 | 流萤·萨姆 | 崩铁·流萤装甲 | 萤火绿、装甲灰、红黄火焰、脉动光效 |
 | 芙宁娜·歌剧院 | 原神·芙宁娜 | 暗色舞台、聚光灯、白芙/黑芙双气泡 |
+| 深海潮汐 | 深海潮汐 | 品红、深蓝、水波折射效果 |
+| 天才俱乐部 | 崩铁·天才俱乐部 | 星空智慧、紫金辉光 |
 
 ### 自定义主题
 
-在 `static/style.css` 中添加 `html[data-theme="你的主题名"]` 变量块即可。变量清单：
+在 `static/style.css` 中添加新的 `html[data-theme="你的主题名"]` CSS 变量块。变量清单：
 
 ```css
 html[data-theme="your_theme"] {
@@ -119,20 +87,41 @@ html[data-theme="your_theme"] {
 }
 ```
 
-然后在 `static/script.js` 的 `THEMES` 和 `THEME_NAMES` 数组中添加名称。
+然后在 `static/script.js` 的 `THEMES` 和 `THEME_NAMES` 数组中添加名称和显示名。
 
 如需背景图片，放入 `style/主题名/` 目录，参照已有主题的 CSS 写法添加 `background-image`。
 
-## 壁纸资源
+### 壁纸资源
 
-珊瑚宫心海、流萤·萨姆、芙宁娜·歌剧院 的背景图片下载：
+珊瑚宫心海、流萤·萨姆、芙宁娜·歌剧院三个主题使用了背景图片：
 
 <https://pan.baidu.com/s/5JXkz0LTTf2X13pVF2ij5_A>
 
-下载后将图片放入对应目录：
-- `style/kokomi/kokomi.png`
-- `style/firefly/firefly.png`
-- `style/furina/furina.png`
+下载后按以下路径放置：
+
+```
+style/kokomi/kokomi.png
+style/firefly/firefly.png
+style/furina/furina.png
+```
+
+## 项目结构
+
+```
+.
+├── main.py              # FastAPI 应用入口、路由、中间件
+├── chat_manager.py      # 聊天业务逻辑 + SSE 推送管理
+├── database.py          # SQLite 数据库层（消息、主题、昵称）
+├── file_handler.py      # 文件存储、流式传输、ZIP 打包、Range 支持
+├── friendship.py        # 外部 Python 服务启动管理器
+├── config.yaml          # 服务端配置
+├── requirements.txt     # 依赖
+├── requirements.lock    # 锁定版本依赖
+└── static/
+    ├── index.html       # 单页应用 HTML
+    ├── script.js        # 前端所有交互逻辑（零框架）
+    └── style.css        # 全局样式 + 7 套主题（约 1600 行）
+```
 
 ## API 接口
 
@@ -140,26 +129,14 @@ html[data-theme="your_theme"] {
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/` | 页面 |
-| GET | `/api/messages` | 获取消息列表（支持 `before_id`、`sender_ip` 参数） |
+| GET | `/` | 首页 |
+| GET | `/api/messages` | 获取消息列表（`before_id` 翻页，`sender_ip` 筛选） |
 | POST | `/api/messages/text` | 发送文本消息 |
 | POST | `/api/messages/file` | 上传文件 |
 | POST | `/api/messages/zip` | 上传多文件打包为 ZIP |
-| POST | `/api/messages/files` | 批量上传多文件 |
 | DELETE | `/api/messages/{id}` | 撤回自己的消息 |
 | DELETE | `/api/messages` | 清空所有消息（需 `?confirm=true`） |
-
-### 文件相关
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
 | GET | `/api/download/{id}` | 下载文件（支持断点续传） |
-| GET | `/api/download-batch/{id}` | 下载批量文件夹为 ZIP |
-
-### 实时通信
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
 | GET | `/api/events` | SSE 实时事件推送 |
 
 ### 用户与主题
@@ -171,21 +148,6 @@ html[data-theme="your_theme"] {
 | GET | `/api/profile` | 获取当前 IP 的昵称 |
 | POST | `/api/profile` | 设置昵称 |
 | GET | `/api/users` | 获取活跃用户列表 |
-| GET | `/api/whoami` | 获取当前 IP |
-
-### 服务管理
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/services` | 列出所有托管服务状态 |
-| POST | `/api/services/{name}/start` | 启动服务 |
-| POST | `/api/services/{name}/stop` | 停止服务 |
-| POST | `/api/services/{name}/restart` | 重启服务 |
-
-### 其他
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
 | GET | `/api/health` | 健康检查 |
 
 ## 技术栈
@@ -195,4 +157,3 @@ html[data-theme="your_theme"] {
 - **存储**：SQLite（消息、主题偏好、用户昵称）
 - **实时**：Server-Sent Events（SSE）
 - **文件流**：aiofiles 异步流式传输，支持 HTTP Range
-- **服务管理**：subprocess 子进程管理，支持进程树清理
