@@ -21,6 +21,7 @@ class FileHandler:
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         (self.upload_dir / "files").mkdir(exist_ok=True)
         (self.upload_dir / "zips").mkdir(exist_ok=True)
+        (self.upload_dir / "batch").mkdir(exist_ok=True)
 
     def save_file(self, data: bytes, filename: str) -> Tuple[str, Path]:
         """Save single file. Returns (relative_path, absolute_path)."""
@@ -47,6 +48,83 @@ class FileHandler:
                 zf.writestr(_sanitize(orig_name), data)
 
         return relative, full, display
+
+    def save_batch(self, files_data: List[Tuple[bytes, str]]) -> Tuple[str, str, int, list]:
+        """Save files to a batch folder. Returns (relative_path, display_name, total_size, filenames)."""
+        batch_id = uuid.uuid4().hex[:12]
+        batch_dir = self.upload_dir / "batch" / batch_id
+        batch_dir.mkdir(parents=True, exist_ok=True)
+
+        total_size = 0
+        names = []
+        for data, orig_name in files_data:
+            safe_name = _sanitize(orig_name if orig_name else "unnamed")
+            (batch_dir / safe_name).write_bytes(data)
+            total_size += len(data)
+            names.append(safe_name)
+
+        display_name = f"{names[0]} 等 {len(names)} 个文件"
+        relative = f"batch/{batch_id}"
+        return relative, display_name, total_size, names
+
+    async def stream_batch_as_zip(self, batch_path: Path, request: Request):
+        """Dynamically pack a batch folder into ZIP and stream it."""
+        if not batch_path.exists() or not batch_path.is_dir():
+            raise HTTPException(404, "Batch folder not found")
+
+        files = sorted(batch_path.iterdir())
+        if not files:
+            raise HTTPException(404, "Batch folder is empty")
+
+        zip_filename = batch_path.name  # batch_id
+        content_type = "application/zip"
+
+        # Build the full zip in memory first for simplicity
+        # (batch files are generally small enough)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                if f.is_file():
+                    data = f.read_bytes()
+                    zf.writestr(f.name, data)
+        buf.seek(0)
+        zip_size = buf.getbuffer().nbytes
+
+        range_header = request.headers.get("range")
+        if range_header:
+            try:
+                raw = range_header.strip().split("=")[-1]
+                parts = raw.split("-", 1)
+                start = int(parts[0]) if parts[0] else 0
+                end = int(parts[1]) if len(parts) > 1 and parts[1] else zip_size - 1
+            except (ValueError, IndexError):
+                raise HTTPException(400, "Invalid Range header")
+            if start >= zip_size:
+                raise HTTPException(416, "Range Not Satisfiable")
+            end = min(end, zip_size - 1)
+            length = end - start + 1
+            buf.seek(start)
+            return StreamingResponse(
+                _iter_bytes(buf, length),
+                status_code=206,
+                headers={"Content-Range": f"bytes {start}-{end}/{zip_size}", "Content-Length": str(length),
+                         "Content-Type": content_type, "Accept-Ranges": "bytes",
+                         "Content-Disposition": _content_disposition(f"{zip_filename}.zip"),
+                         "Cache-Control": "no-cache"},
+            )
+
+        buf.seek(0)
+        return StreamingResponse(
+            _iter_bytes(buf, zip_size),
+            status_code=200,
+            headers={
+                "Content-Length": str(zip_size),
+                "Content-Type": content_type,
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": _content_disposition(f"{zip_filename}.zip"),
+                "Cache-Control": "no-cache",
+            },
+        )
 
     async def stream_file(self, path: Path, filename: str, file_size: int, request: Request):
         """Stream file with HTTP Range support for resumable download."""
@@ -138,6 +216,16 @@ async def _iter_file(path: Path, total: int):
             remaining -= len(chunk)
             yield chunk
 
+
+async def _iter_bytes(buf: io.BytesIO, total: int):
+    """Yield bytes from a BytesIO buffer in chunks."""
+    remaining = total
+    while remaining > 0:
+        chunk = buf.read(min(_CHUNK_SIZE, remaining))
+        if not chunk:
+            break
+        remaining -= len(chunk)
+        yield chunk
 
 async def _iter_file_range(path: Path, start: int, length: int):
     """Yield byte range asynchronously."""

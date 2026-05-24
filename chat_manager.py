@@ -95,6 +95,23 @@ class ChatManager:
         await self.sse.broadcast("new_message", msg)
         return msg
 
+    async def add_batch_message(self, ip: str, sender: str, batch_path: str,
+                                 display_name: str, total_size: int,
+                                 file_names: list) -> dict:
+        msg_id = self.db.add_message(
+            device_ip=ip,
+            sender_name=sender,
+            message_type="batch_files",
+            content=",".join(file_names),
+            file_path=batch_path,
+            file_name=display_name,
+            file_size=total_size,
+            file_mime="",
+        )
+        msg = self.db.get_message(msg_id)
+        await self.sse.broadcast("new_message", msg)
+        return msg
+
     async def add_zip_message(self, ip: str, sender: str, file_path: str,
                                file_name: str, file_size: int, file_count: int) -> dict:
         msg_id = self.db.add_message(

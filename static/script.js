@@ -27,6 +27,7 @@
   const dropZone = document.getElementById('dropZone');
   const fileList = document.getElementById('fileList');
   const btnZipCancel = document.getElementById('btnZipCancel');
+  const btnDirectUpload = document.getElementById('btnDirectUpload');
   const btnZipUpload = document.getElementById('btnZipUpload');
   const zipFileInput = document.getElementById('zipFileInput');
   const sseStatus = document.getElementById('sseStatus');
@@ -141,6 +142,18 @@
             <button class="btn-download" data-id="${msg.id}">下载</button>
           </div>`;
         break;
+      case 'batch_files':
+        icon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 7 L22 7"/><rect x="2" y="4" width="20" height="16" rx="1"/><path d="M9 11 L15 11"/><path d="M9 15 L13 15"/></svg>';
+        bodyHtml = `
+          <div class="msg-file">
+            <span class="msg-file-icon">${icon}</span>
+            <div class="msg-file-info">
+              <div class="msg-file-name">${escapeHtml(msg.file_name)}</div>
+              <div class="msg-file-size">${formatSize(msg.file_size)}</div>
+            </div>
+            <button class="btn-download" data-id="${msg.id}" data-batch="1">下载</button>
+          </div>`;
+        break;
       default:
         bodyHtml = `<div class="msg-content">${escapeHtml(msg.content)}</div>`;
     }
@@ -177,10 +190,15 @@
       rerenderMessages();
     });
 
-    // Download handler
+    // Download handler (regular files + batch files, distinguished by data-batch)
     div.querySelector('.btn-download')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      downloadFile(msg.id, msg.file_name);
+      const btn = e.currentTarget;
+      if (btn.dataset.batch) {
+        downloadBatch(msg.id, msg.file_name);
+      } else {
+        downloadFile(msg.id, msg.file_name);
+      }
     });
 
     if (prepend) {
@@ -206,6 +224,15 @@
     const a = document.createElement('a');
     a.href = `${DL_API}/${msgId}`;
     a.download = filename || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function downloadBatch(msgId, filename) {
+    const a = document.createElement('a');
+    a.href = '/api/download-batch/' + msgId;
+    a.download = (filename || 'batch') + '.zip';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -280,6 +307,101 @@
     } catch (e) {
       showToast('上传失败: ' + e.message);
     }
+  }
+
+  // ── Upload progress helpers ──────────────────────────────────────────
+  const progressFill = document.getElementById('progressFill');
+  const progressInfo = document.getElementById('progressInfo');
+  const progressSection = document.getElementById('progressSection');
+
+  function resetProgress() {
+    progressFill.style.width = '0%';
+    progressInfo.textContent = '';
+    uploadSpeed = 0;
+    uploadLastBytes = 0;
+    uploadLastTime = 0;
+    uploadXHR = null;
+  }
+
+  function showProgress(show) {
+    progressSection.style.display = show ? 'block' : 'none';
+  }
+
+  function updateProgress(loaded, total) {
+    const now = Date.now();
+    if (uploadLastTime > 0) {
+      const dt = (now - uploadLastTime) / 1000;
+      if (dt > 0) {
+        const dBytes = loaded - uploadLastBytes;
+        const instantaneous = dBytes / dt;
+        if (instantaneous > 0) {
+          uploadSpeed = uploadSpeed > 0
+            ? (0.3 * instantaneous + 0.7 * uploadSpeed)
+            : instantaneous;
+        }
+      }
+    }
+    uploadLastBytes = loaded;
+    uploadLastTime = now;
+
+    const pct = Math.min(100, Math.round((loaded / total) * 100));
+    progressFill.style.width = pct + '%';
+
+    const speedStr = formatSize(Math.round(uploadSpeed));
+    let remaining = '';
+    if (uploadSpeed > 0 && pct < 100) {
+      const secs = Math.ceil((total - loaded) / uploadSpeed);
+      remaining = secs < 60 ? ' · 剩余 ' + secs + '秒'
+        : ' · 剩余 ' + Math.ceil(secs / 60) + '分钟';
+    }
+
+    progressInfo.textContent = pct + '% · ' + formatSize(loaded) + ' / ' + formatSize(total)
+      + (speedStr ? ' · ' + speedStr + '/s' : '')
+      + remaining;
+  }
+
+  function sendDirectUpload(files) {
+    const fd = new FormData();
+    fd.set('sender', '');
+    for (const f of files) {
+      fd.append('files', f);
+    }
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      uploadXHR = xhr;
+      xhr.open('POST', MSG_API + '/files');
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          updateProgress(e.loaded, e.total);
+        }
+      };
+
+      xhr.onload = () => {
+        uploadXHR = null;
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch (_) {
+            resolve(xhr.responseText);
+          }
+        } else {
+          let errMsg = 'HTTP ' + xhr.status;
+          try {
+            const body = JSON.parse(xhr.responseText);
+            errMsg = body.detail || errMsg;
+          } catch (_) {}
+          reject(new Error(errMsg));
+        }
+      };
+
+      xhr.onerror = () => { uploadXHR = null; reject(new Error('网络错误')); };
+      xhr.ontimeout = () => { uploadXHR = null; reject(new Error('上传超时')); };
+      xhr.onabort = () => { uploadXHR = null; reject(new Error('上传已取消')); };
+      xhr.timeout = 300000;
+      xhr.send(fd);
+    });
   }
 
   async function sendZip(files, name) {
@@ -387,17 +509,33 @@
   // ── ZIP modal ──────────────────────────────────────────────────────────
   let zipFiles = [];
 
+  // Upload progress state
+  let uploadSpeed = 0;
+  let uploadLastBytes = 0;
+  let uploadLastTime = 0;
+  let uploadXHR = null;
+
   btnZip.addEventListener('click', () => {
     zipFiles = [];
-    updateZipFileList();
     zipName.value = '';
+    resetProgress();
+    showProgress(false);
+    updateZipFileList();
     zipModal.classList.add('open');
   });
 
   function closeZipModal() {
+    // Abort any in-flight upload
+    if (uploadXHR) {
+      try { uploadXHR.abort(); } catch (_) {}
+      uploadXHR = null;
+    }
     zipModal.classList.remove('open');
     zipFiles = [];
+    resetProgress();
+    showProgress(false);
     updateZipFileList();
+    btnZipCancel.textContent = '取消';
   }
 
   btnZipCancel.addEventListener('click', closeZipModal);
@@ -425,8 +563,8 @@
   });
 
   // File input for zip modal
-  zipFileInput.addEventListener('change', () => {
-    const files = zipFileInput.files;
+  zipFileInput.addEventListener('change', (e) => {
+    const files = (e.target || zipFileInput).files;
     if (files && files.length > 0) {
       for (const f of files) zipFiles.push(f);
       updateZipFileList();
@@ -451,7 +589,12 @@
       });
       list.appendChild(item);
     }
+    updateButtonState();
+  }
+
+  function updateButtonState() {
     btnZipUpload.disabled = zipFiles.length === 0;
+    btnDirectUpload.disabled = zipFiles.length === 0;
   }
 
   btnZipUpload.addEventListener('click', async () => {
@@ -465,6 +608,32 @@
     } finally {
       btnZipUpload.disabled = false;
       btnZipUpload.textContent = '上传打包';
+    }
+  });
+
+  btnDirectUpload.addEventListener('click', async () => {
+    if (zipFiles.length === 0) return;
+    const totalSize = zipFiles.reduce((s, f) => s + f.size, 0);
+
+    // Disable all controls
+    btnDirectUpload.disabled = true;
+    btnZipUpload.disabled = true;
+    btnZipCancel.textContent = '取消上传';
+
+    // Show progress
+    resetProgress();
+    showProgress(true);
+    updateProgress(0, totalSize);
+
+    try {
+      await sendDirectUpload(zipFiles);
+      showToast('共 ' + zipFiles.length + ' 个文件，直接发送成功');
+      closeZipModal();
+    } catch (e) {
+      showProgress(false);
+      showToast('上传失败: ' + e.message);
+      updateButtonState();
+      btnZipCancel.textContent = '取消';
     }
   });
 
@@ -698,6 +867,12 @@
 
   // ── Init ───────────────────────────────────────────────────────────────
   async function init() {
+    // Get self IP first so recall buttons work for messages loaded after
+    try {
+      const whoami = await fetchJSON('/api/whoami');
+      localStorage.setItem('self_ip', whoami.ip);
+    } catch (_) {}
+
     await loadProfile();
     await refreshUsers();
     await loadMessages();

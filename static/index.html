@@ -80,15 +80,23 @@
 <!-- ZIP upload modal -->
 <div class="modal-overlay" id="zipModal">
   <div class="modal">
-    <h2>打包上传</h2>
-    <input type="text" id="zipName" placeholder="压缩包名称（默认：files）" value="">
+    <h2>上传文件</h2>
+    <input type="text" id="zipName" placeholder="压缩包名称（仅上传打包有效，默认：files）" value="">
     <div class="drop-zone" id="dropZone">
       <p>拖拽文件至此处，或点击选择</p>
     </div>
     <div class="file-list" id="fileList"></div>
+    <!-- Progress section -->
+    <div class="progress-section" id="progressSection" style="display:none">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-info" id="progressInfo">准备上传...</div>
+    </div>
     <div class="modal-actions">
       <button class="btn-cancel" id="btnZipCancel">取消</button>
-      <button class="btn-upload" id="btnZipUpload" disabled>上传打包</button>
+      <button class="btn-upload" id="btnDirectUpload">直接上传</button>
+      <button class="btn-upload" id="btnZipUpload">上传打包</button>
     </div>
   </div>
 </div>
@@ -98,6 +106,6 @@
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
-<script src="/static/script.js"></script>
+<script src="/static/script.js?v=3"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -187,6 +188,30 @@ async def upload_zip(request: Request, sender: str = Form(""),
     return msg
 
 
+@app.post("/api/messages/files")
+async def upload_files(request: Request, sender: str = Form(""),
+                       files: list[UploadFile] = ...):
+    """Upload multiple files as a batch. Saved in one folder, shown as one message."""
+    _check_origin(request)
+    assert _chat and _fh
+    ip = get_client_ip(request)
+
+    if not files:
+        raise HTTPException(400, "No files provided")
+
+    files_data = []
+    for f in files:
+        data = await f.read()
+        files_data.append((data, f.filename or "unnamed"))
+
+    batch_path, display_name, total_size, file_names = _fh.save_batch(files_data)
+    msg = await _chat.add_batch_message(
+        ip, sender, batch_path, display_name, total_size, file_names,
+    )
+    logger.info("Batch upload: %d files (%d bytes) from %s", len(files), total_size, ip)
+    return msg
+
+
 @app.get("/api/download/{msg_id}")
 async def download(msg_id: int, request: Request):
     assert _db and _fh
@@ -200,6 +225,18 @@ async def download(msg_id: int, request: Request):
 
     file_size = file_path.stat().st_size
     return await _fh.stream_file(file_path, msg["file_name"], file_size, request)
+
+
+@app.get("/api/download-batch/{msg_id}")
+async def download_batch(msg_id: int, request: Request):
+    """Download a batch upload folder as a ZIP file."""
+    assert _db and _fh
+    msg = _db.get_message(msg_id)
+    if not msg or msg["message_type"] != "batch_files" or not msg["file_path"]:
+        raise HTTPException(404, "Batch not found")
+
+    batch_dir = Path(_fh.upload_dir) / msg["file_path"]
+    return await _fh.stream_batch_as_zip(batch_dir, request)
 
 
 @app.get("/api/events")
@@ -278,7 +315,10 @@ async def delete_message(msg_id: int, request: Request):
     if msg["file_path"] and _fh:
         file_path = Path(_fh.upload_dir) / msg["file_path"]
         if file_path.exists():
-            file_path.unlink()
+            if file_path.is_dir():
+                shutil.rmtree(file_path)
+            else:
+                file_path.unlink()
     deleted = _db.delete_message(msg_id)
     await _chat.sse.broadcast("message_deleted", {"id": msg_id})
     return {"status": "ok", "deleted": deleted}
@@ -301,9 +341,12 @@ async def clear_all_messages(request: Request):
     for rel_path in files:
         f = Path(_fh.upload_dir) / rel_path
         if f.exists():
-            f.unlink()
+            if f.is_dir():
+                shutil.rmtree(f)
+            else:
+                f.unlink()
     # Also clean up orphaned files in uploads
-    for subdir in ['files', 'zips']:
+    for subdir in ['files', 'zips', 'batch']:
         d = Path(_fh.upload_dir) / subdir
         if d.exists():
             for p in d.iterdir():
