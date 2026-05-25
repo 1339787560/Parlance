@@ -291,7 +291,69 @@ if TqGameLesson:isEnding() then
 
 ---
 
-## 八、UI 教学引导 — 高亮/遮罩/手指动画
+## 八、教程中断与重入 — 进程杀场景
+
+### 问题描述
+
+玩家在教程对局过程中（未到达 CUSTOM GETREWARD/LESSONOVER 阶段）杀掉进程重新进入游戏，会发现：
+1. **教程内胡牌的金币未实际到账** — LessonData 中的金币变化（如结算显示 250000）是客户端本地模拟的假数据，从未写入服务端
+2. **再次进入依然可以触发教程** — 服务端 `lessonstatus` 仍为 1，玩家可以重来一次
+
+### 根本原因
+
+```lua
+-- TqGameLesson.lua:162-172
+function TqGameLesson:rspLessonReward(rawData)
+    self:nextStep()
+    local data = protobuf.decode("tqplayerlesson.RspLessonReward", rawData)
+    if data.status ~= 0 then
+        return
+    end
+    self._data.lessonstatus = 2  -- ← 唯一阻止重新触发的地方
+end
+```
+
+触发链：
+```
+服务器 lessonstatus=1 → isNeedLesson()=true → lessonStart()
+  → 14 阶段模拟对局（金币全在客户端假变）
+    → CUSTOM GETREWARD → reqLessonReward() → 服务器返回 → lessonstatus=2
+      → CUSTOM LESSONOVER → lessonOver()
+         → setIsEnding(true) → roomSkip() 跳真实房间
+```
+
+- `lessonstatus` 从 1→2 的唯一路径是 `rspLessonReward()`，而这位于教程流程末尾
+- 玩家在流程中途杀进程 = `lessonstatus` 永远停在 1 = 下次重进重新触发
+- 这**不是 bug，是设计**：教程对局内的金币变动都是假数据，只有完成教程领取奖励才算数
+
+### LessonData 中的假金币数据
+
+结算阶段的数据完全硬编码，与真实服务端无关：
+
+```lua
+-- LessonData.lua (line ~2173)
+nOldDeposits = {90000, 70000, 20000, 70000}   -- 结算前快照
+nTotalDepositDiff = {160000, -70000, -20000, -70000}  -- 结算差值
+-- 玩家最终 250000，但这是客户端本地算出来的，服务器未认可
+```
+
+### 迁移要求
+
+Creator 端必须保持这个语义：
+
+| 场景 | 行为 | 原因 |
+|------|------|------|
+| 教程中杀进程重进 | `lessonstatus` 仍为 1，重新触发教程 | 教程未完成，金币未入账 |
+| 教程正常完成 | 发 `reqLessonReward()` → 服务器确认 → `lessonstatus=2` → 不再触发 | 教程已完成 |
+| 教程中途网络异常 | `lessonStart()` 的 xpcall 错误处理中直接调 `reqLessonReward()` 兜底 | 防永久卡住（[line 292](D:\Codlib\douque\xzmx\ClientLua\src\trunk\src\app\plugins\tqPlayerLesson\TqGameLesson.lua#L292)） |
+
+**不要**在客户端本地缓存"是否完成教程"的状态，因为：
+- 清除缓存/重装 App 会丢失，导致玩家永久卡在教程
+- 完成状态必须以服务端 `lessonstatus` 为准
+
+---
+
+## 九、UI 教学引导 — 高亮/遮罩/手指动画
 
 TqGameLesson 包含一套完整的 UI 引导系统（未在 L2 中深入展开，但迁移时必碰）：
 
@@ -316,7 +378,7 @@ TqGameLesson 包含一套完整的 UI 引导系统（未在 L2 中深入展开�
 
 ---
 
-## 九、完整文件依赖清单
+## 十、完整文件依赖清单
 
 ### Lua 侧涉及的所有文件（迁移范围）
 
@@ -354,16 +416,16 @@ TqGameLesson 包含一套完整的 UI 引导系统（未在 L2 中深入展开�
 
 ---
 
-## 十、关键注意事项
+## 十一、关键注意事项
 
-### 10.1 RoomID 13162 特殊处理
+### 11.1 RoomID 13162 特殊处理
 
 教程使用 RoomID 13162，这是一个**线上不存在的虚拟房间 ID**。Creator 需要：
 - 能够将此 ID 映射到 UI 上显示"新手场"
 - 不走正常的房间匹配逻辑
 - `isHZXLRoom()` 检查（系列函数）需要移植
 
-### 10.2 `isEnding()` 标志位
+### 11.2 `isEnding()` 标志位
 
 ```lua
 function TqGameLesson:isEnding()
@@ -375,7 +437,7 @@ end
 
 **必须迁移**，并在教程结束时设置。
 
-### 10.3 `rebuildGameWinData()`
+### 11.3 `rebuildGameWinData()`
 
 AI 用户名替换逻辑。教程中对局玩家的真实用户名是 wuchen0001~wuchen0004，需要在结算前替换成 `"玩家199708563"` 样式的伪装名。
 
@@ -387,7 +449,7 @@ end
 
 **可选**：如果 Creator 的教程对局不再硬编码用户名，此函数可能不需要。
 
-### 10.4 `hideBtns()` — 按钮隐藏
+### 11.4 `hideBtns()` — 按钮隐藏
 
 教程期间需要隐藏"设置""表情""托管"等按钮，防止玩家交互导致状态错乱。在 Creator 中同样需要：
 
@@ -397,17 +459,81 @@ function TqGameLesson:hideBtns()
 end
 ```
 
-### 10.5 第三方配置 `isXXXSupported("playerlesson")`
+### 11.5 第三方配置 `isXXXSupported("playerlesson")`
 
 这是旧版 Lua 对接的第三方 SDK 接口。Creator 需要映射到等价的能力检查接口。如果该接口返回 false，整个教程功能关闭。
 
-### 10.6 批量 require 方式
+### 11.6 批量 require 方式
 
 Lua 使用 `Filelist.lua` 的 `LuaFileList` 机制实现按需加载。Creator 的模块系统（import/require）不同，所有 `require("src.app.plugins.tqPlayerLesson.TqGameLesson")` 需要沿 Creator 的模块路径重新映射。
 
+### 11.7 Creator + CP 架构的状态存储与金币发放
+
+旧版 Lua 教程的金币发放流程存在一个关键缺陷：**教程对局内的金币变化全是客户端假数据，只有教程走完后的奖励才走服务端**。这意味着：
+
+- 教程对局界面显示玩家赢了 160000 金币（90000→250000）
+- 但实际上这 160000 从未写入服务端账户
+- 只有最后的 `reqLessonReward()` 才真正将奖励金打入账户（旧版 Lua 的 `TQLESSONREWARD` 类型）
+
+#### Creator 迁移方案
+
+Creator 端使用 CP（TypeScript 服务）管理用户状态时，必须把"新手教程状态"纳入 CP 管理，而不能依赖客户端本地存储：
+
+| 数据项 | 存储位置 | 说明 |
+|--------|---------|------|
+| `isTutorialCompleted` | CP 服务端 | 玩家是否已完成新手教程 |
+| `tutorialRewardGold` | CP 服务端 | 完成教程获得的奖励金币数 |
+| `lessonstatus` | GameSvr | 沿用现有协议，返回 1/2 |
+
+#### 关键设计
+
+**状态存储（CP 服务端）**：
+
+```typescript
+// CP 服务端需要维护的字段
+interface PlayerTutorialState {
+    userId: number;
+    completed: boolean;         // 是否已完成新手教程
+    rewardGold: number;        // 奖励金币数
+    completedAt?: number;      // 完成时间戳
+}
+```
+
+- `completed` 不由客户端设置，而是由 CP 在收到 `reqLessonReward` 后确认发放奖励时标记
+- 玩家杀进程重进 → CP 查 `completed == false` → GameSvr 返回 `lessonstatus=1` → 重新触发教程
+
+**金币发放时机**：
+
+旧版 Lua 教程在 LessonData 中硬编码了 `nTotalDepositDiff = {160000, -70000, -20000, -70000}`，这 160000 是"展示给玩家看的假收入"，真实奖励在 `reqLessonReward()` 回调后由 CP 发放。
+
+```typescript
+// Creator 端在收到 CUSTOM GETREWARD 时：
+async function handleGetReward() {
+    // 1. 告诉 CP 玩家完成了教程
+    const result = await cpApi.claimTutorialReward(userId);
+    // 2. CP 返回实际奖励金币数
+    const rewardGold = result.rewardGold;  // 如 100000
+    // 3. 更新本地显示的金币
+    depositModel.addGold(rewardGold);
+    // 4. 标记服务端 lessonstatus=2（通过现有协议）
+    // 5. 此时才走 roomSkip() 跳真实房间
+}
+```
+
+**旧版 vs Creator 对比**：
+
+| 方面 | 旧版 Lua | Creator + CP |
+|------|---------|-------------|
+| 教程对局金币来源 | LessonData 硬编码假数据 | 可选：同样假数据 / 由 CP 实时计算 |
+| 奖励发放 | 旧渠道（`TQLESSONREWARD` optype） | CP 接口 `claimTutorialReward()` |
+| 完成状态存储 | GameSvr `lessonstatus=2`（仅此一标记） | CP `completed` + GameSvr `lessonstatus=2` 双重标记 |
+| 金币显示 | 教程内显示 250000，实际上没到账 | 可沿用同样策略，也可由 CP 控制实际发放；
+  **推荐方案**：教程内依旧展示假数据（保持体验一致），
+  完成时 CP 发放真实奖励 |
+
 ---
 
-## 十一、迁移建议顺序
+## 十二、迁移建议顺序
 
 | 步骤 | 内容 | 验证标准 |
 |------|------|---------|

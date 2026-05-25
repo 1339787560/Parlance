@@ -294,11 +294,52 @@ labRatio: Label              // 存取比例展示（如"存 50%"）
 | `Game_Result_Activity` | GoldBankNodeResult | 游戏结算 |
 | 其他 | GoldBankNode | 通用 |
 
+## 20260523 修改计划 (已与策划确认)
+
+### 交互流程
+
+```
+点击快捷档位 / 全部按钮 → 更新输入框文本 + 操作后预览值
+点击输入框 → 弹 GoldBankInputView(数字键盘) → 粗校验+自动调整 → 关闭 → 回填输入框 + 预览值
+点击 btn_ensureSaveOp / btn_ensureTakeOp → 终校验 → 自动调整到最近合法值 → 执行 → toast(自动调整时)
+```
+
+### 按钮角色
+
+| 按钮 Property | 改名前 | Tab 可见性 | 点击行为 |
+|---|---|---|---|
+| `Btn_saveall` | 新加 | 存入 Tab | 输入框设为最大可存金额 |
+| `Btn_takeall` | 新加 | 取出 Tab | 输入框设为最大可取金额 |
+| `btn_ensureSaveOp` | `btn_ensureOp` | 存入 Tab | 执行存入(含校验调整) |
+| `btn_ensureTakeOp` | `btn_takeOp` | 取出 Tab | 执行取出(含校验调整) |
+| `Spr_LevelIcon` | 原类型 `Label`→`Sprite` | 始终 | 等级精灵图实时刷新 |
+
+### 校验规则
+
+**输入框粗校验**(GoldBankInputView 确认后):
+- 超出携带/特权上限 → 自动调至最小值(cap)
+
+**确认按钮终校验**:
+- **存入**: `实际值 = clamp(输入值, savelowlimit, min(oncesavelimit, 携带-minReserveNum, 等级上限-余额))`
+- **取出**: `实际值 = clamp(输入值, takelowlimit, min(余额, maxReserveNum-携带))`
+- 下限不满足 → toast 提示; 合法但被调整 → 执行+toast "已自动调整至合法数值"
+
+### 界面调整
+
+- `Title_curryAfterOp` 文本: 存入 Tab→"存后剩余(携带)", 取出 Tab→"取后剩余(携带)"
+- 输入框值变化时同步更新 `lab_curryAfterOp` / `lab_backNumAfterOp`
+
+### 等级图标
+
+- 在 `onUpdateView` 中 `PlayerLevelInfo` 变更时触发
+- 路径: `extern/leveldefineIcon/lv{userGrade}` → `ct.SpriteFrameCache.getSpriteFrame`
+- 尺寸: 等级≥3 → Size(68,60), 其他 → Size(60,60)
+
 ## 已知局限
 
 1. `GoldBankView.onUpdateView` 中 `FieldWealth` 被检查两次，第二次检查实际未生效
-2. `GoldBankView:63` — `Spr_LevelIcon` 类型声明为 `Label` 但 displayName 写 "等级精灵图" 期望为 `Sprite`，需确认
+2. ~~`GoldBankView:63` — `Spr_LevelIcon` 类型声明有误，已在 20260523 修改中修复~~
 3. `GoldBankInputView.onUpdateView` 中的 tabId 缓存读取有 BUG 注释："二级页面唤起时 tabID 常为 0，但实际应为 1"
 4. 自动取出 (autoTakeGoldBean) 代码中的定时器逻辑已被注释关闭
 5. `showPwdNumPad` 方法已被注释，密码框弹出功能不可用
-6. 20260523 新增的 7+1 个 property 尚未接入实际 UI 逻辑
+6. ~~20260523 新增 property 未接入 — 已在 20260523 修改中实现~~

@@ -1,6 +1,6 @@
 # roleManager — AI 角色开发指南仓库
 
-集中管理多角色（CP-DEV-xzmp / CPP-GameSVR-DEV-xzmp / Creator-Client-DEV-xzmp / LUA-Client-DEV-xzmp）的开发规范、知识笔记和工作流文档。作为 AI 与人类开发的统一导航入口。
+集中管理多角色（CP-DEV-xzmp / CPP-GameSVR-DEV-xzmp / Creator-Client-DEV-xzmp / LUA-Client-DEV-xzmp / PM-DEV）的开发规范、知识笔记和工作流文档。作为 AI 与人类开发的统一导航入口。
 
 ## 核心功能
 
