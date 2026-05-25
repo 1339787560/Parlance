@@ -44,6 +44,7 @@ Legacy maintenance only — no new development or test execution required. Query
 | 模块 | 笔记路径 | 内容 |
 |------|----------|------|
 | 复活礼包 sectionid | [L2_BrokeRechargeNew_SectionId.md](L2_BrokeRechargeNew_SectionId.md) | sectionid 数据流、chunk 计算、宗师场无区分 |
+| 新手教程 TqGameLesson | [L2_TqGameLesson.md](L2_TqGameLesson.md) | 客户端模拟对局机制、LessonData 14 阶段流程、状态机、触发链 |
 
 ---
 
