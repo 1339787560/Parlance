@@ -97,6 +97,7 @@ Tests triggered via scene buttons in CocosCreator engine. Not fully automated �
 | 3D 牌桌系统 | [L2_3DGameDesk.md](L2_3DGameDesk.md) | 牌桌管理、平台适配、屏幕适配 |
 | 胡牌动效系统 | [L2_HuEffect.md](L2_HuEffect.md) | 特效配置、优先级算法、动画播放 |
 | 新手教程迁移 | [L2_TqGameLesson_Migration.md](L2_TqGameLesson_Migration.md) | Lua → Creator 新手教程迁移：触发链、25+ 守卫点、LessonData 模拟消息、结算跳转 |
+| 新手教程实现 | [L2_TqGameLesson_Impl.md](L2_TqGameLesson_Impl.md) | Creator 端实际实现：状态管理、BTree Action 路由、Lesson 模块、runAction 调用模式 |
 
 ## 公共文档索引
 
