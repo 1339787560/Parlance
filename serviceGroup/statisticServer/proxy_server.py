@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import asyncio
 
 # ---- Config ----
 
@@ -44,9 +45,10 @@ def get_pricing(model: str) -> dict:
             return p
     return PRICING["deepseek-chat"]
 
-def calc_cost(model: str, hit: int, miss: int, out: int) -> float:
+def calc_cost(model: str, prompt: int, hit: int, out: int) -> float:
+    """cost = input*hit_price + cache_hit*hit_price + output*output_price."""
     p = get_pricing(model)
-    return (miss * p["miss"] + hit * p["hit"] + out * p["out"]) / 1_000_000
+    return (prompt * p["miss"] + hit * p["hit"] + out * p["out"]) / 1_000_000
 
 # ---- DB ----
 
@@ -69,27 +71,14 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ts ON requests(ts)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_session ON requests(session_id)")
         conn.commit()
+        # Migrate old schema: add cache_miss_tokens if missing
+        try:
+            conn.execute("SELECT cache_miss_tokens FROM requests LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE requests ADD COLUMN cache_miss_tokens INTEGER DEFAULT 0")
+            conn.commit()
     except sqlite3.OperationalError:
-        # Old schema - recreate
-        conn.close()
-        os.remove(str(DB_PATH))
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("""
-            CREATE TABLE requests (
-                id TEXT PRIMARY KEY,
-                ts TEXT, session_id TEXT, model TEXT,
-                prompt_tokens INTEGER DEFAULT 0,
-                completion_tokens INTEGER DEFAULT 0,
-                total_tokens INTEGER DEFAULT 0,
-                cache_hit_tokens INTEGER DEFAULT 0,
-                cache_miss_tokens INTEGER DEFAULT 0,
-                latency_ms INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'ok'
-            )
-        """)
-        conn.execute("CREATE INDEX idx_ts ON requests(ts)")
-        conn.execute("CREATE INDEX idx_session ON requests(session_id)")
-        conn.commit()
+        raise
     return conn
 
 _db = None
@@ -99,7 +88,13 @@ def get_db():
         _db = init_db()
     return _db
 
-def record(d: dict):
+_sse_clients: set[asyncio.Queue] = set()
+
+async def broadcast(event: str, data: dict = None):
+    for queue in list(_sse_clients):
+        await queue.put({"event": event, "data": data or {}})
+
+async def record(d: dict):
     conn = get_db()
     conn.execute("""
         INSERT OR REPLACE INTO requests
@@ -110,9 +105,11 @@ def record(d: dict):
         d["id"], d.get("ts"), d.get("session_id", ""), d.get("model", ""),
         d.get("prompt_tokens", 0), d.get("completion_tokens", 0),
         d.get("total_tokens", 0), d.get("cache_hit_tokens", 0),
-        d.get("cache_miss_tokens", 0), d.get("latency_ms", 0), d.get("status", "ok"),
+        d.get("cache_miss_tokens", 0),
+        d.get("latency_ms", 0), d.get("status", "ok"),
     ))
     conn.commit()
+    await broadcast("new_data")
 
 # ---- Proxy ----
 
@@ -126,10 +123,26 @@ async def proxy(request: Request, path: str):
     # Local endpoints
     if path == "health":
         return {"status": "ok", "target": TARGET}
+    if path == "api/events":
+        queue: asyncio.Queue = asyncio.Queue()
+        _sse_clients.add(queue)
+        async def event_stream():
+            try:
+                while True:
+                    try:
+                        msg = await asyncio.wait_for(queue.get(), timeout=30)
+                        yield f"event: {msg['event']}\ndata: {json.dumps(msg['data'])}\n\n"
+                    except asyncio.TimeoutError:
+                        yield ": keepalive\n\n"
+            finally:
+                _sse_clients.discard(queue)
+        return StreamingResponse(event_stream(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive",
+                     "X-Accel-Buffering": "no"})
     if path == "" or path == "/":
         idx = static_dir / "index.html"
         return FileResponse(str(idx)) if idx.exists() else {"status": "proxy_ready"}
-    if path.startswith("api/"):
+    if path.startswith("api/") and not path.startswith("api/events"):
         return await handle_api(request, path)
 
     if not DEEPSEEK_API_KEY:
@@ -141,7 +154,7 @@ async def proxy(request: Request, path: str):
     body["model"] = map_model(body.get("model", ""))
     is_stream = body.get("stream", True)
     req_id = f"req_{uuid.uuid4().hex[:16]}"
-    session_id = request.headers.get("x-session-id", "")
+    session_id = request.headers.get("x-claude-code-session-id") or request.headers.get("x-session-id", "")
     model = body["model"]
     start_ts = time.time()
 
@@ -168,14 +181,16 @@ async def proxy(request: Request, path: str):
 
         elapsed = int((time.time() - start_ts) * 1000)
         usage = data.get("usage", {})
-        record({
+        cache_hit = usage.get("cache_read_input_tokens", 0)
+        cache_miss = usage.get("cache_creation_input_tokens", 0)
+        await record({
             "id": req_id, "ts": datetime.now().isoformat(), "session_id": session_id,
             "model": data.get("model", model),
             "prompt_tokens": usage.get("input_tokens", 0),
             "completion_tokens": usage.get("output_tokens", 0),
             "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
-            "cache_hit_tokens": usage.get("cache_read_input_tokens", 0),
-            "cache_miss_tokens": usage.get("cache_creation_input_tokens", 0),
+            "cache_hit_tokens": cache_hit,
+            "cache_miss_tokens": cache_miss,
             "latency_ms": elapsed, "status": "ok",
         })
         return JSONResponse(content=data)
@@ -219,18 +234,20 @@ async def proxy(request: Request, path: str):
 
         if not err and usage_data:
             elapsed = int((time.time() - start_ts) * 1000)
-            record({
+            cache_hit = usage_data.get("cache_read_input_tokens", 0)
+            cache_miss = usage_data.get("cache_creation_input_tokens", 0)
+            await record({
                 "id": req_id, "ts": datetime.now().isoformat(), "session_id": session_id,
                 "model": model,
                 "prompt_tokens": usage_data.get("input_tokens", 0),
                 "completion_tokens": usage_data.get("output_tokens", 0),
                 "total_tokens": usage_data.get("input_tokens", 0) + usage_data.get("output_tokens", 0),
-                "cache_hit_tokens": usage_data.get("cache_read_input_tokens", 0),
-                "cache_miss_tokens": usage_data.get("cache_creation_input_tokens", 0),
+                "cache_hit_tokens": cache_hit,
+                "cache_miss_tokens": cache_miss,
                 "latency_ms": elapsed, "status": "ok",
             })
         elif not err:
-            record({"id": req_id, "ts": datetime.now().isoformat(), "session_id": session_id,
+            await record({"id": req_id, "ts": datetime.now().isoformat(), "session_id": session_id,
                      "model": model, "latency_ms": int((time.time()-start_ts)*1000), "status": "ok"})
 
     return StreamingResponse(stream(), media_type="text/event-stream",
@@ -246,13 +263,13 @@ async def handle_api(request: Request, path: str):
         # Per-request breakdown (last 100)
         rows = conn.execute(
             "SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,"
-            "cache_hit_tokens,cache_miss_tokens,latency_ms FROM requests "
+            "cache_hit_tokens,latency_ms FROM requests "
             "ORDER BY ts DESC LIMIT 100"
         ).fetchall()
         return [{
             "ts": r[0], "session": r[1], "model": r[2],
             "prompt": r[3], "completion": r[4], "total": r[5],
-            "cache_hit": r[6], "cache_miss": r[7], "latency_ms": r[8],
+            "cache_hit": r[6], "latency_ms": r[7],
         } for r in rows]
 
     # Daily aggregation
@@ -264,7 +281,6 @@ async def handle_api(request: Request, path: str):
                    COALESCE(SUM(completion_tokens),0),
                    COALESCE(SUM(total_tokens),0),
                    COALESCE(SUM(cache_hit_tokens),0),
-                   COALESCE(SUM(cache_miss_tokens),0),
                    COALESCE(SUM(latency_ms),0)
             FROM requests GROUP BY day, model ORDER BY day DESC
         """).fetchall()
@@ -275,7 +291,7 @@ async def handle_api(request: Request, path: str):
                 days[day] = {
                     "date": day, "requests": 0,
                     "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
-                    "cache_hit_tokens": 0, "cache_miss_tokens": 0,
+                    "cache_hit_tokens": 0,
                     "total_latency_ms": 0, "cost": 0.0, "model_costs": {},
                 }
             d = days[day]
@@ -284,9 +300,8 @@ async def handle_api(request: Request, path: str):
             d["completion_tokens"] += r[4]
             d["total_tokens"] += r[5]
             d["cache_hit_tokens"] += r[6]
-            d["cache_miss_tokens"] += r[7]
-            d["total_latency_ms"] += r[8]
-            c = calc_cost(r[1], r[6], r[7], r[4])
+            d["total_latency_ms"] += r[7]
+            c = calc_cost(r[1], r[3], r[6], r[4])
             d["cost"] += c
             d["model_costs"][r[1]] = round(c, 6)
         result = []
@@ -297,10 +312,12 @@ async def handle_api(request: Request, path: str):
             result.append(d)
         return result
 
-    # Task grouping: requests within 30s gap = same task
+    # Task grouping: same session + time proximity = same task
     if path == "api/stats/tasks":
         limit = int(request.query_params.get("limit", 50))
         session = request.query_params.get("session", "")
+        gap_param = request.query_params.get("gap", "")
+        mode = request.query_params.get("mode", "")
         where_task = ""
         params_task = []
         if session:
@@ -308,30 +325,56 @@ async def handle_api(request: Request, path: str):
             params_task = [session]
         rows = conn.execute(f"""
             SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,
-                   cache_hit_tokens,cache_miss_tokens,latency_ms
+                   cache_hit_tokens,latency_ms
             FROM requests{where_task} ORDER BY ts ASC
         """, params_task).fetchall()
+
+        # Adaptive gap detection: use median + 2*MAD of inter-request gaps
+        if mode != "fixed" and len(rows) >= 3:
+            ts_list = []
+            for r in rows:
+                try:
+                    ts_list.append(datetime.fromisoformat(r[0]))
+                except Exception:
+                    continue
+            gaps = [(ts_list[i+1] - ts_list[i]).total_seconds() for i in range(len(ts_list)-1)]
+            sorted_gaps = sorted(gaps)
+            n = len(sorted_gaps)
+            median = sorted_gaps[n // 2]
+            mad = sorted([abs(g - median) for g in gaps])[n // 2]
+            gap = max(median + 2 * mad, 10)
+            gap = min(gap, 600)
+        else:
+            gap = int(gap_param) if gap_param else 60  # default 60s
 
         tasks = []
         cur = None
         prev_ts = None
+        prev_session = None
         for r in rows:
             try:
                 this_ts = datetime.fromisoformat(r[0])
             except Exception:
                 continue
-            # New task if first request or gap > 30s
+            row_session = r[1] or ""
+            # New task: different session, or gap > threshold within same session
             is_new = (cur is None or
-                      (prev_ts is not None and (this_ts - prev_ts).total_seconds() > 30))
+                      row_session != prev_session or
+                      (prev_ts is not None and row_session == prev_session and
+                       (this_ts - prev_ts).total_seconds() > gap))
+            model = r[2] or "unknown"
             if is_new:
                 cur = {
                     "task_id": len(tasks) + 1,
                     "start": r[0], "end": r[0],
-                    "requests": 0, "session": r[1],
+                    "requests": 0, "session": row_session,
                     "prompt_tokens": 0, "completion_tokens": 0,
                     "total_tokens": 0,
-                    "cache_hit_tokens": 0, "cache_miss_tokens": 0,
+                    "cache_hit_tokens": 0,
                     "total_latency_ms": 0,
+                    "_model_prompt": {},  # model -> total prompt_tokens
+                    "_model_hit": {},
+                    "_model_completion": {},
                 }
                 tasks.append(cur)
             cur["end"] = r[0]
@@ -340,11 +383,14 @@ async def handle_api(request: Request, path: str):
             cur["completion_tokens"] += r[4] or 0
             cur["total_tokens"] += r[5] or 0
             cur["cache_hit_tokens"] += r[6] or 0
-            cur["cache_miss_tokens"] += r[7] or 0
-            cur["total_latency_ms"] += r[8] or 0
+            cur["total_latency_ms"] += r[7] or 0
+            cur["_model_prompt"][model] = cur["_model_prompt"].get(model, 0) + (r[3] or 0)
+            cur["_model_hit"][model] = cur["_model_hit"].get(model, 0) + (r[6] or 0)
+            cur["_model_completion"][model] = cur["_model_completion"].get(model, 0) + (r[4] or 0)
             prev_ts = this_ts
+            prev_session = row_session
 
-        # Compute total wall time per task
+        # Compute total wall time + cost per task
         for t in tasks:
             try:
                 s = datetime.fromisoformat(t["start"])
@@ -352,6 +398,16 @@ async def handle_api(request: Request, path: str):
                 t["wall_time_ms"] = int((e - s).total_seconds() * 1000)
             except Exception:
                 t["wall_time_ms"] = t["total_latency_ms"]
+            # Cost per model
+            cost = 0.0
+            for model in t["_model_prompt"]:
+                cost += calc_cost(model, t["_model_prompt"][model],
+                                  t["_model_hit"].get(model, 0),
+                                  t["_model_completion"].get(model, 0))
+            t["cost"] = round(cost, 6)
+            del t["_model_prompt"]
+            del t["_model_hit"]
+            del t["_model_completion"]
 
         tasks.reverse()
         tasks = tasks[:limit]
@@ -368,7 +424,6 @@ async def handle_api(request: Request, path: str):
                COALESCE(SUM(completion_tokens),0),
                COALESCE(SUM(total_tokens),0),
                COALESCE(SUM(cache_hit_tokens),0),
-               COALESCE(SUM(cache_miss_tokens),0),
                COALESCE(AVG(latency_ms),0),
                COALESCE(SUM(latency_ms),0)
         FROM requests{where}
@@ -378,30 +433,43 @@ async def handle_api(request: Request, path: str):
         return {"total_requests": 0, "sessions": []}
 
     total_hit = row[4]
-    total_miss = row[5]
 
     # Cost per model
     cost_rows = conn.execute(f"""
-        SELECT model, SUM(cache_hit_tokens), SUM(cache_miss_tokens), SUM(completion_tokens)
+        SELECT model, SUM(prompt_tokens), SUM(cache_hit_tokens), SUM(completion_tokens)
         FROM requests{where} GROUP BY model
     """, params).fetchall()
 
     total_cost = 0.0
     model_costs = {}
-    for m, hit, miss, out in cost_rows:
-        c = calc_cost(m, hit or 0, miss or 0, out or 0)
+    for m, prompt, hit, out in cost_rows:
+        prompt = prompt or 0
+        hit = hit or 0
+        out = out or 0
+        c = calc_cost(m, prompt, hit, out)
         model_costs[m] = round(c, 6)
         total_cost += c
 
-    # Sessions (for filter dropdown)
+    # Sessions
     sessions = []
     if not session:
         sess_rows = conn.execute("""
             SELECT session_id, MIN(ts), MAX(ts), COUNT(*), COALESCE(SUM(total_tokens),0)
             FROM requests WHERE session_id != '' GROUP BY session_id ORDER BY MAX(ts) DESC LIMIT 50
         """).fetchall()
+        # Cost per session (query per-model totals for each session)
+        sess_cost_rows = conn.execute("""
+            SELECT session_id, model,
+                   SUM(prompt_tokens), SUM(cache_hit_tokens), SUM(completion_tokens)
+            FROM requests WHERE session_id != '' GROUP BY session_id, model
+        """).fetchall()
+        sess_costs = {}
+        for sid, m, pt, ht, ct in sess_cost_rows:
+            c = calc_cost(m, pt or 0, ht or 0, ct or 0)
+            sess_costs[sid] = sess_costs.get(sid, 0.0) + c
         sessions = [{"id": r[0], "first": r[1], "last": r[2],
-                      "count": r[3], "tokens": r[4]} for r in sess_rows]
+                      "count": r[3], "tokens": r[4],
+                      "cost": round(sess_costs.get(r[0], 0.0), 6)} for r in sess_rows]
 
     return {
         "total_requests": row[0],
@@ -409,9 +477,8 @@ async def handle_api(request: Request, path: str):
         "total_completion_tokens": row[2],
         "total_tokens": row[3],
         "total_cache_hit_tokens": total_hit,
-        "total_cache_miss_tokens": total_miss,
-        "avg_latency_ms": round(row[6], 0),
-        "total_time_ms": row[7],
+        "avg_latency_ms": round(row[5], 0),
+        "total_time_ms": row[6],
         "total_cost": round(total_cost, 6),
         "model_costs": model_costs,
         "sessions": sessions,

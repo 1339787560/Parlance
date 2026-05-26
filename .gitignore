@@ -9,3 +9,4 @@ uploads/*
 .env.*
 .env.local
 %SystemDrive%
+stats.db
