@@ -1597,6 +1597,7 @@
   html[data-theme="silverwolf"] .header h1 {
     color: #00FFCC;
     text-shadow: 0 0 8px rgba(0, 255, 204, 0.6), 0 0 15px rgba(0, 255, 204, 0.3);
+    animation: swTitleGlow 7s ease-in-out infinite;
   }
 
   /* [我方·量子霓虹] 青紫渐变 + 青色边框 */
@@ -1607,6 +1608,7 @@
     border: 1.5px solid #00FFCC;
     border-radius: 16px 16px 2px 16px;
     color: #FFFFFF;
+    animation: swSelfGlow 8s ease-in-out infinite;
     box-shadow:
       0 0 15px rgba(0, 255, 204, 0.15),
       inset 0 0 10px rgba(154, 0, 255, 0.15);
@@ -1630,6 +1632,7 @@
     border: 1.5px solid #FF007F;
     border-radius: 16px 16px 16px 2px;
     color: #FFFFFF;
+    animation: swOtherGlow 8s ease-in-out infinite;
     box-shadow:
       0 0 15px rgba(255, 0, 127, 0.15),
       inset 0 0 10px rgba(255, 174, 0, 0.1);
@@ -1793,4 +1796,25 @@
   
   .input-area textarea { font-size: 13px; }
   .btn-send { padding: 0 12px; font-size: 12px; }
+}
+
+/* ── Silver Wolf 霓虹呼吸动画 (全局 keyframes) ─────── */
+/* 节奏: 亮→灭 (40%), 停顿 ×0.5 (20%), 灭→亮 (40%) */
+@keyframes swTitleGlow {
+  0%   { text-shadow: 0 0 16px rgba(0,255,204,0.9), 0 0 32px rgba(0,255,204,0.5), 0 0 50px rgba(0,255,204,0.2); }
+  40%  { text-shadow: 0 0  6px rgba(0,255,204,0.3), 0 0 12px rgba(0,255,204,0.1); }
+  60%  { text-shadow: 0 0  6px rgba(0,255,204,0.3), 0 0 12px rgba(0,255,204,0.1); }
+  100% { text-shadow: 0 0 16px rgba(0,255,204,0.9), 0 0 32px rgba(0,255,204,0.5), 0 0 50px rgba(0,255,204,0.2); }
+}
+@keyframes swSelfGlow {
+  0%   { box-shadow: 0 0 22px rgba(0,255,204,0.35), 0 0 45px rgba(0,255,204,0.12), inset 0 0 14px rgba(154,0,255,0.20); }
+  40%  { box-shadow: 0 0  8px rgba(0,255,204,0.06), 0 0 15px rgba(0,255,204,0.02), inset 0 0  6px rgba(154,0,255,0.06); }
+  60%  { box-shadow: 0 0  8px rgba(0,255,204,0.06), 0 0 15px rgba(0,255,204,0.02), inset 0 0  6px rgba(154,0,255,0.06); }
+  100% { box-shadow: 0 0 22px rgba(0,255,204,0.35), 0 0 45px rgba(0,255,204,0.12), inset 0 0 14px rgba(154,0,255,0.20); }
+}
+@keyframes swOtherGlow {
+  0%   { box-shadow: 0 0 22px rgba(255,0,127,0.35), 0 0 45px rgba(255,0,127,0.12), inset 0 0 14px rgba(255,174,0,0.15); }
+  40%  { box-shadow: 0 0  8px rgba(255,0,127,0.06), 0 0 15px rgba(255,0,127,0.02), inset 0 0  6px rgba(255,174,0,0.05); }
+  60%  { box-shadow: 0 0  8px rgba(255,0,127,0.06), 0 0 15px rgba(255,0,127,0.02), inset 0 0  6px rgba(255,174,0,0.05); }
+  100% { box-shadow: 0 0 22px rgba(255,0,127,0.35), 0 0 45px rgba(255,0,127,0.12), inset 0 0 14px rgba(255,174,0,0.15); }
 }

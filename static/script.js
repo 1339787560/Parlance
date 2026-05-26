@@ -36,6 +36,9 @@
 
   serverUrl.textContent = window.location.host;
 
+  // ── ShaderRunner instance (initialized on first set/restore) ──────────
+  let shaderRunner = null;
+
   // ── Helpers ────────────────────────────────────────────────────────────
   function formatTime(t) {
     if (!t) return '';
@@ -704,6 +707,8 @@
     applyTheme(theme);
     localStorage.setItem('chat_theme', theme);
     await saveThemeToServer(theme);
+    if (!shaderRunner && window.ShaderRunner) shaderRunner = new window.ShaderRunner();
+    if (shaderRunner) shaderRunner.setTheme(theme);
   }
 
   themeSelect.addEventListener('change', async () => {
@@ -719,11 +724,14 @@
     } else {
       applyTheme('red');
     }
+    if (!shaderRunner && window.ShaderRunner) shaderRunner = new window.ShaderRunner();
+    if (shaderRunner) shaderRunner.setTheme(localTheme && THEMES.includes(localTheme) ? localTheme : 'red');
     try {
       const r = await fetchJSON('/api/theme');
       if (r.theme && THEMES.includes(r.theme)) {
         applyTheme(r.theme);
         localStorage.setItem('chat_theme', r.theme);
+        if (shaderRunner) shaderRunner.setTheme(r.theme);
       }
     } catch (_) { /* offline, stay with local cache */ }
   }
