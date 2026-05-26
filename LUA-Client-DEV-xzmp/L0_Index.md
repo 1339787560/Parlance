@@ -24,7 +24,7 @@
 
 | 工作区 | 路径 | 说明 |
 |--------|------|------|
-| Lua 客户端 | D:\Codlib\douque\xzmx\ClientLua | 旧版客户端代码 |
+| Lua 客户端 | D:\Codlib\douque\xzmx\ClientLua\src\trunk | 旧版客户端代码（CodeGraph 已索引） |
 
 ---
 
