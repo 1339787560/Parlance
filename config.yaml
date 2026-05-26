@@ -1,7 +1,4 @@
-# daemon: true → infoServer runs as background process (pythonw.exe, no console)
-#           killing it kills all managed services via Windows Job Object
 # flask 程序一定要用 DEBUG OFF。
-daemon: false
 
 server:
   host: 0.0.0.0
