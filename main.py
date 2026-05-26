@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from chat_manager import ChatManager
@@ -72,6 +73,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, title="LAN InfoShare")
+
+# ── CORS (allow sub-services on other ports to call theme API) ──────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── Static files ────────────────────────────────────────────────────────────
 static_dir = Path(__file__).parent / "static"
