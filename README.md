@@ -32,6 +32,18 @@ python main.py
 
 默认地址 `http://192.168.10.28:5000`（IP 和端口可在 `config.yaml` 中修改）。
 
+### 服务组管理
+
+`main.py` 启动时会自动拉起 `config.yaml` 中 `services` 段配置的子进程（如统计服务），主进程退出时自动停止。
+
+当前托管服务：
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| statistic-server | 5002 | DeepSeek 代理统计（[详情](serviceGroup/statisticServer/README.md)） |
+
+支持自动重启、健康检查、按标签筛选。
+
 ### 局域网访问
 
 同局域网设备打开 `http://<服务端IP>:5000` 即可，无需任何配置。
@@ -49,6 +61,15 @@ server:
 
 database:
   path: ./data/chat.db
+
+# 管理子服务 — 主进程启动时自动拉起，退出时自动停止
+services:
+  - name: statistic-server
+    command: python
+    args: ["proxy_server.py", "--port", "5002"]
+    cwd: ./serviceGroup/statisticServer
+    auto_restart: true
+    enabled: true
 ```
 
 ## 主题系统
@@ -117,6 +138,8 @@ style/furina/furina.png
 ├── config.yaml          # 服务端配置
 ├── requirements.txt     # 依赖
 ├── requirements.lock    # 锁定版本依赖
+├── serviceGroup/
+│   └── statisticServer/  # DeepSeek 代理统计服务（[README](serviceGroup/statisticServer/README.md)）
 └── static/
     ├── index.html       # 单页应用 HTML
     ├── script.js        # 前端所有交互逻辑（零框架）

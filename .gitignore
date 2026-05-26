@@ -1,6 +1,7 @@
 __pycache__
 .deepseek
 data/*
+*.db
 style/*
 uploads/*
 .gstack/
@@ -8,3 +9,6 @@ uploads/*
 .env.*
 .env.local
 %SystemDrive%
+stats.db
+.codegraph
+.cursor
