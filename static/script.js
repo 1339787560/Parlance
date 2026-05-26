@@ -660,8 +660,8 @@
   });
 
   // ── Theme switching ───────────────────────────────────────────────────
-  const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub'];
-  const THEME_NAMES = ['兰亭信传', '简约配色', '珊瑚宫心海', '流萤·萨姆', '芙宁娜·歌剧院', '海瑟音·深境', '天才俱乐部'];
+  const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
+  const THEME_NAMES = ['兰亭信传', '简约配色', '珊瑚宫心海', '流萤·萨姆', '芙宁娜·歌剧院', '海瑟音·深境', '天才俱乐部', '狼尊 LV.999'];
 
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);

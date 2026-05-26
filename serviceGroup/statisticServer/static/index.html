@@ -46,7 +46,7 @@ td{padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;fon
 tr:hover td{background:#1c2128}
 .empty{text-align:center;padding:40px;color:var(--dim);font-size:14px;line-height:1.8}
 
-/* ── Theme selector ─────────────────────────────── */
+/* Theme selector */
 .theme-select {
   padding: 4px 8px;
   border: 1px solid var(--border);
@@ -76,6 +76,7 @@ tr:hover td{background:#1c2128}
       <option value="furina">芙宁娜·歌剧院</option>
       <option value="hysilens">海瑟音·深境</option>
       <option value="geniusclub">天才俱乐部</option>
+      <option value="silverwolf">狼尊 LV.999</option>
     </select>
     <button class="btn" onclick="refresh()">刷新</button>
     <span style="color:var(--dim);font-size:12px" id="updateTime"></span>
@@ -186,9 +187,9 @@ tr:hover td{background:#1c2128}
 </div>
 
 <script>
-// ── Theme switching ──────────────────────────────
-const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub'];
-const THEME_NAMES = ['朱砂红', '简约配色', '珊瑚宫心海', '流萤·萨姆', '芙宁娜·歌剧院', '海瑟音·深境', '天才俱乐部'];
+// Theme switching
+const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
+const THEME_NAMES = ['朱砂红', '简约配色', '珊瑚宫心海', '流萤·萨姆', '芙宁娜·歌剧院', '海瑟音·深境', '天才俱乐部', '狼尊 LV.999'];
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -217,7 +218,6 @@ async function setTheme(theme) {
 }
 
 async function restoreTheme() {
-  // 1) Try server-side theme (infoServer remembers per IP)
   try {
     const r = await fetch(getInfoServerUrl() + '/api/theme');
     const data = await r.json();
@@ -227,7 +227,6 @@ async function restoreTheme() {
       return;
     }
   } catch (_) { /* infoServer unreachable, use local */ }
-  // 2) Fallback: local cache
   const saved = localStorage.getItem('stats_theme');
   if (saved && THEMES.includes(saved)) {
     applyTheme(saved);
@@ -242,8 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
   restoreTheme();
 });
 
-// ── Stats ─────────────────────────────────────────
-
+// Stats
 function fmt(n){return n===null||n===undefined?'-':n.toLocaleString()}
 function fmtCost(n){if(n===null||n===undefined)return'-';if(n<.001)return'¥'+n.toFixed(6);if(n<1)return'¥'+n.toFixed(4);return'¥'+n.toFixed(2)}
 function fmtTime(ts){if(!ts)return'-';try{return new Date(ts).toLocaleTimeString()}catch(e){return ts}}
@@ -268,7 +266,6 @@ function fillCards(data){
   document.getElementById('s-prompt').textContent=fmt(data.total_prompt_tokens);
   document.getElementById('s-comp').textContent=fmt(data.total_completion_tokens);
   document.getElementById('s-hit').textContent=fmt(data.total_cache_hit_tokens);
-
   document.getElementById('s-cost').textContent=fmtCost(data.total_cost);
   document.getElementById('s-lat').textContent=data.avg_latency_ms?Math.round(data.avg_latency_ms)+'ms':'-';
 
@@ -288,7 +285,6 @@ function fillCards(data){
 async function fetchTotal(){ return (await fetch('/api/stats')).json(); }
 async function fetchDetail(){ return (await fetch('/api/stats/detail')).json(); }
 async function fetchTasks(){ return (await fetch('/api/stats/tasks?limit=100')).json(); }
-
 async function fetchDaily(){ return (await fetch('/api/stats/daily')).json(); }
 
 async function refresh(){
@@ -297,7 +293,6 @@ async function refresh(){
   fillCards(total);
   renderSessions(total.sessions);
 
-  // 任务表
   const tasks=await fetchTasks();
   const tt=document.getElementById('taskTable');
   if(tasks&&tasks.length){
@@ -316,7 +311,6 @@ async function refresh(){
     }).join('');
   } else { tt.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--dim)">暂无任务</td></tr>'; }
 
-  // 每日表
   const daily=await fetchDaily();
   const dt=document.getElementById('dailyTable');
   if(daily&&daily.length){
@@ -334,7 +328,6 @@ async function refresh(){
     }).join('');
   } else { dt.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--dim)">暂无数据</td></tr>'; }
 
-  // 如果正在查看某个会话，SSE 更新后同步刷新会话详情
   if (_currentSessionId) {
     fetch(`/api/stats?session=${encodeURIComponent(_currentSessionId)}`).then(r=>r.json()).then(d=>{
       document.getElementById('ss-req').textContent = fmt(d.total_requests);
@@ -391,8 +384,7 @@ async function refresh(){
   } else { tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--dim)">暂无请求</td></tr>'; }
 }
 
-// ── 会话 ───────────────────────────────────────────────────
-
+// Sessions
 function showSession(sid) {
   _currentSessionId = sid;
   const cards = document.getElementById('sessionCards');
@@ -400,7 +392,7 @@ function showSession(sid) {
   cards.style.display = 'none';
   tasksDiv.style.display = 'none';
   document.querySelector('#tab-sessions .section-title span').textContent =
-    sid ? `会话详情: ${sid.slice(0,16)}…` : '会话列表（点击查看详情）';
+    sid ? `会话详情: ${sid.slice(0,16)}...` : '会话列表（点击查看详情）';
 
   if (!sid) return;
 
@@ -451,7 +443,7 @@ function renderSessions(sessions) {
     return;
   }
   tb.innerHTML = sessions.map(s => `<tr onclick="showSession('${s.id}')" style="cursor:pointer">
-    <td style="font-family:monospace;font-size:12px;color:var(--blue)">${s.id.slice(0,20)}…</td>
+    <td style="font-family:monospace;font-size:12px;color:var(--blue)">${s.id.slice(0,20)}...</td>
     <td>${s.count}</td>
     <td>${fmt(s.tokens)}</td>
     <td class="purple">${fmtCost(s.cost)}</td>
@@ -460,13 +452,11 @@ function renderSessions(sessions) {
   </tr>`).join('');
 }
 
-// Restore saved tab
 const savedTab = localStorage.getItem('statsTab');
 if (savedTab) switchTab(savedTab);
 
 refresh();
 
-// SSE real-time updates + periodic fallback refresh
 const evtSource = new EventSource('/api/events');
 evtSource.addEventListener('new_data', () => refresh());
 evtSource.onerror = () => {
@@ -480,7 +470,6 @@ evtSource.onopen = () => {
     window._sseFallback = null;
   }
 };
-// Periodic refresh as safety net — always keep data fresh
 setInterval(refresh, 30000);
 </script>
 </body>

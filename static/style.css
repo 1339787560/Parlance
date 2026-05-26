@@ -1532,6 +1532,176 @@
     -webkit-text-fill-color: transparent;
   }
 
+  /* ── Silver Wolf 狼尊 LV.999 · 赛博黑客全息终端 ──────────── */
+  html[data-theme="silverwolf"] {
+    --cn-paper:       #070312;
+    --cn-bubble:      rgba(11, 7, 24, 0.85);
+    --cn-ink:         #00FFCC;
+    --cn-ink-light:   #B0B0D0;
+    --cn-ink-faint:   #6B6080;
+    --cn-red:         #FF007F;
+    --cn-red-hover:   #FF2E93;
+    --cn-red-light:   rgba(255, 0, 127, 0.15);
+    --cn-gold:        #FFAE00;
+    --cn-wood:        rgba(154, 0, 255, 0.3);
+    --cn-overlay:     rgba(7, 3, 18, 0.7);
+  }
+  html[data-theme="silverwolf"] {
+    background: #070312;
+    background-image:
+      linear-gradient(#070312, rgba(7, 3, 18, 0.4)),
+      url('/style/silverwolf/silverwolf.png');
+    background-size: cover;
+    background-attachment: fixed;
+  }
+  html[data-theme="silverwolf"] body {
+    background: none;
+    font-family: 'Consolas', 'Courier New', 'PingFang SC', monospace;
+  }
+
+  /* 全息 HUD 顶栏 */
+  html[data-theme="silverwolf"] .header {
+    background: rgba(11, 7, 24, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 2px solid #FF007F;
+    box-shadow: 0 4px 20px rgba(255, 0, 127, 0.12);
+  }
+  html[data-theme="silverwolf"] .header h1 {
+    color: #00FFCC;
+    text-shadow: 0 0 8px rgba(0, 255, 204, 0.6), 0 0 15px rgba(0, 255, 204, 0.3);
+  }
+
+  /* [我方·量子霓虹] 青紫渐变 + 青色边框 */
+  html[data-theme="silverwolf"] .msg.self {
+    background: linear-gradient(135deg, rgba(0, 255, 204, 0.2) 0%, rgba(154, 0, 255, 0.25) 100%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1.5px solid #00FFCC;
+    border-radius: 16px 16px 2px 16px;
+    color: #FFFFFF;
+    box-shadow:
+      0 0 15px rgba(0, 255, 204, 0.15),
+      inset 0 0 10px rgba(154, 0, 255, 0.15);
+  }
+  html[data-theme="silverwolf"] .msg.self::before {
+    content: "✚";
+    position: absolute;
+    top: 6px;
+    right: 12px;
+    color: #00FFCC;
+    font-size: 10px;
+    text-shadow: 0 0 5px #00FFCC;
+    opacity: 0.6;
+  }
+
+  /* [对方·狂热朋克] 洋红紫-金黄渐变 + 洋红边框 */
+  html[data-theme="silverwolf"] .msg.other {
+    background: linear-gradient(135deg, rgba(255, 0, 127, 0.2) 0%, rgba(255, 174, 0, 0.15) 100%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1.5px solid #FF007F;
+    border-radius: 16px 16px 16px 2px;
+    color: #FFFFFF;
+    box-shadow:
+      0 0 15px rgba(255, 0, 127, 0.15),
+      inset 0 0 10px rgba(255, 174, 0, 0.1);
+  }
+  html[data-theme="silverwolf"] .msg.other::before {
+    content: "✚";
+    position: absolute;
+    top: 6px;
+    left: 12px;
+    color: #FFAE00;
+    font-size: 10px;
+    text-shadow: 0 0 5px #FFAE00;
+    opacity: 0.6;
+  }
+
+  /* 消息 IP 和发送者名称 */
+  html[data-theme="silverwolf"] .msg-ip {
+    color: #B0B0D0;
+  }
+  html[data-theme="silverwolf"] .msg-sender {
+    color: #00FFCC;
+    text-shadow: 0 0 5px rgba(0, 255, 204, 0.3);
+  }
+
+  /* 输入区 */
+  html[data-theme="silverwolf"] .input-area {
+    background: transparent;
+    border-top: 1px solid rgba(154, 0, 255, 0.15);
+  }
+  html[data-theme="silverwolf"] .input-area textarea {
+    background: rgba(12, 8, 25, 0.8);
+    border: 1.5px solid rgba(154, 0, 255, 0.4);
+    border-radius: 4px;
+    color: #00FFCC;
+    box-shadow: inset 0 0 8px rgba(154, 0, 255, 0.15);
+    font-family: 'Consolas', 'Courier New', monospace;
+  }
+  html[data-theme="silverwolf"] .input-area textarea:focus {
+    border-color: #00FFCC;
+    box-shadow: 0 0 15px rgba(0, 255, 204, 0.2), inset 0 0 10px rgba(0, 255, 204, 0.1);
+    outline: none;
+  }
+  html[data-theme="silverwolf"] .input-area textarea::placeholder {
+    color: #6B6080;
+  }
+
+  /* 发送按钮 — GAME START 街机按键 */
+  html[data-theme="silverwolf"] .btn-send {
+    background: #FF007F;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-weight: bold;
+    letter-spacing: 2px;
+    box-shadow: 0 0 12px rgba(255, 0, 127, 0.4), 0 0 20px rgba(255, 174, 0, 0.1);
+    transition: all 0.2s;
+  }
+  html[data-theme="silverwolf"] .btn-send:hover {
+    background: #FF2E93;
+    box-shadow: 0 0 20px rgba(255, 174, 0, 0.6), 0 0 30px rgba(255, 0, 127, 0.5);
+    transform: translateY(-1px);
+  }
+  html[data-theme="silverwolf"] .btn-send:active {
+    transform: translateY(1px);
+    box-shadow: 0 0 5px #FF007F;
+  }
+
+  /* 图标按钮 */
+  html[data-theme="silverwolf"] .btn-icon {
+    background: rgba(11, 7, 24, 0.6);
+    border: 1px solid rgba(154, 0, 255, 0.3);
+    color: #B0B0D0;
+  }
+  html[data-theme="silverwolf"] .btn-icon:hover {
+    background: rgba(0, 255, 204, 0.1);
+    border-color: #00FFCC;
+    color: #00FFCC;
+    box-shadow: 0 0 8px rgba(0, 255, 204, 0.2);
+  }
+
+  /* 标题 */
+  html[data-theme="silverwolf"] #pageTitle {
+    background: linear-gradient(135deg, #00FFCC, #FF007F);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* 状态灯 */
+  html[data-theme="silverwolf"] .sse-status.connected {
+    background: #00FFCC;
+    box-shadow: 0 0 8px #00FFCC, 0 0 16px rgba(0, 255, 204, 0.4);
+  }
+  html[data-theme="silverwolf"] .sse-status.disconnected {
+    background: #FF007F;
+    box-shadow: 0 0 8px #FF007F, 0 0 16px rgba(255, 0, 127, 0.4);
+  }
+
   /* User features */
   .name-input { width: 90px; padding: 3px 6px; border: 1px solid var(--cn-wood); background: var(--cn-bubble); color: var(--cn-ink); border-radius: 2px; font-size: 11px; font-family: inherit; outline: none; }
   .name-input:focus { border-color: var(--cn-red); }
