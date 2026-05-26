@@ -52,6 +52,13 @@
 1. **读 A2A 文档（a2a_get）**：需要其他角色的信息时，先读其 L0/L1/L2 文档。A2A 知识库是共享工作区，直接读取即可。
 2. **唤起 subagent**：A2A 文档不足以回答时（需要读实际源码），再 spawn subagent 去对应角色目录查代码。
 
+## CodeGraph 使用策略
+
+当前管理的项目规格属于小型项目，尚未到达 CodeGraph 的优势区间。按以下优先级选择查询方式：
+
+1. **查笔记优先**（a2a_get）：有笔记可以解答的问题，**无需使用 CodeGraph 工具**。
+2. **读代码用 CodeGraph**：笔记不足以回答，需要直接查阅源码时，可以考虑使用 CodeGraph——它在用时上确实更优秀。
+
 ## 新建角色
 
 参见 [WorkFlow/new_role_onboarding.md](WorkFlow/new_role_onboarding.md) — 五步流程：询问角色信息 → 创建文件夹和 L0 → 引导填充 WorkFlow → 填充知识笔记 → 注册到 COMMON.md。
