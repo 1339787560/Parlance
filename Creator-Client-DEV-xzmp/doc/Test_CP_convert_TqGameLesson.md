@@ -63,31 +63,33 @@ interface MigrationResult {
 
 ---
 
-## 3. OnInternalCall — Client Request Handlers
+## 3. OnClientRequest — Client Request Handlers
 
-Add two branches in `OnInternalCall` (after line 99, before the else clause):
+`queryTutorialState` and `claimTutorialReward` are client→CP requests, so they go in `OnClientRequest` (not `OnInternalCall`, which handles CP module↔CP module calls). Add a new `OnClientRequest` function (see `cmdecoration_xzmp.ts:945` for the pattern):
 
 ```typescript
-} else if (reqName === REQ_NAME.QUERY_TUTORIAL_STATE) {
-    let flags = await CommonFuncs.async_getMigrationFlags(cxt, userid);
-    let config = CommonFuncs.loadConfig();
-    let isCompleted = (flags & MIGRATION_BIT.TQNEWPLAYERLESSON) !== 0;
-    iresp.resp = {
-        id: 1,
-        data: {
+async function OnClientRequest(creq: modsvr.client_request, cresp: modsvr.client_response, cxt: modsvr.context) {
+    let userid = creq.src.client.userid;
+    let req_data = creq.req.data;
+    let req_name = req_data['req'];
+
+    if (req_name === REQ_NAME.QUERY_TUTORIAL_STATE) {
+        let flags = await CommonFuncs.async_getMigrationFlags(cxt, userid);
+        let config = CommonFuncs.loadConfig();
+        let isCompleted = (flags & MIGRATION_BIT.TQNEWPLAYERLESSON) !== 0;
+        cresp.resp.id = 1;
+        cresp.resp.data = {
             isCompleted: isCompleted,
             rewardGold: isCompleted ? (config.newPlayerLessonReward ?? 0) : 0
-        }
-    };
-} else if (reqName === REQ_NAME.CLAIM_TUTORIAL_REWARD) {
-    let result = await Business.async_claimTutorialReward(cxt, userid);
-    iresp.resp = {
-        id: result.success ? 1 : 0,
-        data: {
+        };
+    } else if (req_name === REQ_NAME.CLAIM_TUTORIAL_REWARD) {
+        let result = await Business.async_claimTutorialReward(cxt, userid);
+        cresp.resp.id = result.success ? 1 : 0;
+        cresp.resp.data = {
             success: result.success,
             rewardGold: result.rewardGold
-        }
-    };
+        };
+    }
 ```
 
 ### Tests for queryTutorialState
@@ -125,8 +127,8 @@ namespace Business {
         // 1. Send reward first (fail early)
         let rewardOk = true;
         if (rewardGold > 0) {
-            // NOTE: src is not available in OnInternalCall context;
-            // use modsvr internal reward mechanism instead
+            // In OnClientRequest context, src is available via creq.src
+            // Use modsvr batch send reward (similar to async_batch_send_reward)
             rewardOk = await Business.async_sendGoldCoin_internal(cxt, userid, rewardGold);
         }
 
@@ -137,12 +139,13 @@ namespace Business {
         return { success: rewardOk, rewardGold };
     }
 
-    // Internal reward — no src needed, uses modsvr internal batch send
+    // Internal reward — uses modsvr batch send with dummy src
+    // (OnClientRequest provides creq.src; for abstraction pass null and let callee handle it)
     export async function async_sendGoldCoin_internal(
         cxt: modsvr.context, userid: number, amount: number
     ): Promise<boolean> {
-        // Use modsvr internal reward API specific to OnInternalCall context
         // Implementation depends on modsvr framework capabilities
+        // Consider: pass src from OnClientRequest, or use modsvr internal reward
         return true; // placeholder
     }
 }

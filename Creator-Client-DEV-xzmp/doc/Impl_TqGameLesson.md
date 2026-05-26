@@ -8,53 +8,129 @@
 
 ### 1.1 决策
 
-不新建独立 CP 插件。convert 服务已具备位运算 + 推送机制：
+不新建独立 CP 插件。convert 服务通过 `OnClientRequest` 处理客户端请求，通过 `OnLogon` 自动标记老玩家：
 
-- `migrationResult_convert_xzmp` (line 161, `HallDefine.ts`) 已有推送通道
-- convert 服务通过 `modsvr.parse_gameresult` 获取 nBout
-- convert 已有位运算字段支持新增标记位
+- `OnClientRequest` 处理 `queryTutorialState` / `claimTutorialReward`
+- `OnLogon` 自动标记已有对局记录的老玩家（不发奖励）
+- Bit flag 扩展：`MIGRATION_BIT.TQNEWPLAYERLESSON = 0x20`
+- 客户端驱动领奖：教程结束时客户端调用 `client_request('convert', cb, { req: 'claimTutorialReward' })`
 
-### 1.2 convert 新增内容
-
-| 需求 | 实现方式 |
-|------|---------|
-| 教程完成标记 | convert 位运算中新增 1 bit |
-| 教程奖励 | convert 奖励表新增一项，通过 `rewardGold` 字段配置 |
-| 自动标记已玩过玩家 | convert 在 `handleMigrationResult` 时判断 nBout > 0 → 自动置位 |
-
-### 1.3 convert → 客户端协议
-
-`migrationResult_convert_xzmp` 推送数据结构扩展：
+### 1.2 MIGRATION_BIT + REQ_NAME 扩展
 
 ```typescript
-// 新增或扩展字段
-interface MigrationResultData {
-    flags?: number              // 位运算标记（已有）
-    levelInfo?: any             // 已有
-    monthCardInfo?: any         // 已有
-    giftInfo?: any              // 已有
-    // 新增：
-    nBout?: number              // 玩家局数（convert 通过 parse_gameresult 获取）
-    newPlayerLesson?: {         // 新手教程信息
-        isCompleted: boolean    // 是否已完成教程
-        rewardGold: number      // 教程奖励金币数（仅在已标记时携带）
+const MIGRATION_BIT = {
+    TQVIP: 0x01,
+    TQMONTHCARD: 0x02,
+    TQNEWPLAYERDAILYGIFT: 0x04,
+    SCORE_COMPENSATE: 0x08,
+    GOLD_COIN: 0x10,
+    TQNEWPLAYERLESSON: 0x20,   // NEW: bit 5
+    ALL_DONE: 0x3F,             // updated: 63
+}
+
+const REQ_NAME = {
+    // ... existing ...
+    QUERY_TUTORIAL_STATE: 'queryTutorialState',
+    CLAIM_TUTORIAL_REWARD: 'claimTutorialReward',
+}
+```
+
+### 1.3 OnClientRequest 处理
+
+新增 `OnClientRequest` 函数处理客户端请求（参考 `cmdecoration_xzmp.ts:945` 的模式）：
+
+```typescript
+async function OnClientRequest(creq: modsvr.client_request, cresp: modsvr.client_response, cxt: modsvr.context) {
+    let userid = creq.src.client.userid;
+    let req_data = creq.req.data;
+    let req_name = req_data['req'];
+
+    if (req_name === REQ_NAME.QUERY_TUTORIAL_STATE) {
+        let flags = await CommonFuncs.async_getMigrationFlags(cxt, userid);
+        let config = CommonFuncs.loadConfig();
+        let isCompleted = (flags & MIGRATION_BIT.TQNEWPLAYERLESSON) !== 0;
+        cresp.resp.id = 1;
+        cresp.resp.data = {
+            isCompleted,
+            rewardGold: isCompleted ? (config.newPlayerLessonReward ?? 0) : 0
+        };
+    } else if (req_name === REQ_NAME.CLAIM_TUTORIAL_REWARD) {
+        let result = await Business.async_claimTutorialReward(cxt, userid);
+        cresp.resp.id = result.success ? 1 : 0;
+        cresp.resp.data = {
+            success: result.success,
+            rewardGold: result.rewardGold
+        };
+    }
+```
+
+### 1.4 Business.async_claimTutorialReward
+
+```typescript
+namespace Business {
+    export async function async_claimTutorialReward(
+        cxt: modsvr.context, userid: number
+    ): Promise<{ success: boolean; rewardGold: number }> {
+        let config = CommonFuncs.loadConfig();
+        if (config.isenable == 0) return { success: false, rewardGold: 0 };
+
+        let flags = await CommonFuncs.async_getMigrationFlags(cxt, userid);
+        let rewardGold = config.newPlayerLessonReward ?? 0;
+
+        // 1. 先发奖励（失败不影响标记）
+        let rewardOk = true;
+        if (rewardGold > 0) {
+            rewardOk = await Business.async_sendGoldCoin_internal(cxt, userid, rewardGold);
+        }
+
+        // 2. 设 bit（无论发奖结果）
+        let newFlags = flags | MIGRATION_BIT.TQNEWPLAYERLESSON;
+        await CommonFuncs.async_setMigrationFlags(cxt, userid, newFlags);
+
+        return { success: rewardOk, rewardGold };
+    }
+
+    export async function async_sendGoldCoin_internal(
+        cxt: modsvr.context, userid: number, amount: number
+    ): Promise<boolean> {
+        // OnClientRequest 上下文中使用 modsvr 发奖能力（需确认具体接口）
+        // 参考 CommonFuncs.async_batch_send_reward 需要 src 参数
+        // 在 OnClientRequest 中可通过 creq.src 获取
+        return true; // placeholder — 取决于 modsvr 框架能力
     }
 }
 ```
 
-### 1.4 convert 逻辑
+### 1.5 OnLogon 自动标记
 
+在 gold coin migration 之后（line ~172）：
+
+```typescript
+// tutorial — 已有对局记录的老玩家自动标记
+if ((flags & MIGRATION_BIT.TQNEWPLAYERLESSON) === 0) {
+    let bout = (logon as any).usergameinfo?.bout ?? 0;
+    if (bout > 0) {
+        flags = flags | MIGRATION_BIT.TQNEWPLAYERLESSON;
+    }
+}
+
+// final flags write
+result.flags = flags;
+result.newPlayerLesson = {
+    isCompleted: (flags & MIGRATION_BIT.TQNEWPLAYERLESSON) !== 0,
+    rewardGold: config.newPlayerLessonReward ?? 0,
+};
+CommonFuncs.notifyClient(src, cxt, userid, REQ_NAME.MIGRATION_RESULT, result);
 ```
-handleMigration():
-  nBout = parse_gameresult(userId).bout
-  if nBout > 0:
-    lessonBit = checkBit(flags, LESSON_BIT_POSITION)  // 检查教程位
-    if !lessonBit:
-      setBit(flags, LESSON_BIT_POSITION)              // 自动标记完成
-      // 不发奖励，仅标记
 
-  push "migrationResult_convert_xzmp" to client
-    with { flags, nBout, newPlayerLesson: { isCompleted: lessonBit, rewardGold: config.rewardGold } }
+### 1.6 convert_xzmp.jsonc 配置
+
+```jsonc
+{
+    "isenable": 1,
+    "guid": "convert_xzmp",
+    "newPlayerLessonReward": 100000
+}
 ```
 
 ---
@@ -63,21 +139,8 @@ handleMigration():
 
 **文件**: `plugins/hall/scripts/Define.ts`
 
-在 `HallDefine` namespace 中新增常量：
-
-```typescript
-export namespace HallDefine {
-    // ... 已有内容 ...
-
-    // 新增：convert 推送中的字段名
-    export const CP_CONVERT_LESSON = {
-        FIELD_NBOUT: "nBout",
-        FIELD_LESSON: "newPlayerLesson",
-    }
-}
-```
-
-改动位置：在 `MSG_FROM_CP` 枚举后追加，约 line 162。
+说明：migrationResult 推送中新增 `newPlayerLesson` 字段（含 `isCompleted` / `rewardGold`），
+HallPlugin 的 `handleMigrationResult` 直接按该字段名读取，无需新增常量。
 
 ---
 
@@ -93,18 +156,12 @@ private handleMigrationResult(data: {
     levelInfo?: any
     monthCardInfo?: any
     giftInfo?: any
-    nBout?: number                // 新增
     newPlayerLesson?: {           // 新增
         isCompleted: boolean
         rewardGold: number
     }
 }) {
     // ... 既有 leveldefine / monthcard / gift 查询 ...
-
-    // 新增：更新本地 nBout
-    if (data.nBout != null) {
-        ct.LocalCache.setInt("userbout", data.nBout)
-    }
 
     // 新增：更新教程状态
     if (data.newPlayerLesson != null) {
@@ -116,6 +173,8 @@ private handleMigrationResult(data: {
     }
 }
 ```
+
+> 注：nBout 由客户端本地缓存提供（`ct.LocalCache.getInt("userbout")`），CP 不推送。
 
 ### 3.2 onInit 中为 DataCenter 初始化默认教程状态
 
@@ -233,7 +292,7 @@ export class CMNewPlayerLessonHelp extends ct.BaseFunctionNode {
 
 **文件**: `game/scripts/GameInfo.ts`
 
-新增两个静态方法（建议放在文件顶部，`GamePlugin` import 之后，~line 18-19 后）：
+新增三个静态方法（建议放在文件顶部，`GamePlugin` import 之后，~line 18-19 后）：
 
 ```typescript
 // 检查是否需要新手教程
@@ -241,19 +300,35 @@ static checkNeedLesson(): boolean {
     return CMNewPlayerLessonHelp.isNewPlayer()
 }
 
-// 标记教程完成（对局结束时调用）
-// 由 Game.ts 在 onGameWinComplete 中触发
-// 不直接请求 CP，而是通过 convert 的协议通道——
-// 实际上标记动作已经由 HallPlugin.handleMigrationResult 完成
-// 此方法仅用于检查是否处于教程对局中
+// 检查是否处于教程对局中
 static isLessonPlaying(): boolean {
     return window["_isLessonPlaying"] === true
 }
+
+// 请求 CP 发奖并标记教程完成
+// 由 Game.ts 在教程对局结束时调用
+static requestClaimTutorialReward(callback: (success: boolean, rewardGold: number) => void) {
+    ct.CommonCPInterFace.client_request('convert', (res: any) => {
+        if (res && res.data && res.id === 1) {
+            // 更新 DataCenter 教程状态
+            let plugin = ct.centerCtrl.getPlugin('CMNewPlayerLessonPlugin')
+            if (plugin) {
+                plugin.updateState({
+                    isCompleted: true,
+                    rewardGold: res.data.rewardGold
+                })
+            }
+            callback(res.data.success, res.data.rewardGold)
+        } else {
+            callback(false, 0)
+        }
+    }, { req: 'claimTutorialReward' })
+}
 ```
 
-> 注意：奖励标记不在 GameInfo 中直接请求 CP。教程完成时，客户端只需标记游戏结束，
-> convert 的 `parse_gameresult` 会在对局结束时检测到 nBout 变化，由 convert 自动处理奖励发放。
-> 这是简化后的流程——客户端不直接调 `markComplete`。
+> 注意：发奖由客户端驱动。教程对局结束时，Game.ts 调用 `GameInfo.requestClaimTutorialReward()`，
+> 通过 `client_request('convert', cb, { req: 'claimTutorialReward' })` 请求 CP 发奖和标记。
+> CP 的 `OnClientRequest` 处理设 bit + 发金币，返回结果后客户端更新 DataCenter 并跳转到真实房间。
 
 ---
 
@@ -447,7 +522,8 @@ export class TqGameLesson {
         switch (msgID) {
             case 1: // BETTERCARD
                 break
-            case 2: // GETREWARD
+            case 2: // GETREWARD — 教程结束触发 CP 发奖
+                this.onLessonReward?.()
                 this.lessonOver()
                 break
             case 3: // LESSONOVER
@@ -462,6 +538,9 @@ export class TqGameLesson {
         }
     }
 
+    // 教程结束时由 Game.ts 注入发奖回调
+    public onLessonReward: (() => void) | null = null
+
     // 玩家操作后调用，推进到下一步
     nextStep() {
         // 暂停模式恢复
@@ -469,7 +548,7 @@ export class TqGameLesson {
 
     lessonOver() {
         this.isEnding = true
-        // 标记对局结束，触发 onGameWin
+        // Game.ts 在检测到 _isEnding 后调用 claimTutorialReward
     }
 
     isEnding(): boolean { return this.isEnding }
@@ -538,32 +617,52 @@ private startLesson() {
 }
 ```
 
-### 9.3 结算拦截（~line 1112 附近）
+### 9.3 startLesson 注入发奖回调
 
 ```typescript
-// 在 ntfGameWin 处理或 onGameWinStart 事件中
-// 找到：
-//   let gameWinResult: XZMS_interface.GAME_WIN_RESULT = this.getTmpWinResult();
-//   if (gameWinResult) {
-//       GameInfo.ntfGameWin(gameWinResult);
+private startLesson() {
+    this._isLessonPlaying = true
+    window["_isLessonPlaying"] = true
+    this._lesson = new TqGameLesson(GameInfo)
 
-// 在其之前或之后插入：
-if (this._isLessonPlaying) {
-    // 教程对局：跳过常规结算 UI
-    this._lesson.lessonOver()
-    this.lessonRoomSkip()
-    return  // 注意：此处需确保不执行后续正常结算流程
+    // 注入发奖回调：LessonData 中 CUSTOM GETREWARD 触发此回调
+    this._lesson.onLessonReward = () => {
+        this.claimTutorialReward()
+    }
+
+    this._lesson.lessonStart()
 }
 ```
 
-### 9.4 roomSkip 方法
+### 9.4 发奖流程
+
+```typescript
+private claimTutorialReward() {
+    // 先暂停状态机推进，等待 CP 返回
+    GameInfo.requestClaimTutorialReward((success: boolean, rewardGold: number) => {
+        // 无论发奖成功与否，都结束教程跳到真实房间
+        this.lessonCleanup()
+    })
+}
+
+private lessonCleanup() {
+    this._isLessonPlaying = false
+    window["_isLessonPlaying"] = false
+    this.lessonRoomSkip()
+}
+```
+
+### 9.5 roomSkip 方法
 
 ```typescript
 private lessonRoomSkip() {
     // 通过 Action_FindSuitableRoom 获取真实房间
-    // 或直接 ct.startGame 回到大厅再自动进入
-    // 具体实现待定——需确认 ct.startGame 从 game 场景切回大厅再进房间的可用路径
-    // 临时方案：
+    // 此时 CMNewPlayerLessonHelp.isNewPlayer() == false（CP 已完成标记）
+    let action = ct.btreeCenter.createAction("Action_FindSuitableRoom")
+    if (action) {
+        // 走 action 逻辑，返回真实房间
+    }
+    // 备用方案：
     ct.startGame(0, ct.StartGameSource.kSourceQuickStart)
 }
 ```

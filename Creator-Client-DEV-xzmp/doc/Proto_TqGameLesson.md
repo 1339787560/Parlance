@@ -21,28 +21,36 @@
 
 | 术语 | 含义 |
 |------|------|
-| CMNewPlayerLesson | CP 插件，管理教程完成状态和奖励 |
+| CMNewPlayerLesson | 客户端插件，管理教程完成状态 |
 | TqGameLesson | 客户端纯逻辑模块，模拟对局状态机 |
 | LessonData | 14 阶段 3500+ 行预定义消息序列 |
 | singleplayer | additionConfig 中配置的单机房间 |
 | roomSkip | 教程结束后跳转到真实房间 |
+| convert | CP 服务，通过 OnClientRequest 和 OnLogon 管理教程状态 |
 
 ---
 
 ## 2. 架构总览
 
 ```
++-- CP convert (OnClientRequest + OnLogon) ---+
+|   Bit flag TQNEWPLAYERLESSON 管理            |
+|   OnLogon 自动标记老玩家（nBout > 0）        |
+|   OnClientRequest: queryTutorialState        |
+|                 claimTutorialReward          |
++---------------------------------------------+
+          | migrationResult push
+          v
 +-- HallPlugin ------------------------------+
 |   CMNewPlayerLesson DataCenter 托管         |
-|   handleMigrationResult() → nBout != 0     |
-|   时自动标记完成                            |
+|   收到 newPlayerLesson 写入 DataCenter       |
 +--------------------------------------------+
           |
           | this.dataCenter.getState()
           v
 +-- GameInfo --------------------------------+
 |   取 CMNewPlayerLesson 数据项               |
-|   请求 markLessonComplete → CP 发奖         |
+|   claimTutorialReward → convert 发奖 + 标记 |
 +--------------------------------------------+
           |
           | 持有实例引用
@@ -57,7 +65,7 @@
           v
 +-- Game.ts ---------------------------------+
 |   onLoad() → isNeedLesson() → lessonStart() |
-|   ntfGameWin() → 触发结算 → markComplete   |
+|   CUSTOM GETREWARD → claimTutorialReward   |
 +--------------------------------------------+
 ```
 
@@ -65,38 +73,67 @@
 
 | 组件 | 类型 | 位置 | 职责 |
 |------|------|------|------|
-| CMNewPlayerLessonPlugin | CP 插件 | `plugins/cmnewplayerlesson/` | CP 数据托管、请求处理 |
+| convert (CP) | 服务端 | `convert_xzmp.ts` | OnLogon 标记、OnClientRequest 处理请求 |
+| CMNewPlayerLessonPlugin | 客户端插件 | `plugins/cmnewplayerlesson/` | DataCenter 数据托管 |
 | CMNewPlayerLessonHelp | Help 类 | `plugins/cmnewplayerlesson/` | 静态数据访问方法 |
 | TqGameLesson | 纯模块 | `game/scripts/common/TqGameLesson.ts` | 模拟对局状态机 |
 | LessonData | 数据文件 | `game/scripts/common/LessonData.ts` | 14 阶段预定义消息 |
 | Action_FindRoom | BT Action | `plugins/hall/scripts/actions/` | 统一房间查找 |
-| GameInfo | 数据管理 | `game/scripts/GameInfo.ts` | CP 数据访问 + 请求 |
+| GameInfo | 数据管理 | `game/scripts/GameInfo.ts` | 数据访问 + CP 请求 |
 | Game | 主控制器 | `game/scripts/components/Game.ts` | 启动守卫 |
 
 ---
 
-## 3. CP 插件: CMNewPlayerLesson
+## 3. CP 扩展: convert
 
-### 3.1 目录结构
+教程状态不由独立 CP 插件管理，而是扩展已有 convert 服务。
+
+### 3.1 CP 侧新增内容
+
+```typescript
+// 1. MIGRATION_BIT 扩展
+const MIGRATION_BIT = {
+    // ... 已有位 ...
+    TQNEWPLAYERLESSON: 0x20,   // bit 5 — 新增
+    ALL_DONE: 0x3F,             // 63
+}
+
+// 2. REQ_NAME 扩展
+const REQ_NAME = {
+    // ... 已有 ...
+    QUERY_TUTORIAL_STATE: 'queryTutorialState',
+    CLAIM_TUTORIAL_REWARD: 'claimTutorialReward',
+}
+
+// 3. OnClientRequest 处理
+// queryTutorialState → 读 bit flag 返回 isCompleted + rewardGold
+// claimTutorialReward → 发金币 + 设 bit，返回 success + rewardGold
+
+// 4. OnLogon 自动标记
+// 检测 nBout > 0 && bit 未设 → 自动置位（不发奖励）
+// 推送 migrationResult 携带 newPlayerLesson.isCompleted
+
+// 5. config 新增
+// newPlayerLessonReward: 100000
+```
+
+### 3.2 客户端插件: CMNewPlayerLesson
+
+客户端插件负责 DataCenter 托管，不直接和 CP 通信。
 
 ```
 plugins/cmnewplayerlesson/
 ├── scripts/
-│   ├── CMNewPlayerLessonDef.ts      # 常量、数据类型、接口定义
+│   ├── CMNewPlayerLessonDef.ts      # 常量、数据类型
 │   ├── CMNewPlayerLessonHelp.ts     # 静态 Helper (extend ct.BaseFunctionNode)
 │   └── CMNewPlayerLessonPlugin.ts   # 插件类 (extend ct.BasePlugin)
 ```
 
-### 3.2 数据定义 (CMNewPlayerLessonDef)
+### 3.3 数据定义 (CMNewPlayerLessonDef)
 
 ```typescript
 export namespace CMNewPlayerLessonDef {
     export const PluginName = 'CMNewPlayerLessonPlugin'
-    export const MODULE_NAME = 'cmnewplayerlesson'
-
-    // 客户端 → CP 请求
-    export const REQ_QUERY_STATE = 'queryLessonState'
-    export const REQ_MARK_COMPLETE = 'markLessonComplete'
 
     export const DataType = {
         LessonState: "CMNewPlayerLesson_LessonState",
@@ -106,84 +143,58 @@ export namespace CMNewPlayerLessonDef {
         UpdateLessonState: "CMNewPlayerLesson_UpdateLessonState",
     }
 
-    // CP 返回的玩家状态
     export interface LessonState {
-        isCompleted: boolean      // 是否已完成教程
-        rewardGold?: number       // 奖励金币数（仅 markComplete 返回时携带）
+        isCompleted: boolean
+        rewardGold: number
     }
 }
 ```
 
-### 3.3 插件类 (CMNewPlayerLessonPlugin)
+### 3.4 插件类 (CMNewPlayerLessonPlugin)
 
 ```typescript
 @ct.plugin
 export class CMNewPlayerLessonPlugin extends ct.BasePlugin {
     onInit() {
-        // 初始化状态
-        return new Promise<void>((resolve, reject) => {
-            // onInit 时不强求请求 CP（保持启动速度）
-            // 由 HallPlugin 在适当时机调用查询
+        return new Promise<void>((resolve) => {
+            this.dispatch({
+                type: CMNewPlayerLessonDef.ReduceType.UpdateLessonState,
+                value: { isCompleted: false, rewardGold: 0 }
+            })
             resolve()
         })
     }
 
-    onDataReducer(state, action) {
-        // 标准 reducer 模式
+    onDataReducer(state: ct.StateRead, action: ct.AnyAction) {
+        if (!state) {
+            return { [CMNewPlayerLessonDef.DataType.LessonState]: { isCompleted: false, rewardGold: 0 } }
+        }
+        switch (action.type) {
+            case CMNewPlayerLessonDef.ReduceType.UpdateLessonState:
+                return { ...state, [CMNewPlayerLessonDef.DataType.LessonState]: action.value }
+        }
+        return state
     }
 
-    // 查询教程状态
-    queryState(callback: (state: LessonState) => void) {
-        ct.CommonCPInterFace.client_request(
-            MODULE_NAME,
-            (res: any) => {
-                if (res?.id === 1 && res?.data) {
-                    this.dispatch({
-                        type: ReduceType.UpdateLessonState,
-                        value: { isCompleted: res.data.isCompleted || false }
-                    })
-                    callback({ isCompleted: res.data.isCompleted || false })
-                } else {
-                    callback({ isCompleted: false })
-                }
-            },
-            { req: REQ_QUERY_STATE }
-        )
-    }
-
-    // 标记教程完成（由 GameInfo 调用）
-    markComplete(callback: (result: { success: boolean, rewardGold: number }) => void) {
-        ct.CommonCPInterFace.client_request(
-            MODULE_NAME,
-            (res: any) => {
-                if (res?.id === 1 && res?.data) {
-                    this.dispatch({
-                        type: ReduceType.UpdateLessonState,
-                        value: { isCompleted: true, rewardGold: res.data.rewardGold }
-                    })
-                    callback({ success: true, rewardGold: res.data.rewardGold || 0 })
-                } else {
-                    callback({ success: false, rewardGold: 0 })
-                }
-            },
-            { req: REQ_MARK_COMPLETE }
-        )
+    updateState(state: { isCompleted: boolean, rewardGold: number }) {
+        this.dispatch({
+            type: CMNewPlayerLessonDef.ReduceType.UpdateLessonState,
+            value: state
+        })
     }
 }
 ```
 
-### 3.4 数据访问 (CMNewPlayerLessonHelp)
+### 3.5 数据访问 (CMNewPlayerLessonHelp)
 
 ```typescript
 @ccclass('CMNewPlayerLessonHelp')
 export class CMNewPlayerLessonHelp extends ct.BaseFunctionNode {
-    // 是否已完成教程
     static isCompleted(): boolean {
         let state = this.dataCenter.getState(CMNewPlayerLessonDef.PluginName)
         return state?.get(CMNewPlayerLessonDef.DataType.LessonState)?.isCompleted || false
     }
 
-    // 是否为新玩家（需完成教程）
     static isNewPlayer(): boolean {
         if (this.isCompleted()) return false
         let nBout = ct.LocalCache.getInt("userbout", 0)
@@ -192,27 +203,17 @@ export class CMNewPlayerLessonHelp extends ct.BaseFunctionNode {
 }
 ```
 
-### 3.5 CP 接口协议
+### 3.6 CP 接口协议
 
-| 请求 | req 值 | 发送方 | 返回值 |
-|------|--------|--------|--------|
-| 查询状态 | `queryLessonState` | HallPlugin | `{ isCompleted: boolean }` |
-| 标记完成 | `markLessonComplete` | GameInfo | `{ success: boolean, rewardGold: number }` |
+| 请求 | req 值 | 目标 | 返回值 |
+|------|--------|------|--------|
+| 查询状态 | `queryTutorialState` | convert OnClientRequest | `{ isCompleted: boolean, rewardGold: number }` |
+| 标记+领奖 | `claimTutorialReward` | convert OnClientRequest | `{ success: boolean, rewardGold: number }` |
 
-CP 端数据存储：
-
-```typescript
-// CP 端维护
-interface PlayerTutorialState {
-    userId: number
-    isCompleted: boolean          // 教程完成标记
-    rewardGold: number            // 奖励金币数
-}
-```
-
-- `isCompleted` 不由客户端直接设置
-- 仅在 `markLessonComplete` 成功发奖后由 CP 置位
-- CP 端通过 `modsvr.parse_gameresult` 获取玩家局数（nBout）
+- 客户端通过 `ct.CommonCPInterFace.client_request('convert', cb, { req: 'queryTutorialState' })` 调用
+- 状态通过 `MIGRATION_BIT.TQNEWPLAYERLESSON`（bit 5）位存储
+- `OnLogon` 自动标记 nBout > 0 的老玩家（不发奖励）
+- 奖励在 `claimTutorialReward` 时由 convert 发金币 + 设 bit（幂等）
 
 ---
 
@@ -220,38 +221,34 @@ interface PlayerTutorialState {
 
 ### 4.1 数据托管
 
-HallPlugin 在 `onInit()` 中获取 CMNewPlayerLesson 数据：
+教程状态由 convert 的 `OnLogon` 自动推送。HallPlugin 在 `handleMigrationResult` 中收到直接更新：
 
 ```typescript
-onInit() {
-    // 启动时查询教程状态
-    let lessonPlugin = ct.centerCtrl.getPlugin('CMNewPlayerLessonPlugin')
-    if (lessonPlugin) {
-        lessonPlugin.queryState((state) => {
-            // 状态已写入 DataCenter
-        })
+handleMigrationResult(data) {
+    // ... 既有 migration 处理 ...
+
+    // 新增：更新教程状态（由 convert OnLogon 推送）
+    if (data.newPlayerLesson != null) {
+        let lessonPlugin = ct.centerCtrl.getPlugin('CMNewPlayerLessonPlugin')
+        if (lessonPlugin) {
+            lessonPlugin.updateState(data.newPlayerLesson)
+        }
     }
 }
 ```
 
 ### 4.2 迁移处理
 
-HallPlugin.handleMigrationResult() 中发现玩家 nBout != 0 时，
-自动将玩家标记为"已完成教程"（防止已玩过的玩家被错误拦截）：
+CP 端的 `OnLogon` 负责自动标记老玩家，客户端不做任何请求：
 
-```typescript
-handleMigrationResult(data) {
-    // ... 现有迁移逻辑 ...
-
-    // 迁移：如果已有对局记录，标记教程完成
-    if (data.nBout != null && data.nBout > 0) {
-        ct.CommonCPInterFace.client_request('cmnewplayerlesson', (res) => {
-            if (res?.id === 1) {
-                console.log("cmnewplayerlesson migration markComplete ok")
-            }
-        }, { req: 'markLessonComplete' })
-    }
-}
+```
+OnLogon 流程：
+  → 读取 MIGRATION_BIT（已有）
+  → 检测 logon.usergameinfo.bout
+  → 若 nBout > 0 且 bit 未设 → 自动标记 bit 5（不发奖励）
+  → 推送 migrationResult_convert_xzmp
+    → 携带 newPlayerLesson: { isCompleted, rewardGold }
+  → HallPlugin.handleMigrationResult 收到后写入 DataCenter
 ```
 
 ### 4.3 首次引导 (FirstLayer)
@@ -330,53 +327,50 @@ GameInfo 新增教程相关方法：
 ```typescript
 // GameInfo.ts
 
-// 检查玩家是否需要教程
 static checkNeedLesson(): boolean {
     return CMNewPlayerLessonHelp.isNewPlayer()
 }
 
-// 请求标记教程完成并领取奖励
-static requestMarkLessonComplete(callback: (success: boolean, rewardGold: number) => void) {
-    let plugin = ct.centerCtrl.getPlugin('CMNewPlayerLessonPlugin') as CMNewPlayerLessonPlugin
-    if (!plugin) {
-        callback(false, 0)
-        return
-    }
-    plugin.markComplete((result) => {
-        if (result.success) {
-            // 更新本地金币显示
-            // depositModel.addGold(result.rewardGold)
+static isLessonPlaying(): boolean {
+    return window["_isLessonPlaying"] === true
+}
+
+// 请求 CP 发奖并标记完成（客户端驱动）
+static requestClaimTutorialReward(callback: (success: boolean, rewardGold: number) => void) {
+    ct.CommonCPInterFace.client_request('convert', (res: any) => {
+        if (res && res.data && res.id === 1) {
+            let plugin = ct.centerCtrl.getPlugin('CMNewPlayerLessonPlugin')
+            if (plugin) {
+                plugin.updateState({ isCompleted: true, rewardGold: res.data.rewardGold })
+            }
+            callback(res.data.success, res.data.rewardGold)
+        } else {
+            callback(false, 0)
         }
-        callback(result.success, result.rewardGold)
-    })
+    }, { req: 'claimTutorialReward' })
 }
 ```
 
 ### 6.2 Game.ts onLoad 教程启动
 
 ```typescript
-// Game.ts onLoad()
 onLoad(): void {
     // ... 既有初始化逻辑 ...
-
-    // 检查是否需要启动教程
     if (GameInfo.checkNeedLesson()) {
         this.startLesson()
     }
 }
 
 private startLesson() {
-    // 教程进行中标记
     this._isLessonPlaying = true
-
-    // 创建教程状态机实例
-    this._lesson = new TqGameLesson(GameInfo.getInstance())
-
-    // 启动异步状态机
+    window["_isLessonPlaying"] = true
+    this._lesson = new TqGameLesson(GameInfo)
+    // 注入发奖回调
+    this._lesson.onLessonReward = () => this.claimTutorialReward()
     this._lesson.lessonStart().catch((err) => {
         console.error("TqGameLesson error:", err)
-        // xpcall 等价兜底：直接请求标记完成
-        GameInfo.requestMarkLessonComplete()
+        // 兜底：直接请求发奖
+        GameInfo.requestClaimTutorialReward(() => this.lessonCleanup())
     })
 }
 ```
@@ -386,29 +380,21 @@ private startLesson() {
 不再在 8 个 Manager 中散布守卫，全部集中在 Game.ts：
 
 - **`onLoad()`** — 启动教程状态机
-- **`ntfGameWin()`** — 教程结算时调 `markLessonComplete`
-- **`OperateBtnsManager`** — 教程期间按钮可见性由 TqGameLesson 控制（不入侵 Manager）
+- **`claimTutorialReward()`** — 教程 GETREWARD 时调用，请求 CP 发奖
+- **`lessonCleanup()`** — 清理标记 + roomSkip
+- **`OperateBtnsManager`** / **`PlayerInfoNode`** — 读取 `window["_isLessonPlaying"]` 做约束
 
 ```typescript
-// Game.ts: 拦截 ntfGameWin
-// 原流程: GameConnect → GameInfo.ntfGameWin
-// 教程中: TqGameLesson → direct call → GameInfo.ntfGameWin → Game.ts 检测
+private claimTutorialReward() {
+    GameInfo.requestClaimTutorialReward((success, rewardGold) => {
+        this.lessonCleanup()
+    })
+}
 
-// Game.ts 中监听 ntfGameWin 完成
-onGameWinComplete() {
-    if (this._isLessonPlaying) {
-        // 教程对局结束 → 请求发奖
-        GameInfo.requestMarkLessonComplete((success, rewardGold) => {
-            if (success) {
-                this._lesson.setIsEnding(true)
-                this.roomSkip()  // 跳转到真实房间
-            } else {
-                // 发奖失败，仍然结束教程
-                this._lesson.lessonOver()
-                this.roomSkip()
-            }
-        })
-    }
+private lessonCleanup() {
+    this._isLessonPlaying = false
+    window["_isLessonPlaying"] = false
+    this.lessonRoomSkip()
 }
 ```
 
@@ -510,7 +496,7 @@ async lessonStart(): Promise<void> {
     } catch (err) {
         // xpcall 等价兜底
         console.error("lessonStart error:", err)
-        GameInfo.requestMarkLessonComplete()
+        GameInfo.requestClaimTutorialReward(() => { /* 兜底清理 */ })
     }
 }
 ```
@@ -520,7 +506,7 @@ async lessonStart(): Promise<void> {
 | ID | 名称 | 处理 |
 |----|------|------|
 | 1 | BETTERCARD | 出牌提示「选更好的牌」，更新 UI 引导预制体 |
-| 2 | GETREWARD | 调 `reqLessonReward()` → CP `markLessonComplete` |
+| 2 | GETREWARD | 触发 `onLessonReward` 回调 → `claimTutorialReward` |
 | 3 | LESSONOVER | `lessonOver()` → `setIsEnding(true)` |
 | 4 | FIRSTHU | 首次胡牌特殊处理 |
 | 5 | CANHUTINGINFO | 显示"可以胡牌"提示 |
@@ -533,16 +519,18 @@ async lessonStart(): Promise<void> {
 ```
 LessonData 模拟对局
   ↓ 局内每次胡牌：客户端本地算法算出假金币变化，仅 UI 展示
-  ↓ 对局结束（LESSONOVER 前最后一个阶段）
-  → GameInfo.ntfGameWin(fakeWinData)  // 假结算数据
-  → Game.ts onGameWinComplete()
-    → GameInfo.requestMarkLessonComplete()
-      → CP markLessonComplete 接口
-        → CP 发奖成功 → isCompleted = true
-        → CP 返回 rewardGold
-      → 更新本地 DataCenter
-      → lessonOver()
-      → roomSkip()
+  ↓ 对局结束 → CUSTOM GETREWARD 触发
+  → TqGameLesson.onLessonReward 回调
+  → Game.ts claimTutorialReward()
+    → GameInfo.requestClaimTutorialReward()
+      → client_request('convert', cb, { req: 'claimTutorialReward' })
+      → convert OnClientRequest 处理
+        → 发金币（失败不影响标记）
+        → 设 bit 5
+        → 返回 { success, rewardGold }
+    → 更新 DataCenter
+    → lessonCleanup()
+    → roomSkip()
 ```
 
 ---
@@ -615,16 +603,20 @@ private updateGuideUI(step: string) {
 
 ```
 TqGameLesson 14 阶段模拟对局结束
-  → ntfGameWin（假结算数据）
-  → GameInfo.requestMarkLessonComplete()
-    → CP markLessonComplete
-      → CP 发奖 + 置位 isCompleted
-    → 返回 { success: true, rewardGold }
-  → 更新 DataCenter
-  → lessonOver()
-  → roomSkip()
-    → Action_FindSuitableRoom（此时 isNewPlayer == false）
-    → ct.startGame(realRoomId)
+  → CUSTOM GETREWARD 触发
+  → TqGameLesson.onLessonReward 回调
+  → Game.ts claimTutorialReward()
+    → GameInfo.requestClaimTutorialReward()
+      → client_request('convert', cb, { req: 'claimTutorialReward' })
+      → convert OnClientRequest
+        → 发金币（先发奖，失败继续）
+        → 设 bit 5
+        → 返回 { success, rewardGold }
+    → 更新 DataCenter（isCompleted = true）
+    → lessonCleanup()
+    → roomSkip()
+      → Action_FindSuitableRoom（此时 isNewPlayer == false）
+      → ct.startGame(realRoomId)
 ```
 
 ### 9.4 中断重入流程
@@ -632,15 +624,16 @@ TqGameLesson 14 阶段模拟对局结束
 ```
 玩家在教程中途杀进程
   → 重新打开 App → 进入大厅
-  → HallPlugin.onInit() → queryLessonState
-    → CP 返回 { isCompleted: false }
+  → OnLogon 执行 → nBout == 0，bit 未设
+  → migrationResult 推送 isCompleted == false
   → 玩家点击房间
   → isNewPlayer() == true
   → 重新进入教程对局
   → 第 1 阶段重新开始
 
 教程完成后杀进程
-  → CP 已存 isCompleted = true
+  → CP 已存 bit 5
+  → OnLogon 推送 isCompleted == true
   → 不再进入教程
 ```
 
@@ -650,14 +643,14 @@ TqGameLesson 14 阶段模拟对局结束
 
 | 步骤 | 内容 | 依赖 | 验证标准 |
 |------|------|------|---------|
-| 1 | 创建 CMNewPlayerLesson 插件结构（Def/Help/Plugin） | 无 | 插件注册成功，DataCenter 初始化 |
-| 2 | 实现 CP 接口 queryState + markLessonComplete | CP 端配合 | HallPlugin 能查询状态 |
-| 3 | 实现 GameInfo.checkNeedLesson / requestMarkLessonComplete | 步骤 2 | 接口调用成功 |
-| 4 | 创建 Action_FindSuitableRoom 统一房间查找 | 步骤 3 | 新玩家跳转到 singleplayer 房间 |
-| 5 | 改造现有 findSuitableRoomId 调用点 | 步骤 4 | 所有位置使用同一 Action |
-| 6 | 迁移 TqGameLesson + LessonData 核心模块 | 无 | 状态机可启动 |
-| 7 | Game.ts onLoad 集成 + 教程启动 | 步骤 6 | onLoad 触发 lessonStart |
-| 8 | 结算集成 + markComplete 调用链 | 步骤 3 + 7 | 教程结束完成发奖 |
-| 9 | HallPlugin 迁移处理（nBout != 0 → markComplete） | 步骤 2 | 已玩过玩家不被拦截 |
-| 10 | UI 引导预制体集成 | 步骤 6 | 教程期间正确显示引导 |
-| 11 | 按钮约束集成 | 步骤 6 | 教程期间只显示可操作按钮 |
+| 1 | CP convert 扩展（bit flag + OnClientRequest + OnLogon） | 无 | 接口返回正确状态 |
+| 2 | 创建 CMNewPlayerLesson 插件结构（Def/Help/Plugin） | 无 | 插件注册成功，DataCenter 初始化 |
+| 3 | HallPlugin handleMigrationResult 扩展 | Step 2 | 收到推送后更新 DataCenter |
+| 4 | 实现 GameInfo.checkNeedLesson / requestClaimTutorialReward | Step 2-3 | CP 请求调用成功 |
+| 5 | 创建 Action_FindSuitableRoom 统一房间查找 | Step 4 | 新玩家跳转到 singleplayer 房间 |
+| 6 | 改造入口（RoomNode + AreaNode 替换 KEY_SYSGAME） | Step 5 | 新玩家进入教程房间 |
+| 7 | 迁移 TqGameLesson + LessonData 核心模块 | 无 | 状态机可启动 |
+| 8 | Game.ts onLoad 集成 + 教程启动 | Step 7 | onLoad 触发 lessonStart |
+| 9 | 结算集成 + claimTutorialReward 调用链 | Step 4 + 8 | 教程结束完成发奖+跳转 |
+| 10 | PlayerInfoNode 头像点击拦截 + OperateBtnsManager 约束 | Step 7 | 教程期间操作受控 |
+| 11 | UI 引导预制体集成 | Step 7 | 教程期间正确显示引导 |

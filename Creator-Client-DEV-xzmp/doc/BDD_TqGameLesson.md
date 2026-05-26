@@ -5,37 +5,47 @@
 
 ---
 
-## 场景 1: CP 插件的状态查询
+## 场景 1: CP 状态查询
 
-**背景：** CMNewPlayerLessonPlugin 已注册，HallPlugin 已初始化。
+**背景：** MMigrationResult 已推送，DataCenter 已初始化。
 
-**规则 1.1：首次进入的玩家状态为未完成**
+**规则 1.1：OnLogon 推送时标记未完成**
 
 ```
-Given 玩家从未登录过游戏
-When  HallPlugin.onInit() 查询教程状态
-Then  调用 CMNewPlayerLessonPlugin.queryState()
-And   CP 返回 { isCompleted: false }
+Given 玩家从未登录过游戏（nBout == 0, bit 未设置）
+When  OnLogon 执行
+Then  教程 bit 保持 0
+And   migrationResult 推送 newPlayerLesson.isCompleted == false
 And   DataCenter 中 LessonState.isCompleted == false
 ```
 
-**规则 1.2：已完成教程的玩家状态为已完成**
+**规则 1.2：OnLogon 推送时标记已完成**
 
 ```
-Given 玩家已完成过新手教程（CP 端 isCompleted = true）
-When  HallPlugin.onInit() 查询教程状态
-Then  CP 返回 { isCompleted: true }
+Given 玩家已有对局记录（nBout > 0, bit 已设置）
+When  OnLogon 执行
+Then  教程 bit 保持不变
+And   migrationResult 推送 newPlayerLesson.isCompleted == true
 And   DataCenter 中 LessonState.isCompleted == true
 ```
 
-**规则 1.3：CP 服务异常时默认为未完成**
+**规则 1.3：客户端也可主动查询**
+
+```
+Given 需要确认教程状态
+When  GameInfo 调用 client_request('convert', cb, { req: 'queryTutorialState' })
+Then  CP OnClientRequest 返回 { isCompleted: bool, rewardGold: number }
+And   客户端根据结果决定是否进入教程
+```
+
+**规则 1.4：CP 服务异常时默认为未完成**
 
 ```
 Given CP 服务不可用
-When  queryState() 发起请求
-Then  回调返回 { isCompleted: false }
-And   DataCenter 保持默认值
+When  客户端请求 queryTutorialState 超时
+Then  兜底返回 { isCompleted: false, rewardGold: 0 }
 And   不影响玩家进入游戏（不因 CP 异常卡住）
+And   isNewPlayer() 仍依据本地 nBout 判定
 ```
 
 ---
@@ -201,7 +211,7 @@ And   不经过网络层 GameConnect
 Given 当前处理的消息类型为 CUSTOM
 When  dealCustom(msgID) 被调用
 Then  根据 msgID 执行对应的客户端控制逻辑：
-      - GETREWARD → 触发 CP markLessonComplete
+      - GETREWARD → 触发 Game.ts 的 claimTutorialReward 流程（客户端驱动）
       - LESSONOVER → 标记教程结束
       - BETTERCARD/CANHUTINGINFO → 更新 UI 引导
       - FIRSTHU → 首次胡牌特殊处理
@@ -213,7 +223,7 @@ Then  根据 msgID 执行对应的客户端控制逻辑：
 ```
 Given 状态机执行中抛出异常
 When  lessonStart() 的 catch 块捕获到错误
-Then  调用 GameInfo.requestMarkLessonComplete() 作为兜底
+Then  调用 GameInfo.requestClaimTutorialReward() 作为兜底
 And   玩家不会卡在教程中
 ```
 
@@ -251,33 +261,33 @@ Then  调用 TqGameLesson.nextStep() 推进到下一消息
 
 ## 场景 8: 结算与奖励
 
-**规则 8.1：教程对局结束 → 请求发奖**
+**规则 8.1：教程对局结束 → 客户端驱动发奖**
 
 ```
-Given TqGameLesson 模拟对局结束（ntfGameWin 已调用）
+Given TqGameLesson 的 CUSTOM GETREWARD 消息触发
 And  Game._isLessonPlaying == true
-When  Game.onGameWinComplete() 被触发
-Then  调用 GameInfo.requestMarkLessonComplete()
-And  等待 CP 返回发奖结果
+When  onLessonReward 回调被执行
+Then  Game.ts 调用 GameInfo.requestClaimTutorialReward()
+And  底层通过 client_request('convert', cb, { req: 'claimTutorialReward' }) 请求 CP
 ```
 
 **规则 8.2：发奖成功 → 标记完成 + 跳转**
 
 ```
-Given CP markLessonComplete 返回 { success: true, rewardGold: N }
+Given CP claimTutorialReward 返回 { success: true, rewardGold: N }
 When  收到发奖成功回调
-Then  DataCenter 中 LessonState.isCompleted 更新为 true
-And  TqGameLesson.setIsEnding(true) 设置
-And  调用 roomSkip() 跳转到真实房间
+Then  GameInfo.requestClaimTutorialReward 的回调更新 DataCenter
+And  LessonState.isCompleted 更新为 true
+And  调用 lessonCleanup() → roomSkip() 跳转到真实房间
 And  玩家金币增加 rewardGold
 ```
 
 **规则 8.3：发奖失败 → 仍然结束教程**
 
 ```
-Given CP markLessonComplete 返回 { success: false }
+Given CP claimTutorialReward 返回 { success: false }
 When  收到发奖失败回调
-Then  TqGameLesson.lessonOver() 仍然执行
+Then  lessonCleanup() 仍然执行
 And  roomSkip() 仍然执行（玩家不卡住）
 ```
 
@@ -309,23 +319,28 @@ And  ct.startGame(realRoomId, ...) 执行跳转
 
 ## 场景 10: 数据迁移
 
-**规则 10.1：已玩过玩家自动标记完成**
+**规则 10.1：OnLogon 自动标记已玩过玩家**
 
 ```
-Given HallPlugin.handleMigrationResult() 收到数据
-And  data.nBout > 0
+Given convert 的 OnLogon 执行
+And  logon.usergameinfo.bout > 0
+And  MIGRATION_BIT.TQNEWPLAYERLESSON 未设置
 When  迁移处理执行
-Then  调用 markLessonComplete 请求 CP 标记完成
+Then  flags = flags | TQNEWPLAYERLESSON（不发奖励）
+And  该 bit 参与最终 async_setMigrationFlags 批量写
+And  migrationResult 推送 newPlayerLesson.isCompleted == true
+And  客户端 DataCenter 更新为已完成
 And  后续该玩家不再进入教程
 ```
 
-**规则 10.2：新玩家迁移不受影响**
+**规则 10.2：新玩家不受影响**
 
 ```
-Given HallPlugin.handleMigrationResult() 收到数据
-And  data.nBout == null 或 data.nBout == 0
+Given OnLogon 执行
+And  logon.usergameinfo.bout == 0 或不存在
 When  迁移处理执行
-Then  不调用 markLessonComplete
+Then  TQNEWPLAYERLESSON bit 保持 0
+And  migrationResult 推送 newPlayerLesson.isCompleted == false
 And  玩家继续享受教程引导
 ```
 
