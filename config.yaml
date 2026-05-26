@@ -11,10 +11,10 @@ database:
 # Managed services - launched as subprocesses, killed on main shutdown
 # Extensible fields: name, command, args, cwd, env, auto_restart, health_check, tags, enabled
 services:
-  # - name: http-photo-server
-  #   command: python
-  #   args: ["C:\\codelib\\HttpPhotoServer\\src\\main.py"]
-  #   cwd: C:\codelib\HttpPhotoServer\src
-  #   auto_restart: false
-  #   tags: [media, gallery]
-  #   enabled: true
+  - name: http-photo-server
+    command: python
+    args: ["C:\\codelib\\HttpPhotoServer\\src\\main.py"]
+    cwd: C:\codelib\HttpPhotoServer\src
+    auto_restart: false
+    tags: [media, gallery]
+    enabled: true
