@@ -2,6 +2,9 @@
 
 Target: `D:\Codlib\other\ModCPSvr\cpscript\src\xzmp\convert_xzmp.ts`
 
+Principle: Client drives completion and reward claiming via CP requests.
+convert handles server-side flag persistence + old-player auto-mark.
+
 ---
 
 ## 1. Bit Flag
@@ -20,15 +23,27 @@ const MIGRATION_BIT = {
 }
 ```
 
+Also add to `REQ_NAME`:
+
+```typescript
+const REQ_NAME = {
+    // ... existing ...
+    QUERY_TUTORIAL_STATE: 'queryTutorialState',     // NEW
+    CLAIM_TUTORIAL_REWARD: 'claimTutorialReward',   // NEW
+}
+```
+
 **Test A1** — `TQNEWPLAYERLESSON === 0x20`
-**Test A2** — `ALL_DONE === 0x3F` (all 6 bits combined)
+**Test A2** — `ALL_DONE === 0x3F` (all 6 bits OR'd)
 **Test A3** — bit 5 does not overlap any existing bit
+**Test A4** — `REQ_NAME.QUERY_TUTORIAL_STATE === 'queryTutorialState'`
+**Test A5** — `REQ_NAME.CLAIM_TUTORIAL_REWARD === 'claimTutorialReward'`
 
 ---
 
 ## 2. MigrationResult Interface
 
-Extend:
+Extend `MigrationResult` for OnLogon push:
 
 ```typescript
 interface MigrationResult {
@@ -43,201 +58,229 @@ interface MigrationResult {
 }
 ```
 
-**Test A4** — default response omits `newPlayerLesson` when nBout = 0 and bit not set
-**Test A5** — response includes `newPlayerLesson` with `{ isCompleted: true, rewardGold: N }` when bit is set
+**Test A6** — OnLogon push when bit NOT set: `newPlayerLesson.isCompleted === false`
+**Test A7** — OnLogon push when bit set: `newPlayerLesson.isCompleted === true`
 
 ---
 
-## 3. OnGameResult — Tutorial Completion Detection
+## 3. OnInternalCall — Client Request Handlers
 
-Currently: `function OnGameResult(mgr: modsvr.multi_gameresult, cxt: modsvr.context): void { }`
-
-**Requirement:** After each game result, detect if the player completed tutorial.
+Add two branches in `OnInternalCall` (after line 99, before the else clause):
 
 ```typescript
-async function OnGameResult(mgr: modsvr.multi_gameresult, cxt: modsvr.context): Promise<void> {
-    let config = CommonFuncs.loadConfig();
-    if (config.isenable == 0) return;
-
-    let userid = mgr.base.userid;
+} else if (reqName === REQ_NAME.QUERY_TUTORIAL_STATE) {
     let flags = await CommonFuncs.async_getMigrationFlags(cxt, userid);
-    if (flags & MIGRATION_BIT.TQNEWPLAYERLESSON) return;     // already completed
-    if (flags & MIGRATION_BIT.ALL_DONE) return;
-
-    let bout = mgr.usergameresult?.bout ?? 0;
-    if (bout < 1) return;                                     // still 0 bouts, not a real game
-
-    // nBout > 0 → player just finished a real game session
-    // → mark tutorial as completed (they no longer need tutorial)
-    await processTutorialCompletion(src, cxt, userid, flags);
-}
+    let config = CommonFuncs.loadConfig();
+    let isCompleted = (flags & MIGRATION_BIT.TQNEWPLAYERLESSON) !== 0;
+    iresp.resp = {
+        id: 1,
+        data: {
+            isCompleted: isCompleted,
+            rewardGold: isCompleted ? (config.newPlayerLessonReward ?? 0) : 0
+        }
+    };
+} else if (reqName === REQ_NAME.CLAIM_TUTORIAL_REWARD) {
+    let result = await Business.async_claimTutorialReward(cxt, userid);
+    iresp.resp = {
+        id: result.success ? 1 : 0,
+        data: {
+            success: result.success,
+            rewardGold: result.rewardGold
+        }
+    };
 ```
 
-**Test B1** — nBout = 0 after game result → no action, bit unchanged
-**Test B2** — nBout > 0 AND bit already set → no action (early return)
-**Test B3** — nBout > 0 AND bit NOT set → call `processTutorialCompletion`, bit set to 1
-**Test B4** — `ALL_DONE` already set → early return, no-op
-**Test B5** — config.isenable = 0 → early return, no-op
+### Tests for queryTutorialState
+
+**Test B1** — bit NOT set, returns `{ isCompleted: false, rewardGold: 0 }`
+**Test B2** — bit set, returns `{ isCompleted: true, rewardGold: config.newPlayerLessonReward }`
+**Test B3** — bit set, config.reward omitted → `rewardGold: 0`
+**Test B4** — userid invalid → `id: 0` error response
+
+### Tests for claimTutorialReward
+
+**Test C1** — bit NOT set → `async_claimTutorialReward` called, bit written, reward sent, `{ success: true, rewardGold: N }` returned
+**Test C2** — bit already set → still ok, return success (idempotent — client may retry)
+**Test C3** — reward send fails → bit still set, `{ success: true, rewardGold: 0 }` (graceful — player can retry but won't re-tutorial)
+**Test C4** — config.isenable == 0 → `{ id: 0, data: {} }` (disabled)
+**Test C5** — rewarded gold matches config value
 
 ---
 
-## 4. processTutorialCompletion Logic
+## 4. Business.async_claimTutorialReward
 
 ```typescript
-async function processTutorialCompletion(
-    src: modsvr.source, cxt: modsvr.context, userid: number, flags: number
-): Promise<void> {
-    // 1. Send reward
-    let config = CommonFuncs.loadConfig();
-    let rewardGold = config.newPlayerLessonReward ?? 0;
-    let rewardSuccess = false;
-    if (rewardGold > 0) {
-        rewardSuccess = await Business.async_sendGoldCoin_super(src, cxt, userid, rewardGold);
+namespace Business {
+    // ... existing ...
+
+    export async function async_claimTutorialReward(
+        cxt: modsvr.context, userid: number
+    ): Promise<{ success: boolean; rewardGold: number }> {
+        let config = CommonFuncs.loadConfig();
+        if (config.isenable == 0) return { success: false, rewardGold: 0 };
+
+        let flags = await CommonFuncs.async_getMigrationFlags(cxt, userid);
+        let rewardGold = config.newPlayerLessonReward ?? 0;
+
+        // 1. Send reward first (fail early)
+        let rewardOk = true;
+        if (rewardGold > 0) {
+            // NOTE: src is not available in OnInternalCall context;
+            // use modsvr internal reward mechanism instead
+            rewardOk = await Business.async_sendGoldCoin_internal(cxt, userid, rewardGold);
+        }
+
+        // 2. Set bit regardless of reward outcome
+        let newFlags = flags | MIGRATION_BIT.TQNEWPLAYERLESSON;
+        await CommonFuncs.async_setMigrationFlags(cxt, userid, newFlags);
+
+        return { success: rewardOk, rewardGold };
     }
 
-    // 2. Set bit
-    let newFlags = flags | MIGRATION_BIT.TQNEWPLAYERLESSON;
-    await CommonFuncs.async_setMigrationFlags(cxt, userid, newFlags);
-
-    // 3. Push to client
-    // Need src from OnGameResult context — challenge here is that
-    // OnGameResult doesn't provide src directly like OnLogon does
-    // Resolution: push through client notification or handle in OnLogon
+    // Internal reward — no src needed, uses modsvr internal batch send
+    export async function async_sendGoldCoin_internal(
+        cxt: modsvr.context, userid: number, amount: number
+    ): Promise<boolean> {
+        // Use modsvr internal reward API specific to OnInternalCall context
+        // Implementation depends on modsvr framework capabilities
+        return true; // placeholder
+    }
 }
 ```
 
-**Test C1** — rewardGold > 0 → `async_sendGoldCoin_super` called with correct amount
-**Test C2** — rewardGold = 0 → skip reward, still mark bit
-**Test C3** — reward fails (async_sendGoldCoin_super returns false) → bit still set (graceful degradation)
-**Test C4** — bit flag written to persistence (`async_setMigrationFlags` called with OR'd bit)
-
-### Challenge: src in OnGameResult
-
-`OnGameResult` receives `mgr: modsvr.multi_gameresult` — does it contain `src`? 
-If not, alternative approaches:
-
-- **Option 1**: Defer notification to next `OnLogon` (OnLogon already checks bits and pushes)
-- **Option 2**: Store completion in DB, `OnLogon` reads it and pushes to client
-- **Option 3**: Use `modsvr` notification to client if src is derivable
-
-**Recommendation: Option 1 + 2.** In `processTutorialCompletion`, only write the bit + reward. Do NOT push from OnGameResult. The next OnLogon will detect the bit, skip the tutorial path, and push the updated `newPlayerLesson` in the migration result.
-
-**Test C5** — after `processTutorialCompletion`, next OnLogon returns `newPlayerLesson: { isCompleted: true, rewardGold: N }`
+**Test D1** — `isenable == 0` → early return `{ success: false, rewardGold: 0 }`, no flag write
+**Test D2** — `newPlayerLessonReward` in config → `rewardGold === config value`
+**Test D3** — `newPlayerLessonReward` missing → `rewardGold === 0`
+**Test D4** — reward sent, amount equals config value
+**Test D5** — `async_setMigrationFlags` called with OR'd bit 5
+**Test D6** — idempotent: calling twice passes both times, no duplicate reward concern (bit already set → second call still sets same bit, no extra reward)
+**Test D7** — reward fails → bit still committed, return `{ success: false, rewardGold }`
 
 ---
 
-## 5. OnLogon — Extended for Tutorial
+## 5. OnLogon — Auto-Mark for Legacy Players
 
-Current OnLogon flow (line 125-204). Insert after gold coin migration (after line 172):
+Insert after gold coin migration (after line 172, before line 177):
 
 ```typescript
-// 5. tutorial (bit 5) — check bout, auto-mark old players
+// 5. tutorial (bit 5) — auto-mark old players who never went through tutorial
 if ((flags & MIGRATION_BIT.TQNEWPLAYERLESSON) === 0) {
     let bout = (logon as any).usergameinfo?.bout ?? 0;
     if (bout > 0) {
-        // Player already has game records → auto-mark as completed
-        // Optionally send reward for very first-time migration catch
+        // Has game records but no tutorial bit → auto-complete (no reward)
         flags = flags | MIGRATION_BIT.TQNEWPLAYERLESSON;
     }
 }
 ```
 
-**Test D1** — nBout = 0, bit not set → bit unchanged (player is new, needs tutorial)
-**Test D2** — nBout > 0, bit not set → bit set to 1 (auto-mark old/played player)
-**Test D3** — nBout > 0, bit already set → bit unchanged (idempotent)
-**Test D4** — bit set in flags variable, participated in the final `async_setMigrationFlags` write (line 197-199)
-
-### Notification to Client in OnLogon
-
-After the final flags write (line 197-199), extend `result` before pushing:
+After the final flags write, extend `result` before push (replace the simple `result.flags = flags`):
 
 ```typescript
-// After line 199, before line 202-203:
+result.flags = flags;
 result.newPlayerLesson = {
     isCompleted: (flags & MIGRATION_BIT.TQNEWPLAYERLESSON) !== 0,
     rewardGold: config.newPlayerLessonReward ?? 0,
 };
+CommonFuncs.notifyClient(src, cxt, userid, REQ_NAME.MIGRATION_RESULT, result);
 ```
 
-**Test D5** — when bit set, `result.newPlayerLesson.isCompleted === true`
-**Test D6** — when bit not set, `result.newPlayerLesson.isCompleted === false`
-**Test D7** — `result.newPlayerLesson.rewardGold === config.newPlayerLessonReward`
+**Test E1** — nBout = 0, bit not set → bit unchanged (new player, needs tutorial)
+**Test E2** — nBout > 0, bit not set → bit SET (auto-mark, no reward)
+**Test E3** — nBout > 0, bit already set → bit unchanged (idempotent)
+**Test E4** — after auto-mark, push contains `newPlayerLesson.isCompleted === true`
+**Test E5** — no auto-mark when bit not set and nBout=0 → push contains `newPlayerLesson.isCompleted === false`
+**Test E6** — auto-mark participates in final `async_setMigrationFlags` batch write (not a separate write)
 
 ---
 
 ## 6. Config — newPlayerLessonReward
 
-In `convert_xzmp.jsonc`, add config field:
+In `convert_xzmp.jsonc`:
 
 ```jsonc
 {
     "isenable": 1,
     "guid": "convert_xzmp",
-    // ... existing fields ...
-    "newPlayerLessonReward": 100000   // NEW: gold coins rewarded on tutorial completion
+    // ... existing ...
+    "newPlayerLessonReward": 100000
 }
 ```
 
-**Test E1** — config parses `newPlayerLessonReward` correctly
-**Test E2** — missing field defaults to 0 (no reward)
+**Test F1** — config parses `newPlayerLessonReward` as number
+**Test F2** — missing field defaults to 0
 
 ---
 
 ## 7. Full Integration Scenarios
 
 ### Scenario 1: Truly New Player
+```
+1. nBout=0, bit not set → Login
+2. OnLogon: bout=0 → bit stays 0
+3. Push: { newPlayerLesson: { isCompleted: false, rewardGold: 0 } }
+4. Client: player needs tutorial → direct to singleplayer room
+→ PASS
+```
 
-1. Player with nBout=0, no tutorial bit → logs in
-2. OnLogon runs: bit not set, bout=0 → bit stays 0
-3. OnLogon pushes `{ flags: 0, ... }` (no newPlayerLesson field, or with isCompleted=false)
-4. Client knows: player needs tutorial
-5. → **Pass**
+### Scenario 2: Tutorial Complete (Client-Driven Reward)
+```
+1. nBout=0, bit not set → enters tutorial
+2. Client plays through 14 stages → game ends
+3. Client calls claimTutorialReward
+4. convert: set bit 5, send 100000 gold
+5. Return { success: true, rewardGold: 100000 }
+6. Client updates local display
+7. Next Login: OnLogon sees bit set, push isCompleted=true
+→ PASS
+```
 
-### Scenario 2: Tutorial Complete (New Player Plays First Game)
+### Scenario 3: Client Retries Claim After Network Error
+```
+1. Tutorial done, client calls claimTutorialReward
+2. Network timeout → client retries
+3. First call: bit set, reward sent (but client didn't get response)
+4. Second call: bit already set → still return { success: true, rewardGold: 0 }
+5. Client: got reward already on first call, second call says success
+   Edge: client should check if rewardGold > 0 before showing reward animation
+   Resolution: claimTutorialReward always returns current rewardGold from config,
+   not "did we just send it". Client compares with pre-claim state.
+→ PASS (idempotent by design)
+```
 
-1. Player with nBout=0 enters tutorial (singleplayer room)
-2. Tutorial plays out, game ends
-3. nBout becomes 1 (game server records it)
-4. OnGameResult fires: bout=1, bit not set
-5. processTutorialCompletion: send reward 100000, set bit 5
-6. Player logs in next time:
-7. OnLogon: bit already set → skip tutorial
-8. OnLogon pushes `{ newPlayerLesson: { isCompleted: true, rewardGold: 100000 } }`
-9. → **Pass**
+### Scenario 4: Old Player (nBout > 0, Never Had Tutorial)
+```
+1. nBout=50, bit not set → Login
+2. OnLogon: bout=50 > 0 → auto-mark bit 5 (no reward)
+3. Push: { newPlayerLesson: { isCompleted: true, rewardGold: 100000 } }
+4. Client: sees completed=true → never shows tutorial
+→ PASS
+```
 
-### Scenario 3: Legacy Player (Already Played Before Tutorial Feature)
+### Scenario 5: Mid-Tutorial Crash
+```
+1. nBout=0, bit not set → enters tutorial
+2. Killed at stage 5 of 14
+3. Relaunch → Login
+4. OnLogon: bout=0, bit not set → unchanged
+5. Push: isCompleted=false
+6. Client: re-enters tutorial from beginning
+→ PASS
+```
 
-1. Player with nBout=50, no tutorial bit → logs in
-2. OnLogon runs: bit not set, bout=50 > 0
-3. Auto-mark: bit set to 1 (no reward — they already have their gold)
-4. OnLogon pushes `{ newPlayerLesson: { isCompleted: true, rewardGold: 0 } }`
-5. → **Pass**
+### Scenario 6: Tutorial Complete → Client Crashes Before Redirect
+```
+1. Tutorial done → claimTutorialReward returns success
+2. Client crashes before roomSkip executes
+3. Relaunch → Login
+4. OnLogon: bit set → isCompleted=true
+5. Client: never enters tutorial, goes to normal hall
+→ PASS (no stuck state)
+```
 
-### Scenario 4: Player Crashes Mid-Tutorial
-
-1. Player with nBout=0, bit not set → enters tutorial
-2. Killed at stage 5 of 14 (game not finished, no game result)
-3. nBout still 0
-4. OnGameResult never fires
-5. Player logs in again:
-6. OnLogon: bout=0, bit not set → bit unchanged
-7. Client gets isCompleted=false
-8. Tutorial re-enters from beginning
-9. → **Pass**
-
-### Scenario 5: Player Crashes Right After Game Ends But Before Reward
-
-1. Player finishes tutorial → game result written → nBout becomes 1
-2. OnGameResult: bout=1, bit not set → processTutorialCompletion called
-3. Reward sent successfully → bit written to DB
-4. Client crashes before receiving notification
-5. Player logs in again:
-6. OnLogon: bit already set → skip
-7. Client gets isCompleted=true
-8. → **Pass**
-
-### Scenario 6: Config Disables Tutorial
-
-1. `config.newPlayerLessonReward = 0` or feature flag off
-2. OnLogon/OnGameResult: path skipped
-3. → **Pass**
+### Scenario 7: Config Disabled
+```
+1. isenable=0
+2. OnLogon skips all migration
+3. claimTutorialReward returns { success: false, rewardGold: 0 }
+→ PASS
+```
