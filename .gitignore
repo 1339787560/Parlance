@@ -1,6 +1,7 @@
 __pycache__
 .deepseek
 data/*
+*.db
 style/*
 uploads/*
 .gstack/

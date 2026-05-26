@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek 代理统计</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--dim:#8b949e;--green:#3fb950;--yellow:#d29922;--red:#f85149;--blue:#58a6ff;--purple:#bc8cff;--cyan:#39d2c0}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);padding:20px}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.header h1{font-size:22px;font-weight:600}
+.header h1 span{color:var(--blue)}
+.tabs{display:flex;gap:4px;margin-bottom:16px}
+.tab{padding:8px 18px;border:1px solid var(--border);border-radius:6px 6px 0 0;cursor:pointer;font-size:13px;background:var(--card);color:var(--dim)}
+.tab.active{background:var(--bg);color:var(--text);border-bottom-color:var(--bg)}
+.btn{background:#238636;border:1px solid rgba(46,164,79,.4);color:var(--text);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap}
+.btn:hover{background:#2ea043}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px}
+.card-label{font-size:11px;color:var(--dim);margin-bottom:4px}
+.card-value{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.card-sub{font-size:11px;color:var(--dim);margin-top:2px}
+.green{color:var(--green)}.yellow{color:var(--yellow)}.red{color:var(--red)}.blue{color:var(--blue)}.purple{color:var(--purple)}.cyan{color:var(--cyan)}
+.section{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden}
+.section-title{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--dim);display:flex;justify-content:space-between}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 12px;color:var(--dim);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;font-size:12px}
+td{padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;font-variant-numeric:tabular-nums;font-size:13px}
+tr:hover td{background:#1c2128}
+.empty{text-align:center;padding:40px;color:var(--dim);font-size:14px;line-height:1.8}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>DeepSeek <span>统计</span></h1>
+  <div><button class="btn" onclick="refresh()">刷新</button> <span style="color:var(--dim);font-size:12px" id="updateTime"></span></div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('total',this)">总览</div>
+  <div class="tab" onclick="switchTab('tasks',this)">任务</div>
+  <div class="tab" onclick="switchTab('daily',this)">按日</div>
+  <div class="tab" onclick="switchTab('requests',this)">请求明细</div>
+</div>
+
+<div id="tab-total">
+  <div class="cards" id="totalCards">
+    <div class="card"><div class="card-label">请求次数</div><div class="card-value blue" id="s-req">-</div></div>
+    <div class="card"><div class="card-label">总 Token 用量</div><div class="card-value" id="s-total">-</div></div>
+    <div class="card"><div class="card-label">输入 / 输出</div><div class="card-value" id="s-prompt-comp"><span id="s-prompt">-</span> / <span id="s-comp">-</span></div><div class="card-sub">输入 token / 输出 token</div></div>
+    <div class="card"><div class="card-label">缓存命中</div><div class="card-value green" id="s-hit">-</div></div>
+    <div class="card"><div class="card-label">缓存未命中</div><div class="card-value yellow" id="s-miss">-</div></div>
+    <div class="card"><div class="card-label">总费用 (RMB)</div><div class="card-value purple" id="s-cost">-</div></div>
+    <div class="card"><div class="card-label">平均用时</div><div class="card-value cyan" id="s-lat">-</div></div>
+  </div>
+  <div class="section">
+    <div class="section-title"><span>各模型费用明细</span></div>
+    <div id="modelCosts" style="padding:12px 16px;font-size:13px;color:var(--dim)">暂无数据</div>
+  </div>
+</div>
+
+<div id="tab-tasks" style="display:none">
+  <div class="section">
+    <div class="section-title"><span>任务列表（同一会话中 30 秒内请求归为一任务）</span></div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>任务 #</th><th>会话</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>总计</th>
+          <th>缓存命中</th><th>缓存未命中</th><th>总用时</th>
+        </tr></thead>
+        <tbody id="taskTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="tab-daily" style="display:none">
+  <div class="section">
+    <div class="section-title"><span>每日汇总</span></div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>日期</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>总计</th>
+          <th>缓存命中</th><th>缓存未命中</th><th>平均耗时</th><th>费用</th>
+        </tr></thead>
+        <tbody id="dailyTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="tab-requests" style="display:none">
+  <div class="section">
+    <div class="section-title"><span>最近 100 次请求</span></div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>时间</th><th>模型</th><th>输入</th><th>输出</th><th>总计</th>
+          <th>缓存命中</th><th>缓存未命中</th><th>耗时</th>
+        </tr></thead>
+        <tbody id="reqTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+
+function fmt(n){return n===null||n===undefined?'-':n.toLocaleString()}
+function fmtCost(n){if(n===null||n===undefined)return'-';if(n<.001)return'¥'+n.toFixed(6);if(n<1)return'¥'+n.toFixed(4);return'¥'+n.toFixed(2)}
+function fmtTime(ts){if(!ts)return'-';try{return new Date(ts).toLocaleTimeString()}catch(e){return ts}}
+
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('[id^="tab-"]').forEach(t=>t.style.display='none');
+  document.getElementById('tab-'+name).style.display='block';
+}
+
+function fillCards(data){
+  document.getElementById('s-req').textContent=fmt(data.total_requests);
+  document.getElementById('s-total').textContent=fmt(data.total_tokens);
+  document.getElementById('s-prompt').textContent=fmt(data.total_prompt_tokens);
+  document.getElementById('s-comp').textContent=fmt(data.total_completion_tokens);
+  document.getElementById('s-hit').textContent=fmt(data.total_cache_hit_tokens);
+  document.getElementById('s-miss').textContent=fmt(data.total_cache_miss_tokens);
+  document.getElementById('s-cost').textContent=fmtCost(data.total_cost);
+  document.getElementById('s-lat').textContent=data.avg_latency_ms?Math.round(data.avg_latency_ms)+'ms':'-';
+
+  const mc=document.getElementById('modelCosts');
+  if(data.model_costs&&Object.keys(data.model_costs).length){
+    mc.innerHTML=Object.entries(data.model_costs).map(([m,c])=>{
+      const p=m.includes('reason')?{miss:.025,hit:.02,out:3}:{miss:.02,hit:.02,out:2};
+      const label=m.includes('reason')?'Pro':'Flash';
+      return `<div style="margin-bottom:4px"><strong>${label}</strong> ${m}: `+
+        `输入 ¥${p.miss}/M, 输出 ¥${p.out}/M → `+
+        `<span style="color:var(--purple)">${fmtCost(c)}</span></div>`;
+    }).join('');
+  } else { mc.innerHTML='<span style="color:var(--dim)">暂无数据</span>'; }
+}
+
+async function fetchTotal(){ return (await fetch('/api/stats')).json(); }
+async function fetchDetail(){ return (await fetch('/api/stats/detail')).json(); }
+async function fetchTasks(){ return (await fetch('/api/stats/tasks?limit=100')).json(); }
+
+async function fetchDaily(){ return (await fetch('/api/stats/daily')).json(); }
+
+async function refresh(){
+  document.getElementById('updateTime').textContent=new Date().toLocaleTimeString();
+  const total=await fetchTotal();
+  fillCards(total);
+
+  // 任务表
+  const tasks=await fetchTasks();
+  const tt=document.getElementById('taskTable');
+  if(tasks&&tasks.length){
+    tt.innerHTML=tasks.map(t=>{
+      return `<tr>
+        <td>#${t.task_id}</td>
+        <td style="font-size:12px;font-family:monospace;color:var(--blue)">${(t.session||'').slice(0,12)}</td>
+        <td>${t.requests}</td>
+        <td>${fmt(t.prompt_tokens)}</td>
+        <td>${fmt(t.completion_tokens)}</td>
+        <td><strong>${fmt(t.total_tokens)}</strong></td>
+        <td>${fmt(t.cache_hit_tokens)}</td>
+        <td>${fmt(t.cache_miss_tokens)}</td>
+        <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
+      </tr>`;
+    }).join('');
+  } else { tt.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--dim)">暂无任务</td></tr>'; }
+
+  // 每日表
+  const daily=await fetchDaily();
+  const dt=document.getElementById('dailyTable');
+  if(daily&&daily.length){
+    dt.innerHTML=daily.map(d=>{
+      return `<tr>
+        <td><strong>${d.date}</strong></td>
+        <td>${d.requests}</td>
+        <td>${fmt(d.prompt_tokens)}</td>
+        <td>${fmt(d.completion_tokens)}</td>
+        <td><strong>${fmt(d.total_tokens)}</strong></td>
+        <td>${fmt(d.cache_hit_tokens)}</td>
+        <td>${fmt(d.cache_miss_tokens)}</td>
+        <td>${d.avg_latency_ms?d.avg_latency_ms+'ms':'-'}</td>
+        <td class="purple">${fmtCost(d.cost)}</td>
+      </tr>`;
+    }).join('');
+  } else { dt.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--dim)">暂无数据</td></tr>'; }
+
+  const detail=await fetchDetail();
+  const tb=document.getElementById('reqTable');
+  if(detail.length){
+    tb.innerHTML=detail.map(r=>{
+      const modelLabel=r.model&&r.model.includes('reason')?'Pro':'Flash';
+      return `<tr>
+        <td>${fmtTime(r.ts)}</td>
+        <td style="font-size:12px">${modelLabel}</td>
+        <td>${fmt(r.prompt)}</td>
+        <td>${fmt(r.completion)}</td>
+        <td><strong>${fmt(r.total)}</strong></td>
+        <td>${fmt(r.cache_hit)}</td>
+        <td>${fmt(r.cache_miss)}</td>
+        <td>${r.latency_ms?r.latency_ms+'ms':'-'}</td>
+      </tr>`;
+    }).join('');
+  } else { tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--dim)">暂无请求</td></tr>'; }
+}
+
+refresh();
+setInterval(refresh,5000);
+</script>
+</body>
+</html>
