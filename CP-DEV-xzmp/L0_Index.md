@@ -79,6 +79,7 @@
 | 补充金币-详情 | [L3_cmquickrecharge_xzmp.md](L3_cmquickrecharge_xzmp.md) | 补充金币模块详情 |
 | 迎新礼包-原型 | [doc/cmnewplayerdailygift_xzmp_proto.md](doc/cmnewplayerdailygift_xzmp_proto.md) | 迎新礼包模块需求原型 |
 | 迎新礼包-详情 | [L3_cmnewplayerdailygift_xzmp.md](L3_cmnewplayerdailygift_xzmp.md) | 迎新礼包模块详情 |
+| **新手教程-Task** | **[doc/Task_convert_TqGameLesson.md](doc/Task_convert_TqGameLesson.md)** | **convert 扩展 — 新手教程对局** |
 
 ---
 
