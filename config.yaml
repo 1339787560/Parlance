@@ -1,3 +1,8 @@
+# daemon: true → infoServer runs as background process (pythonw.exe, no console)
+#           killing it kills all managed services via Windows Job Object
+# flask 程序一定要用 DEBUG OFF。
+daemon: false
+
 server:
   host: 0.0.0.0
   port: 5001
@@ -8,19 +13,26 @@ server:
 database:
   path: ./data/chat.db
 
-# Managed services - launched as subprocesses, killed on main shutdown
-# Extensible fields: name, command, args, cwd, env, auto_restart, health_check, tags, enabled
+# Managed services - launched as subprocesses
+# Fields: name, command, args, cwd, env, auto_restart, health_check, tags, enabled, managed, port
+#   managed=true (default): killed on parent exit via Job Object
+#   managed=false: fire-and-forget, survives parent exit
+#   port=<number>: auto-free port before start (kill occupying process)
 services:
   - name: http-photo-server
     command: python
-    args: ["C:\\codelib\\HttpPhotoServer\\src\\main.py"]
+    args: ["C:\\codelib\\HttpPhotoServer\\src\\main.py", "--port", "5000"]
     cwd: C:\codelib\HttpPhotoServer\src
+    port: 5000
     auto_restart: false
     tags: [media, gallery]
+    enabled: true
+
   - name: statistic-server
     command: python
     args: ["proxy_server.py", "--port", "5002"]
     cwd: ./serviceGroup/statisticServer
+    port: 5002
     auto_restart: true
     tags: [statistics, proxy]
     enabled: true
