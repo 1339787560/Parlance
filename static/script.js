@@ -120,6 +120,13 @@
         break;
       case 'file':
         icon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="1"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="14" y2="12"/><line x1="8" y1="16" x2="15" y2="16"/></svg>';
+        let previewHtml = '';
+        const _mime = (msg.file_mime || '').toLowerCase();
+        if (_mime.startsWith('image/')) {
+          previewHtml = `<div class="msg-preview-wrap"><img class="msg-preview" src="/api/download/${msg.id}" alt="${escapeHtml(msg.file_name)}" loading="lazy"></div>`;
+        } else if (_mime.startsWith('video/')) {
+          previewHtml = `<div class="msg-preview-wrap"><video class="msg-preview" src="/api/download/${msg.id}" controls preload="metadata"></video></div>`;
+        }
         bodyHtml = `
           <div class="msg-file">
             <span class="msg-file-icon">${icon}</span>
@@ -128,7 +135,8 @@
               <div class="msg-file-size">${formatSize(msg.file_size)}</div>
             </div>
             <button class="btn-download" data-id="${msg.id}">下载</button>
-          </div>`;
+          </div>
+          ${previewHtml}`;
         break;
       case 'zip':
         icon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="7" width="18" height="14" rx="1"/><path d="M3 7 L5 4 L19 4 L21 7"/><line x1="12" y1="4" x2="12" y2="7"/><circle cx="12" cy="14" r="2"/></svg>';
@@ -200,6 +208,18 @@
         downloadFile(msg.id, msg.file_name);
       }
     });
+
+    // Auto-scroll when image/video preview loads (appended msgs only)
+    const _preview = div.querySelector('.msg-preview');
+    if (_preview && !prepend) {
+      const onMediaLoad = () => scrollToBottom(false);
+      if (_preview.tagName === 'IMG') {
+        _preview.addEventListener('load', onMediaLoad);
+        if (_preview.complete) onMediaLoad();
+      } else if (_preview.tagName === 'VIDEO') {
+        _preview.addEventListener('loadedmetadata', onMediaLoad);
+      }
+    }
 
     if (prepend) {
       msgArea.insertBefore(div, msgArea.firstChild);

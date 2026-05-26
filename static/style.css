@@ -86,7 +86,7 @@
 
   /* ── Message bubble: 信笺 ─────────────────────────────────────────────── */
   .msg {
-    max-width: 75%;
+    max-width: 75%; min-width: 0;
     padding: 18px 24px;
     background: var(--cn-bubble);
     border: 1px solid var(--cn-wood);
@@ -164,6 +164,33 @@
   }
   .btn-download:hover {
     background: var(--cn-red); color: var(--cn-bubble);
+  }
+
+  /* Download button on center-facing side */
+  .msg.self .msg-file { flex-direction: row-reverse; }
+
+  /* ── Media preview (image/video) ─────────────────────────────────── */
+  .msg-preview-wrap {
+    margin-top: 10px;
+    border-radius: 4px;
+    overflow: hidden;
+    width: 100%; min-width: 0;
+  }
+  .msg-preview {
+    display: block;
+    max-width: 100%; width: auto;
+    max-height: 420px; height: auto;
+    object-fit: contain;
+    border-radius: 4px;
+    cursor: pointer;
+    background: #000;
+  }
+  .msg-preview:hover {
+    opacity: 0.92;
+  }
+  video.msg-preview {
+    max-height: 360px;
+    width: 100%;
   }
 
   /* ── Input area ──────────────────────────────────────────────────────── */
@@ -1746,6 +1773,8 @@
   .btn-icon svg { width: 18px; height: 18px; }
   
   .modal { width: 94%; padding: 20px; }
+  .msg-preview { max-height: 240px; }
+  video.msg-preview { max-height: 180px; }
   .drop-zone { padding: 24px 16px; }
   
   .toast { font-size: 12px; padding: 8px 16px; bottom: 70px; }
