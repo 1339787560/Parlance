@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem *)",
-      "Read(//c/codelib/HttpPhotoServer/src/**)"
+      "Read(//c/codelib/HttpPhotoServer/src/**)",
+      "mcp__codegraph__codegraph_context",
+      "mcp__codegraph__codegraph_files",
+      "mcp__codegraph__codegraph_search"
     ]
   }
 }

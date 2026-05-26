@@ -10,3 +10,5 @@ uploads/*
 .env.local
 %SystemDrive%
 stats.db
+.codegraph
+.cursor

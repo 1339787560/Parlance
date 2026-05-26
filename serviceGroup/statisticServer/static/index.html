@@ -68,6 +68,7 @@ tr:hover td{background:#1c2128}
     <div class="card"><div class="card-label">总 Token</div><div class="card-value" id="ss-total">-</div></div>
     <div class="card"><div class="card-label">缓存命中</div><div class="card-value green" id="ss-hit">-</div></div>
     <div class="card"><div class="card-label">费用</div><div class="card-value purple" id="ss-cost">-</div></div>
+    <div class="card"><div class="card-label">平均请求耗时</div><div class="card-value cyan" id="ss-lat">-</div><div class="card-sub" id="ss-lat-diff">-</div></div>
   </div>
   <div class="section">
     <div class="section-title"><span>会话列表（点击查看详情）</span></div>
@@ -157,7 +158,11 @@ function switchTab(name, el) {
   localStorage.setItem('statsTab', name);
 }
 
+let _currentSessionId = null;
+let _overallAvgLatency = null;
+
 function fillCards(data){
+  _overallAvgLatency = data.avg_latency_ms;
   document.getElementById('s-req').textContent=fmt(data.total_requests);
   document.getElementById('s-total').textContent=fmt(data.total_tokens);
   document.getElementById('s-prompt').textContent=fmt(data.total_prompt_tokens);
@@ -229,6 +234,45 @@ async function refresh(){
     }).join('');
   } else { dt.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--dim)">暂无数据</td></tr>'; }
 
+  // 如果正在查看某个会话，SSE 更新后同步刷新会话详情
+  if (_currentSessionId) {
+    fetch(`/api/stats?session=${encodeURIComponent(_currentSessionId)}`).then(r=>r.json()).then(d=>{
+      document.getElementById('ss-req').textContent = fmt(d.total_requests);
+      document.getElementById('ss-total').textContent = fmt(d.total_tokens);
+      document.getElementById('ss-hit').textContent = fmt(d.total_cache_hit_tokens);
+      document.getElementById('ss-cost').textContent = fmtCost(d.total_cost);
+      const lat = d.avg_latency_ms;
+      document.getElementById('ss-lat').textContent = lat ? Math.round(lat) + 'ms' : '-';
+      const diffEl = document.getElementById('ss-lat-diff');
+      if (lat && _overallAvgLatency) {
+        const diff = lat - _overallAvgLatency;
+        const sign = diff >= 0 ? '+' : '';
+        const color = diff > 200 ? 'var(--red)' : diff > 50 ? 'var(--yellow)' : 'var(--green)';
+        diffEl.textContent = `总体 ${Math.round(_overallAvgLatency)}ms · 差异 ${sign}${Math.round(diff)}ms`;
+        diffEl.style.color = color;
+      } else {
+        diffEl.textContent = '-';
+      }
+    });
+    fetch(`/api/stats/tasks?session=${encodeURIComponent(_currentSessionId)}&limit=50`).then(r=>r.json()).then(tasks=>{
+      const tb = document.getElementById('sessionTaskTable');
+      const tasksDiv = document.getElementById('sessionTasks');
+      if (tasks.length) {
+        tasksDiv.style.display = 'block';
+        tb.innerHTML = tasks.map(t=>`<tr>
+          <td>#${t.task_id}</td>
+          <td>${t.requests}</td>
+          <td>${fmt(t.prompt_tokens)}</td>
+          <td>${fmt(t.completion_tokens)}</td>
+          <td><strong>${fmt(t.total_tokens)}</strong></td>
+          <td>${fmt(t.cache_hit_tokens)}</td>
+          <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
+          <td class="purple">${fmtCost(t.cost)}</td>
+        </tr>`).join('');
+      }
+    });
+  }
+
   const detail=await fetchDetail();
   const tb=document.getElementById('reqTable');
   if(detail.length){
@@ -250,6 +294,7 @@ async function refresh(){
 // ── 会话 ───────────────────────────────────────────────────
 
 function showSession(sid) {
+  _currentSessionId = sid;
   const cards = document.getElementById('sessionCards');
   const tasksDiv = document.getElementById('sessionTasks');
   cards.style.display = 'none';
@@ -265,6 +310,18 @@ function showSession(sid) {
     document.getElementById('ss-total').textContent = fmt(d.total_tokens);
     document.getElementById('ss-hit').textContent = fmt(d.total_cache_hit_tokens);
     document.getElementById('ss-cost').textContent = fmtCost(d.total_cost);
+    const lat = d.avg_latency_ms;
+    document.getElementById('ss-lat').textContent = lat ? Math.round(lat) + 'ms' : '-';
+    const diffEl = document.getElementById('ss-lat-diff');
+    if (lat && _overallAvgLatency) {
+      const diff = lat - _overallAvgLatency;
+      const sign = diff >= 0 ? '+' : '';
+      const color = diff > 200 ? 'var(--red)' : diff > 50 ? 'var(--yellow)' : 'var(--green)';
+      diffEl.textContent = `总体 ${Math.round(_overallAvgLatency)}ms · 差异 ${sign}${Math.round(diff)}ms`;
+      diffEl.style.color = color;
+    } else {
+      diffEl.textContent = '-';
+    }
   });
 
   fetch(`/api/stats/tasks?session=${encodeURIComponent(sid)}&limit=50`).then(r=>r.json()).then(tasks=>{
