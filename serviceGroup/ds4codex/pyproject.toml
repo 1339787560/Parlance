@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "ds4codex"
+version = "0.1.5"
+description = "Responses API to Chat Completions proxy for Codex-compatible model providers."
+authors = ["Yuan Zan <yfinddream@gmail.com>"]
+readme = "README.md"
+packages = [{include = "ds4codex"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+click = "^8.1.7"
+aiohttp = "^3.9.5"
+tomli = {version = "^2.0.1", python = "<3.11"}
+
+[tool.poetry.scripts]
+ds4codex = "ds4codex.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
