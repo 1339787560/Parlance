@@ -200,6 +200,21 @@ class ManagedService:
         self._last_error = None
         self._exit_code = None
 
+        # Pre-flight: cwd must exist if specified
+        if self.cwd and not os.path.isdir(self.cwd):
+            self._last_error = f"cwd '{self.cwd}' not found"
+            logger.warning("[svc] '%s' skipped: %s", self.name, self._last_error)
+            self.enabled = False
+            return
+
+        # Pre-flight: command must be resolvable (PATH lookup or direct path)
+        import shutil
+        if not (os.path.isfile(self.command) or shutil.which(self.command)):
+            self._last_error = f"command '{self.command}' not found"
+            logger.warning("[svc] '%s' skipped: %s", self.name, self._last_error)
+            self.enabled = False
+            return
+
         # Free configured port before start
         if self.port is not None:
             self._free_port(self.port)
@@ -255,7 +270,8 @@ class ManagedService:
 
             except FileNotFoundError:
                 self._last_error = f"Command '{self.command}' not found"
-                logger.error("[svc] '%s': %s", self.name, self._last_error)
+                logger.warning("[svc] '%s' skipped: %s", self.name, self._last_error)
+                self.enabled = False
                 return
 
     def stop(self, timeout: float = 15):

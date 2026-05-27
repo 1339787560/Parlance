@@ -3,7 +3,7 @@ name = "ds4codex"
 version = "0.1.5"
 description = "Responses API to Chat Completions proxy for Codex-compatible model providers."
 authors = ["Yuan Zan <yfinddream@gmail.com>"]
-readme = "README.md"
+readme = "ds4codex.md"
 packages = [{include = "ds4codex"}]
 
 [tool.poetry.dependencies]
