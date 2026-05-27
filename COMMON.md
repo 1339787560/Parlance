@@ -5,6 +5,7 @@
 |:---|:---|:---:|
 | **LUA-Client-DEV-xzmp** | Maintain legacy Cocos-2DX client | Lua |
 | **Creator-Client-DEV-xzmp** | Maintain new CocosCreator 3.8.1 client | TS |
+| **Creator-Client-DEV-zgda** | Maintain CocosCreator 斗地主 client | TS |
 | **CPP-GameSVR-DEV-xzmp** | Maintain GameSvr & legacy gift services (川麻) | C++ |
 | **CPP-GameSVR-DEV-zgda** | Maintain 斗地主游戏+礼包+配置+残局机器人 services | C++ |
 | **CP-DEV-xzmp** | Maintain new gift services, user plugins & reward logic | TS |
