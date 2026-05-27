@@ -89,7 +89,7 @@ Tests triggered via scene buttons in CocosCreator engine. Not fully automated �
 | 防沉迷 | ddzprotect | 未成年人防沉迷 |
 | 签到 | ddzsignin | 每日签到奖励 |
 | 任务 | ddztask | 任务系统 |
-| 最终结算 | finalPhase | 最终结算界面 |
+| 残局模式 | finalPhase | 残局模式，单机模式pve |
 | 段位赛 | levelmatch | 段位匹配赛 |
 | 登录 | login | 登录认证 |
 | 救济 | relief | 救济金系统 |
@@ -108,7 +108,7 @@ Tests triggered via scene buttons in CocosCreator engine. Not fully automated �
 | 签到 | ddzsignin | 对局内签到 |
 | 任务 | ddztask | 对局内任务 |
 | 装饰 | decorate | 牌桌装饰 |
-| 最终结算 | finalPhase | 对局内结算 |
+| 残局模式 | finalPhase | 联动游戏插件，本地 pve |
 | 好友房 | frdroom | 好友开房 |
 | 荣耀 | glory | 荣耀时刻 |
 | 玩家信息 | playerinfo | 玩家信息展示 |
