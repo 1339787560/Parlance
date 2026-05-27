@@ -141,7 +141,7 @@ async def proxy(request: Request, path: str):
                      "X-Accel-Buffering": "no"})
     if path == "" or path == "/":
         idx = static_dir / "index.html"
-        return FileResponse(str(idx)) if idx.exists() else {"status": "proxy_ready"}
+        return FileResponse(str(idx), media_type="text/html") if idx.exists() else {"status": "proxy_ready"}
     if path.startswith("api/") and not path.startswith("api/events"):
         return await handle_api(request, path)
 

@@ -4,20 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DeepSeek 代理统计</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<!-- infoServer theme CSS (cross-origin, <link> allows this) -->
-<link rel="stylesheet" href="http://127.0.0.1:5001/static/style.css">
 <style>
 :root {
-  --bg:      var(--cn-paper, #0d1117);
-  --card:    var(--cn-bubble, #161b22);
-  --border:  var(--cn-wood, #30363d);
-  --text:    var(--cn-ink, #e6edf3);
-  --dim:     var(--cn-ink-light, #8b949e);
+  --bg:      #0d1117;
+  --card:    #161b22;
+  --border:  #30363d;
+  --text:    #e6edf3;
+  --dim:     #8b949e;
   --green:   #3fb950;
   --yellow:  #d29922;
-  --red:     var(--cn-red, #f85149);
-  --blue:    var(--cn-gold, #58a6ff);
+  --red:     #f85149;
+  --blue:    #58a6ff;
   --purple:  #bc8cff;
   --cyan:    #39d2c0;
 }
@@ -30,8 +27,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .tabs{display:flex;gap:4px;margin-bottom:16px}
 .tab{padding:8px 18px;border:1px solid var(--border);border-radius:6px 6px 0 0;cursor:pointer;font-size:13px;background:var(--card);color:var(--dim)}
 .tab.active{background:var(--bg);color:var(--text);border-bottom-color:var(--bg)}
-.btn{background:#238636;border:1px solid rgba(46,164,79,.4);color:var(--text);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap}
-.btn:hover{background:#2ea043}
+.btn{background:var(--btn-bg,#238636);border:1px solid var(--btn-border,rgba(46,164,79,.4));color:var(--text);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap}
+.btn:hover{background:var(--btn-hover-bg,#2ea043)}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:16px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px}
 .card-label{font-size:11px;color:var(--dim);margin-bottom:4px}
@@ -43,8 +40,138 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;padding:8px 12px;color:var(--dim);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;font-size:12px}
 td{padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;font-variant-numeric:tabular-nums;font-size:13px}
-tr:hover td{background:#1c2128}
+tr:hover td{background:var(--hover-bg,#1c2128)}
 .empty{text-align:center;padding:40px;color:var(--dim);font-size:14px;line-height:1.8}
+
+/* ── Theme system ────────────────────────────────────────────── */
+
+/* Red (Classic Chinese warm paper) */
+html[data-theme="red"] {
+  --bg:      #F4E8D3;
+  --card:    #FDFBF7;
+  --border:  #D4C4A9;
+  --text:    #2C251F;
+  --dim:     #8B7355;
+  --hover-bg:#f0e8d8;
+  --btn-bg:  #B32A26;
+  --btn-border: rgba(179,42,38,.4);
+  --btn-hover-bg: #8A1F1B;
+}
+
+/* Default (clean modern light) */
+html[data-theme="default"] {
+  --bg:      #f5f5f5;
+  --card:    #ffffff;
+  --border:  #dadce0;
+  --text:    #1a1a1a;
+  --dim:     #999999;
+  --hover-bg:#f0f0f0;
+  --btn-bg:  #1a73e8;
+  --btn-border: rgba(26,115,232,.4);
+  --btn-hover-bg: #1557b0;
+}
+
+/* Kokomi (Sangonomiya — ocean blue/pink) */
+html[data-theme="kokomi"] {
+  --bg:      #E1F0FF;
+  --card:    rgba(255,255,255,0.75);
+  --border:  rgba(140,185,214,0.4);
+  --text:    #2A4365;
+  --dim:     #718096;
+  --hover-bg:rgba(242,156,178,0.10);
+  --btn-bg:  #F29CB2;
+  --btn-border: rgba(242,156,178,.4);
+  --btn-hover-bg: #E0859E;
+}
+
+/* Firefly (SAM — mint/gold) */
+html[data-theme="firefly"] {
+  --bg:      #E5F3F1;
+  --card:    rgba(221,244,240,0.85);
+  --border:  rgba(140,209,197,0.5);
+  --text:    #16463C;
+  --dim:     #6EA89A;
+  --hover-bg:rgba(255,191,0,0.08);
+  --btn-bg:  #FF5E3A;
+  --btn-border: rgba(255,94,58,.4);
+  --btn-hover-bg: #E04A2A;
+}
+
+/* Furina (Opera — dark theater) */
+html[data-theme="furina"] {
+  --bg:      #120B0B;
+  --card:    #1C1212;
+  --border:  rgba(234,236,239,0.15);
+  --text:    #E2E8F0;
+  --dim:     #6B7280;
+  --hover-bg:rgba(217,179,108,0.10);
+  --btn-bg:  #D9B36C;
+  --btn-border: rgba(217,179,108,.4);
+  --btn-hover-bg: #C4A058;
+  --green:   #6BCB7C;
+  --yellow:  #D9B36C;
+  --red:     #D96C6C;
+  --blue:    #7AADF5;
+  --purple:  #C4A0E8;
+  --cyan:    #6CCFD8;
+}
+
+/* Hysilens (deep ocean) */
+html[data-theme="hysilens"] {
+  --bg:      #0E1826;
+  --card:    rgba(14,24,38,0.85);
+  --border:  rgba(163,198,214,0.15);
+  --text:    #E6F3FF;
+  --dim:     #6B8A9E;
+  --hover-bg:rgba(112,195,252,0.10);
+  --btn-bg:  #D12E6B;
+  --btn-border: rgba(209,46,107,.4);
+  --btn-hover-bg: #E91E63;
+  --green:   #4ECDC4;
+  --yellow:  #F7D84C;
+  --red:     #D12E6B;
+  --blue:    #70C3FC;
+  --purple:  #B388FF;
+  --cyan:    #4DD0E1;
+}
+
+/* Genius Club (cosmic purple) */
+html[data-theme="geniusclub"] {
+  --bg:      #0F121F;
+  --card:    rgba(20,26,41,0.9);
+  --border:  rgba(211,182,243,0.12);
+  --text:    #F3EEF9;
+  --dim:     #8A7A9A;
+  --hover-bg:rgba(138,79,255,0.10);
+  --btn-bg:  #8A4FFF;
+  --btn-border: rgba(138,79,255,.4);
+  --btn-hover-bg: #7A3FEF;
+  --green:   #6BCB7C;
+  --yellow:  #E5C17B;
+  --red:     #FF6B6B;
+  --blue:    #7AADF5;
+  --purple:  #B388FF;
+  --cyan:    #4DD0E1;
+}
+
+/* Silver Wolf (cyberpunk neon) */
+html[data-theme="silverwolf"] {
+  --bg:      #070312;
+  --card:    rgba(11,7,24,0.9);
+  --border:  rgba(154,0,255,0.25);
+  --text:    #00FFCC;
+  --dim:     #6B6080;
+  --hover-bg:rgba(255,0,127,0.10);
+  --btn-bg:  #FF007F;
+  --btn-border: rgba(255,0,127,.4);
+  --btn-hover-bg: #FF2E93;
+  --green:   #00FFCC;
+  --yellow:  #FFAE00;
+  --red:     #FF007F;
+  --blue:    #7AADF5;
+  --purple:  #B388FF;
+  --cyan:    #00FFCC;
+}
 
 /* Theme selector */
 .theme-select {
@@ -191,10 +318,33 @@ tr:hover td{background:#1c2128}
 const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
 const THEME_NAMES = ['朱砂红', '简约配色', '珊瑚宫心海', '流萤·萨姆', '芙宁娜·歌剧院', '海瑟音·深境', '天才俱乐部', '狼尊 LV.999'];
 
+// Theme background images (served by infoServer)
+const THEME_WALLPAPERS = {
+  kokomi:     { img: '/style/kokomi/kokomi.png',       overlay: 'linear-gradient(135deg, rgba(225,240,255,.55), rgba(252,232,240,.55))' },
+  firefly:    { img: '/style/firefly/firefly.png',      overlay: 'linear-gradient(135deg, rgba(229,243,241,.55), rgba(236,233,242,.55), rgba(245,235,240,.55))' },
+  furina:     { img: '/style/furina/furina.png',        overlay: 'radial-gradient(circle 900px at top center, rgba(255,235,190,.15) 0%, rgba(255,250,230,.03) 50%, rgba(18,11,11,.7) 100%), linear-gradient(135deg, rgba(18,11,11,.45), rgba(18,11,11,.25))' },
+  hysilens:   { img: '/style/Hysilens/Hysilens.jpg',    overlay: 'radial-gradient(ellipse 80% 35% at 50% 0%, rgba(112,195,252,.12) 0%, transparent 70%), radial-gradient(ellipse 40% 30% at 10% 100%, rgba(209,46,107,.10) 0%, transparent 70%), linear-gradient(135deg, rgba(14,24,38,.4), rgba(45,15,63,.3), rgba(21,42,66,.4))' },
+  geniusclub: { img: '/style/geniusclub/geniusclub.png', overlay: 'radial-gradient(ellipse 70% 40% at 50% 0%, rgba(138,79,255,.08) 0%, transparent 70%), radial-gradient(ellipse 40% 25% at 80% 100%, rgba(229,193,123,.06) 0%, transparent 60%), linear-gradient(135deg, rgba(15,18,31,.5), rgba(34,18,48,.4))' },
+  silverwolf: { img: '/style/silverwolf/silverwolf.png', overlay: 'linear-gradient(#070312, rgba(7,3,18,.4))' },
+};
+
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const sel = document.getElementById('themeSelect');
   if (sel) sel.value = theme;
+
+  // Set background image from infoServer
+  const wp = THEME_WALLPAPERS[theme];
+  if (wp) {
+    const url = `${getInfoServerUrl()}${wp.img}`;
+    document.body.style.backgroundImage = `${wp.overlay}, url(${url})`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundAttachment = 'fixed';
+  } else {
+    document.body.style.backgroundImage = 'none';
+    document.body.style.backgroundSize = '';
+    document.body.style.backgroundAttachment = '';
+  }
 }
 
 function getInfoServerUrl() {
