@@ -1,6 +1,6 @@
 # roleManager — AI 角色开发指南仓库
 
-集中管理多角色（CP-DEV-xzmp / CPP-GameSVR-DEV-xzmp / Creator-Client-DEV-xzmp / LUA-Client-DEV-xzmp / PM-DEV）的开发规范、知识笔记和工作流文档。作为 AI 与人类开发的统一导航入口。
+集中管理多角色（CP-DEV-xzmp / CPP-GameSVR-DEV-xzmp / Creator-Client-DEV-xzmp / LUA-Client-DEV-xzmp）的开发规范、知识笔记和工作流文档。作为 AI 与人类开发的统一导航入口。
 
 ## 核心功能
 
@@ -68,38 +68,31 @@
 ## PM 任务管理系统工作流
 
 > 目标服务：API http://192.168.46.166:8787 / UI http://192.168.46.166:5173
-> 详细文档：[Skills/PM_Workflow.md](Skills/PM_Workflow.md)
 
 ### 角色确认前的例外
 
 用户要求拉取**项目信息**（如查看版本进度、任务列表）时，允许在**角色确认前**调用 PM 系统 API。不受"禁止工具调用"约束。
 
-使用 `curl -s http://192.168.46.166:8787/api/snapshot` 获取全量数据。
+使用 `python Skills/api.py snapshot` 获取全量数据（**禁止** Windows curl 发中文）。
 
 ### 默认负责人
 
 当前工作区默认负责人为 **李真**。创建任务时若用户未指定负责人，使用该默认值。
 
-### 版本状态判断
+### Agent 行为逻辑与角色映射
 
-| 场景 | 行为 |
-|------|------|
-| 获取 snapshot 后所有版本均为`已完成` | 主动提示用户：`当前版本已全部完成，是否新增版本？` |
-| 用户报出某个版本名 | 查询该版本下的任务，按角色列出进度 |
-| 任务拆分前 | 获取 snapshot → 确认可用版本 → 按角色拆分任务 |
+涉及 PM 操作时，**加载 [Skills/PM_Agent.md](Skills/PM_Agent.md)** 获取：
+- 关键词 → 角色 → assignee 推断映射
+- 行为逻辑（优先关注进行中 → 未开始 → 提示状态变更 → 零任务引导）
+- 常见陷阱（Windows 编码、revision 链、父任务工时、删除级联）
 
-### 任务拆分规范
+### API 参考
 
-拆分任务时按角色标注执行人：
+加载 [Skills/PMBestPractice.md](Skills/PMBestPractice.md) 获取端点、数据模型、并发控制详细规范。
 
-| 角色 | 典型负责人 |
-|------|-----------|
-| CP-DEV-xzmp（后端 CP 服务） | 李真 |
-| CPP-GameSVR-DEV-xzmp（游戏服务端） | 李真 |
-| Creator-Client-DEV-xzmp（CocosCreator 客户端） | 李真 |
-| LUA-Client-DEV-xzmp（Lua 客户端） | 李真 |
+### 工作流示例
 
-拆分完毕时主动提示：**`当前版本{name}的进度：{已完成}/{总数}，是否继续跟踪？`**
+加载 [Skills/PM_Workflow.md](Skills/PM_Workflow.md) 获取 curl/bash 示例脚本。
 
 ### 本地缓存
 
@@ -126,7 +119,3 @@
 1. 获取 snapshot，定位 `currentTaskId`
 2. 检查当前任务到上一个已标记`已完成`的位置之间是否有其他`进行中`任务
 3. 提示用户：**`从{上一步}到{当前}之间的任务是否需要标记为已完成？`**
-
-### 技能入口
-
-涉及 PM 系统操作时，先加载技能 `Skills/PM_Workflow.md` 获取 API 参考和示例脚本。

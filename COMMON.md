@@ -10,7 +10,6 @@
 | **CPP-GameSVR-DEV-zgda** | Maintain 斗地主游戏+礼包+配置+残局机器人 services | C++ |
 | **CP-DEV-xzmp** | Maintain new gift services, user plugins & reward logic | TS |
 | **ChangData-Seeker** | Query existing data tables & field descriptions | SQL / Hive |
-| **PM-DEV** | Develop Project Management System | Rust / Web |
 
 ## Working Rules
 1. **L0 Required**: Must read L0 docs (duties, dir priority, index).
@@ -22,10 +21,6 @@
 ### LUA-Client-DEV-xzmp
 
 Legacy maintenance only — no new development. Query historical functionality as needed.
-
-### PM-DEV
-
-Active development role. Development docs provided separately by user.
 
 ### Common Development Flow (Creator / CPP / CP)
 

@@ -1,0 +1,1126 @@
+[
+    {
+        "ts": 7954,
+        "dir": "recv",
+        "msgID": 211010,
+        "msgName": "GR_PLAYER_ABORT",
+        "data": {
+            "nUserID": 1040722,
+            "nChairNO": 1,
+            "bForce": 0,
+            "nOldScore": 0,
+            "nOldDeposit": 0,
+            "nScoreDiff": 0,
+            "nDepositDfif": 0,
+            "nTableNO": 2,
+            "nAbortFlag": 0,
+            "nReserved": [
+                0,
+                0
+            ]
+        }
+    },
+    {
+        "ts": 8570,
+        "dir": "recv",
+        "msgID": 211028,
+        "msgName": "GR_START_SOLOTABLE",
+        "data": {
+            "StartData": {
+                "szSerialNO": "48868cd37f1a08409f3bbadcaad9ba",
+                "nBoutCount": 1,
+                "nBaseDeposit": 2000,
+                "nBaseScore": 2000,
+                "nBanker": 0,
+                "nBankerHold": 1,
+                "nCurrentChair": 0,
+                "dwStatus": 17,
+                "dwCurrentFlags": 0,
+                "nFirstCatch": 0,
+                "nFirstThrow": 0,
+                "nThrowWait": 999,
+                "nMaxAutoThrow": 2147483647,
+                "nEntrustWait": 2,
+                "bNeedDeposit": 1,
+                "bForbidDesert": 0,
+                "nDices": [
+                    6,
+                    6,
+                    0,
+                    0
+                ],
+                "bQuickCatch": 0,
+                "bAllowChi": 0,
+                "bAnGangShow": 1,
+                "bJokerSortIn": 0,
+                "bBaibanNoSort": 1,
+                "nBeginNO": 0,
+                "nJokerNO": -1,
+                "nJokerID": 108,
+                "nJokerID2": -1,
+                "nFanID": -1,
+                "nTailTaken": 0,
+                "nCurrentCatch": 53,
+                "nPGCHWait": 999,
+                "nPGCHWaitEx": 2,
+                "nHuGains": 0,
+                "nTotalCards": 114,
+                "nSectionId": [
+                    1,
+                    1,
+                    1,
+                    -1
+                ],
+                "exinfo": [
+                    {
+                        "cardrecorder": 0,
+                        "headpropid": 7
+                    },
+                    {
+                        "cardrecorder": 0,
+                        "headpropid": 3
+                    },
+                    {
+                        "cardrecorder": 0,
+                        "headpropid": 5
+                    },
+                    {
+                        "cardrecorder": 1,
+                        "headpropid": 1
+                    }
+                ]
+            },
+            "nCardsCount": [
+                14,
+                13,
+                13,
+                13
+            ],
+            "nChairCards": [
+                18,
+                27,
+                19,
+                32,
+                15,
+                24,
+                63,
+                39,
+                66,
+                40,
+                93,
+                102,
+                76,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1
+            ],
+            "nDingQueWait": 999,
+            "nGiveupWait": 9999,
+            "nShowTask": 0,
+            "soloPlayers": [
+                {
+                    "nUserID": 1124795,
+                    "nUserType": 1073741824,
+                    "nStatus": 14,
+                    "nTableNO": 3,
+                    "nChairNO": 0,
+                    "nNickSex": 0,
+                    "nPortrait": 0,
+                    "nNetSpeed": 10,
+                    "nClothingID": 0,
+                    "szUsername": "玩家1124795",
+                    "szNickName": "玩家1124795",
+                    "nDeposit": 88077,
+                    "nPlayerLevel": 88077,
+                    "nScore": 0,
+                    "nBreakOff": 0,
+                    "nWin": 1555,
+                    "nLoss": 2148,
+                    "nStandOff": 0,
+                    "nBout": 3703,
+                    "nTimeCost": 0,
+                    "bRefuse": 0
+                },
+                {
+                    "nUserID": 1124801,
+                    "nUserType": 1073741824,
+                    "nStatus": 14,
+                    "nTableNO": 3,
+                    "nChairNO": 1,
+                    "nNickSex": 0,
+                    "nPortrait": 0,
+                    "nNetSpeed": 10,
+                    "nClothingID": 0,
+                    "szUsername": "玩家1124801",
+                    "szNickName": "玩家1124801",
+                    "nDeposit": 128576,
+                    "nPlayerLevel": 128576,
+                    "nScore": 0,
+                    "nBreakOff": 0,
+                    "nWin": 2563,
+                    "nLoss": 3133,
+                    "nStandOff": 0,
+                    "nBout": 5696,
+                    "nTimeCost": 0,
+                    "bRefuse": 0
+                },
+                {
+                    "nUserID": 1124859,
+                    "nUserType": 1073741824,
+                    "nStatus": 14,
+                    "nTableNO": 3,
+                    "nChairNO": 2,
+                    "nNickSex": 0,
+                    "nPortrait": 0,
+                    "nNetSpeed": 10,
+                    "nClothingID": 0,
+                    "szUsername": "玩家1124859",
+                    "szNickName": "玩家1124859",
+                    "nDeposit": 95679,
+                    "nPlayerLevel": 95679,
+                    "nScore": 0,
+                    "nBreakOff": 0,
+                    "nWin": 2141,
+                    "nLoss": 1825,
+                    "nStandOff": 0,
+                    "nBout": 3966,
+                    "nTimeCost": 0,
+                    "bRefuse": 0
+                },
+                {
+                    "nUserID": 1040722,
+                    "nUserType": 2304,
+                    "nStatus": 14,
+                    "nTableNO": 3,
+                    "nChairNO": 3,
+                    "nNickSex": 0,
+                    "nPortrait": 0,
+                    "nNetSpeed": 0,
+                    "nClothingID": 1,
+                    "szUsername": "玩家10407**",
+                    "szNickName": "玩家10407**",
+                    "nDeposit": 61174,
+                    "nPlayerLevel": 0,
+                    "nScore": 61174,
+                    "nBreakOff": 0,
+                    "nWin": 1,
+                    "nLoss": 17,
+                    "nStandOff": 0,
+                    "nBout": 18,
+                    "nTimeCost": 0,
+                    "bRefuse": 0
+                }
+            ],
+            "soloTable": {
+                "nRoomID": 11883,
+                "nTableNO": 3,
+                "nUserCount": 4,
+                "nUserIDs": [
+                    1124795,
+                    1124801,
+                    1124859,
+                    1040722,
+                    0,
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "szSerialNO": "48868cd37f1a08409f3bbadcaad9ba",
+            "nChairCardsAll": [
+                {
+                    "nChairCards": [
+                        42,
+                        51,
+                        72,
+                        81,
+                        90,
+                        99,
+                        74,
+                        83,
+                        80,
+                        89,
+                        98,
+                        107,
+                        108,
+                        109,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1
+                    ]
+                },
+                {
+                    "nChairCards": [
+                        1,
+                        28,
+                        11,
+                        29,
+                        13,
+                        22,
+                        33,
+                        36,
+                        70,
+                        44,
+                        62,
+                        71,
+                        75,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1
+                    ]
+                },
+                {
+                    "nChairCards": [
+                        0,
+                        9,
+                        31,
+                        17,
+                        35,
+                        46,
+                        55,
+                        65,
+                        57,
+                        58,
+                        68,
+                        84,
+                        103,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1
+                    ]
+                },
+                {
+                    "nChairCards": [
+                        18,
+                        27,
+                        19,
+                        32,
+                        15,
+                        24,
+                        63,
+                        39,
+                        66,
+                        40,
+                        93,
+                        102,
+                        76,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1
+                    ]
+                }
+            ]
+        }
+    },
+    {
+        "ts": 11145,
+        "dir": "recv",
+        "msgID": 400106,
+        "msgName": "GR_PRE_SAVE_RESULT",
+        "data": {
+            "nFlag": 6,
+            "nHuStatus": [
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            ],
+            "nOldScores": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nOldDeposits": [
+                88077,
+                128576,
+                95679,
+                61174
+            ],
+            "nScoreDiffs": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nDepositDiffs": [
+                -10000,
+                -10000,
+                -10000,
+                -10000
+            ],
+            "nChairNO": -1,
+            "hupoints": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "goldbelldeposit": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "extraInfo": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "overFlowLine": 2000000000,
+            "overFlowDeposit": [
+                0,
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    {
+        "ts": 11537,
+        "dir": "recv",
+        "msgID": 229800,
+        "msgName": "GR_SYSTEMMSG",
+        "data": {
+            "nRoomID": 0,
+            "nUserID": 0,
+            "nMsgID": 7,
+            "nChairNO": 2,
+            "nFangCardChairNO": 0,
+            "nEventID": 2,
+            "nMJID": 0
+        }
+    },
+    {
+        "ts": 12041,
+        "dir": "recv",
+        "msgID": 229800,
+        "msgName": "GR_SYSTEMMSG",
+        "data": {
+            "nRoomID": 0,
+            "nUserID": 0,
+            "nMsgID": 7,
+            "nChairNO": 0,
+            "nFangCardChairNO": 0,
+            "nEventID": 0,
+            "nMJID": 0
+        }
+    },
+    {
+        "ts": 12513,
+        "dir": "recv",
+        "msgID": 229800,
+        "msgName": "GR_SYSTEMMSG",
+        "data": {
+            "nRoomID": 0,
+            "nUserID": 0,
+            "nMsgID": 7,
+            "nChairNO": 1,
+            "nFangCardChairNO": 0,
+            "nEventID": 2,
+            "nMJID": 0
+        }
+    },
+    {
+        "ts": 18265,
+        "dir": "send",
+        "msgID": 222070,
+        "msgName": "GR_AUCTION_BANKER",
+        "data": {
+            "nDingQueCardType": [
+                0,
+                2,
+                2,
+                2
+            ],
+            "bAuto": 0,
+            "nUserID": 1040722,
+            "nRoomID": 11883,
+            "nTableNO": 3,
+            "nChairNO": 3,
+            "dPGCH": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nBankerHuFan": 0,
+            "nReserved": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    {
+        "ts": 19257,
+        "dir": "recv",
+        "msgID": 229800,
+        "msgName": "GR_SYSTEMMSG",
+        "data": {
+            "nRoomID": 0,
+            "nUserID": 0,
+            "nMsgID": 7,
+            "nChairNO": 3,
+            "nFangCardChairNO": 0,
+            "nEventID": 2,
+            "nMJID": 0
+        }
+    },
+    {
+        "ts": 19676,
+        "dir": "recv",
+        "msgID": 222168,
+        "msgName": "GR_AUCTION_FINISHED",
+        "data": {
+            "nDingQueCardType": [
+                0,
+                2,
+                2,
+                2
+            ],
+            "bAuto": 0,
+            "nUserID": 1040722,
+            "nRoomID": 11883,
+            "nTableNO": 3,
+            "nChairNO": 3,
+            "dPGCH": [
+                8,
+                0,
+                0,
+                0
+            ],
+            "nBankerHuFan": 512,
+            "nReserved": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    {
+        "ts": 21745,
+        "dir": "recv",
+        "msgID": 219006,
+        "msgName": "GR_MJ_QUERY_HUINFO",
+        "data": {}
+    },
+    {
+        "ts": 22195,
+        "dir": "recv",
+        "msgID": 222170,
+        "msgName": "MJ_GR_CARDS_THROW",
+        "data": {
+            "nUserID": 0,
+            "nChairNO": 0,
+            "nNextChair": 3,
+            "bNextFirst": 1,
+            "bNextPass": 0,
+            "nRemains": 13,
+            "dwFlags": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ],
+            "dwCardsType": 1,
+            "nThrowCount": 0,
+            "nReserved": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nCardsCount": 1,
+            "nCardIDs": [
+                42
+            ],
+            "nHuFan": [
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1
+            ]
+        }
+    },
+    {
+        "ts": 22625,
+        "dir": "recv",
+        "msgID": 219006,
+        "msgName": "GR_MJ_QUERY_HUINFO",
+        "data": {}
+    },
+    {
+        "ts": 31562,
+        "dir": "recv",
+        "msgID": 229160,
+        "msgName": "MJ_GR_CARD_CAUGHT",
+        "data": {
+            "nChairNO": 3,
+            "nCardID": 92,
+            "nCardNO": 53,
+            "dwFlags": 0,
+            "nReserved": [
+                0,
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    {
+        "ts": 36586,
+        "dir": "send",
+        "msgID": 222080,
+        "msgName": "MJ_GR_THROW_CARDS",
+        "data": {
+            "nUserID": 1040722,
+            "nRoomID": 11883,
+            "nTableNO": 3,
+            "nChairNO": 3,
+            "bPassive": 0,
+            "sender_info": {
+                "nSendTable": 3,
+                "nSendChair": 3,
+                "nSendUser": 1040722,
+                "szHardID": "50A4C8bf98020000000000000000000",
+                "nReserved4": [
+                    0,
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "dwCardsType": 1,
+            "nReserved4": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nCardsCount": 1,
+            "nCardIDs": [
+                92,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1
+            ]
+        }
+    },
+    {
+        "ts": 133009,
+        "dir": "recv",
+        "msgID": 219006,
+        "msgName": "GR_MJ_QUERY_HUINFO",
+        "data": {}
+    },
+    {
+        "ts": 135847,
+        "dir": "recv",
+        "msgID": 229800,
+        "msgName": "GR_SYSTEMMSG",
+        "data": {
+            "nRoomID": 0,
+            "nUserID": 0,
+            "nMsgID": 3,
+            "nChairNO": 0,
+            "nFangCardChairNO": 3,
+            "nEventID": 1,
+            "nMJID": 92
+        }
+    },
+    {
+        "ts": 135915,
+        "dir": "recv",
+        "msgID": 400106,
+        "msgName": "GR_PRE_SAVE_RESULT",
+        "data": {
+            "nFlag": 4,
+            "nHuStatus": [
+                {
+                    "item": [
+                        268435473,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            ],
+            "nOldScores": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nOldDeposits": [
+                78077,
+                0,
+                0,
+                51174
+            ],
+            "nScoreDiffs": [
+                48,
+                0,
+                0,
+                -48
+            ],
+            "nDepositDiffs": [
+                51174,
+                0,
+                0,
+                -51174
+            ],
+            "nChairNO": 0,
+            "nPreSaveAllDeposit": 51174,
+            "huitemhead": {
+                "nCount": 1,
+                "nChairNO": 3,
+                "nPreSaveAllDeposit": -51174
+            },
+            "huiteminfo": [
+                {
+                    "bWin": 0,
+                    "bSend": 1,
+                    "nHuFlag": 1,
+                    "nHuID": 92,
+                    "nHuFan": -48,
+                    "nHuDeposits": -51174,
+                    "nHuGains": [
+                        0,
+                        6,
+                        0,
+                        0,
+                        0,
+                        0,
+                        4,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        2,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0
+                    ],
+                    "nRelateChair": [
+                        0,
+                        -1,
+                        -1,
+                        -1
+                    ],
+                    "nIsGoldBell": 0,
+                    "nExtraInfo": 0
+                }
+            ],
+            "hupoints": [
+                48,
+                0,
+                0,
+                -48
+            ],
+            "goldbelldeposit": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "extraInfo": [
+                1,
+                0,
+                0,
+                0
+            ],
+            "overFlowLine": 2000000000,
+            "overFlowDeposit": [
+                0,
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    {
+        "ts": 135936,
+        "dir": "recv",
+        "msgID": 400104,
+        "msgName": "GR_PLAYING_DEPOSIT_NOT_ENOUGH",
+        "data": {
+            "nNeedDeposit": 61174,
+            "nLastSecond": 9999,
+            "nGiveUpChair": [
+                -1,
+                -1,
+                -1,
+                3
+            ],
+            "nHuReady": 0
+        }
+    },
+    {
+        "ts": 148247,
+        "dir": "recv",
+        "msgID": 229800,
+        "msgName": "GR_SYSTEMMSG",
+        "data": {
+            "nRoomID": 0,
+            "nUserID": 0,
+            "nMsgID": 5,
+            "nChairNO": 3,
+            "nFangCardChairNO": 0,
+            "nEventID": 64,
+            "nMJID": 0
+        }
+    },
+    {
+        "ts": 148484,
+        "dir": "recv",
+        "msgID": 400106,
+        "msgName": "GR_PRE_SAVE_RESULT",
+        "data": {
+            "nFlag": 5,
+            "nHuStatus": [
+                {
+                    "item": [
+                        268435473,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "item": [
+                        64,
+                        0,
+                        0
+                    ]
+                }
+            ],
+            "nOldScores": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nOldDeposits": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nScoreDiffs": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nDepositDiffs": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "nChairNO": 3,
+            "nPreSaveAllDeposit": -51174,
+            "hupoints": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "goldbelldeposit": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "extraInfo": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "overFlowLine": 2000000000,
+            "overFlowDeposit": [
+                0,
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    {
+        "ts": 148524,
+        "dir": "recv",
+        "msgID": 229800,
+        "msgName": "GR_SYSTEMMSG",
+        "data": {
+            "nRoomID": 0,
+            "nUserID": 0,
+            "nMsgID": 4,
+            "nChairNO": 2,
+            "nFangCardChairNO": 0,
+            "nEventID": 0,
+            "nMJID": 0
+        }
+    },
+    {
+        "ts": 148529,
+        "dir": "recv",
+        "msgID": 229160,
+        "msgName": "MJ_GR_CARD_CAUGHT",
+        "data": {
+            "nChairNO": 2,
+            "nCardID": 110,
+            "nCardNO": 54,
+            "dwFlags": 0,
+            "nReserved": [
+                0,
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    {
+        "ts": 148537,
+        "dir": "recv",
+        "msgID": 219006,
+        "msgName": "GR_MJ_QUERY_HUINFO",
+        "data": {}
+    }
+]
