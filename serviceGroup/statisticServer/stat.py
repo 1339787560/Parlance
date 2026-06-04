@@ -31,11 +31,11 @@ DEFAULT_MODEL = "deepseek-chat"
 CONFIG_DIR = Path.home() / ".deepseek_stats"
 HISTORY_FILE = CONFIG_DIR / "history.json"
 
-# Pricing (per 1M tokens, USD)
+# Pricing (per 1M tokens, RMB) — DeepSeek v4 Pro
 PRICING = {
-    "cache_hit": 0.028,
-    "cache_miss": 0.28,
-    "completion": 0.42,
+    "cache_hit": 0.025,
+    "cache_miss": 3,
+    "completion": 6,
 }
 
 

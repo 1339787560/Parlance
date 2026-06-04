@@ -30,7 +30,7 @@ MODEL_MAP = [
 
 PRICING = {
     "deepseek-chat":     {"miss": 1, "hit": 0.02, "out": 2, "label": "Flash"},
-    "deepseek-reasoner": {"miss": 3, "hit": 0.02, "out": 6, "label": "Pro"},
+    "deepseek-reasoner": {"miss": 3, "hit": 0.025, "out": 6, "label": "Pro"},
 }
 
 def map_model(m: str) -> str:
@@ -43,6 +43,9 @@ def get_pricing(model: str) -> dict:
     for key, p in PRICING.items():
         if key in model:
             return p
+    # Fallback: pro/reasoner → Pro pricing
+    if any(k in model for k in ("pro", "reasoner")):
+        return PRICING["deepseek-reasoner"]
     return PRICING["deepseek-chat"]
 
 def calc_cost(model: str, prompt: int, hit: int, out: int) -> float:

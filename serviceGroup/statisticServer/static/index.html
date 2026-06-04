@@ -422,8 +422,8 @@ function fillCards(data){
   const mc=document.getElementById('modelCosts');
   if(data.model_costs&&Object.keys(data.model_costs).length){
     mc.innerHTML=Object.entries(data.model_costs).map(([m,c])=>{
-      const p=m.includes('reason')?
-        {miss:3, hit:.02, out:6, label:'Pro'}:
+      const p=m.includes('reason')||m.includes('pro')?
+        {miss:3, hit:.025, out:6, label:'Pro'}:
         {miss:1, hit:.02, out:2, label:'Flash'};
       return `<div style="margin-bottom:4px"><strong>${p.label}</strong> ${m}: `+
         `输入命中 ¥${p.hit}/M · 输入未命中 ¥${p.miss}/M · 输出 ¥${p.out}/M → `+
