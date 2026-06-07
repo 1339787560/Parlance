@@ -33,17 +33,3 @@ services:
     auto_restart: true
     tags: [statistics, proxy]
     enabled: true
-
-  - name: ds4codex
-    command: ds4codex
-    args: ["run", "--port", "5003"]
-    port: 5003
-    auto_restart: true
-    tags: [proxy, deepseek, codex]
-    enabled: true
-    # 项目来源: https://github.com/seqyuan/ds4codex  作者: 苑赞 (seqyuan)
-    # 作用: 协议翻译代理，让 Codex 通过 Responses API 使用 DeepSeek 模型
-    # 设置 API Key 方式（任选一）：
-    # 1) 在 env 中加入 DS4CODEX_API_KEY=sk-xxx
-    # 2) 或设环境变量 DEEPSEEK_API_KEY
-    # 3) 或通过 args 传 --api-key sk-xxx

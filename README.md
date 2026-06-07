@@ -44,6 +44,8 @@ python main.py
 
 支持自动重启、健康检查、按标签筛选。
 
+> **ds4codex 已废弃**，请使用最新的 cc switch（v3.16.1 版本），该版本已支持 codex 路由。参考文档：<https://catchadmin.com/post/2026-05/ccswitch-ds-to-codex>
+
 ### 局域网访问
 
 同局域网设备打开 `http://<服务端IP>:5000` 即可，无需任何配置。
