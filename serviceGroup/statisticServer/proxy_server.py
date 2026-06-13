@@ -105,7 +105,14 @@ def normalize_path(path: str, fmt: str) -> str:
 
 
 def extract_usage(usage: dict, fmt: str) -> dict:
-    """归一化 usage 字段，统一为内部 schema"""
+    """归一化 usage 字段，统一为内部 schema
+
+    内部 schema 语义（与 OpenAI 一致）：
+    - prompt_tokens: 本次请求所有输入 token（含命中和未命中）
+    - cache_hit_tokens: 命中缓存的 token
+    - cache_miss_tokens: 未命中缓存的 token（即新付费的 input）
+    - prompt_tokens = cache_hit_tokens + cache_miss_tokens
+    """
     if fmt == "openai":
         prompt = usage.get("prompt_tokens", 0)
         completion = usage.get("completion_tokens", 0)
@@ -117,14 +124,19 @@ def extract_usage(usage: dict, fmt: str) -> dict:
             "cache_miss_tokens": usage.get("prompt_cache_miss_tokens", 0),
         }
     else:
-        prompt = usage.get("input_tokens", 0)
+        # Anthropic: input_tokens 不含缓存部分（新付费的输入）
+        # 总 prompt = input_tokens + cache_read + cache_creation
+        new_input = usage.get("input_tokens", 0)
+        cache_hit = usage.get("cache_read_input_tokens", 0)
+        cache_creation = usage.get("cache_creation_input_tokens", 0)
+        prompt = new_input + cache_hit + cache_creation
         completion = usage.get("output_tokens", 0)
         return {
             "prompt_tokens": prompt,
             "completion_tokens": completion,
             "total_tokens": prompt + completion,
-            "cache_hit_tokens": usage.get("cache_read_input_tokens", 0),
-            "cache_miss_tokens": usage.get("cache_creation_input_tokens", 0),
+            "cache_hit_tokens": cache_hit,
+            "cache_miss_tokens": new_input + cache_creation,  # miss = 所有非命中部分
         }
 
 
@@ -375,17 +387,21 @@ async def handle_api(request: Request, path: str):
     conn = get_db()
     where = ""
     params = []
+    # 手动触发前端刷新（用于数据迁移、外部直接改 DB 等场景）
+    if path == "api/refresh":
+        await broadcast("new_data")
+        return {"status": "ok", "broadcast": "new_data"}
     if path == "api/stats/detail":
         # Per-request breakdown (last 100)
         rows = conn.execute(
             "SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,"
-            "cache_hit_tokens,latency_ms FROM requests "
+            "cache_hit_tokens,cache_miss_tokens,latency_ms FROM requests "
             "ORDER BY ts DESC LIMIT 100"
         ).fetchall()
         return [{
             "ts": r[0], "session": r[1], "model": r[2],
             "prompt": r[3], "completion": r[4], "total": r[5],
-            "cache_hit": r[6], "latency_ms": r[7],
+            "cache_hit": r[6], "cache_miss": r[7], "latency_ms": r[8],
         } for r in rows]
 
     # Daily aggregation
@@ -397,7 +413,8 @@ async def handle_api(request: Request, path: str):
                    COALESCE(SUM(completion_tokens),0),
                    COALESCE(SUM(total_tokens),0),
                    COALESCE(SUM(cache_hit_tokens),0),
-                   COALESCE(SUM(latency_ms),0)
+                   COALESCE(SUM(latency_ms),0),
+                   COALESCE(SUM(cache_miss_tokens),0)
             FROM requests GROUP BY day, model ORDER BY day DESC
         """).fetchall()
         days = {}
@@ -407,7 +424,7 @@ async def handle_api(request: Request, path: str):
                 days[day] = {
                     "date": day, "requests": 0,
                     "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
-                    "cache_hit_tokens": 0,
+                    "cache_hit_tokens": 0, "cache_miss_tokens": 0,
                     "total_latency_ms": 0, "cost": 0.0, "model_costs": {},
                 }
             d = days[day]
@@ -417,6 +434,7 @@ async def handle_api(request: Request, path: str):
             d["total_tokens"] += r[5]
             d["cache_hit_tokens"] += r[6]
             d["total_latency_ms"] += r[7]
+            d["cache_miss_tokens"] += r[8]
             c = calc_cost(r[1], r[3], r[6], r[4])
             d["cost"] += c
             d["model_costs"][r[1]] = round(c, 6)
@@ -441,7 +459,7 @@ async def handle_api(request: Request, path: str):
             params_task = [session]
         rows = conn.execute(f"""
             SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,
-                   cache_hit_tokens,latency_ms
+                   cache_hit_tokens,latency_ms,cache_miss_tokens
             FROM requests{where_task} ORDER BY ts ASC
         """, params_task).fetchall()
 
@@ -487,6 +505,7 @@ async def handle_api(request: Request, path: str):
                     "prompt_tokens": 0, "completion_tokens": 0,
                     "total_tokens": 0,
                     "cache_hit_tokens": 0,
+                    "cache_miss_tokens": 0,
                     "total_latency_ms": 0,
                     "_model_prompt": {},  # model -> total prompt_tokens
                     "_model_hit": {},
@@ -499,6 +518,7 @@ async def handle_api(request: Request, path: str):
             cur["completion_tokens"] += r[4] or 0
             cur["total_tokens"] += r[5] or 0
             cur["cache_hit_tokens"] += r[6] or 0
+            cur["cache_miss_tokens"] += r[8] or 0
             cur["total_latency_ms"] += r[7] or 0
             cur["_model_prompt"][model] = cur["_model_prompt"].get(model, 0) + (r[3] or 0)
             cur["_model_hit"][model] = cur["_model_hit"].get(model, 0) + (r[6] or 0)
@@ -541,7 +561,8 @@ async def handle_api(request: Request, path: str):
                COALESCE(SUM(total_tokens),0),
                COALESCE(SUM(cache_hit_tokens),0),
                COALESCE(AVG(latency_ms),0),
-               COALESCE(SUM(latency_ms),0)
+               COALESCE(SUM(latency_ms),0),
+               COALESCE(SUM(cache_miss_tokens),0)
         FROM requests{where}
     """, params).fetchone()
 
@@ -549,6 +570,7 @@ async def handle_api(request: Request, path: str):
         return {"total_requests": 0, "sessions": []}
 
     total_hit = row[4]
+    total_miss = row[7]
 
     # Cost per model
     cost_rows = conn.execute(f"""
@@ -593,6 +615,7 @@ async def handle_api(request: Request, path: str):
         "total_completion_tokens": row[2],
         "total_tokens": row[3],
         "total_cache_hit_tokens": total_hit,
+        "total_cache_miss_tokens": total_miss,
         "avg_latency_ms": round(row[5], 0),
         "total_time_ms": row[6],
         "total_cost": round(total_cost, 6),

@@ -222,8 +222,14 @@ html[data-theme="silverwolf"] {
   <div class="cards" id="totalCards">
     <div class="card"><div class="card-label">请求次数</div><div class="card-value blue" id="s-req">-</div></div>
     <div class="card"><div class="card-label">总 Token 用量</div><div class="card-value" id="s-total">-</div></div>
-    <div class="card"><div class="card-label">输入 / 输出</div><div class="card-value" id="s-prompt-comp"><span id="s-prompt">-</span> / <span id="s-comp">-</span></div><div class="card-sub">输入 token / 输出 token</div></div>
-    <div class="card"><div class="card-label">缓存命中</div><div class="card-value green" id="s-hit">-</div></div>
+    <div class="card"><div class="card-label">输入未命中 / 缓存命中 / 输出</div>
+      <div class="card-value">
+        <span id="s-miss" style="color:#f87171">-</span> /
+        <span id="s-hit" style="color:#4ade80">-</span> /
+        <span id="s-comp" style="color:#a78bfa">-</span>
+      </div>
+      <div class="card-sub">未命中 / 缓存命中 / 输出 token</div>
+    </div>
     <div class="card"><div class="card-label">总费用 (RMB)</div><div class="card-value purple" id="s-cost">-</div></div>
     <div class="card"><div class="card-label">平均用时</div><div class="card-value cyan" id="s-lat">-</div></div>
   </div>
@@ -237,7 +243,14 @@ html[data-theme="silverwolf"] {
   <div id="sessionCards" class="cards" style="display:none">
     <div class="card"><div class="card-label">请求次数</div><div class="card-value blue" id="ss-req">-</div></div>
     <div class="card"><div class="card-label">总 Token</div><div class="card-value" id="ss-total">-</div></div>
-    <div class="card"><div class="card-label">缓存命中</div><div class="card-value green" id="ss-hit">-</div></div>
+    <div class="card"><div class="card-label">输入未命中 / 缓存命中 / 输出</div>
+      <div class="card-value">
+        <span id="ss-miss" style="color:#f87171">-</span> /
+        <span id="ss-hit" style="color:#4ade80">-</span> /
+        <span id="ss-comp" style="color:#a78bfa">-</span>
+      </div>
+      <div class="card-sub">未命中 / 缓存命中 / 输出 token</div>
+    </div>
     <div class="card"><div class="card-label">费用</div><div class="card-value purple" id="ss-cost">-</div></div>
     <div class="card"><div class="card-label">平均请求耗时</div><div class="card-value cyan" id="ss-lat">-</div><div class="card-sub" id="ss-lat-diff">-</div></div>
   </div>
@@ -258,8 +271,9 @@ html[data-theme="silverwolf"] {
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>任务 #</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>总计</th>
-            <th>缓存命中</th><th>总用时</th><th>费用</th>
+            <th>任务 #</th><th>请求数</th>
+            <th>输入未命中</th><th>缓存命中</th><th>输出</th><th>总计</th>
+            <th>总用时</th><th>费用</th>
           </tr></thead>
           <tbody id="sessionTaskTable"></tbody>
         </table>
@@ -274,8 +288,9 @@ html[data-theme="silverwolf"] {
     <div style="overflow-x:auto">
       <table>
         <thead><tr>
-          <th>任务 #</th><th>会话</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>总计</th>
-          <th>缓存命中</th><th>总用时</th><th>费用</th>
+          <th>任务 #</th><th>会话</th><th>请求数</th>
+          <th>输入未命中</th><th>缓存命中</th><th>输出</th><th>总计</th>
+          <th>总用时</th><th>费用</th>
         </tr></thead>
         <tbody id="taskTable"></tbody>
       </table>
@@ -289,8 +304,9 @@ html[data-theme="silverwolf"] {
     <div style="overflow-x:auto">
       <table>
         <thead><tr>
-          <th>日期</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>总计</th>
-          <th>缓存命中</th><th>平均耗时</th><th>费用</th>
+          <th>日期</th><th>请求数</th>
+          <th>输入未命中</th><th>缓存命中</th><th>输出</th><th>总计</th>
+          <th>平均耗时</th><th>费用</th>
         </tr></thead>
         <tbody id="dailyTable"></tbody>
       </table>
@@ -304,8 +320,9 @@ html[data-theme="silverwolf"] {
     <div style="overflow-x:auto">
       <table>
         <thead><tr>
-          <th>时间</th><th>模型</th><th>输入</th><th>输出</th><th>总计</th>
-          <th>缓存命中</th><th>耗时</th>
+          <th>时间</th><th>模型</th>
+          <th>输入未命中</th><th>缓存命中</th><th>输出</th><th>总计</th>
+          <th>耗时</th>
         </tr></thead>
         <tbody id="reqTable"></tbody>
       </table>
@@ -413,9 +430,14 @@ function fillCards(data){
   _overallAvgLatency = data.avg_latency_ms;
   document.getElementById('s-req').textContent=fmt(data.total_requests);
   document.getElementById('s-total').textContent=fmt(data.total_tokens);
-  document.getElementById('s-prompt').textContent=fmt(data.total_prompt_tokens);
-  document.getElementById('s-comp').textContent=fmt(data.total_completion_tokens);
-  document.getElementById('s-hit').textContent=fmt(data.total_cache_hit_tokens);
+  // 拆分输入：缓存命中 + 未命中（如果后端没返 miss，就用 prompt - hit 兜底）
+  const totalHit = data.total_cache_hit_tokens || 0;
+  const totalMiss = (data.total_cache_miss_tokens != null)
+    ? data.total_cache_miss_tokens
+    : Math.max(0, (data.total_prompt_tokens || 0) - totalHit);
+  document.getElementById('s-miss').textContent = fmt(totalMiss);
+  document.getElementById('s-hit').textContent = fmt(totalHit);
+  document.getElementById('s-comp').textContent = fmt(data.total_completion_tokens);
   document.getElementById('s-cost').textContent=fmtCost(data.total_cost);
   document.getElementById('s-lat').textContent=data.avg_latency_ms?Math.round(data.avg_latency_ms)+'ms':'-';
 
@@ -447,14 +469,16 @@ async function refresh(){
   const tt=document.getElementById('taskTable');
   if(tasks&&tasks.length){
     tt.innerHTML=tasks.map(t=>{
+      const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
+        : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
       return `<tr>
         <td>#${t.task_id}</td>
         <td style="font-size:12px;font-family:monospace;color:var(--blue)">${(t.session||'').slice(0,12)}</td>
         <td>${t.requests}</td>
-        <td>${fmt(t.prompt_tokens)}</td>
-        <td>${fmt(t.completion_tokens)}</td>
+        <td style="color:#f87171">${fmt(miss)}</td>
+        <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
+        <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
         <td><strong>${fmt(t.total_tokens)}</strong></td>
-        <td>${fmt(t.cache_hit_tokens)}</td>
         <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
         <td class="purple">${fmtCost(t.cost)}</td>
       </tr>`;
@@ -465,13 +489,15 @@ async function refresh(){
   const dt=document.getElementById('dailyTable');
   if(daily&&daily.length){
     dt.innerHTML=daily.map(d=>{
+      const miss = (d.cache_miss_tokens != null) ? d.cache_miss_tokens
+        : Math.max(0, (d.prompt_tokens||0) - (d.cache_hit_tokens||0));
       return `<tr>
         <td><strong>${d.date}</strong></td>
         <td>${d.requests}</td>
-        <td>${fmt(d.prompt_tokens)}</td>
-        <td>${fmt(d.completion_tokens)}</td>
+        <td style="color:#f87171">${fmt(miss)}</td>
+        <td style="color:#4ade80">${fmt(d.cache_hit_tokens)}</td>
+        <td style="color:#a78bfa">${fmt(d.completion_tokens)}</td>
         <td><strong>${fmt(d.total_tokens)}</strong></td>
-        <td>${fmt(d.cache_hit_tokens)}</td>
         <td>${d.avg_latency_ms?d.avg_latency_ms+'ms':'-'}</td>
         <td class="purple">${fmtCost(d.cost)}</td>
       </tr>`;
@@ -482,7 +508,12 @@ async function refresh(){
     fetch(`/api/stats?session=${encodeURIComponent(_currentSessionId)}`).then(r=>r.json()).then(d=>{
       document.getElementById('ss-req').textContent = fmt(d.total_requests);
       document.getElementById('ss-total').textContent = fmt(d.total_tokens);
-      document.getElementById('ss-hit').textContent = fmt(d.total_cache_hit_tokens);
+      const hit = d.total_cache_hit_tokens || 0;
+      const miss = (d.total_cache_miss_tokens != null) ? d.total_cache_miss_tokens
+        : Math.max(0, (d.total_prompt_tokens || 0) - hit);
+      document.getElementById('ss-miss').textContent = fmt(miss);
+      document.getElementById('ss-hit').textContent = fmt(hit);
+      document.getElementById('ss-comp').textContent = fmt(d.total_completion_tokens);
       document.getElementById('ss-cost').textContent = fmtCost(d.total_cost);
       const lat = d.avg_latency_ms;
       document.getElementById('ss-lat').textContent = lat ? Math.round(lat) + 'ms' : '-';
@@ -502,16 +533,20 @@ async function refresh(){
       const tasksDiv = document.getElementById('sessionTasks');
       if (tasks.length) {
         tasksDiv.style.display = 'block';
-        tb.innerHTML = tasks.map(t=>`<tr>
+        tb.innerHTML = tasks.map(t=>{
+          const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
+            : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
+          return `<tr>
           <td>#${t.task_id}</td>
           <td>${t.requests}</td>
-          <td>${fmt(t.prompt_tokens)}</td>
-          <td>${fmt(t.completion_tokens)}</td>
+          <td style="color:#f87171">${fmt(miss)}</td>
+          <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
+          <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
           <td><strong>${fmt(t.total_tokens)}</strong></td>
-          <td>${fmt(t.cache_hit_tokens)}</td>
           <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
           <td class="purple">${fmtCost(t.cost)}</td>
-        </tr>`).join('');
+        </tr>`;
+        }).join('');
       }
     });
   }
@@ -521,13 +556,15 @@ async function refresh(){
   if(detail.length){
     tb.innerHTML=detail.map(r=>{
       const modelLabel=r.model&&r.model.includes('reason')?'Pro':'Flash';
+      const miss = (r.cache_miss != null) ? r.cache_miss
+        : Math.max(0, (r.prompt||0) - (r.cache_hit||0));
       return `<tr>
         <td>${fmtTime(r.ts)}</td>
         <td style="font-size:12px">${modelLabel}</td>
-        <td>${fmt(r.prompt)}</td>
-        <td>${fmt(r.completion)}</td>
+        <td style="color:#f87171">${fmt(miss)}</td>
+        <td style="color:#4ade80">${fmt(r.cache_hit)}</td>
+        <td style="color:#a78bfa">${fmt(r.completion)}</td>
         <td><strong>${fmt(r.total)}</strong></td>
-        <td>${fmt(r.cache_hit)}</td>
         <td>${r.latency_ms?r.latency_ms+'ms':'-'}</td>
       </tr>`;
     }).join('');
@@ -550,7 +587,12 @@ function showSession(sid) {
     cards.style.display = 'grid';
     document.getElementById('ss-req').textContent = fmt(d.total_requests);
     document.getElementById('ss-total').textContent = fmt(d.total_tokens);
-    document.getElementById('ss-hit').textContent = fmt(d.total_cache_hit_tokens);
+    const hit = d.total_cache_hit_tokens || 0;
+    const miss = (d.total_cache_miss_tokens != null) ? d.total_cache_miss_tokens
+      : Math.max(0, (d.total_prompt_tokens || 0) - hit);
+    document.getElementById('ss-miss').textContent = fmt(miss);
+    document.getElementById('ss-hit').textContent = fmt(hit);
+    document.getElementById('ss-comp').textContent = fmt(d.total_completion_tokens);
     document.getElementById('ss-cost').textContent = fmtCost(d.total_cost);
     const lat = d.avg_latency_ms;
     document.getElementById('ss-lat').textContent = lat ? Math.round(lat) + 'ms' : '-';
@@ -570,16 +612,20 @@ function showSession(sid) {
     const tb = document.getElementById('sessionTaskTable');
     if (tasks.length) {
       tasksDiv.style.display = 'block';
-      tb.innerHTML = tasks.map(t=>`<tr>
+      tb.innerHTML = tasks.map(t=>{
+        const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
+          : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
+        return `<tr>
         <td>#${t.task_id}</td>
         <td>${t.requests}</td>
-        <td>${fmt(t.prompt_tokens)}</td>
-        <td>${fmt(t.completion_tokens)}</td>
+        <td style="color:#f87171">${fmt(miss)}</td>
+        <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
+        <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
         <td><strong>${fmt(t.total_tokens)}</strong></td>
-        <td>${fmt(t.cache_hit_tokens)}</td>
         <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
         <td class="purple">${fmtCost(t.cost)}</td>
-      </tr>`).join('');
+      </tr>`;
+      }).join('');
     } else {
       tasksDiv.style.display = 'none';
     }
@@ -607,19 +653,34 @@ if (savedTab) switchTab(savedTab);
 
 refresh();
 
+// SSE 实时推送 + 5 秒兜底轮询
 const evtSource = new EventSource('/api/events');
-evtSource.addEventListener('new_data', () => refresh());
+let _lastSseAt = Date.now();
+evtSource.addEventListener('new_data', () => {
+  _lastSseAt = Date.now();
+  refresh();
+});
+evtSource.onmessage = () => { _lastSseAt = Date.now(); };
 evtSource.onerror = () => {
   if (!window._sseFallback) {
-    window._sseFallback = setInterval(refresh, 10000);
+    window._sseFallback = setInterval(refresh, 5000);
   }
 };
 evtSource.onopen = () => {
+  _lastSseAt = Date.now();
   if (window._sseFallback) {
     clearInterval(window._sseFallback);
     window._sseFallback = null;
   }
 };
+
+// 健康检查兜底：超过 60 秒没收到任何 SSE → 启动轮询
+setInterval(() => {
+  if (Date.now() - _lastSseAt > 60000 && !window._sseFallback) {
+    console.warn('[stats] SSE silent for 60s, starting fallback polling');
+    window._sseFallback = setInterval(refresh, 5000);
+  }
+}, 10000);
 setInterval(refresh, 30000);
 </script>
 </body>
