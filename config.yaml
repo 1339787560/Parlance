@@ -33,5 +33,3 @@ services:
     auto_restart: true
     tags: [statistics, proxy]
     enabled: true
-    # env:
-    #   DEEPSEEK_API_KEY: "sk-4504b4ccb6384abfb382150d61159908"
