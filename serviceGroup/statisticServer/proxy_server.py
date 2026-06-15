@@ -141,15 +141,16 @@ def extract_usage(usage: dict, fmt: str) -> dict:
 
 
 def build_headers(fmt: str, request_headers) -> dict:
-    """构造转发到上游的 headers"""
+    """构造转发到上游的 headers - 优先透传客户端 key，回退到代理 key"""
+    auth = request_headers.get("authorization") or f"Bearer {DEEPSEEK_API_KEY}"
     if fmt == "openai":
         return {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Authorization": auth,
             "Content-Type": "application/json",
         }
     else:
         return {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Authorization": auth,
             "Content-Type": "application/json",
             "anthropic-version": request_headers.get("anthropic-version", "2023-06-01"),
         }
@@ -296,7 +297,25 @@ async def proxy(request: Request, path: str):
                     ct = e.response.json()
                 except Exception:
                     ct = {"error": e.response.text[:500]}
+                await record({
+                    "id": req_id, "ts": datetime.now().isoformat(),
+                    "session_id": session_id, "model": model,
+                    "latency_ms": int((time.time() - start_ts) * 1000),
+                    "status": f"http_{e.response.status_code}", "format": fmt,
+                })
                 return JSONResponse(content=ct, status_code=e.response.status_code)
+            except (httpx.RequestError, ValueError) as e:
+                # 网络层故障(ConnectError/ReadError/Timeout) 或 JSON 解析失败
+                await record({
+                    "id": req_id, "ts": datetime.now().isoformat(),
+                    "session_id": session_id, "model": model,
+                    "latency_ms": int((time.time() - start_ts) * 1000),
+                    "status": f"upstream_{type(e).__name__}", "format": fmt,
+                })
+                return JSONResponse(
+                    content={"error": f"upstream: {type(e).__name__}: {str(e)[:200]}"},
+                    status_code=502,
+                )
 
         elapsed = int((time.time() - start_ts) * 1000)
         usage = data.get("usage", {})
