@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Cocos Debug - 真机调试</title>
+    <link rel="stylesheet" href="debug-ui.css">
+</head>
+<body>
+    <div id="toolbar">
+        <span id="status-indicator" class="disconnected">● 未连接</span>
+        <span id="game-status" class="disconnected">游戏: 未连接</span>
+        <select class="theme-select" id="themeSelect" title="切换样式">
+            <option value="">深色默认</option>
+            <option value="red">朱砂红</option>
+            <option value="default">简约配色</option>
+            <option value="kokomi">珊瑚宫心海</option>
+            <option value="firefly">流萤·萨姆</option>
+            <option value="furina">芙宁娜·歌剧院</option>
+            <option value="hysilens">海瑟音·深境</option>
+            <option value="geniusclub">天才俱乐部</option>
+            <option value="silverwolf">狼尊 LV.999</option>
+        </select>
+    </div>
+
+    <div id="tab-bar">
+        <button id="tab-console" class="tab active" onclick="switchTab('console')">Console</button>
+        <button id="tab-sources" class="tab" onclick="switchTab('sources')">Sources</button>
+    </div>
+
+    <div id="panel-console" class="panel active">
+        <div id="console-toolbar">
+            <button onclick="clearConsole()">Clear</button>
+            <button id="filter-log" class="filter active" onclick="toggleFilter('log')">Log</button>
+            <button id="filter-warn" class="filter active" onclick="toggleFilter('warn')">Warn</button>
+            <button id="filter-error" class="filter active" onclick="toggleFilter('error')">Error</button>
+            <button id="filter-info" class="filter active" onclick="toggleFilter('info')">Info</button>
+        </div>
+        <div id="console-output"></div>
+        <div id="console-input-bar">
+            <input id="eval-input" type="text" placeholder="输入表达式查看变量（如 GameInfo.curGameState）" onkeydown="if(event.key==='Enter')evalExpr()">
+            <button onclick="evalExpr()">Eval</button>
+        </div>
+    </div>
+
+    <div id="panel-sources" class="panel">
+        <div id="sources-sidebar">
+            <div id="file-tree"></div>
+        </div>
+        <div id="source-viewer">
+            <div id="source-header">
+                <span id="source-filename">未选择文件</span>
+                <span id="pause-indicator" class="hidden">⏸ 已暂停</span>
+                <button id="resume-btn" class="hidden" onclick="resumeExecution()">Resume</button>
+            </div>
+            <pre id="source-code"><code id="source-content">选择左侧文件浏览源码</code></pre>
+        </div>
+    </div>
+
+    <script src="debug-console.js"></script>
+    <script src="debug-sources.js"></script>
+</body>
+</html>

@@ -33,3 +33,12 @@ services:
     auto_restart: true
     tags: [statistics, proxy]
     enabled: true
+
+  - name: debug-relay
+    command: python
+    args: ["debug_relay.py", "--port", "5003", "--src", "D:\\Codlib\\douque\\xzmx\\ClientEngineGame\\trunk\\assets\\game\\scripts"]
+    cwd: ./serviceGroup/debugRelay
+    port: 5003
+    auto_restart: true
+    tags: [debug, game, cocos]
+    enabled: true
