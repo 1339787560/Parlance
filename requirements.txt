@@ -3,4 +3,6 @@ uvicorn[standard]>=0.24.0
 pyyaml>=6.0
 python-multipart>=0.0.6
 aiofiles>=23.2.0
--e ./serviceGroup/ds4codex
+# 子服务 serviceGroup/statisticServer 所需
+httpx>=0.27.0
+rich>=13.0.0
