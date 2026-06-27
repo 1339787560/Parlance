@@ -109,6 +109,12 @@ class ManagedService:
         self._exit_code: Optional[int] = None
         self._last_error: Optional[str] = None
 
+        # Auto-restart policy: 3 quick retries, then hourly
+        self._crash_restart_count: int = 0
+        self._stability_seconds: int = 60      # runs longer → consider stable, reset counter
+        self._max_quick_retries: int = 3
+        self._backoff_seconds: int = 3600      # 1 hour
+
     # ── Properties ──────────────────────────────────────────────────────
 
     @property
@@ -321,6 +327,8 @@ class ManagedService:
             "tags": self.tags,
             "command": f"{self.command} {' '.join(self.args)}",
             "health_check_url": self.health_check.get("url") if self.health_check else None,
+            "crash_restart_count": self._crash_restart_count,
+            "in_backoff": self._crash_restart_count > self._max_quick_retries,
         }
 
     # ── Internal ────────────────────────────────────────────────────────
@@ -337,6 +345,31 @@ class ManagedService:
             except ProcessLookupError:
                 pass
 
+    def _check_stability(self, uptime: float):
+        """If service ran long enough, reset crash counter (consider it healthy)."""
+        if uptime >= self._stability_seconds:
+            if self._crash_restart_count > 0:
+                logger.info("[svc] '%s' ran for %.0fs (≥%ds), resetting crash counter",
+                            self.name, uptime, self._stability_seconds)
+            self._crash_restart_count = 0
+
+    def _handle_restart(self):
+        """Restart policy: 3 quick retries, then hourly backoff."""
+        if not self.auto_restart or self._stop_event.is_set():
+            return
+        self._crash_restart_count += 1
+        if self._crash_restart_count <= self._max_quick_retries:
+            logger.info("[svc] Auto-restarting '%s' (attempt %d/%d)",
+                        self.name, self._crash_restart_count, self._max_quick_retries)
+            self.start()
+        else:
+            logger.warning("[svc] '%s' failed %d times, will retry in %ds",
+                           self.name, self._crash_restart_count - 1, self._backoff_seconds)
+            time.sleep(self._backoff_seconds)
+            if not self._stop_event.is_set():
+                logger.info("[svc] Retrying '%s' after backoff", self.name)
+                self.start()
+
     def _monitor(self):
         """Foreground mode: read pipes, log output, detect exit."""
         assert self._process is not None
@@ -346,26 +379,26 @@ class ManagedService:
             logger.warning("[%s] %s", self.name, line.decode(errors="replace").rstrip())
         self._process.wait()
         self._exit_code = self._process.returncode
+        uptime = (time.time() - self._start_time) if self._start_time else 0
         self._start_time = None
         logger.info("[svc] '%s' exited with code %d", self.name, self._exit_code)
         if self._exit_code != 0:
             self._last_error = f"Exit code {self._exit_code}"
-        if self.auto_restart and not self._stop_event.is_set():
-            logger.info("[svc] Auto-restarting '%s'", self.name)
-            self.start()
+        self._check_stability(uptime)
+        self._handle_restart()
 
     def _wait_daemon(self):
         """Daemon mode: just wait for exit, no pipe reading."""
         assert self._process is not None
         self._process.wait()
         self._exit_code = self._process.returncode
+        uptime = (time.time() - self._start_time) if self._start_time else 0
         self._start_time = None
         logger.info("[svc] daemon '%s' exited with code %d", self.name, self._exit_code)
         if self._exit_code != 0:
             self._last_error = f"Exit code {self._exit_code}"
-        if self.auto_restart and not self._stop_event.is_set():
-            logger.info("[svc] Auto-restarting daemon '%s'", self.name)
-            self.start()
+        self._check_stability(uptime)
+        self._handle_restart()
 
 
 class ServiceGroupManager:

@@ -5,7 +5,9 @@
       "Read(//c/codelib/HttpPhotoServer/src/**)",
       "mcp__codegraph__codegraph_context",
       "mcp__codegraph__codegraph_files",
-      "mcp__codegraph__codegraph_search"
+      "mcp__codegraph__codegraph_search",
+      "Bash(rtk ls *)",
+      "Bash(rtk pip *)"
     ]
   }
 }
