@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "bash*",
+      "rtk*",
       "mcp__codegraph__codegraph_context",
       "mcp__codegraph__codegraph_search",
       "mcp__codegraph__codegraph_node",
