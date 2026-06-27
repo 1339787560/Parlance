@@ -1,8 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "bash*",
-      "rtk*",
       "mcp__codegraph__codegraph_context",
       "mcp__codegraph__codegraph_search",
       "mcp__codegraph__codegraph_node",
@@ -36,7 +34,10 @@
       "Bash(export HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 ALL_PROXY=socks5://127.0.0.1:7897)",
       "Bash(.venv/bin/python -c \"import fastapi, uvicorn, yaml, multipart, aiofiles; print\\('imports OK'\\); print\\('fastapi', fastapi.__version__, '| uvicorn', uvicorn.__version__\\)\")",
       "Bash(export HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897)",
-      "Bash(.venv/bin/python -c ' *)"
+      "Bash(.venv/bin/python -c ' *)",
+      "PowerShell(schtasks /Delete /TN InfoServerTest /F 2>&1)",
+      "PowerShell(Get-Process -Name python -ErrorAction SilentlyContinue)",
+      "PowerShell(schtasks /Create /TN InfoServerDebug /TR \"cmd /c D:\\\\Codlib\\\\vscodeTemplate\\\\agent\\\\infoServer\\\\start.bat\" /SC ONLOGON /RL HIGHEST /F; schtasks /Run /TN InfoServerDebug; Start-Sleep 8; netstat -ano | Select-String \":5001\")"
     ],
     "additionalDirectories": [
       "/Users/liz"

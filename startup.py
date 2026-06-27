@@ -32,9 +32,9 @@ def _venv_python() -> str:
 
 
 def _uvicorn_cmd() -> list[str]:
-    """Build the uvicorn launch command."""
-    py = _venv_python()
-    return [py, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+    """Build the server launch command (main.py reads port from config.yaml)."""
+    bat = str(PROJECT_DIR / "start.bat")
+    return ["cmd", "/c", bat]
 
 
 # ── macOS (launchd) ─────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ def _mac_install():
 def _mac_uninstall():
     plist = _plist_path()
     if not plist.exists():
-        print("⚠️  Not installed (plist not found)")
+        print("[WARN] Not installed (plist not found)")
         return
     subprocess.run(["launchctl", "unload", str(plist)], capture_output=True)
     plist.unlink()
@@ -139,14 +139,14 @@ def _task_xml() -> str:
     <Description>infoServer - LAN InfoShare service</Description>
   </RegistrationInfo>
   <Triggers>
-    <BootTrigger>
+    <LogonTrigger>
       <Enabled>true</Enabled>
-    </BootTrigger>
+    </LogonTrigger>
   </Triggers>
   <Principals>
     <Principal>
       <LogonType>InteractiveToken</LogonType>
-      <RunLevel>LeastPrivilege</RunLevel>
+      <RunLevel>HighestAvailable</RunLevel>
     </Principal>
   </Principals>
   <Settings>
@@ -165,6 +165,10 @@ def _task_xml() -> str:
       <Interval>PT1M</Interval>
       <Count>3</Count>
     </RestartOnFailure>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
   </Settings>
   <Actions>
     <Exec>
@@ -187,7 +191,7 @@ def _win_install():
     )
     xml_path.unlink()
     subprocess.run(["schtasks", "/Run", "/TN", TASK_NAME], check=True)
-    print(f"✅  Task Scheduler job created: {TASK_NAME}")
+    print(f"[OK] Task Scheduler job created: {TASK_NAME}")
 
 
 def _win_uninstall():
@@ -196,9 +200,9 @@ def _win_uninstall():
         capture_output=True, text=True,
     )
     if result.returncode == 0:
-        print(f"✅  Removed task: {TASK_NAME}")
+        print(f"[OK] Removed task: {TASK_NAME}")
     else:
-        print(f"⚠️  {result.stderr.strip()}")
+        print(f"[WARN] {result.stderr.strip()}")
 
 
 def _win_status():
@@ -207,11 +211,11 @@ def _win_status():
         capture_output=True, text=True,
     )
     if result.returncode == 0:
-        print("✅  Task exists")
+        print("[OK] Task exists")
         for line in result.stdout.strip().splitlines():
             print(f"    {line}")
     else:
-        print("❌  Task not found")
+        print("[ERROR] Task not found")
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
@@ -231,7 +235,7 @@ def main():
     os_name = platform.system()
     handlers = _HANDLERS.get(os_name)
     if not handlers:
-        print(f"❌  Unsupported OS: {os_name}")
+        print(f"[ERROR] Unsupported OS: {os_name}")
         sys.exit(1)
 
     idx = {"install": 0, "uninstall": 1, "status": 2}[action]

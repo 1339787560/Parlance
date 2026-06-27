@@ -6,10 +6,10 @@
       "mcp__codegraph__codegraph_context",
       "mcp__codegraph__codegraph_files",
       "mcp__codegraph__codegraph_search",
-      "Bash(rtk ls *)",
+      "Bash(*)",
       "Bash(rtk pip *)",
-      "bash*",
-      "rtk*"
+      "PowerShell(*)",
+      "Bash(tasklist /FI \"PID eq 24460\" /V)"
     ]
   }
 }

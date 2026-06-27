@@ -235,8 +235,6 @@ class ManagedService:
                 if self.managed:
                     _ensure_job()
                     cf = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-                    if hasattr(subprocess, 'CREATE_BREAKAWAY_FROM_JOB'):
-                        cf |= subprocess.CREATE_BREAKAWAY_FROM_JOB
 
                     self._process = subprocess.Popen(
                         [self.command] + self.args,
@@ -371,12 +369,28 @@ class ManagedService:
                 self.start()
 
     def _monitor(self):
-        """Foreground mode: read pipes, log output, detect exit."""
+        """Foreground mode: read pipes concurrently, log output, detect exit."""
         assert self._process is not None
-        for line in self._process.stdout:
-            logger.info("[%s] %s", self.name, line.decode(errors="replace").rstrip())
-        for line in self._process.stderr:
-            logger.warning("[%s] %s", self.name, line.decode(errors="replace").rstrip())
+
+        def _read_pipe(pipe, log_fn, prefix):
+            for line in pipe:
+                log_fn("[%s] %s", prefix, line.decode(errors="replace").rstrip())
+
+        t_out = threading.Thread(
+            target=_read_pipe,
+            args=(self._process.stdout, logger.info, self.name),
+            daemon=True,
+        )
+        t_err = threading.Thread(
+            target=_read_pipe,
+            args=(self._process.stderr, logger.warning, self.name),
+            daemon=True,
+        )
+        t_out.start()
+        t_err.start()
+        t_out.join()
+        t_err.join()
+
         self._process.wait()
         self._exit_code = self._process.returncode
         uptime = (time.time() - self._start_time) if self._start_time else 0

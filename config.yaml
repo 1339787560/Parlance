@@ -21,7 +21,7 @@ services:
     args: ["C:\\codelib\\HttpPhotoServer\\src\\main.py", "--port", "5000"]
     cwd: C:\codelib\HttpPhotoServer\src
     port: 5000
-    auto_restart: false
+    auto_restart: true
     tags: [media, gallery]
     enabled: true
 
