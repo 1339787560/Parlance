@@ -2,6 +2,7 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 
 import threading
 import time
@@ -422,12 +423,43 @@ class ServiceGroupManager:
         self.services: List[ManagedService] = []
         self._name_map: Dict[str, ManagedService] = {}
 
+        # 平台后缀:win / mac / None(Linux 及未知 → 回退基础字段)
+        if sys.platform.startswith("win"):
+            _plat = "win"
+        elif sys.platform == "darwin":
+            _plat = "mac"
+        else:
+            _plat = None
+
         for cfg in (services_config or []):
+            # 平台专属 command/args/cwd 覆盖,缺省回退基础字段。
+            # enabled 不覆盖:无 enabled_<plat> 的服务靠 pre-flight 跳过
+            # (如 http-photo-server 在 Mac 上靠 cwd 预检跳过)。
+            if _plat:
+                command = cfg.get(f"command_{_plat}") or cfg.get("command")
+                args_v = cfg.get(f"args_{_plat}")
+                if args_v is None:            # 空列表 [] 也是合法值,用 is None 判断
+                    args_v = cfg.get("args", [])
+                cwd_v = cfg.get(f"cwd_{_plat}") or cfg.get("cwd")
+            else:
+                command = cfg.get("command")
+                args_v = cfg.get("args", [])
+                cwd_v = cfg.get("cwd")
+
+            # 相对路径型 command 解析为绝对路径(相对父进程 cwd=项目根)。
+            # subprocess.Popen 先 chdir(cwd) 再 execv,相对 executable 会按子进程
+            # cwd(服务目录)解析而失败;此处提前 abspath 让 precheck 与 exec 一致。
+            # bare 名(如 "python")与绝对路径均不动:前者走 PATH 查找,后者已确定。
+            if command and not os.path.isabs(command) and ('/' in command or '\\' in command):
+                command = os.path.abspath(command)
+            # 基础 command 缺失时不崩(command=""),交 precheck 报 "command '' not found" 后跳过
+            command = command or ""
+
             svc = ManagedService(
                 name=cfg.get("name", "unnamed"),
-                command=cfg["command"],
-                args=cfg.get("args", []),
-                cwd=cfg.get("cwd"),
+                command=command,
+                args=args_v,
+                cwd=cwd_v,
                 env=cfg.get("env", {}),
                 auto_restart=cfg.get("auto_restart", False),
                 health_check=cfg.get("health_check"),

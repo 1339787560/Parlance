@@ -26,7 +26,8 @@ services:
     enabled: true
 
   - name: statistic-server
-    command: python
+    command_mac: ./.venv/bin/python
+    command_win: ./.venv/Scripts/python.exe
     args: ["proxy_server.py", "--port", "5002"]
     cwd: ./serviceGroup/statisticServer
     port: 5002
