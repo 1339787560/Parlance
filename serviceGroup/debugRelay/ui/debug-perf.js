@@ -72,10 +72,17 @@ function formatNumber(n) {
     return String(n);
 }
 
+// 折线图颜色: 用固定 hex 字面量, 不用 CSS 变量。
+// 关键: Canvas 2D 不解析 var(--x), 直接赋值会被当成非法颜色退回黑色
+// (实测 strokeStyle='var(--accent,#4ec9b0)' 实际生效 '#000000'), 黑线画在深色
+// canvas 背景 (var(--bg)=#0d1117) 上对比度极低 → 折线不可见 (狼尊 LV999 下复现)。
+// 决策: 只要可见、不跟主题变。这些色在深背景上高对比稳定, 且 --bg 不随主题变。
+const CHART_COLORS = { fps: '#4ec9b0', dc: '#58a6ff', ft: '#d29922' };
+
 function renderPerfCharts() {
-    drawLineChart('perf-fps-canvas', perfHistory.map(s => s.fps), { color: 'var(--accent, #4ec9b0)', fill: true, min: 0 });
-    drawLineChart('perf-dc-canvas', perfHistory.map(s => s.drawCall >= 0 ? s.drawCall : null), { color: 'var(--blue, #58a6ff)' });
-    drawLineChart('perf-ft-canvas', perfHistory.map(s => s.frameTime), { color: 'var(--yellow, #d29922)' });
+    drawLineChart('perf-fps-canvas', perfHistory.map(s => s.fps), { color: CHART_COLORS.fps, fill: true, min: 0 });
+    drawLineChart('perf-dc-canvas', perfHistory.map(s => s.drawCall >= 0 ? s.drawCall : null), { color: CHART_COLORS.dc });
+    drawLineChart('perf-ft-canvas', perfHistory.map(s => s.frameTime), { color: CHART_COLORS.ft });
 }
 
 function drawLineChart(canvasId, values, opts) {
