@@ -5,7 +5,11 @@
       "Read(//c/codelib/HttpPhotoServer/src/**)",
       "mcp__codegraph__codegraph_context",
       "mcp__codegraph__codegraph_files",
-      "mcp__codegraph__codegraph_search"
+      "mcp__codegraph__codegraph_search",
+      "Bash(*)",
+      "Bash(rtk pip *)",
+      "PowerShell(*)",
+      "Bash(tasklist /FI \"PID eq 24460\" /V)"
     ]
   }
 }

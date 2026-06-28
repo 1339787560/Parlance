@@ -10,7 +10,37 @@
       "mcp__codegraph__codegraph_callees",
       "mcp__codegraph__codegraph_impact",
       "mcp__codegraph__codegraph_files",
-      "mcp__codegraph__codegraph_status"
+      "mcp__codegraph__codegraph_status",
+      "Bash(brew --version)",
+      "Bash(brew install *)",
+      "Read(//opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/bin/**)",
+      "Bash(/opt/homebrew/bin/python3 --version)",
+      "Bash(/opt/homebrew/opt/python@3.14/libexec/bin/python --version)",
+      "Read(//Users/liz/**)",
+      "Bash(brew shellenv *)",
+      "Bash(zsh -l -c 'echo \"python  -> $\\(which python\\)  \\($\\($python --version 2>&1 || python --version\\)\\)\"; echo \"python3 -> $\\(which python3\\)  \\($\\(python3 --version 2>&1\\)\\)\"; echo \"pip     -> $\\(which pip\\)\"; echo \"pip3    -> $\\(which pip3\\)\"')",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/python --version)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(/opt/homebrew/bin/python3.3.14 -m venv .venv)",
+      "Bash(/opt/homebrew/bin/python3 -m venv .venv)",
+      "Bash(.venv/bin/pip --version)",
+      "Bash(echo \"pip upgraded: $\\(.venv/bin/pip --version\\)\")",
+      "Bash(grep -v 'ds4codex' requirements.txt > /tmp/req_filtered.txt && cat /tmp/req_filtered.txt && echo \"=== installing ===\" && .venv/bin/pip install -r /tmp/req_filtered.txt -i https://pypi.tuna.tsinghua.edu.cn/simple 2>&1 | tail -25)",
+      "Read(//tmp/**)",
+      "Bash(.venv/bin/python -c \"import ssl; print\\('OpenSSL:', ssl.OPENSSL_VERSION\\); print\\('default ciphers ok'\\)\")",
+      "Bash(lsof -nP -iTCP -sTCP:LISTEN)",
+      "Bash(awk 'NR==1 || /LISTEN/')",
+      "Bash(export HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 ALL_PROXY=socks5://127.0.0.1:7897)",
+      "Bash(.venv/bin/python -c \"import fastapi, uvicorn, yaml, multipart, aiofiles; print\\('imports OK'\\); print\\('fastapi', fastapi.__version__, '| uvicorn', uvicorn.__version__\\)\")",
+      "Bash(export HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897)",
+      "Bash(.venv/bin/python -c ' *)",
+      "PowerShell(schtasks /Delete /TN InfoServerTest /F 2>&1)",
+      "PowerShell(Get-Process -Name python -ErrorAction SilentlyContinue)",
+      "PowerShell(schtasks /Create /TN InfoServerDebug /TR \"cmd /c D:\\\\Codlib\\\\vscodeTemplate\\\\agent\\\\infoServer\\\\start.bat\" /SC ONLOGON /RL HIGHEST /F; schtasks /Run /TN InfoServerDebug; Start-Sleep 8; netstat -ano | Select-String \":5001\")"
+    ],
+    "additionalDirectories": [
+      "/Users/liz"
     ]
   }
 }

@@ -1,0 +1,81 @@
+Starting at 2026/06/27 周六 10:48:47.71 
+CD OK 
+Python OK
+Done 
+INFO:     Started server process [135532]
+INFO:     Waiting for application startup.
+2026-06-27 10:49:04,912 [WARNING] service_manager: ──────────────────────────────────────────────────
+2026-06-27 10:49:04,913 [WARNING] service_manager: \u26a0 前台服务 (foreground/managed=true): 父进程退出时连带终止子进程
+2026-06-27 10:49:04,913 [WARNING] service_manager:   但如果父进程被强制杀死（如任务管理器结束进程），
+2026-06-27 10:49:04,913 [WARNING] service_manager:   子进程可能变成孤儿进程继续运行。
+2026-06-27 10:49:04,913 [WARNING] service_manager:   \u2022 http-photo-server (PID after start)
+2026-06-27 10:49:04,913 [WARNING] service_manager:   \u2022 statistic-server (PID after start)
+2026-06-27 10:49:04,913 [WARNING] service_manager:   \u2022 debug-relay (PID after start)
+2026-06-27 10:49:04,913 [WARNING] service_manager: ──────────────────────────────────────────────────
+ERROR:    Traceback (most recent call last):
+  File "D:\Compiler\python\Lib\site-packages\starlette\routing.py", line 638, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "D:\Compiler\python\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Compiler\python\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+  File "D:\Compiler\python\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Codlib\vscodeTemplate\agent\infoServer\main.py", line 60, in lifespan
+    svc_mgr.start_all()
+  File "D:\Codlib\vscodeTemplate\agent\infoServer\service_manager.py", line 466, in start_all
+    svc.start()
+  File "D:\Codlib\vscodeTemplate\agent\infoServer\service_manager.py", line 241, in start
+    self._process = subprocess.Popen(
+                    ^^^^^^^^^^^^^^^^^
+  File "D:\Compiler\python\Lib\subprocess.py", line 1026, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "D:\Compiler\python\Lib\subprocess.py", line 1538, in _execute_child
+    hp, ht, pid, tid = _winapi.CreateProcess(executable, args,
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] 拒绝访问。
+
+ERROR:    Application startup failed. Exiting.
+INFO:     Started server process [133164]
+INFO:     Waiting for application startup.
+2026-06-27 10:49:44,013 [WARNING] service_manager: ──────────────────────────────────────────────────
+2026-06-27 10:49:44,013 [WARNING] service_manager: \u26a0 前台服务 (foreground/managed=true): 父进程退出时连带终止子进程
+2026-06-27 10:49:44,013 [WARNING] service_manager:   但如果父进程被强制杀死（如任务管理器结束进程），
+2026-06-27 10:49:44,013 [WARNING] service_manager:   子进程可能变成孤儿进程继续运行。
+2026-06-27 10:49:44,013 [WARNING] service_manager:   \u2022 http-photo-server (PID after start)
+2026-06-27 10:49:44,013 [WARNING] service_manager:   \u2022 statistic-server (PID after start)
+2026-06-27 10:49:44,013 [WARNING] service_manager:   \u2022 debug-relay (PID after start)
+2026-06-27 10:49:44,013 [WARNING] service_manager: ──────────────────────────────────────────────────
+2026-06-27 10:49:44,351 [INFO] service_manager: [svc] 'http-photo-server' started (PID 36736, foreground)
+2026-06-27 10:49:44,691 [INFO] service_manager: [svc] 'statistic-server' started (PID 26080, foreground)
+2026-06-27 10:49:45,012 [INFO] service_manager: [http-photo-server]  * Serving Flask app 'route'
+2026-06-27 10:49:45,013 [INFO] service_manager: [http-photo-server]  * Debug mode: off
+2026-06-27 10:49:45,029 [INFO] service_manager: [svc] 'debug-relay' started (PID 30812, foreground)
+2026-06-27 10:49:45,030 [INFO] main: Server started — http://0.0.0.0:5001
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5001 (Press CTRL+C to quit)
+2026-06-27 10:49:45,598 [WARNING] service_manager: [statistic-server] INFO:     Started server process [26080]
+2026-06-27 10:49:45,598 [WARNING] service_manager: [statistic-server] INFO:     Waiting for application startup.
+2026-06-27 10:49:45,598 [WARNING] service_manager: [statistic-server] INFO:     Application startup complete.
+2026-06-27 10:49:45,598 [WARNING] service_manager: [statistic-server] INFO:     Uvicorn running on http://0.0.0.0:5002 (Press CTRL+C to quit)
+2026-06-27 10:49:45,806 [WARNING] service_manager: [debug-relay] INFO:     Started server process [30812]
+2026-06-27 10:49:45,806 [WARNING] service_manager: [debug-relay] INFO:     Waiting for application startup.
+2026-06-27 10:49:45,806 [WARNING] service_manager: [debug-relay] INFO:     Application startup complete.
+2026-06-27 10:49:45,807 [WARNING] service_manager: [debug-relay] INFO:     Uvicorn running on http://0.0.0.0:5003 (Press CTRL+C to quit)
+2026-06-27 10:49:46,297 [WARNING] service_manager: [http-photo-server] WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+2026-06-27 10:49:46,297 [WARNING] service_manager: [http-photo-server]  * Running on all addresses (0.0.0.0)
+2026-06-27 10:49:46,297 [WARNING] service_manager: [http-photo-server]  * Running on http://127.0.0.1:5000
+2026-06-27 10:49:46,297 [WARNING] service_manager: [http-photo-server]  * Running on http://192.168.10.28:5000
+2026-06-27 10:49:46,297 [WARNING] service_manager: [http-photo-server] Press CTRL+C to quit
+INFO:     192.168.10.28:44135 - "GET / HTTP/1.1" 200 OK
+INFO:     192.168.10.28:44135 - "GET /api/theme HTTP/1.1" 200 OK
+INFO:     192.168.10.28:37533 - "GET /api/whoami HTTP/1.1" 200 OK
+INFO:     192.168.10.28:37533 - "GET /api/profile HTTP/1.1" 200 OK
+INFO:     192.168.10.28:37533 - "GET /api/users HTTP/1.1" 200 OK
+INFO:     192.168.10.28:37533 - "GET /api/messages?limit=50 HTTP/1.1" 200 OK
+INFO:     192.168.10.28:37533 - "GET /api/events HTTP/1.1" 200 OK
+2026-06-27 10:50:04,307 [WARNING] service_manager: [http-photo-server] 192.168.10.28 - - [27/Jun/2026 10:50:04] "GET / HTTP/1.1" 200 -
+2026-06-27 10:50:04,384 [WARNING] service_manager: [http-photo-server] 192.168.10.28 - - [27/Jun/2026 10:50:04] "GET /static/settings.js HTTP/1.1" 200 -
+^C
