@@ -25,11 +25,14 @@
     <div id="tab-bar">
         <button id="tab-console" class="tab active" onclick="switchTab('console')">Console</button>
         <button id="tab-sources" class="tab" onclick="switchTab('sources')">Sources</button>
+        <button id="tab-perf" class="tab" onclick="switchTab('perf')">Performance</button>
+        <button id="tab-events" class="tab" onclick="switchTab('events')">Events</button>
     </div>
 
     <div id="panel-console" class="panel active">
         <div id="console-toolbar">
             <button onclick="clearConsole()">Clear</button>
+            <button onclick="scrollToBottom()" title="跳到底部">⏬</button>
             <button id="filter-log" class="filter active" onclick="toggleFilter('log')">Log</button>
             <button id="filter-warn" class="filter active" onclick="toggleFilter('warn')">Warn</button>
             <button id="filter-error" class="filter active" onclick="toggleFilter('error')">Error</button>
@@ -51,12 +54,108 @@
                 <span id="source-filename">未选择文件</span>
                 <span id="pause-indicator" class="hidden">⏸ 已暂停</span>
                 <button id="resume-btn" class="hidden" onclick="resumeExecution()">Resume</button>
+                <div class="font-size-controls">
+                    <button onclick="changeCodeFontSize(-1)" title="缩小">A-</button>
+                    <span class="size-label" id="font-size-label">13px</span>
+                    <button onclick="changeCodeFontSize(1)" title="放大">A+</button>
+                </div>
             </div>
-            <pre id="source-code"><code id="source-content">选择左侧文件浏览源码</code></pre>
+            <pre id="source-code"><code id="source-content">选择左侧文件浏览源码
+
+快捷键:
+  Ctrl+P  快速打开文件
+  Ctrl+Shift+F  全局搜索</code></pre>
         </div>
     </div>
 
-    <script src="debug-console.js"></script>
+    <!-- Performance Panel -->
+    <div id="panel-perf" class="panel">
+        <div id="perf-cards">
+            <div class="perf-card">
+                <div class="perf-label">FPS</div>
+                <div class="perf-value" id="perf-fps">-</div>
+                <div class="perf-sub" id="perf-frame">-</div>
+            </div>
+            <div class="perf-card">
+                <div class="perf-label">DrawCall (avg)</div>
+                <div class="perf-value" id="perf-dc">-</div>
+                <div class="perf-sub" id="perf-dc-max">峰值 -</div>
+            </div>
+            <div class="perf-card">
+                <div class="perf-label">FrameTime (ms)</div>
+                <div class="perf-value" id="perf-ft">-</div>
+                <div class="perf-sub" id="perf-ft-max">峰值 -</div>
+            </div>
+            <div class="perf-card">
+                <div class="perf-label">内存 (MB)</div>
+                <div class="perf-value" id="perf-mem">-</div>
+                <div class="perf-sub" id="perf-mem-sub">JS Heap</div>
+            </div>
+            <div class="perf-card">
+                <div class="perf-label">三角形 / 顶点</div>
+                <div class="perf-value" id="perf-tris">-</div>
+                <div class="perf-sub" id="perf-verts">-</div>
+            </div>
+        </div>
+        <div id="perf-charts">
+            <div class="perf-chart-wrap">
+                <div class="perf-chart-title">FPS 历史 (最近 5 分钟)</div>
+                <canvas id="perf-fps-canvas" width="800" height="80"></canvas>
+            </div>
+            <div class="perf-chart-wrap">
+                <div class="perf-chart-title">DrawCall 历史</div>
+                <canvas id="perf-dc-canvas" width="800" height="80"></canvas>
+            </div>
+            <div class="perf-chart-wrap">
+                <div class="perf-chart-title">FrameTime (ms) 历史</div>
+                <canvas id="perf-ft-canvas" width="800" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Events Panel - 重要事件按日归档查阅 -->
+    <div id="panel-events" class="panel">
+        <div id="events-toolbar">
+            <select id="events-category" onchange="eventsLoadDates()">
+                <option value="">全部分类</option>
+            </select>
+            <select id="events-date" onchange="eventsLoadData()">
+                <option value="">选择日期</option>
+            </select>
+            <button onclick="eventsRefresh()" title="刷新">🔄</button>
+            <button onclick="eventsPrevDay()" title="前一天">◀</button>
+            <button onclick="eventsNextDay()" title="后一天">▶</button>
+            <span id="events-count" class="events-count"></span>
+            <span id="events-status" class="events-status"></span>
+        </div>
+        <div id="events-output">
+            <div class="events-empty">选择分类和日期查看归档事件，或等待实时事件推送</div>
+        </div>
+    </div>
+
+    <!-- Quick Open Panel (Ctrl+P) -->
+    <div id="quick-open" class="command-palette hidden">
+        <div class="command-palette-input-wrap">
+            <input type="text" id="quick-open-input" placeholder="输入文件名搜索...">
+        </div>
+        <div id="quick-open-results"></div>
+    </div>
+
+    <!-- Search Panel (Ctrl+Shift+F) -->
+    <div id="search-panel" class="command-palette hidden">
+        <div class="command-palette-input-wrap">
+            <input type="text" id="search-input" placeholder="搜索代码内容...">
+            <div class="search-options">
+                <label><input type="checkbox" id="search-case"> 区分大小写</label>
+                <label><input type="checkbox" id="search-whole"> 全字匹配</label>
+            </div>
+        </div>
+        <div id="search-results"></div>
+    </div>
+
+    <script src="debug-console.js?v=3"></script>
     <script src="debug-sources.js"></script>
+    <script src="debug-perf.js"></script>
+    <script src="debug-events.js?v=3"></script>
 </body>
 </html>

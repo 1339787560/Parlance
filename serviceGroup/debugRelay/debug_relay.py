@@ -9,7 +9,7 @@ Debug Relay Server - 真机调试中继服务
 - 源文件读取：从项目目录读取源码
 
 用法：
-    python debug_relay.py --port 9229 --src "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets/game/scripts"
+    python debug_relay.py --port 9229 --src "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets"
 """
 
 import os
@@ -18,7 +18,7 @@ import json
 import asyncio
 import argparse
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
 from typing import Set
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -30,7 +30,12 @@ import uvicorn
 # ---- Config ----
 
 DEFAULT_PORT = 9229
-DEFAULT_SRC = "../../../game/scripts"
+# 默认扫描 assets 下的所有 .ts / .js 文件
+DEFAULT_SRC = "../../../assets"
+
+
+# 允许的文件扩展名（仅这些类型会被索引）
+INDEXED_EXTS = [".ts", ".js"]
 
 # 消息类型枚举
 class MsgType:
@@ -43,12 +48,16 @@ class MsgType:
     SOURCE_CONTENT = "source_content"  # 源文件内容响应
     BREAKPOINT_HIT = "breakpoint_hit"  # 断点命中
     PAUSE_STATE = "pause_state"        # 暂停状态通知
+    PERF_SNAPSHOT = "perf_snapshot"    # 性能指标快照
+    RUNTIME_SOURCE = "runtime_source"  # 运行时源码（hot-patch 用）
+    IMPORTANT_EVENT = "important_event"  # 重要事件（按日归档）
 
     # Relay -> Game
     REGISTER_BREAKPOINT = "register_breakpoint"  # 注册断点
     REMOVE_BREAKPOINT = "remove_breakpoint"      # 移除断点
     RESUME = "resume"                  # 继续执行
     EVAL = "eval"                      # 执行表达式
+    FETCH_RUNTIME_SOURCE = "fetch_runtime_source"  # 请求运行时源码
 
     # Relay -> Browser
     CONSOLE_BATCH = "console_batch"    # 批量控制台消息（新连接时发送历史）
@@ -72,8 +81,50 @@ console_buffer: list = []
 CONSOLE_BUFFER_MAX = 50000
 console_seq = 0  # 消息序号
 
+# 性能快照环形缓冲区（最近 600 条 = 约 10 分钟 @ 1Hz）
+perf_buffer: list = []
+PERF_BUFFER_MAX = 600
+
 # 源文件目录
 src_dir: Path = None
+
+# 重要事件存储目录（按日分割 JSONL 文件）
+events_dir: Path = None
+
+
+# ---- Important Event Persistence ----
+
+def persist_important_event(msg: dict):
+    """将重要事件追加到当天的 JSONL 文件中。
+
+    文件路径: {events_dir}/{category}/{YYYY-MM-DD}.jsonl
+    每行一个 JSON 对象，字段: category, name, data, ts
+    """
+    if not events_dir:
+        return
+
+    category = msg.get("category", "unknown")
+    # 清理 category 中的路径分隔符，防止目录穿越
+    safe_category = category.replace("/", "_").replace("\\", "_").replace("..", "_")
+    today = date.today().isoformat()  # YYYY-MM-DD
+
+    day_dir = events_dir / safe_category
+    day_dir.mkdir(parents=True, exist_ok=True)
+
+    filepath = day_dir / f"{today}.jsonl"
+
+    entry = {
+        "category": category,
+        "name": msg.get("name", ""),
+        "data": msg.get("data", {}),
+        "ts": msg.get("ts", datetime.now().isoformat()),
+    }
+
+    try:
+        with open(filepath, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[debug-relay] failed to persist event: {e}")
 
 
 # ---- FastAPI App ----
@@ -124,6 +175,22 @@ async def ui_sources_js():
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/debug-perf.js")
+async def ui_perf_js():
+    f = UI_DIR / "debug-perf.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
+@app.get("/debug-events.js")
+async def ui_events_js():
+    f = UI_DIR / "debug-events.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/health")
 async def health():
     return {
@@ -138,10 +205,11 @@ async def health():
 
 async def handle_game_websocket(websocket: WebSocket):
     """处理游戏端连接"""
-    global game_ws, game_connected, console_buffer, console_seq
+    global game_ws, game_connected, console_buffer, console_seq, perf_buffer
 
     # 游戏重连时清空旧缓冲，新会话重新累积
     console_buffer.clear()
+    perf_buffer.clear()
     console_seq = 0
 
     await websocket.accept()
@@ -196,6 +264,13 @@ async def handle_browser_websocket(websocket: WebSocket):
             "messages": console_buffer,
         })
 
+    # 发送 perf 历史（最近 600 条）
+    if perf_buffer:
+        await websocket.send_json({
+            "type": "perf_history",
+            "snapshots": perf_buffer,
+        })
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -245,6 +320,25 @@ async def handle_game_message(msg: dict):
 
     elif msg_type == MsgType.PAUSE_STATE:
         # 暂停状态通知
+        await broadcast_to_browsers(msg)
+
+    elif msg_type == MsgType.PERF_SNAPSHOT:
+        # 性能指标快照：只保留最近 600 条供新连接同步
+        perf_buffer.append(msg)
+        if len(perf_buffer) > PERF_BUFFER_MAX:
+            perf_buffer.pop(0)
+        # 调试：每 30 条打一次日志
+        if len(perf_buffer) % 30 == 0:
+            print(f"[debug-relay] perf_buffer size={len(perf_buffer)} browsers={len(browser_ws_set)} latest_fps={msg.get('fps')}")
+        await broadcast_to_browsers(msg)
+
+    elif msg_type == MsgType.RUNTIME_SOURCE:
+        # 运行时源码：转发给浏览器（hot-patch 同步）
+        await broadcast_to_browsers(msg)
+
+    elif msg_type == MsgType.IMPORTANT_EVENT:
+        # 重要事件：持久化到按日分割的 JSONL 文件 + 转发给浏览器
+        persist_important_event(msg)
         await broadcast_to_browsers(msg)
 
     # eval 结果：直接转发给浏览器（无 type 字段，靠 eval_result 判断）
@@ -306,8 +400,11 @@ async def list_sources():
         return {"files": [], "error": "src_dir not configured (run with --src)"}
 
     files = []
-    for ext in [".ts", ".js"]:
+    for ext in INDEXED_EXTS:
         for f in src_dir.rglob(f"*{ext}"):
+            # 跳过 .meta 文件和 node_modules 等
+            if '.meta' in f.name or 'node_modules' in f.parts:
+                continue
             rel = f.relative_to(src_dir)
             files.append(str(rel).replace("\\", "/"))
 
@@ -347,6 +444,133 @@ async def get_source(path: str):
         return JSONResponse({"error": f"read error: {e}"}, status_code=500)
 
 
+# ---- Important Event Query API ----
+
+@app.get("/api/events")
+async def query_events(category: str = None, date: str = None, limit: int = 100):
+    """查询按日归档的重要事件。
+
+    参数:
+      category: 事件分类 (如 "enter_room")，不传则返回所有分类
+      date:     日期 (如 "2025-01-15")，不传则返回最近一天
+      limit:    返回条数上限 (默认 100)
+
+    返回:
+      {events: [{category, name, data, ts}, ...], count, date, category}
+    """
+    if not events_dir or not events_dir.exists():
+        return {"events": [], "count": 0, "date": date, "category": category,
+                "error": "events_dir not configured (run with --events-dir)"}
+
+    # 确定要扫描的目录
+    if category:
+        safe_category = category.replace("/", "_").replace("\\", "_").replace("..", "_")
+        scan_dirs = [events_dir / safe_category]
+    else:
+        scan_dirs = [d for d in events_dir.iterdir() if d.is_dir()]
+
+    # 确定 date
+    target_date = date or date.today().isoformat()
+
+    events = []
+    for d in scan_dirs:
+        if not d.exists():
+            continue
+        filepath = d / f"{target_date}.jsonl"
+        if not filepath.exists():
+            continue
+        try:
+            lines = filepath.read_text(encoding="utf-8").strip().split("\n")
+            for i, line in enumerate(lines[-limit:]):
+                entry = json.loads(line)
+                entry["_idx"] = i  # 文件内原始行号，供删除定位
+                entry["_category"] = d.name
+                events.append(entry)
+        except Exception:
+            pass
+
+    return {
+        "events": events[-limit:],
+        "count": len(events),
+        "date": target_date,
+        "category": category,
+    }
+
+
+@app.get("/api/events/dates")
+async def list_event_dates(category: str = None):
+    """列出可查询的日期列表。
+
+    参数:
+      category: 事件分类，不传则列出所有分类
+    """
+    if not events_dir or not events_dir.exists():
+        return {"dates": [], "categories": [],
+                "error": "events_dir not configured"}
+
+    categories = []
+    all_dates = []
+
+    scan_dirs = []
+    if category:
+        safe_category = category.replace("/", "_").replace("\\", "_").replace("..", "_")
+        scan_dirs = [events_dir / safe_category]
+    else:
+        scan_dirs = [d for d in events_dir.iterdir() if d.is_dir()]
+
+    for d in scan_dirs:
+        if not d.exists():
+            continue
+        cat_name = d.name
+        categories.append(cat_name)
+        for f in d.glob("*.jsonl"):
+            date_str = f.stem  # YYYY-MM-DD
+            all_dates.append({"category": cat_name, "date": date_str})
+
+    return {"dates": sorted(all_dates, reverse=True), "categories": sorted(categories)}
+
+
+@app.delete("/api/events")
+async def delete_event(category: str, date: str, index: int):
+    """删除指定分类/日期下第 index 条事件记录（0-based，按文件原始顺序）。
+
+    参数:
+      category: 事件分类
+      date:     日期 (YYYY-MM-DD)
+      index:    要删除的行索引（0-based）
+
+    返回:
+      {ok, remaining, category, date}
+    """
+    if not events_dir or not events_dir.exists():
+        return JSONResponse({"ok": False, "error": "events_dir not configured"}, status_code=500)
+
+    safe_category = category.replace("/", "_").replace("\\", "_").replace("..", "_")
+    filepath = events_dir / safe_category / f"{date}.jsonl"
+
+    if not filepath.exists():
+        return JSONResponse({"ok": False, "error": f"file not found: {category}/{date}"}, status_code=404)
+
+    try:
+        lines = filepath.read_text(encoding="utf-8").splitlines()
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"read error: {e}"}, status_code=500)
+
+    if index < 0 or index >= len(lines):
+        return JSONResponse({"ok": False, "error": f"index out of range: {index}/{len(lines)}"}, status_code=400)
+
+    # 移除目标行，写回文件
+    del lines[index]
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            if lines:
+                f.write("\n".join(lines) + "\n")
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"write error: {e}"}, status_code=500)
+
+    return {"ok": True, "remaining": len(lines), "category": category, "date": date}
+
+
 # ---- WebSocket Routes ----
 
 @app.websocket("/ws/game")
@@ -366,6 +590,8 @@ def parse_args():
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port")
     parser.add_argument("--host", default="0.0.0.0", help="Server host")
     parser.add_argument("--src", default=DEFAULT_SRC, help="Source directory to serve")
+    parser.add_argument("--events-dir", default=None,
+                        help="Directory to persist important events (按日归档 JSONL)")
     return parser.parse_args()
 
 
@@ -375,11 +601,21 @@ if __name__ == "__main__":
     # 解析源文件目录（相对于当前文件）
     src_dir = Path(args.src).resolve()
 
+    # 解析重要事件存储目录
+    if args.events_dir:
+        events_dir = Path(args.events_dir).resolve()
+        events_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        # 默认: 与 debug_relay.py 同级的 events/ 目录
+        events_dir = Path(__file__).parent / "events"
+        events_dir.mkdir(parents=True, exist_ok=True)
+
     print(f"=" * 50)
     print(f"Debug Relay Server")
     print(f"  Port: {args.port}")
     print(f"  Host: {args.host}")
     print(f"  Source: {src_dir}")
+    print(f"  Events: {events_dir}")
     print(f"  UI: http://{args.host}:{args.port}")
     print(f"  WS Game: ws://{args.host}:{args.port}/ws/game")
     print(f"  WS Browser: ws://{args.host}:{args.port}/ws/browser")

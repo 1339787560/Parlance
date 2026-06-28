@@ -235,7 +235,7 @@ class ManagedService:
                     self._process = subprocess.Popen(
                         [self.command] + self.args,
                         cwd=self.cwd, env=proc_env,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         creationflags=cf,
                     )
                     _assign_job(self._process)

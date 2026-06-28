@@ -36,9 +36,18 @@ services:
 
   - name: debug-relay
     command: python
-    args: ["debug_relay.py", "--port", "5003", "--src", "D:\\Codlib\\douque\\xzmx\\ClientEngineGame\\trunk\\assets\\game\\scripts"]
+    args: ["debug_relay.py", "--port", "5003", "--src", "D:\\Codlib\\douque\\xzmx\\ClientEngineGame\\trunk\\assets"]
     cwd: ./serviceGroup/debugRelay
     port: 5003
     auto_restart: true
     tags: [debug, game, cocos]
+    enabled: true
+
+  - name: wechatgame-static
+    command: python
+    args: ["-m", "http.server", "8003", "--bind", "192.168.41.158"]
+    cwd: D:\Codlib\douque\xzmx\ClientEngineGame\trunk\build\wechatgame001
+    port: 8003
+    auto_restart: true
+    tags: [static, wechatgame, cocos]
     enabled: true

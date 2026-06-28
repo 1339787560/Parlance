@@ -22,6 +22,11 @@ function clearConsole() {
     output.innerHTML = '';
 }
 
+function scrollToBottom() {
+    const output = document.getElementById('console-output');
+    output.scrollTop = output.scrollHeight;
+}
+
 // ---- Console Display ----
 
 const allEntries = [];  // 全量消息列表
@@ -86,8 +91,10 @@ function renderEntry(entry, autoScroll) {
     const typeClass = entry.type.replace('console_', '');
     div.className = `console-entry console-${typeClass}`;
 
-    const seqSpan = `<span class="seq">${entry.seq}</span>`;
-    div.innerHTML = `${seqSpan}${escapeHtml(entry.content)}`;
+    // 前缀图标替代行号
+    const iconMap = { log: '›', warn: '⚠', error: '✕', info: 'ℹ' };
+    const icon = iconMap[typeClass] || '›';
+    div.innerHTML = `<span class="log-icon">${icon}</span>${escapeHtml(entry.content)}`;
 
     output.appendChild(div);
 
@@ -119,7 +126,7 @@ function evalExpr() {
     const output = document.getElementById('console-output');
     const div = document.createElement('div');
     div.className = 'console-entry console-info';
-    div.innerHTML = `<span class="seq">▸</span>${escapeHtml(expr)}`;
+    div.innerHTML = `<span class="log-icon">▸</span>${escapeHtml(expr)}`;
     output.appendChild(div);
 
     // 滚动到底部让用户看到输入的表达式
@@ -136,6 +143,25 @@ function switchTab(tab) {
 
     document.getElementById(`tab-${tab}`).classList.add('active');
     document.getElementById(`panel-${tab}`).classList.add('active');
+
+    // 持久化 tab 选择，刷新后恢复
+    try { localStorage.setItem('debug_active_tab', tab); } catch(e) {}
+
+    if (tab === 'perf' && window.renderPerfCharts) {
+        setTimeout(window.renderPerfCharts, 50);
+    }
+    // 首次切换到 events 面板时自动加载分类列表
+    if (tab === 'events' && typeof eventsLoadCategories === 'function') {
+        eventsLoadCategories();
+    }
+}
+
+function restoreActiveTab() {
+    let saved = null;
+    try { saved = localStorage.getItem('debug_active_tab'); } catch(e) {}
+    if (saved && document.getElementById(`tab-${saved}`)) {
+        switchTab(saved);
+    }
 }
 
 // ---- WebSocket ----
@@ -224,18 +250,274 @@ function handleBrowserMessage(msg) {
             handleSourceContent(msg);
             break;
 
+        case 'perf_snapshot':
+            if (window.handlePerfSnapshot) window.handlePerfSnapshot(msg);
+            break;
+
+        case 'perf_history':
+            if (window.handlePerfHistory) window.handlePerfHistory(msg.snapshots || []);
+            break;
+
+        case 'important_event':
+            if (typeof onRealtimeEvent === 'function') onRealtimeEvent(msg);
+            break;
+
         // eval 结果也在控制台显示
         default:
             if (msg.eval_result !== undefined) {
-                const output = document.getElementById('console-output');
-                const div = document.createElement('div');
-                div.className = msg.eval_error ? 'eval-error' : 'eval-result';
-                div.innerHTML = `<span class="seq">←</span>${escapeHtml(String(msg.eval_result))}`;
-                output.appendChild(div);
-                output.scrollTop = output.scrollHeight;
+                try {
+                    const output = document.getElementById('console-output');
+                    const div = document.createElement('div');
+                    div.className = msg.eval_error ? 'eval-error' : 'eval-result';
+
+                    const icon = msg.eval_error ? '✕' : (msg.eval_is_object ? '⊕' : '←');
+                    const iconSpan = document.createElement('span');
+                    iconSpan.className = 'log-icon';
+                    iconSpan.textContent = icon;
+                    div.appendChild(iconSpan);
+
+                    const raw = String(msg.eval_result);
+                    if (msg.eval_is_object) {
+                        // Object：用折叠树展示
+                        const tree = buildFoldableTree(raw);
+                        div.appendChild(tree);
+                    } else {
+                        // 原始值：单行
+                        const text = document.createElement('span');
+                        text.textContent = raw;
+                        div.appendChild(text);
+                    }
+
+                    output.appendChild(div);
+                    requestAnimationFrame(() => { output.scrollTop = output.scrollHeight; });
+                } catch (e) {
+                    console.error('[eval] render failed:', e);
+                }
             }
             break;
     }
+}
+
+// ---- 折叠树（浏览器 DevTools 风格） -----------------------------
+
+/**
+ * 解析 JSON 字符串为折叠树
+ * 节点类型：object / array / leaf（string/number/bool/null）
+ */
+function buildFoldableTree(jsonText) {
+    const container = document.createElement('div');
+    container.className = 'eval-tree';
+
+    let parsed;
+    try {
+        parsed = JSON.parse(jsonText);
+    } catch (e) {
+        // 解析失败：回退到纯文本
+        const pre = document.createElement('pre');
+        pre.className = 'eval-object';
+        pre.textContent = jsonText;
+        container.appendChild(pre);
+        return container;
+    }
+
+    if (parsed === null) {
+        container.textContent = 'null';
+        return container;
+    }
+    if (typeof parsed !== 'object') {
+        container.textContent = String(parsed);
+        return container;
+    }
+
+    const root = document.createElement('div');
+    root.className = 'tree-root';
+    if (Array.isArray(parsed)) {
+        appendArrayNode(root, parsed, 0, true);
+    } else {
+        appendObjectNode(root, parsed, 0, true);
+    }
+    container.appendChild(root);
+    return container;
+}
+
+function appendObjectNode(parent, obj, depth, isRoot) {
+    const keys = Object.keys(obj);
+    const header = document.createElement('div');
+    header.className = 'tree-node-header';
+    header.style.paddingLeft = (depth * 16) + 'px';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'tree-arrow-toggle';
+    arrow.textContent = isRoot ? '▼' : '▶';
+    header.appendChild(arrow);
+
+    if (isRoot) {
+        const brace = document.createElement('span');
+        brace.className = 'tree-brace';
+        brace.textContent = '{';
+        header.appendChild(brace);
+
+        const summary = document.createElement('span');
+        summary.className = 'tree-summary';
+        summary.textContent = ` ${keys.length} keys `;
+        header.appendChild(summary);
+
+        parent.appendChild(header);
+    } else {
+        parent.appendChild(header);
+    }
+
+    const children = document.createElement('div');
+    children.className = 'tree-children';
+    if (!isRoot) children.style.display = 'none';
+
+    for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        const v = obj[k];
+        const isLast = i === keys.length - 1;
+
+        const item = document.createElement('div');
+        item.className = 'tree-item';
+
+        if (v !== null && typeof v === 'object') {
+            appendObjectNode(item, v, depth + 1, false);
+            // 改 header 的缩进与前缀
+            item.querySelector('.tree-node-header').style.paddingLeft = ((depth + 1) * 16) + 'px';
+        } else if (Array.isArray(v)) {
+            appendArrayNode(item, v, depth + 1, false);
+            item.querySelector('.tree-node-header').style.paddingLeft = ((depth + 1) * 16) + 'px';
+        } else {
+            const line = document.createElement('div');
+            line.className = 'tree-leaf';
+            line.style.paddingLeft = ((depth + 1) * 16) + 'px';
+            const keySpan = document.createElement('span');
+            keySpan.className = 'json-key';
+            keySpan.textContent = JSON.stringify(k);
+            line.appendChild(keySpan);
+            line.appendChild(document.createTextNode(': '));
+            line.appendChild(formatLeafNode(v));
+            if (!isLast) line.appendChild(document.createTextNode(','));
+            item.appendChild(line);
+        }
+
+        children.appendChild(item);
+    }
+    parent.appendChild(children);
+
+    if (isRoot) {
+        const close = document.createElement('div');
+        close.className = 'tree-close';
+        close.style.paddingLeft = (depth * 16) + 'px';
+        const cb = document.createElement('span');
+        cb.className = 'tree-brace';
+        cb.textContent = '}';
+        close.appendChild(cb);
+        parent.appendChild(close);
+    }
+
+    // 折叠/展开
+    header.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const collapsed = children.style.display === 'none';
+        children.style.display = collapsed ? 'block' : 'none';
+        arrow.textContent = collapsed ? '▼' : '▶';
+    });
+}
+
+function appendArrayNode(parent, arr, depth, isRoot) {
+    const header = document.createElement('div');
+    header.className = 'tree-node-header';
+    header.style.paddingLeft = (depth * 16) + 'px';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'tree-arrow-toggle';
+    arrow.textContent = '▼';
+    header.appendChild(arrow);
+
+    if (isRoot) {
+        const brace = document.createElement('span');
+        brace.className = 'tree-brace';
+        brace.textContent = '[';
+        header.appendChild(brace);
+        const summary = document.createElement('span');
+        summary.className = 'tree-summary';
+        summary.textContent = ` ${arr.length} items `;
+        header.appendChild(summary);
+        parent.appendChild(header);
+    } else {
+        parent.appendChild(header);
+    }
+
+    const children = document.createElement('div');
+    children.className = 'tree-children';
+    if (!isRoot) children.style.display = 'none';
+
+    for (let i = 0; i < arr.length; i++) {
+        const v = arr[i];
+        const isLast = i === arr.length - 1;
+        const item = document.createElement('div');
+        item.className = 'tree-item';
+
+        if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+            appendObjectNode(item, v, depth + 1, false);
+            item.querySelector('.tree-node-header').style.paddingLeft = ((depth + 1) * 16) + 'px';
+        } else if (Array.isArray(v)) {
+            appendArrayNode(item, v, depth + 1, false);
+            item.querySelector('.tree-node-header').style.paddingLeft = ((depth + 1) * 16) + 'px';
+        } else {
+            const line = document.createElement('div');
+            line.className = 'tree-leaf';
+            line.style.paddingLeft = ((depth + 1) * 16) + 'px';
+            const idx = document.createElement('span');
+            idx.className = 'json-key';
+            idx.textContent = String(i);
+            line.appendChild(idx);
+            line.appendChild(document.createTextNode(': '));
+            line.appendChild(formatLeafNode(v));
+            if (!isLast) line.appendChild(document.createTextNode(','));
+            item.appendChild(line);
+        }
+        children.appendChild(item);
+    }
+    parent.appendChild(children);
+
+    if (isRoot) {
+        const close = document.createElement('div');
+        close.className = 'tree-close';
+        close.style.paddingLeft = (depth * 16) + 'px';
+        const cb = document.createElement('span');
+        cb.className = 'tree-brace';
+        cb.textContent = ']';
+        close.appendChild(cb);
+        parent.appendChild(close);
+    }
+
+    header.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const collapsed = children.style.display === 'none';
+        children.style.display = collapsed ? 'block' : 'none';
+        arrow.textContent = collapsed ? '▼' : '▶';
+    });
+}
+
+function formatLeafNode(v) {
+    const span = document.createElement('span');
+    if (v === null) {
+        span.className = 'json-bool';
+        span.textContent = 'null';
+    } else if (typeof v === 'string') {
+        span.className = 'json-string';
+        span.textContent = JSON.stringify(v);
+    } else if (typeof v === 'number') {
+        span.className = 'json-number';
+        span.textContent = String(v);
+    } else if (typeof v === 'boolean') {
+        span.className = 'json-bool';
+        span.textContent = String(v);
+    } else {
+        span.textContent = String(v);
+    }
+    return span;
 }
 
 // ---- Status Display ----
@@ -264,7 +546,7 @@ function handleBreakpointHit(msg) {
     const output = document.getElementById('console-output');
     const div = document.createElement('div');
     div.className = 'console-entry console-warn';
-    div.innerHTML = `<span class="seq">⏸</span>断点命中: ${msg.file}:${msg.line || msg.func} — ${msg.reason || ''}`;
+    div.innerHTML = `<span class="log-icon">⏸</span>断点命中: ${msg.file}:${msg.line || msg.func} — ${msg.reason || ''}`;
     output.appendChild(div);
     output.scrollTop = output.scrollHeight;
 
@@ -370,6 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sel.addEventListener('change', () => setTheme(sel.value));
     }
     restoreTheme();
+    restoreActiveTab();
 });
 
 // ---- Init ----
