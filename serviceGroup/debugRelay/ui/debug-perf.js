@@ -36,15 +36,16 @@ function handlePerfHistory(snapshots) {
 }
 
 function renderPerfCards(snap) {
-    setText('perf-fps', snap.fps, snap.fps >= 50 ? 'good' : snap.fps >= 30 ? 'warn' : 'bad');
-    setText('perf-frame', `frameTime ${snap.frameTime}ms · max ${snap.frameTimeMax}ms`);
+    const f1 = (v) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(1) : v;
+    setText('perf-fps', f1(snap.fps), snap.fps >= 50 ? 'good' : snap.fps >= 30 ? 'warn' : 'bad');
+    setText('perf-frame', `frameTime ${f1(snap.frameTime)}ms · max ${f1(snap.frameTimeMax)}ms`);
     setText('perf-dc', snap.drawCall >= 0 ? String(snap.drawCall) : 'N/A',
         snap.drawCall < 0 ? '' : snap.drawCall <= 100 ? 'good' : snap.drawCall <= 200 ? 'warn' : 'bad');
     setText('perf-dc-max', `峰值 ${snap.drawCallMax}`);
 
-    setText('perf-ft', snap.frameTime > 0 ? String(snap.frameTime) : 'N/A',
+    setText('perf-ft', snap.frameTime > 0 ? f1(snap.frameTime) : 'N/A',
         snap.frameTime <= 0 ? '' : snap.frameTime <= 20 ? 'good' : snap.frameTime <= 33 ? 'warn' : 'bad');
-    setText('perf-ft-max', `峰值 ${snap.frameTimeMax}ms`);
+    setText('perf-ft-max', `峰值 ${f1(snap.frameTimeMax)}ms`);
 
     if (snap.memBytes > 0) {
         const mb = (snap.memBytes / 1024 / 1024).toFixed(1);

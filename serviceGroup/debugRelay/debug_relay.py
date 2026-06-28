@@ -470,7 +470,9 @@ async def query_events(category: str = None, date: str = None, limit: int = 100)
         scan_dirs = [d for d in events_dir.iterdir() if d.is_dir()]
 
     # 确定 date
-    target_date = date or date.today().isoformat()
+    # 注意:形参 date(str)遮蔽了 datetime.date,此处不能写 date.today()
+    # 用 datetime.now().date() 取今天,绕开遮蔽
+    target_date = date or datetime.now().date().isoformat()
 
     events = []
     for d in scan_dirs:
