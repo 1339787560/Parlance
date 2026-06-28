@@ -27,7 +27,7 @@ services:
 
   - name: statistic-server
     command_mac: ./.venv/bin/python
-    command_win: ./.venv/Scripts/python.exe
+    command_win: python
     args: ["proxy_server.py", "--port", "5002"]
     cwd: ./serviceGroup/statisticServer
     port: 5002
@@ -36,7 +36,8 @@ services:
     enabled: true
 
   - name: debug-relay
-    command: python
+    command_mac: ./.venv/bin/python
+    command_win: python
     args: ["debug_relay.py", "--port", "5003", "--src", "D:\\Codlib\\douque\\xzmx\\ClientEngineGame\\trunk\\assets"]
     cwd: ./serviceGroup/debugRelay
     port: 5003
