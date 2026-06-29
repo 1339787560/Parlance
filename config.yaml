@@ -23,6 +23,15 @@ services:
     port: 5000
     auto_restart: true
     tags: [media, gallery]
+    enabled: false
+
+  - name: serviceServer
+    command: python
+    args: ["main.py"]
+    cwd: D:\Codlib\VscodeCodlib\Python\serviceServer
+    port: 5000
+    auto_restart: true
+    tags: [service, api]
     enabled: true
 
   - name: statistic-server
