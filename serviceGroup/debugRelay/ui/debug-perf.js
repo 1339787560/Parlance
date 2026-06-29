@@ -103,11 +103,14 @@ function formatNumber(n) {
 // 决策: 只要可见、不跟主题变。这些色在深背景上高对比稳定, 且 --bg 不随主题变。
 const CHART_COLORS = { fps: '#4ec9b0', dc: '#58a6ff', ft: '#d29922' };
 
+// 保存每个 canvas 的绘制参数，供 hover 时查最近数据点
+const _chartMeta = {};  // { canvasId: { pts, min, max, xStep, padX, padY, w, h, color, unit, decimals } }
+
 function renderPerfCharts() {
-    // 兼容新旧字段名
-    drawLineChart('perf-fps-canvas', perfHistory.map(s => s.fps), { color: CHART_COLORS.fps, fill: true, min: 0 });
-    drawLineChart('perf-dc-canvas', perfHistory.map(s => getField(s, 'draws', 'drawCall', -1)), { color: CHART_COLORS.dc });
-    drawLineChart('perf-ft-canvas', perfHistory.map(s => getField(s, 'frame', 'frameTime', 0)), { color: CHART_COLORS.ft });
+    drawLineChart('perf-fps-canvas', perfHistory.map(s => s.fps), { color: CHART_COLORS.fps, fill: true, min: 0, unit: '', decimals: 0 });
+    drawLineChart('perf-dc-canvas', perfHistory.map(s => getField(s, 'draws', 'drawCall', -1)), { color: CHART_COLORS.dc, unit: '', decimals: 0 });
+    drawLineChart('perf-ft-canvas', perfHistory.map(s => getField(s, 'frame', 'frameTime', 0)), { color: CHART_COLORS.ft, unit: 'ms', decimals: 1 });
+    bindPerfHover();
 }
 
 function drawLineChart(canvasId, values, opts) {
@@ -131,7 +134,10 @@ function drawLineChart(canvasId, values, opts) {
         if (v === null || v === undefined || v < 0) return;
         pts.push({ i, v });
     });
-    if (pts.length < 2) return;
+    if (pts.length < 2) {
+        _chartMeta[canvasId] = null;
+        return;
+    }
 
     // 计算 min/max
     let min = opts.min !== undefined ? opts.min : Infinity;
@@ -148,6 +154,9 @@ function drawLineChart(canvasId, values, opts) {
     const w = cssW - padX * 2;
     const h = cssH - padY * 2;
     const xStep = w / Math.max(1, values.length - 1);
+
+    // 保存绘制参数，供 hover 查最近点
+    _chartMeta[canvasId] = { pts, min, max, xStep, padX, padY, w, h, color, cssW, cssH, unit: opts.unit || '', decimals: opts.decimals ?? 1 };
 
     // 填充
     if (opts.fill) {
@@ -187,6 +196,88 @@ function drawLineChart(canvasId, values, opts) {
     ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
+
+    // 悬停标记（hover 时由事件回调追加绘制）
+    if (canvas._hoverX !== undefined) {
+        drawHoverIndicator(canvasId, ctx, canvas._hoverX);
+    }
+}
+
+// ---- Hover tooltip ----
+
+function drawHoverIndicator(canvasId, ctx, mouseX) {
+    const meta = _chartMeta[canvasId];
+    if (!meta) return;
+
+    const { pts, min, max, xStep, padX, padY, w, h, color, cssW, cssH, unit, decimals } = meta;
+
+    // 二分找最近的数据点（按 x 坐标）
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const p of pts) {
+        const x = padX + p.i * xStep;
+        const dist = Math.abs(x - mouseX);
+        if (dist < nearestDist) {
+            nearestDist = dist;
+            nearest = p;
+        }
+    }
+    if (!nearest) return;
+
+    const hx = padX + nearest.i * xStep;
+    const hy = padY + h - (nearest.v - min) / (max - min) * h;
+
+    // 竖线
+    ctx.strokeStyle = withAlpha(color, 0.5);
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(hx, 0);
+    ctx.lineTo(hx, cssH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 数据点高亮
+    ctx.beginPath();
+    ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // 数值标签
+    const valStr = nearest.v.toFixed(decimals) + unit;
+    ctx.font = '11px monospace';
+    const tw = ctx.measureText(valStr).width;
+    const tx = Math.min(Math.max(hx - tw / 2 - 4, 1), cssW - tw - 9);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(tx, 2, tw + 8, 16);
+    ctx.fillStyle = color;
+    ctx.fillText(valStr, tx + 4, 13);
+}
+
+// 给所有 perf canvas 绑定 hover 事件（只需绑定一次）
+let _hoverBound = false;
+function bindPerfHover() {
+    if (_hoverBound) return;
+    _hoverBound = true;
+
+    ['perf-fps-canvas', 'perf-dc-canvas', 'perf-ft-canvas'].forEach(id => {
+        const canvas = document.getElementById(id);
+        if (!canvas) return;
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            canvas._hoverX = e.clientX - rect.left;
+            renderPerfCharts();
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            canvas._hoverX = undefined;
+            renderPerfCharts();
+        });
+    });
 }
 
 function withAlpha(color, alpha) {

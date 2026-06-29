@@ -56,8 +56,11 @@ services:
 
   - name: cocos-creator
     command: "D:\\IDE\\Cocos Download\\Creator\\Creator\\3.8.1\\CocosCreator.exe"
+    command_mac: "/Applications/Cocos/Creator/3.8.1/CocosCreator.app/Contents/MacOS/CocosCreator"
     args: ["--project", "D:\\Codlib\\douque\\xzmx\\ClientEngineGame\\trunk", "--port", "3000"]
+    args_mac: ["--project", "/Users/liz/autoTestProj", "--port", "3000"]
     cwd: D:\\Codlib\\douque\\xzmx\\ClientEngineGame\\trunk
+    cwd_mac: /Users/liz/autoTestProj
     port: 3000
     auto_restart: false
     managed: false

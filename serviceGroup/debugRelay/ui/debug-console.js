@@ -423,12 +423,12 @@ function appendObjectNode(parent, obj, depth, isRoot) {
         const item = document.createElement('div');
         item.className = 'tree-item';
 
-        if (v !== null && typeof v === 'object') {
+        if (Array.isArray(v)) {
+            appendArrayNode(item, v, depth + 1, false);
+            item.querySelector('.tree-node-header').style.paddingLeft = ((depth + 1) * 16) + 'px';
+        } else if (v !== null && typeof v === 'object') {
             appendObjectNode(item, v, depth + 1, false);
             // 改 header 的缩进与前缀
-            item.querySelector('.tree-node-header').style.paddingLeft = ((depth + 1) * 16) + 'px';
-        } else if (Array.isArray(v)) {
-            appendArrayNode(item, v, depth + 1, false);
             item.querySelector('.tree-node-header').style.paddingLeft = ((depth + 1) * 16) + 'px';
         } else {
             const line = document.createElement('div');

@@ -645,7 +645,7 @@ async def list_event_dates(category: str = None):
             date_str = f.stem  # YYYY-MM-DD
             all_dates.append({"category": cat_name, "date": date_str})
 
-    return {"dates": sorted(all_dates, reverse=True), "categories": sorted(categories)}
+    return {"dates": sorted(all_dates, key=lambda x: x["date"], reverse=True), "categories": sorted(categories)}
 
 
 @app.delete("/api/events")
