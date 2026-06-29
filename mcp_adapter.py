@@ -3,9 +3,11 @@
 Cocos MCP Adapter — stdio MCP server，CocosCreator 编辑器操作的精简入口。
 
 设计：
-- 固定暴露 8 个核心工具 + 1 个通用入口（cocos_raw_tool）
+- 固定暴露核心工具 + 节点操作封装 + 通用入口（cocos_raw_tool）
 - cocos_status 检测三维度：进程/7456端口/3000端口
 - cocos_start 启动 CocosCreator 并等待 MCP 就绪（最多 60s）
+- 节点操作封装统一参数命名（nodeUuid），屏蔽底层 node-tools(uuid) / component-tools(nodeUuid) 不一致
+- cocos_set_component_property 自动推断 propertyType，免去手动指定
 - cocos_raw_tool 用于访问非核心的底层 MCP 工具
 
 底层经 InfoServer REST API 转发到 CocosCreator 内部 MCP（:3000）。
@@ -258,6 +260,70 @@ async def _cocos_raw_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str
     return await _call_mcp_tool(tool_name, arguments)
 
 
+# ── Node operation wrappers (统一参数命名，屏蔽底层不一致) ──────────────────
+# 底层 node-tools.ts 用 `uuid`，component-tools.ts 用 `nodeUuid`，这里统一为 `nodeUuid`
+
+async def _cocos_find_node(name: str) -> Dict[str, Any]:
+    """查找节点：按名称查找，返回 UUID 和基本信息。底层 node_find_node_by_name。"""
+    return await _call_mcp_tool("node_find_node_by_name", {"name": name})
+
+
+async def _cocos_get_node_info(nodeUuid: str) -> Dict[str, Any]:
+    """获取节点信息：位置/旋转/缩放/子节点/组件。底层 node_get_node_info（uuid → nodeUuid 统一）。"""
+    return await _call_mcp_tool("node_get_node_info", {"uuid": nodeUuid})
+
+
+async def _cocos_create_node(name: str, parentUuid: str = "", components: List[str] = None) -> Dict[str, Any]:
+    """创建节点：统一 name 参数（底层也用 name，但执行时曾丢失），可选 parentUuid 和 components。
+    底层 node_create_node。"""
+    arguments: Dict[str, Any] = {"name": name}
+    if parentUuid:
+        arguments["parentUuid"] = parentUuid
+    if components:
+        arguments["components"] = components
+    return await _call_mcp_tool("node_create_node", arguments)
+
+
+async def _cocos_add_component(nodeUuid: str, componentType: str) -> Dict[str, Any]:
+    """添加组件：统一 nodeUuid + componentType。底层 component_add_component（参数已一致）。"""
+    return await _call_mcp_tool("component_add_component", {"nodeUuid": nodeUuid, "componentType": componentType})
+
+
+async def _cocos_set_component_property(
+    nodeUuid: str, componentType: str, property: str, value: Any, propertyType: str = ""
+) -> Dict[str, Any]:
+    """设置组件属性：统一 nodeUuid + componentType + property + value + propertyType。
+    底层 component_set_component_property（参数已一致，但 propertyType 必填，这里自动推断）。"""
+    arguments: Dict[str, Any] = {
+        "nodeUuid": nodeUuid,
+        "componentType": componentType,
+        "property": property,
+        "value": value,
+    }
+    if propertyType:
+        arguments["propertyType"] = propertyType
+    else:
+        # 自动推断类型
+        if isinstance(value, str):
+            arguments["propertyType"] = "string"
+        elif isinstance(value, bool):
+            arguments["propertyType"] = "boolean"
+        elif isinstance(value, (int, float)):
+            arguments["propertyType"] = "number"
+        elif isinstance(value, dict):
+            if "width" in value and "height" in value:
+                arguments["propertyType"] = "size"
+            elif "x" in value and "y" in value:
+                arguments["propertyType"] = "vec2"
+            elif "r" in value and "g" in value:
+                arguments["propertyType"] = "color"
+            else:
+                arguments["propertyType"] = "string"
+        else:
+            arguments["propertyType"] = "string"
+    return await _call_mcp_tool("component_set_component_property", arguments)
+
+
 # ── Tool schemas ─────────────────────────────────────────────────────────────
 
 def _tool_schemas() -> List[Tool]:
@@ -344,6 +410,68 @@ def _tool_schemas() -> List[Tool]:
             },
         ),
         Tool(
+            name="cocos_find_node",
+            description="按名称查找节点，返回 UUID 和基本信息。底层 find_node_by_name。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "节点名称"},
+                },
+                "required": ["name"],
+            },
+        ),
+        Tool(
+            name="cocos_get_node_info",
+            description="获取节点信息：位置/旋转/缩放/子节点/组件。底层 get_node_info。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "nodeUuid": {"type": "string", "description": "节点 UUID"},
+                },
+                "required": ["nodeUuid"],
+            },
+        ),
+        Tool(
+            name="cocos_create_node",
+            description="创建节点。底层 create_node。统一参数：name（必填）、parentUuid（可选）、components（可选，如 [\"cc.Sprite\", \"cc.Button\"]）。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "节点名称"},
+                    "parentUuid": {"type": "string", "description": "父节点 UUID（可选，不传则创建在场景根）"},
+                    "components": {"type": "array", "items": {"type": "string"}, "description": "要添加的组件列表（可选，如 [\"cc.Sprite\", \"cc.Button\"]）"},
+                },
+                "required": ["name"],
+            },
+        ),
+        Tool(
+            name="cocos_add_component",
+            description="给节点添加组件。底层 add_component。统一参数：nodeUuid + componentType。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "nodeUuid": {"type": "string", "description": "节点 UUID"},
+                    "componentType": {"type": "string", "description": "组件类型，如 cc.Sprite / cc.Label / cc.Button"},
+                },
+                "required": ["nodeUuid", "componentType"],
+            },
+        ),
+        Tool(
+            name="cocos_set_component_property",
+            description="设置组件属性。底层 set_component_property。统一参数：nodeUuid + componentType + property + value + propertyType（可选，不传自动推断）。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "nodeUuid": {"type": "string", "description": "节点 UUID"},
+                    "componentType": {"type": "string", "description": "组件类型，如 cc.Label"},
+                    "property": {"type": "string", "description": "属性名，如 string / fontSize / contentSize"},
+                    "value": {"description": "属性值"},
+                    "propertyType": {"type": "string", "description": "属性类型（可选，不传自动推断）。可选值：string/number/boolean/color/vec2/vec3/size"},
+                },
+                "required": ["nodeUuid", "componentType", "property", "value"],
+            },
+        ),
+        Tool(
             name="cocos_raw_tool",
             description=(
                 "通用入口：按工具名调用 CocosCreator 内部 MCP 的任意工具。"
@@ -373,7 +501,7 @@ def _tool_schemas() -> List[Tool]:
 
 @_app.list_tools()
 async def list_tools() -> List[Tool]:
-    """Return fixed tool set (7 core + 1 generic entry)."""
+    """Return fixed tool set (core + node wrappers + raw_tool)."""
     return _tool_schemas()
 
 
@@ -410,6 +538,29 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 name=args["name"],
                 method=args["method"],
                 args=args.get("args", []),
+            )
+        elif name == "cocos_find_node":
+            result = await _cocos_find_node(name=args["name"])
+        elif name == "cocos_get_node_info":
+            result = await _cocos_get_node_info(nodeUuid=args["nodeUuid"])
+        elif name == "cocos_create_node":
+            result = await _cocos_create_node(
+                name=args["name"],
+                parentUuid=args.get("parentUuid", ""),
+                components=args.get("components"),
+            )
+        elif name == "cocos_add_component":
+            result = await _cocos_add_component(
+                nodeUuid=args["nodeUuid"],
+                componentType=args["componentType"],
+            )
+        elif name == "cocos_set_component_property":
+            result = await _cocos_set_component_property(
+                nodeUuid=args["nodeUuid"],
+                componentType=args["componentType"],
+                property=args["property"],
+                value=args["value"],
+                propertyType=args.get("propertyType", ""),
             )
         elif name == "cocos_raw_tool":
             result = await _cocos_raw_tool(
