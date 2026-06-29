@@ -21,6 +21,12 @@ from pathlib import Path
 from datetime import datetime, date
 from typing import Set
 
+try:
+    import yaml  # type: ignore
+    _HAS_YAML = True
+except Exception:
+    _HAS_YAML = False
+
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
@@ -695,6 +701,40 @@ async def ws_browser(websocket: WebSocket):
     await handle_browser_websocket(websocket)
 
 
+# ---- Config File ----
+
+CONFIG_CANDIDATES = ("debug_relay.config.json", "debug_relay.config.yaml", "debug_relay.config.yml")
+
+
+def _load_config(path: Path) -> dict:
+    """加载配置文件。按后缀解析: .yaml/.yml 走 PyYAML, .json 走 json。无匹配后缀先 json 再 yaml。"""
+    if not path or not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+    if suffix in (".yaml", ".yml"):
+        if not _HAS_YAML:
+            print(f"[debug-relay] {path} 需要 PyYAML,但未安装,跳过")
+            return {}
+        return yaml.safe_load(text) or {}
+    if suffix == ".json":
+        try:
+            return json.loads(text)
+        except Exception as e:
+            print(f"[debug-relay] 解析 JSON 配置失败 {path}: {e}")
+            return {}
+    # 未知后缀:先 json 再 yaml
+    try:
+        return json.loads(text)
+    except Exception:
+        if _HAS_YAML:
+            try:
+                return yaml.safe_load(text) or {}
+            except Exception:
+                return {}
+        return {}
+
+
 # ---- CLI ----
 
 def parse_args():
@@ -708,6 +748,8 @@ def parse_args():
                         help="启用 IP 白名单(仅白名单内 IP 可连 WS)")
     parser.add_argument("--whitelist-ips", default="",
                         help="白名单 IP 列表,逗号分隔,需 --whitelist-enable 生效")
+    parser.add_argument("--config", default=None,
+                        help="配置文件路径(JSON/YAML),支持 whitelist.enabled / whitelist.ips;CLI 显式值覆盖")
     return parser.parse_args()
 
 
@@ -726,14 +768,41 @@ if __name__ == "__main__":
         events_dir = Path(__file__).parent / "events"
         events_dir.mkdir(parents=True, exist_ok=True)
 
-    # 解析 IP 白名单
-    whitelist_enabled = bool(args.whitelist_enable)
-    whitelist_ips = {ip.strip() for ip in args.whitelist_ips.split(",") if ip.strip()}
+    # 解析 IP 白名单:CLI 显式值 > 配置文件
+    cfg_path = None
+    if args.config:
+        cfg_path = Path(args.config).resolve()
+    else:
+        base = Path(__file__).parent
+        for name in CONFIG_CANDIDATES:
+            p = base / name
+            if p.exists():
+                cfg_path = p
+                break
+
+    cfg = _load_config(cfg_path) if cfg_path else {}
+    wl_cfg = cfg.get("whitelist") or {} if isinstance(cfg, dict) else {}
+    cfg_enabled = bool(wl_cfg.get("enabled", False))
+    cfg_ip_list = wl_cfg.get("ips") or []
+    if not isinstance(cfg_ip_list, list):
+        cfg_ip_list = []
+    cfg_ip_set = {str(x).strip() for x in cfg_ip_list if str(x).strip()}
+
+    cli_ips = {ip.strip() for ip in args.whitelist_ips.split(",") if ip.strip()}
+    whitelist_ips = cli_ips if cli_ips else cfg_ip_set
+    whitelist_enabled = bool(args.whitelist_enable) or cfg_enabled
+    wl_source_parts = []
+    if args.whitelist_enable or cli_ips:
+        wl_source_parts.append("CLI")
+    if cfg_path and (cfg_enabled or cfg_ip_set):
+        wl_source_parts.append(str(cfg_path))
+
     if whitelist_enabled:
         if not whitelist_ips:
-            print("WARNING: --whitelist-enable 已启用但 --whitelist-ips 为空,将拒绝所有连接")
+            print("WARNING: IP 白名单已启用但 IP 列表为空,将拒绝所有连接")
         else:
-            print(f"IP 白名单已启用: {sorted(whitelist_ips)}")
+            src = "+".join(wl_source_parts) if wl_source_parts else "?"
+            print(f"IP 白名单已启用: {sorted(whitelist_ips)} (来源: {src})")
     else:
         print("IP 白名单未启用,允许所有 IP 连接")
 
