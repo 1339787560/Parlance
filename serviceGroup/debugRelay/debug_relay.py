@@ -103,6 +103,27 @@ src_dir: Path = None
 # 重要事件存储目录（按日分割 JSONL 文件）
 events_dir: Path = None
 
+# IP 白名单(可选,未启用时允许所有 IP)
+whitelist_enabled: bool = False
+whitelist_ips: set = set()
+
+
+# ---- IP Whitelist ----
+
+async def _enforce_whitelist(websocket: WebSocket) -> bool:
+    """白名单校验。返回 True=放行,False=已拒绝并 close。"""
+    if not whitelist_enabled:
+        return True
+    client_ip = websocket.client.host if websocket.client else ""
+    if client_ip in whitelist_ips:
+        return True
+    print(f"[debug-relay] reject WS from {client_ip} (not in whitelist)")
+    try:
+        await websocket.close(code=1008, reason="ip_not_allowed")
+    except Exception:
+        pass
+    return False
+
 
 # ---- Important Event Persistence ----
 
@@ -233,6 +254,9 @@ async def health():
 
 async def handle_game_websocket(websocket: WebSocket):
     """处理游戏端连接"""
+    if not await _enforce_whitelist(websocket):
+        return
+
     global game_ws, game_connected, console_buffer, console_seq, perf_buffer
 
     # 游戏重连时清空旧缓冲，新会话重新累积
@@ -270,6 +294,9 @@ async def handle_game_websocket(websocket: WebSocket):
 
 async def handle_browser_websocket(websocket: WebSocket):
     """处理浏览器端连接"""
+    if not await _enforce_whitelist(websocket):
+        return
+
     await websocket.accept()
     browser_ws_set.add(websocket)
 
@@ -677,6 +704,10 @@ def parse_args():
     parser.add_argument("--src", default=DEFAULT_SRC, help="Source directory to serve")
     parser.add_argument("--events-dir", default=None,
                         help="Directory to persist important events (按日归档 JSONL)")
+    parser.add_argument("--whitelist-enable", action="store_true",
+                        help="启用 IP 白名单(仅白名单内 IP 可连 WS)")
+    parser.add_argument("--whitelist-ips", default="",
+                        help="白名单 IP 列表,逗号分隔,需 --whitelist-enable 生效")
     return parser.parse_args()
 
 
@@ -694,6 +725,17 @@ if __name__ == "__main__":
         # 默认: 与 debug_relay.py 同级的 events/ 目录
         events_dir = Path(__file__).parent / "events"
         events_dir.mkdir(parents=True, exist_ok=True)
+
+    # 解析 IP 白名单
+    whitelist_enabled = bool(args.whitelist_enable)
+    whitelist_ips = {ip.strip() for ip in args.whitelist_ips.split(",") if ip.strip()}
+    if whitelist_enabled:
+        if not whitelist_ips:
+            print("WARNING: --whitelist-enable 已启用但 --whitelist-ips 为空,将拒绝所有连接")
+        else:
+            print(f"IP 白名单已启用: {sorted(whitelist_ips)}")
+    else:
+        print("IP 白名单未启用,允许所有 IP 连接")
 
     print(f"=" * 50)
     print(f"Debug Relay Server")
