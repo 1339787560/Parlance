@@ -313,6 +313,7 @@ async def restart_service(name: str):
 # ── Cocos MCP Proxy ────────────────────────────────────────────────────────
 
 COCOS_MCP_URL = "http://127.0.0.1:3000/mcp"
+DEBUGRELAY_URL = "http://127.0.0.1:5003"  # debugrelay base
 
 
 @router.get("/api/cocos-mcp/health")
@@ -358,6 +359,60 @@ async def cocos_mcp_call(request: Request):
             return resp.json()
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.post("/api/cocos-mcp/reload")
+async def cocos_mcp_reload():
+    """Atomic: refresh assets + soft-reload scene + reload preview runtime.
+
+    让 agent 一键把业务代码改动同步到 preview 运行时。
+    链路:
+      1. MCP refresh_assets (业务代码重编译/重导入)
+      2. MCP soft_reload_scene (场景脚本软重载)
+      3. debugrelay /api/runtime/reload (硬刷新 preview, 重载 plugin)
+    """
+    steps = []
+
+    # Step 1: refresh_assets
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(COCOS_MCP_URL, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "tools/call",
+                "params": {"name": "project_refresh_assets", "arguments": {}},
+            })
+            steps.append({"step": "refresh_assets", "ok": True, "raw": r.json()})
+    except Exception as e:
+        steps.append({"step": "refresh_assets", "ok": False, "error": str(e)})
+
+    # Step 2: soft_reload_scene
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(COCOS_MCP_URL, json={
+                "jsonrpc": "2.0", "id": 2,
+                "method": "tools/call",
+                "params": {"name": "sceneAdvanced_soft_reload_scene", "arguments": {}},
+            })
+            steps.append({"step": "soft_reload_scene", "ok": True, "raw": r.json()})
+    except Exception as e:
+        steps.append({"step": "soft_reload_scene", "ok": False, "error": str(e)})
+
+    # Step 3: debugrelay runtime reload (硬刷新 preview)
+    relay_result = None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.post(f"{DEBUGRELAY_URL}/api/runtime/reload")
+            relay_result = {"ok": r.status_code == 200, "body": r.json()}
+            steps.append({"step": "runtime_reload", "ok": r.status_code == 200, "raw": r.json()})
+    except Exception as e:
+        relay_result = {"ok": False, "error": str(e)}
+        steps.append({"step": "runtime_reload", "ok": False, "error": str(e)})
+
+    return {
+        "ok": all(s.get("ok") for s in steps),
+        "steps": steps,
+        "relay": relay_result,
+    }
 
 
 @router.get("/api/health")

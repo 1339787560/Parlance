@@ -130,6 +130,25 @@ async def _cocos_restart() -> Dict[str, Any]:
     return await _cocos_start()
 
 
+async def _cocos_reload_preview() -> Dict[str, Any]:
+    """Atomic: refresh assets + soft-reload scene + reload preview runtime.
+
+    一键同步业务代码改动到 preview 运行时（含 plugin 重载）。
+    后端走 infoServer /api/cocos-mcp/reload 聚合三个原子操作。
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(f"{INFOSERVER_URL}/api/cocos-mcp/reload")
+            data = resp.json()
+            return {
+                "success": data.get("ok", False),
+                "steps": data.get("steps", []),
+                "relay": data.get("relay"),
+            }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ── Proxy tool management ───────────────────────────────────────────────────
 
 async def _load_proxy_tools() -> bool:
@@ -203,6 +222,11 @@ async def list_tools() -> List[Tool]:
             description="Restart CocosCreator editor (stop then start).",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
+        Tool(
+            name="cocos_reload_preview",
+            description="Atomic: refresh_assets + soft_reload_scene + reload preview runtime. Sync business code (including plugin) to preview runtime in one call. Use after editing TS/JS in assets/.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
     ]
 
     # Add proxy tools (prefixed to avoid conflicts)
@@ -228,6 +252,8 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         result = await _cocos_status()
     elif name == "cocos_restart":
         result = await _cocos_restart()
+    elif name == "cocos_reload_preview":
+        result = await _cocos_reload_preview()
     # Proxy tools (strip prefix)
     elif name.startswith("cocos_mcp_"):
         tool_name = name[len("cocos_mcp_"):]
