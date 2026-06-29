@@ -49,8 +49,13 @@ class MsgType:
     BREAKPOINT_HIT = "breakpoint_hit"  # 断点命中
     PAUSE_STATE = "pause_state"        # 暂停状态通知
     PERF_SNAPSHOT = "perf_snapshot"    # 性能指标快照
+    PERF_MARK = "perf_mark"            # 业务段耗时 (mark/measure)
     RUNTIME_SOURCE = "runtime_source"  # 运行时源码（hot-patch 用）
     IMPORTANT_EVENT = "important_event"  # 重要事件（按日归档）
+
+    # 场景节点树
+    SCENE_TREE = "scene_tree"            # 场景树快照
+    SCENE_NODE_INFO = "scene_node_info"  # 节点组件详情
 
     # Relay -> Game
     REGISTER_BREAKPOINT = "register_breakpoint"  # 注册断点
@@ -58,6 +63,13 @@ class MsgType:
     RESUME = "resume"                  # 继续执行
     EVAL = "eval"                      # 执行表达式
     FETCH_RUNTIME_SOURCE = "fetch_runtime_source"  # 请求运行时源码
+    RUNTIME_RELOAD = "runtime_reload"      # 刷新 Web preview runtime
+
+    # Browser -> Game (场景控制)
+    SCENE_GET_TREE = "scene_get_tree"        # 请求场景树
+    SCENE_SET_ACTIVE = "scene_set_active"    # 设置节点显隐
+    SCENE_GET_NODE_INFO = "scene_get_node_info"  # 请求节点详情
+    SCENE_SET_PROPERTY = "scene_set_property"    # 修改节点/组件属性
 
     # Relay -> Browser
     CONSOLE_BATCH = "console_batch"    # 批量控制台消息（新连接时发送历史）
@@ -159,6 +171,14 @@ async def ui_css():
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/scene-panel.css")
+async def scene_panel_css():
+    f = UI_DIR / "scene-panel.css"
+    if f.exists():
+        return FileResponse(str(f), media_type="text/css")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/debug-console.js")
 async def ui_console_js():
     f = UI_DIR / "debug-console.js"
@@ -186,6 +206,14 @@ async def ui_perf_js():
 @app.get("/debug-events.js")
 async def ui_events_js():
     f = UI_DIR / "debug-events.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
+@app.get("/debug-scene.js")
+async def ui_scene_js():
+    f = UI_DIR / "debug-scene.js"
     if f.exists():
         return FileResponse(str(f), media_type="application/javascript")
     return JSONResponse({"error": "not found"}, status_code=404)
@@ -332,6 +360,10 @@ async def handle_game_message(msg: dict):
             print(f"[debug-relay] perf_buffer size={len(perf_buffer)} browsers={len(browser_ws_set)} latest_fps={msg.get('fps')}")
         await broadcast_to_browsers(msg)
 
+    elif msg_type == MsgType.PERF_MARK:
+        # 业务段耗时：转发给浏览器（mark/measure 产生，低频无需缓冲）
+        await broadcast_to_browsers(msg)
+
     elif msg_type == MsgType.RUNTIME_SOURCE:
         # 运行时源码：转发给浏览器（hot-patch 同步）
         await broadcast_to_browsers(msg)
@@ -339,6 +371,10 @@ async def handle_game_message(msg: dict):
     elif msg_type == MsgType.IMPORTANT_EVENT:
         # 重要事件：持久化到按日分割的 JSONL 文件 + 转发给浏览器
         persist_important_event(msg)
+        await broadcast_to_browsers(msg)
+
+    elif msg_type in (MsgType.SCENE_TREE, MsgType.SCENE_NODE_INFO):
+        # 场景树/节点详情：直接转发给浏览器
         await broadcast_to_browsers(msg)
 
     # eval 结果：直接转发给浏览器（无 type 字段，靠 eval_result 判断）
@@ -369,6 +405,16 @@ async def handle_browser_message(msg: dict, sender: WebSocket):
 
     elif msg_type == MsgType.EVAL:
         # 执行表达式：转发给游戏端
+        if game_ws:
+            await game_ws.send_json(msg)
+
+    elif msg_type == MsgType.RUNTIME_RELOAD:
+        # 刷新 Web preview runtime：转发给游戏端
+        if game_ws:
+            await game_ws.send_json(msg)
+
+    elif msg_type in (MsgType.SCENE_GET_TREE, MsgType.SCENE_SET_ACTIVE, MsgType.SCENE_GET_NODE_INFO, MsgType.SCENE_SET_PROPERTY):
+        # 场景控制：转发给游戏端
         if game_ws:
             await game_ws.send_json(msg)
 
@@ -443,6 +489,43 @@ async def get_source(path: str):
     except Exception as e:
         return JSONResponse({"error": f"read error: {e}"}, status_code=500)
 
+
+# ---- Runtime Control API ----
+
+@app.post("/api/runtime/reload")
+async def reload_runtime():
+    """刷新 Web preview runtime。
+
+    Agent 可直接调用:
+      curl -X POST http://host:5003/api/runtime/reload
+
+    relay 转发 runtime_reload 给 /ws/game；Web preview 收到后执行 location.reload()。
+    """
+    if not game_ws:
+        return JSONResponse({
+            "ok": False,
+            "error": "game not connected",
+            "hint": "Open/refresh preview first, wait for game_connected=true",
+        }, status_code=409)
+
+    msg = {
+        "type": MsgType.RUNTIME_RELOAD,
+        "ts": datetime.now().isoformat(),
+        "source": "http_api",
+    }
+    try:
+        await game_ws.send_json(msg)
+    except Exception as e:
+        return JSONResponse({
+            "ok": False,
+            "error": f"send failed: {e}",
+        }, status_code=500)
+
+    return {
+        "ok": True,
+        "message": "runtime_reload sent to game",
+        "ts": msg["ts"],
+    }
 
 # ---- Important Event Query API ----
 

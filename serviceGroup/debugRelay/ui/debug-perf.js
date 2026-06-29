@@ -1,11 +1,21 @@
 /**
  * Performance 面板
- * - 显示 FPS / DrawCall / FrameTime / 内存 / 三角面-顶点
+ * - 显示 FPS / DrawCall / FrameTime / CPU耗时分解 / 显存 / 内存 / 三角面
  * - 历史折线图
+ *
+ * 字段兼容：同时支持旧字段名(frameTime/drawCall/tris/verts)和新字段名(frame/draws/tricount)
+ * 新字段来自 profiler.stats（策略对齐），旧字段来自 PerfBridge fallback
  */
 
 const PERF_HISTORY_MAX = 300;   // 最多保留 300 条 = 5 分钟 @ 1Hz
-const perfHistory = [];         // [{ fps, drawCall, frameTime, memBytes, ts }]
+const perfHistory = [];         // [{ fps, draws, frame, logic, render, textureMemory, ... }]
+
+/** 兼容读取：优先新字段名，fallback 旧字段名 */
+function getField(snap, newName, oldName, defaultVal = -1) {
+    if (snap[newName] !== undefined && snap[newName] !== null) return snap[newName];
+    if (snap[oldName] !== undefined && snap[oldName] !== null) return snap[oldName];
+    return defaultVal;
+}
 
 function handlePerfSnapshot(snap) {
     perfHistory.push(snap);
@@ -37,16 +47,27 @@ function handlePerfHistory(snapshots) {
 
 function renderPerfCards(snap) {
     const f1 = (v) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(1) : v;
+
+    // FPS
     setText('perf-fps', f1(snap.fps), snap.fps >= 50 ? 'good' : snap.fps >= 30 ? 'warn' : 'bad');
-    setText('perf-frame', `frameTime ${f1(snap.frameTime)}ms · max ${f1(snap.frameTimeMax)}ms`);
-    setText('perf-dc', snap.drawCall >= 0 ? String(snap.drawCall) : 'N/A',
-        snap.drawCall < 0 ? '' : snap.drawCall <= 100 ? 'good' : snap.drawCall <= 200 ? 'warn' : 'bad');
-    setText('perf-dc-max', `峰值 ${snap.drawCallMax}`);
 
-    setText('perf-ft', snap.frameTime > 0 ? f1(snap.frameTime) : 'N/A',
-        snap.frameTime <= 0 ? '' : snap.frameTime <= 20 ? 'good' : snap.frameTime <= 33 ? 'warn' : 'bad');
-    setText('perf-ft-max', `峰值 ${f1(snap.frameTimeMax)}ms`);
+    // FrameTime — 新字段 frame, 旧字段 frameTime
+    const frameTime = getField(snap, 'frame', 'frameTime', 0);
+    const frameTimeMax = snap.frameTimeMax ?? 0;
+    setText('perf-frame', `frameTime ${f1(frameTime)}ms · max ${f1(frameTimeMax)}ms`);
 
+    // DrawCall — 新字段 draws, 旧字段 drawCall
+    const draws = getField(snap, 'draws', 'drawCall', -1);
+    const drawCallMax = snap.drawCallMax ?? -1;
+    setText('perf-dc', draws >= 0 ? String(draws) : 'N/A',
+        draws < 0 ? '' : draws <= 100 ? 'good' : draws <= 200 ? 'warn' : 'bad');
+    setText('perf-dc-max', `峰值 ${drawCallMax >= 0 ? drawCallMax : '-'}`);
+
+    setText('perf-ft', frameTime > 0 ? f1(frameTime) : 'N/A',
+        frameTime <= 0 ? '' : frameTime <= 20 ? 'good' : frameTime <= 33 ? 'warn' : 'bad');
+    setText('perf-ft-max', `峰值 ${f1(frameTimeMax)}ms`);
+
+    // 内存
     if (snap.memBytes > 0) {
         const mb = (snap.memBytes / 1024 / 1024).toFixed(1);
         setText('perf-mem', mb, parseFloat(mb) < 80 ? 'good' : parseFloat(mb) < 150 ? 'warn' : 'bad');
@@ -56,8 +77,11 @@ function renderPerfCards(snap) {
         setText('perf-mem-sub', '不可用');
     }
 
-    setText('perf-tris', snap.tris >= 0 ? formatNumber(snap.tris) : 'N/A');
-    setText('perf-verts', snap.verts >= 0 ? formatNumber(snap.verts) : 'N/A');
+    // 三角面 — 新字段 tricount, 旧字段 tris
+    const tricount = getField(snap, 'tricount', 'tris', -1);
+    const verts = snap.verts ?? -1;
+    setText('perf-tris', tricount >= 0 ? formatNumber(tricount) : 'N/A');
+    setText('perf-verts', verts >= 0 ? formatNumber(verts) : 'N/A');
 }
 
 function setText(id, text, klass) {
@@ -80,9 +104,10 @@ function formatNumber(n) {
 const CHART_COLORS = { fps: '#4ec9b0', dc: '#58a6ff', ft: '#d29922' };
 
 function renderPerfCharts() {
+    // 兼容新旧字段名
     drawLineChart('perf-fps-canvas', perfHistory.map(s => s.fps), { color: CHART_COLORS.fps, fill: true, min: 0 });
-    drawLineChart('perf-dc-canvas', perfHistory.map(s => s.drawCall >= 0 ? s.drawCall : null), { color: CHART_COLORS.dc });
-    drawLineChart('perf-ft-canvas', perfHistory.map(s => s.frameTime), { color: CHART_COLORS.ft });
+    drawLineChart('perf-dc-canvas', perfHistory.map(s => getField(s, 'draws', 'drawCall', -1)), { color: CHART_COLORS.dc });
+    drawLineChart('perf-ft-canvas', perfHistory.map(s => getField(s, 'frame', 'frameTime', 0)), { color: CHART_COLORS.ft });
 }
 
 function drawLineChart(canvasId, values, opts) {
@@ -100,10 +125,10 @@ function drawLineChart(canvasId, values, opts) {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    // 过滤 null
+    // 过滤 null / 负值（-1 表示不可用）
     const pts = [];
     values.forEach((v, i) => {
-        if (v === null || v === undefined) return;
+        if (v === null || v === undefined || v < 0) return;
         pts.push({ i, v });
     });
     if (pts.length < 2) return;
@@ -174,7 +199,41 @@ function withAlpha(color, alpha) {
     return color;
 }
 
+// ---- 段打点 (perf_mark) ----
+
+const perfMarks = [];         // 最近的 mark 记录 [{name, dur, ts}]
+const PERF_MARKS_MAX = 200;
+
+function handlePerfMark(msg) {
+    perfMarks.push(msg);
+    if (perfMarks.length > PERF_MARKS_MAX) {
+        perfMarks.shift();
+    }
+    renderPerfMarks();
+}
+
+function renderPerfMarks() {
+    const el = document.getElementById('perf-marks-list');
+    if (!el) return;
+
+    // 只显示最近 20 条
+    const recent = perfMarks.slice(-20).reverse();
+    el.innerHTML = recent.map(m => {
+        const f1 = (v) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(1) : v;
+        const durMs = f1(m.dur);
+        const cls = m.dur <= 16 ? 'good' : m.dur <= 33 ? 'warn' : 'bad';
+        return `<div class="perf-mark-item"><span class="perf-mark-name">${escapePerfHtml(m.name)}</span><span class="perf-value ${cls}">${durMs}ms</span><span class="perf-mark-ts">${m.ts ? m.ts.split('T')[1]?.split('.')?.[0] || '' : ''}</span></div>`;
+    }).join('');
+}
+
+function escapePerfHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+
 // 暴露给 debug-console.js 调用
 window.handlePerfSnapshot = handlePerfSnapshot;
 window.handlePerfHistory = handlePerfHistory;
-window.renderPerfCharts = renderPerfCharts;
+window.handlePerfCharts = renderPerfCharts;
+window.handlePerfMark = handlePerfMark;

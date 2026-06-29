@@ -12,3 +12,4 @@ uploads/*
 stats.db
 .codegraph
 .cursor
+diagnose*

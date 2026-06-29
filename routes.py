@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, Body
 from fastapi.responses import HTMLResponse, StreamingResponse
 
@@ -307,6 +308,56 @@ async def restart_service(name: str):
         raise HTTPException(404, f"Service '{name}' not found")
     svc.restart()
     return {"status": "ok", "service": svc.to_dict()}
+
+
+# ── Cocos MCP Proxy ────────────────────────────────────────────────────────
+
+COCOS_MCP_URL = "http://127.0.0.1:3000/mcp"
+
+
+@router.get("/api/cocos-mcp/health")
+async def cocos_mcp_health():
+    """Check if CocosCreator internal MCP server is reachable."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get("http://127.0.0.1:3000/health")
+            return {"reachable": resp.status_code == 200, "status_code": resp.status_code}
+    except Exception as e:
+        return {"reachable": False, "error": str(e)}
+
+
+@router.get("/api/cocos-mcp/tools")
+async def cocos_mcp_tools():
+    """Get tool list from CocosCreator internal MCP server."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # JSON-RPC request to list tools
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {}
+            }
+            resp = await client.post(COCOS_MCP_URL, json=payload)
+            data = resp.json()
+            if "result" in data and "tools" in data["result"]:
+                return {"tools": data["result"]["tools"]}
+            return {"tools": [], "error": data.get("error")}
+    except Exception as e:
+        return {"tools": [], "error": str(e)}
+
+
+@router.post("/api/cocos-mcp/call")
+async def cocos_mcp_call(request: Request):
+    """Forward a tool call to CocosCreator internal MCP server."""
+    try:
+        body = await request.json()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Forward the JSON-RPC request
+            resp = await client.post(COCOS_MCP_URL, json=body)
+            return resp.json()
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @router.get("/api/health")

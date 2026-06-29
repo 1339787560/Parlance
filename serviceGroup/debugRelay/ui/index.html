@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css">
+    <link rel="stylesheet" href="debug-ui.css?v=3">
 </head>
 <body>
     <div id="toolbar">
         <span id="status-indicator" class="disconnected">● 未连接</span>
         <span id="game-status" class="disconnected">游戏: 未连接</span>
+        <button id="runtime-reload-btn" class="toolbar-btn" onclick="reloadRuntime()" title="刷新 preview 页面，重载运行时代码">Reload Preview</button>
         <select class="theme-select" id="themeSelect" title="切换样式">
             <option value="">深色默认</option>
             <option value="red">朱砂红</option>
@@ -27,6 +28,7 @@
         <button id="tab-sources" class="tab" onclick="switchTab('sources')">Sources</button>
         <button id="tab-perf" class="tab" onclick="switchTab('perf')">Performance</button>
         <button id="tab-events" class="tab" onclick="switchTab('events')">Events</button>
+        <button id="tab-scene" class="tab" onclick="switchTab('scene')">Scene</button>
     </div>
 
     <div id="panel-console" class="panel active">
@@ -110,6 +112,10 @@
                 <div class="perf-chart-title">FrameTime (ms) 历史</div>
                 <canvas id="perf-ft-canvas" width="800" height="80"></canvas>
             </div>
+            <div class="perf-chart-wrap">
+                <div class="perf-chart-title">段耗时 (perf_mark)</div>
+                <div id="perf-marks-list" class="perf-marks-list"></div>
+            </div>
         </div>
     </div>
 
@@ -133,6 +139,20 @@
         </div>
     </div>
 
+    <!-- Scene Panel - 场景节点树浏览与控制 -->
+    <div id="panel-scene" class="panel">
+        <div id="scene-toolbar">
+            <button onclick="sceneRefreshTree()" title="刷新场景树">🔄 刷新</button>
+            <span id="scene-status"></span>
+        </div>
+        <div id="scene-container">
+            <div id="scene-tree"></div>
+            <div id="scene-detail">
+                <div class="scene-empty">点击节点查看详情</div>
+            </div>
+        </div>
+    </div>
+
     <!-- Quick Open Panel (Ctrl+P) -->
     <div id="quick-open" class="command-palette hidden">
         <div class="command-palette-input-wrap">
@@ -153,9 +173,10 @@
         <div id="search-results"></div>
     </div>
 
-    <script src="debug-console.js?v=3"></script>
-    <script src="debug-sources.js"></script>
-    <script src="debug-perf.js"></script>
-    <script src="debug-events.js?v=3"></script>
+    <script src="debug-console.js?v=7"></script>
+    <script src="debug-sources.js?v=2"></script>
+    <script src="debug-perf.js?v=3"></script>
+    <script src="debug-events.js?v=5"></script>
+    <script src="debug-scene.js?v=4"></script>
 </body>
 </html>

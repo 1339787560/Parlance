@@ -135,6 +135,34 @@ function evalExpr() {
     input.value = '';
 }
 
+// ---- Runtime Reload ----
+
+async function reloadRuntime() {
+    const btn = document.getElementById('runtime-reload-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Reloading...';
+    }
+    try {
+        const resp = await fetch('/api/runtime/reload', { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+            console.error('[runtime_reload] failed:', data);
+            alert('Reload failed: ' + (data.error || resp.status));
+        }
+    } catch (e) {
+        console.error('[runtime_reload] request failed:', e);
+        alert('Reload request failed: ' + e.message);
+    } finally {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Reload Preview';
+            }
+        }, 2000);
+    }
+}
+
 // ---- Tab Switching ----
 
 function switchTab(tab) {
@@ -153,6 +181,10 @@ function switchTab(tab) {
     // 首次切换到 events 面板时自动加载分类列表
     if (tab === 'events' && typeof eventsLoadCategories === 'function') {
         eventsLoadCategories();
+    }
+    // 切换到 scene 面板时自动加载场景树
+    if (tab === 'scene' && window.sceneRefreshTree) {
+        sceneRefreshTree();
     }
 }
 
@@ -252,6 +284,18 @@ function handleBrowserMessage(msg) {
 
         case 'perf_snapshot':
             if (window.handlePerfSnapshot) window.handlePerfSnapshot(msg);
+            break;
+
+        case 'perf_mark':
+            if (window.handlePerfMark) window.handlePerfMark(msg);
+            break;
+
+        case 'scene_tree':
+            if (window.handleSceneTree) window.handleSceneTree(msg);
+            break;
+
+        case 'scene_node_info':
+            if (window.handleSceneNodeInfo) window.handleSceneNodeInfo(msg);
             break;
 
         case 'perf_history':

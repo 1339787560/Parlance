@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -110,6 +111,11 @@ def main():
     svr = cfg.get("server", {})
     host = svr.get("host", "0.0.0.0")
     port = svr.get("port", 8080)
+
+    # Free own port before start (kill stale process from previous run)
+    from service_manager import ManagedService
+    ManagedService._free_port(port)
+    time.sleep(0.3)
 
     import uvicorn
     uvicorn.run(
