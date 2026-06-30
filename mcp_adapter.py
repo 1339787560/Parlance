@@ -3,11 +3,12 @@
 Cocos MCP Adapter — stdio MCP server，CocosCreator 编辑器操作的精简入口。
 
 设计：
-- 固定暴露核心工具 + 节点操作封装 + 通用入口（cocos_raw_tool）
-- cocos_status 检测三维度：进程/7456端口/3000端口
+- 固定暴露核心工具 + 节点/组件/Prefab 封装 + 通用入口（cocos_raw_tool）
+- cocos_status 检测三维度：进程/7456端口/3000端口（全部跨平台，不依赖 lsof/pgrep）
 - cocos_start 启动 CocosCreator 并等待 MCP 就绪（最多 60s）
 - 节点操作封装统一参数命名（nodeUuid），屏蔽底层 node-tools(uuid) / component-tools(nodeUuid) 不一致
 - cocos_set_component_property 自动推断 propertyType，免去手动指定
+- cocos_prefab_* 封装 prefab 加载/校验/挂脚本/保存等常用操作
 - cocos_raw_tool 用于访问非核心的底层 MCP 工具
 
 底层经 InfoServer REST API 转发到 CocosCreator 内部 MCP（:3000）。
@@ -18,7 +19,9 @@ Usage:
 
 import asyncio
 import json
+import socket
 import subprocess
+import sys
 from typing import Any, Dict, List
 
 import httpx
@@ -63,14 +66,63 @@ async def _post(path: str, data: Any = None, timeout: float = 30.0) -> Any:
 
 # ── Health check ────────────────────────────────────────────────────────────
 
+def _check_port_listening(port: int, host: str = "127.0.0.1", timeout: float = 1.0) -> bool:
+    """跨平台检测端口是否监听。用 socket 连接试探，不依赖 lsof/netstat。"""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def _check_process_running(name: str) -> bool:
+    """跨平台检测进程是否在运行。
+
+    Windows: tasklist /FO CSV /NH 子串匹配
+    POSIX:   优先 pgrep，缺失则回退 ps
+    """
+    name_l = name.lower()
+    if sys.platform == "win32":
+        try:
+            out = subprocess.check_output(
+                ["tasklist", "/FO", "CSV", "/NH"],
+                timeout=5, text=True, errors="ignore",
+            )
+            return any(name_l in line.lower() for line in out.splitlines())
+        except Exception:
+            return False
+    try:
+        r = subprocess.run(
+            ["pgrep", "-if", name],
+            capture_output=True, text=True, timeout=2,
+        )
+        return r.returncode == 0
+    except FileNotFoundError:
+        # 无 pgrep（部分精简环境）→ 回退 ps
+        try:
+            out = subprocess.check_output(
+                ["ps", "-ax", "-o", "comm="],
+                timeout=5, text=True, errors="ignore",
+            )
+            return any(name_l in line.lower() for line in out.splitlines())
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
 async def _detect_cocos_status() -> Dict[str, Any]:
     """检测 CocosCreator 状态，返回详细信息。
-    
-    检测三个维度：
-    1. CocosCreator 进程是否存在（pgrep）
-    2. 7456 端口是否监听（preview）
-    3. 3000 端口 MCP 服务是否可达
-    
+
+    检测三个维度（全部跨平台，不依赖 lsof/pgrep 等平台命令）：
+    1. CocosCreator 进程是否存在（win: tasklist / mac: pgrep+ps 回退）
+    2. 7456 端口是否监听（preview）— socket 连接试探
+    3. 3000 端口 MCP 服务是否可达 — HTTP /health
+
     返回：
     {
         "cocos_running": bool,      # CocosCreator 进程是否存在
@@ -87,28 +139,13 @@ async def _detect_cocos_status() -> Dict[str, Any]:
         "ready": False,
         "hint": ""
     }
-    
+
     # 1. 检查 CocosCreator 进程
-    try:
-        result = subprocess.run(
-            ["pgrep", "-f", "CocosCreator"],
-            capture_output=True, text=True, timeout=2
-        )
-        status["cocos_running"] = result.returncode == 0
-    except Exception:
-        pass
-    
-    # 2. 检查 7456 端口（preview）
-    try:
-        result = subprocess.run(
-            ["lsof", "-i", ":7456", "-sTCP:LISTEN"],
-            capture_output=True, text=True, timeout=2
-        )
-        # lsof 输出会截断进程名，CocosCreator 显示为 CocosCrea
-        status["preview_port"] = "CocosCrea" in result.stdout
-    except Exception:
-        pass
-    
+    status["cocos_running"] = _check_process_running("CocosCreator")
+
+    # 2. 检查 7456 端口（preview）— socket 连接试探
+    status["preview_port"] = _check_port_listening(7456)
+
     # 3. 检查 3000 端口（MCP 服务）
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
@@ -116,10 +153,10 @@ async def _detect_cocos_status() -> Dict[str, Any]:
             status["mcp_service"] = resp.status_code == 200
     except Exception:
         pass
-    
+
     # 4. 判断就绪状态
     status["ready"] = status["mcp_service"]
-    
+
     # 5. 生成提示
     if status["ready"]:
         status["hint"] = "CocosCreator 已启动，MCP 服务就绪"
@@ -127,7 +164,7 @@ async def _detect_cocos_status() -> Dict[str, Any]:
         status["hint"] = "CocosCreator 已启动，但 MCP 服务未就绪。请在编辑器中启动 MCP 扩展"
     else:
         status["hint"] = "CocosCreator 未启动。调用 cocos_start 启动"
-    
+
     return status
 
 
@@ -260,6 +297,70 @@ async def _cocos_raw_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str
     return await _call_mcp_tool(tool_name, arguments)
 
 
+# ── Prefab 操作封装 ─────────────────────────────────────────────────────────
+# 薄封装，统一参数命名（prefabPath 用 db:// 协议路径），底层 prefab_* 系列。
+# 给 agent 暴露常用 prefab 操作；其余可经 cocos_raw_tool 调用。
+
+async def _cocos_prefab_list(folder: str = "db://assets") -> Dict[str, Any]:
+    """列出项目内 prefab。底层 prefab_get_prefab_list。"""
+    return await _call_mcp_tool("prefab_get_prefab_list", {"folder": folder})
+
+
+async def _cocos_prefab_load(prefabPath: str) -> Dict[str, Any]:
+    """加载 prefab（编辑器态打开）。底层 prefab_load_prefab。返回含根节点 UUID。"""
+    return await _call_mcp_tool("prefab_load_prefab", {"prefabPath": prefabPath})
+
+
+async def _cocos_prefab_info(prefabPath: str) -> Dict[str, Any]:
+    """获取 prefab 详细信息。底层 prefab_get_prefab_info。"""
+    return await _call_mcp_tool("prefab_get_prefab_info", {"prefabPath": prefabPath})
+
+
+async def _cocos_prefab_validate(prefabPath: str) -> Dict[str, Any]:
+    """校验 prefab 文件格式。底层 prefab_validate_prefab。"""
+    return await _call_mcp_tool("prefab_validate_prefab", {"prefabPath": prefabPath})
+
+
+async def _cocos_prefab_save(prefabPath: str, nodeUuid: str) -> Dict[str, Any]:
+    """把节点改动回写为 prefab。底层 prefab_update_prefab。"""
+    return await _call_mcp_tool("prefab_update_prefab", {"prefabPath": prefabPath, "nodeUuid": nodeUuid})
+
+
+async def _cocos_prefab_instantiate(prefabPath: str, parentUuid: str = "", position: Dict[str, float] = None) -> Dict[str, Any]:
+    """在场景实例化 prefab。底层 prefab_instantiate_prefab。"""
+    arguments: Dict[str, Any] = {"prefabPath": prefabPath}
+    if parentUuid:
+        arguments["parentUuid"] = parentUuid
+    if position:
+        arguments["position"] = position
+    return await _call_mcp_tool("prefab_instantiate_prefab", arguments)
+
+
+async def _cocos_prefab_create(nodeUuid: str, savePath: str, prefabName: str) -> Dict[str, Any]:
+    """从场景节点创建 prefab。底层 prefab_create_prefab。"""
+    return await _call_mcp_tool("prefab_create_prefab", {
+        "nodeUuid": nodeUuid,
+        "savePath": savePath,
+        "prefabName": prefabName,
+    })
+
+
+async def _cocos_prefab_duplicate(sourcePrefabPath: str, targetPrefabPath: str, newPrefabName: str = "") -> Dict[str, Any]:
+    """复制 prefab。底层 prefab_duplicate_prefab。"""
+    arguments: Dict[str, Any] = {
+        "sourcePrefabPath": sourcePrefabPath,
+        "targetPrefabPath": targetPrefabPath,
+    }
+    if newPrefabName:
+        arguments["newPrefabName"] = newPrefabName
+    return await _call_mcp_tool("prefab_duplicate_prefab", arguments)
+
+
+async def _cocos_prefab_revert(nodeUuid: str) -> Dict[str, Any]:
+    """把 prefab 实例还原为原始。底层 prefab_revert_prefab。"""
+    return await _call_mcp_tool("prefab_revert_prefab", {"nodeUuid": nodeUuid})
+
+
 # ── Node operation wrappers (统一参数命名，屏蔽底层不一致) ──────────────────
 # 底层 node-tools.ts 用 `uuid`，component-tools.ts 用 `nodeUuid`，这里统一为 `nodeUuid`
 
@@ -287,6 +388,11 @@ async def _cocos_create_node(name: str, parentUuid: str = "", components: List[s
 async def _cocos_add_component(nodeUuid: str, componentType: str) -> Dict[str, Any]:
     """添加组件：统一 nodeUuid + componentType。底层 component_add_component（参数已一致）。"""
     return await _call_mcp_tool("component_add_component", {"nodeUuid": nodeUuid, "componentType": componentType})
+
+
+async def _cocos_attach_script(nodeUuid: str, scriptPath: str) -> Dict[str, Any]:
+    """给节点挂脚本组件：统一 nodeUuid + scriptPath。底层 component_attach_script。"""
+    return await _call_mcp_tool("component_attach_script", {"nodeUuid": nodeUuid, "scriptPath": scriptPath})
 
 
 async def _cocos_set_component_property(
@@ -471,6 +577,133 @@ def _tool_schemas() -> List[Tool]:
                 "required": ["nodeUuid", "componentType", "property", "value"],
             },
         ),
+        # ── Prefab 操作封装 ──
+        Tool(
+            name="cocos_prefab_list",
+            description="列出项目内 prefab。底层 prefab_get_prefab_list。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "folder": {"type": "string", "description": "文件夹路径（可选，默认 db://assets）", "default": "db://assets"},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="cocos_prefab_load",
+            description="加载（编辑器态打开）prefab，返回含根节点 UUID。底层 prefab_load_prefab。挂脚本/改属性前先 load 拿 nodeUuid。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prefabPath": {"type": "string", "description": "prefab 资源路径，如 db://assets/plugins/debug/prefabs/DebugView.prefab"},
+                },
+                "required": ["prefabPath"],
+            },
+        ),
+        Tool(
+            name="cocos_prefab_info",
+            description="获取 prefab 详细信息。底层 prefab_get_prefab_info。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prefabPath": {"type": "string", "description": "prefab 资源路径"},
+                },
+                "required": ["prefabPath"],
+            },
+        ),
+        Tool(
+            name="cocos_prefab_validate",
+            description="校验 prefab 文件格式。底层 prefab_validate_prefab。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prefabPath": {"type": "string", "description": "prefab 资源路径"},
+                },
+                "required": ["prefabPath"],
+            },
+        ),
+        Tool(
+            name="cocos_prefab_save",
+            description="把节点改动回写为 prefab（保存）。底层 prefab_update_prefab。改完 prefab 后必须 save 才落盘。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prefabPath": {"type": "string", "description": "prefab 资源路径"},
+                    "nodeUuid": {"type": "string", "description": "改动的节点 UUID（load 返回的根节点）"},
+                },
+                "required": ["prefabPath", "nodeUuid"],
+            },
+        ),
+        Tool(
+            name="cocos_prefab_instantiate",
+            description="在场景实例化 prefab。底层 prefab_instantiate_prefab。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prefabPath": {"type": "string", "description": "prefab 资源路径"},
+                    "parentUuid": {"type": "string", "description": "父节点 UUID（可选）"},
+                    "position": {
+                        "type": "object",
+                        "description": "初始位置（可选）",
+                        "properties": {
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                            "z": {"type": "number"},
+                        },
+                    },
+                },
+                "required": ["prefabPath"],
+            },
+        ),
+        Tool(
+            name="cocos_prefab_create",
+            description="从场景节点创建 prefab。底层 prefab_create_prefab。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "nodeUuid": {"type": "string", "description": "源节点 UUID"},
+                    "savePath": {"type": "string", "description": "保存路径，如 db://assets/prefabs/MyPrefab.prefab"},
+                    "prefabName": {"type": "string", "description": "prefab 名称"},
+                },
+                "required": ["nodeUuid", "savePath", "prefabName"],
+            },
+        ),
+        Tool(
+            name="cocos_prefab_duplicate",
+            description="复制 prefab。底层 prefab_duplicate_prefab。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sourcePrefabPath": {"type": "string", "description": "源 prefab 路径"},
+                    "targetPrefabPath": {"type": "string", "description": "目标 prefab 路径"},
+                    "newPrefabName": {"type": "string", "description": "新 prefab 名称（可选）"},
+                },
+                "required": ["sourcePrefabPath", "targetPrefabPath"],
+            },
+        ),
+        Tool(
+            name="cocos_prefab_revert",
+            description="把 prefab 实例还原为原始。底层 prefab_revert_prefab。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "nodeUuid": {"type": "string", "description": "prefab 实例节点 UUID"},
+                },
+                "required": ["nodeUuid"],
+            },
+        ),
+        Tool(
+            name="cocos_attach_script",
+            description="给节点挂脚本组件。底层 component_attach_script。挂自定义 TS 脚本到节点（含 prefab 根节点）。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "nodeUuid": {"type": "string", "description": "节点 UUID"},
+                    "scriptPath": {"type": "string", "description": "脚本资源路径，如 db://assets/plugins/debug/scripts/DebugView.ts"},
+                },
+                "required": ["nodeUuid", "scriptPath"],
+            },
+        ),
         Tool(
             name="cocos_raw_tool",
             description=(
@@ -562,6 +795,42 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 value=args["value"],
                 propertyType=args.get("propertyType", ""),
             )
+        elif name == "cocos_attach_script":
+            result = await _cocos_attach_script(
+                nodeUuid=args["nodeUuid"],
+                scriptPath=args["scriptPath"],
+            )
+        # ── Prefab 操作 ──
+        elif name == "cocos_prefab_list":
+            result = await _cocos_prefab_list(folder=args.get("folder", "db://assets"))
+        elif name == "cocos_prefab_load":
+            result = await _cocos_prefab_load(prefabPath=args["prefabPath"])
+        elif name == "cocos_prefab_info":
+            result = await _cocos_prefab_info(prefabPath=args["prefabPath"])
+        elif name == "cocos_prefab_validate":
+            result = await _cocos_prefab_validate(prefabPath=args["prefabPath"])
+        elif name == "cocos_prefab_save":
+            result = await _cocos_prefab_save(prefabPath=args["prefabPath"], nodeUuid=args["nodeUuid"])
+        elif name == "cocos_prefab_instantiate":
+            result = await _cocos_prefab_instantiate(
+                prefabPath=args["prefabPath"],
+                parentUuid=args.get("parentUuid", ""),
+                position=args.get("position"),
+            )
+        elif name == "cocos_prefab_create":
+            result = await _cocos_prefab_create(
+                nodeUuid=args["nodeUuid"],
+                savePath=args["savePath"],
+                prefabName=args["prefabName"],
+            )
+        elif name == "cocos_prefab_duplicate":
+            result = await _cocos_prefab_duplicate(
+                sourcePrefabPath=args["sourcePrefabPath"],
+                targetPrefabPath=args["targetPrefabPath"],
+                newPrefabName=args.get("newPrefabName", ""),
+            )
+        elif name == "cocos_prefab_revert":
+            result = await _cocos_prefab_revert(nodeUuid=args["nodeUuid"])
         elif name == "cocos_raw_tool":
             result = await _cocos_raw_tool(
                 tool_name=args["tool_name"],

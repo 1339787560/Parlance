@@ -120,10 +120,17 @@ async def _enforce_whitelist(websocket: WebSocket) -> bool:
     """白名单校验。返回 True=放行,False=已拒绝并 close。"""
     if not whitelist_enabled:
         return True
-    client_ip = websocket.client.host if websocket.client else ""
+    client_ip = websocket.client.host if websocket.client else "<unknown>"
     if client_ip in whitelist_ips:
         return True
-    print(f"[debug-relay] reject WS from {client_ip} (not in whitelist)")
+    # 拒绝的连接：打印 IP + 时间 + 端点路径，便于排查未授权访问
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    path = websocket.url.path if websocket.url else "?"
+    print(
+        f"[debug-relay] {ts} REJECT WS connection from {client_ip} "
+        f"(endpoint={path}, not in whitelist={sorted(whitelist_ips)})",
+        flush=True,
+    )
     try:
         await websocket.close(code=1008, reason="ip_not_allowed")
     except Exception:

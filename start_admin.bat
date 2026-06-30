@@ -17,7 +17,12 @@ echo   CWD: %cd%
 echo ============================================
 echo.
 
-"D:\Compiler\python\python.exe" main.py
+set "VENV_PYTHON=.venv\Scripts\python.exe"
+if exist "%VENV_PYTHON%" (
+    "%VENV_PYTHON%" run.py
+) else (
+    "D:\Compiler\python\python.exe" run.py
+)
 
 echo.
 pause

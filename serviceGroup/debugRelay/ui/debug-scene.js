@@ -126,6 +126,8 @@ function sceneSelectNode(path) {
     sceneSelectedPath = path;
     sceneRenderTree();
     sceneRenderInspectorLoading(path);
+    // 点节点前先刷新场景树，避免缓存的 path 已过期
+    sceneSend({ type: 'scene_get_tree' });
     sceneSend({ type: 'scene_get_node_info', path });
 }
 
