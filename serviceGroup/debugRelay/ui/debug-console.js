@@ -63,6 +63,7 @@ function shouldShow(entry) {
         console_warn: 'warn',
         console_error: 'error',
         console_info: 'info',
+        console_debug: 'log',
     };
     const filterName = typeMap[entry.type] || 'log';
     return filters[filterName];
@@ -94,7 +95,11 @@ function renderEntry(entry, autoScroll) {
     // 前缀图标替代行号
     const iconMap = { log: '›', warn: '⚠', error: '✕', info: 'ℹ' };
     const icon = iconMap[typeClass] || '›';
-    div.innerHTML = `<span class="log-icon">${icon}</span>${escapeHtml(entry.content)}`;
+    // tag（来自 LoggerCenter._output 的 LogTag，如 Socket/Login）单独高亮显示
+    const tagHtml = entry.tag
+        ? `<span class="log-tag">${escapeHtml(entry.tag)}</span>`
+        : '';
+    div.innerHTML = `<span class="log-icon">${icon}</span>${tagHtml}${escapeHtml(entry.content)}`;
 
     output.appendChild(div);
 
@@ -248,6 +253,7 @@ function handleBrowserMessage(msg) {
         case 'console_warn':
         case 'console_error':
         case 'console_info':
+        case 'console_debug':
             // 实时消息
             addConsoleEntry(msg);
             break;
