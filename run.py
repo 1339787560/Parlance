@@ -36,6 +36,11 @@ if os.name == "nt":
 else:
     msvcrt = None
 
+if os.name != "nt":
+    import signal
+    import tty
+    import termios
+
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
@@ -51,33 +56,51 @@ def _load_port() -> int:
 
 
 def _find_python() -> str:
-    venv_py = PROJECT_DIR / ".venv" / "Scripts" / "python.exe"
+    if os.name == "nt":
+        venv_py = PROJECT_DIR / ".venv" / "Scripts" / "python.exe"
+    else:
+        venv_py = PROJECT_DIR / ".venv" / "bin" / "python"
     if venv_py.exists():
         return str(venv_py)
     return sys.executable
 
 
 def _is_interactive() -> bool:
-    return os.name == "nt" and sys.stdin.isatty() and msvcrt is not None
+    if not sys.stdin.isatty():
+        return False
+    if os.name == "nt":
+        return msvcrt is not None
+    return True  # POSIX with tty
 
 
 def _listeners(port: int) -> List[int]:
     """Return PIDs currently listening on the given port."""
     pids: set[int] = set()
-    if os.name != "nt":
-        return []
     try:
-        out = subprocess.run(
-            ["netstat", "-ano"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout
-        for line in out.splitlines():
-            if "LISTENING" in line and f":{port}" in line:
-                parts = line.strip().split()
-                if parts and parts[-1].isdigit():
-                    pids.add(int(parts[-1]))
+        if os.name == "nt":
+            out = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout
+            for line in out.splitlines():
+                if "LISTENING" in line and f":{port}" in line:
+                    parts = line.strip().split()
+                    if parts and parts[-1].isdigit():
+                        pids.add(int(parts[-1]))
+        else:
+            # macOS / Linux: use lsof
+            out = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout
+            for line in out.splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    pids.add(int(line))
     except Exception:
         pass
     return sorted(pids)
@@ -105,11 +128,17 @@ def _ensure_port_free(port: int, timeout: float = 15) -> bool:
             return True
         for pid in pids:
             logger.info("Killing PID %d to free port %d", pid, port)
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True,
-                timeout=5,
-            )
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True,
+                    timeout=5,
+                )
+            else:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
         time.sleep(0.5)
     return not _listeners(port) and _can_bind(port)
 
@@ -192,13 +221,28 @@ Hotkeys:
             self._reloading = False
             self.stop()
 
+    @staticmethod
+    def _getch_posix() -> str:
+        """Read a single character from stdin on POSIX (macOS/Linux)."""
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
     def _input_loop(self):
         while self._running:
             if self._reloading:
                 time.sleep(0.2)
                 continue
             try:
-                ch = msvcrt.getch().decode("utf-8", errors="ignore").lower()
+                if os.name == "nt" and msvcrt is not None:
+                    ch = msvcrt.getch().decode("utf-8", errors="ignore").lower()
+                else:
+                    ch = self._getch_posix().lower()
             except Exception:
                 time.sleep(0.2)
                 continue

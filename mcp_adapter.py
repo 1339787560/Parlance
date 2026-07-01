@@ -411,7 +411,11 @@ async def _cocos_set_component_property(
     else:
         # 自动推断类型
         if isinstance(value, str):
-            arguments["propertyType"] = "string"
+            # hex 颜色字符串(#RRGGBB / #RRGGBBAA)推断为 color,否则 string
+            if value.startswith("#") and len(value) in (7, 9) and all(c in "0123456789abcdefABCDEF" for c in value[1:]):
+                arguments["propertyType"] = "color"
+            else:
+                arguments["propertyType"] = "string"
         elif isinstance(value, bool):
             arguments["propertyType"] = "boolean"
         elif isinstance(value, (int, float)):
@@ -419,6 +423,8 @@ async def _cocos_set_component_property(
         elif isinstance(value, dict):
             if "width" in value and "height" in value:
                 arguments["propertyType"] = "size"
+            elif "x" in value and "y" in value and "z" in value:
+                arguments["propertyType"] = "vec3"
             elif "x" in value and "y" in value:
                 arguments["propertyType"] = "vec2"
             elif "r" in value and "g" in value:
