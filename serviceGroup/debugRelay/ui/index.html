@@ -98,6 +98,11 @@
                 <div class="perf-value" id="perf-tris">-</div>
                 <div class="perf-sub" id="perf-verts">-</div>
             </div>
+            <div class="perf-card">
+                <div class="perf-label">CPU 占用 (帧预算)</div>
+                <div class="perf-value" id="perf-cpu-total">-</div>
+                <div class="perf-sub" id="perf-cpu-detail">logic / phys / render / present</div>
+            </div>
         </div>
         <div id="perf-charts">
             <div class="perf-chart-wrap">
@@ -111,6 +116,10 @@
             <div class="perf-chart-wrap">
                 <div class="perf-chart-title">FrameTime (ms) 历史</div>
                 <canvas id="perf-ft-canvas" width="800" height="80"></canvas>
+            </div>
+            <div class="perf-chart-wrap">
+                <div class="perf-chart-title">CPU 占用率 (%) 历史 · 100% = 帧预算 16.67ms</div>
+                <canvas id="perf-cpu-canvas" width="800" height="80"></canvas>
             </div>
             <div class="perf-chart-wrap">
                 <div class="perf-chart-title">段耗时 (perf_mark)</div>
@@ -144,6 +153,10 @@
         <div id="scene-toolbar">
             <button onclick="sceneRefreshTree()" title="刷新场景树">🔄 刷新</button>
             <span id="scene-status"></span>
+            <span class="scene-perf-badges">
+                <span class="scene-perf-badge">FPS <b id="scene-fps">-</b></span>
+                <span class="scene-perf-badge">DC <b id="scene-dc">-</b></span>
+            </span>
         </div>
         <div id="scene-container">
             <div id="scene-tree"></div>

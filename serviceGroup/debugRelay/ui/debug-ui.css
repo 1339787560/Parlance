@@ -612,6 +612,23 @@ body {
 
 #scene-toolbar button:hover { background: var(--hover-bg); }
 
+/* Scene 工具栏右侧实时性能徽标（FPS / DrawCall） */
+.scene-perf-badges {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text);
+}
+.scene-perf-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  white-space: nowrap;
+}
+.scene-perf-badge b { color: var(--accent); }
+
 #scene-container {
   display: flex;
   flex: 1;

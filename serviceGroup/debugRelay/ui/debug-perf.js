@@ -31,6 +31,7 @@ function handlePerfSnapshot(snap) {
     }
     renderPerfCards(snap);
     renderPerfCharts();
+    updateScenePerfBadges(snap);
 }
 
 function handlePerfHistory(snapshots) {
@@ -42,6 +43,22 @@ function handlePerfHistory(snapshots) {
     if (perfHistory.length > 0) {
         renderPerfCards(perfHistory[perfHistory.length - 1]);
         renderPerfCharts();
+        updateScenePerfBadges(perfHistory[perfHistory.length - 1]);
+    }
+}
+
+/** Scene 工具栏右侧实时 FPS / DrawCall 徽标 */
+function updateScenePerfBadges(snap) {
+    const fpsEl = document.getElementById('scene-fps');
+    const dcEl = document.getElementById('scene-dc');
+    if (fpsEl && typeof snap.fps === 'number' && snap.fps >= 0) {
+        fpsEl.textContent = snap.fps.toFixed(0);
+    } else if (fpsEl) {
+        fpsEl.textContent = '-';
+    }
+    const draws = getField(snap, 'draws', 'drawCall', -1);
+    if (dcEl) {
+        dcEl.textContent = draws >= 0 ? String(draws) : '-';
     }
 }
 
@@ -82,6 +99,30 @@ function renderPerfCards(snap) {
     const verts = snap.verts ?? -1;
     setText('perf-tris', tricount >= 0 ? formatNumber(tricount) : 'N/A');
     setText('perf-verts', verts >= 0 ? formatNumber(verts) : 'N/A');
+
+    // CPU 阶段（占 60Hz 帧预算 16.67ms 的百分比，近似 CPU 占用率）
+    // profiler.stats 给的是 ms，转 % 更直观。基准 16.67ms = 100%。
+    const FRAME_BUDGET_MS = 1000 / 60;
+    const logic = snap.logic ?? -1;
+    const physics = snap.physics ?? -1;
+    const render = snap.render ?? -1;
+    const present = snap.present ?? -1;
+    const cpuParts = [logic, physics, render, present];
+    const validParts = cpuParts.filter(v => typeof v === 'number' && v >= 0);
+    if (validParts.length > 0) {
+        const totalMs = validParts.reduce((a, b) => a + b, 0);
+        const totalPct = totalMs / FRAME_BUDGET_MS * 100;
+        setText('perf-cpu-total', totalPct.toFixed(0) + '%',
+            totalPct <= 60 ? 'good' : totalPct <= 90 ? 'warn' : 'bad');
+        const pct = (v) => (typeof v === 'number' && v >= 0)
+            ? (v / FRAME_BUDGET_MS * 100).toFixed(0) + '%'
+            : '-';
+        setText('perf-cpu-detail',
+            `logic ${pct(logic)} · phys ${pct(physics)} · render ${pct(render)} · present ${pct(present)}`);
+    } else {
+        setText('perf-cpu-total', 'N/A');
+        setText('perf-cpu-detail', '不可用');
+    }
 }
 
 function setText(id, text, klass) {
@@ -101,7 +142,7 @@ function formatNumber(n) {
 // (实测 strokeStyle='var(--accent,#4ec9b0)' 实际生效 '#000000'), 黑线画在深色
 // canvas 背景 (var(--bg)=#0d1117) 上对比度极低 → 折线不可见 (狼尊 LV999 下复现)。
 // 决策: 只要可见、不跟主题变。这些色在深背景上高对比稳定, 且 --bg 不随主题变。
-const CHART_COLORS = { fps: '#4ec9b0', dc: '#58a6ff', ft: '#d29922' };
+const CHART_COLORS = { fps: '#4ec9b0', dc: '#58a6ff', ft: '#d29922', cpu: '#f85149' };
 
 // 保存每个 canvas 的绘制参数，供 hover 时查最近数据点
 const _chartMeta = {};  // { canvasId: { pts, min, max, xStep, padX, padY, w, h, color, unit, decimals } }
@@ -110,6 +151,14 @@ function renderPerfCharts() {
     drawLineChart('perf-fps-canvas', perfHistory.map(s => s.fps), { color: CHART_COLORS.fps, fill: true, min: 0, unit: '', decimals: 0 });
     drawLineChart('perf-dc-canvas', perfHistory.map(s => getField(s, 'draws', 'drawCall', -1)), { color: CHART_COLORS.dc, unit: '', decimals: 0 });
     drawLineChart('perf-ft-canvas', perfHistory.map(s => getField(s, 'frame', 'frameTime', 0)), { color: CHART_COLORS.ft, unit: 'ms', decimals: 1 });
+    // CPU 占用率（% = 阶段 ms 之和 / 60Hz 帧预算 16.67ms * 100）
+    const FRAME_BUDGET_MS_CHART = 1000 / 60;
+    drawLineChart('perf-cpu-canvas', perfHistory.map(s => {
+        const parts = [s.logic, s.physics, s.render, s.present]
+            .filter(v => typeof v === 'number' && v >= 0);
+        if (parts.length === 0) return -1;
+        return parts.reduce((a, b) => a + b, 0) / FRAME_BUDGET_MS_CHART * 100;
+    }), { color: CHART_COLORS.cpu, min: 0, unit: '%', decimals: 0 });
     bindPerfHover();
 }
 
@@ -263,7 +312,7 @@ function bindPerfHover() {
     if (_hoverBound) return;
     _hoverBound = true;
 
-    ['perf-fps-canvas', 'perf-dc-canvas', 'perf-ft-canvas'].forEach(id => {
+    ['perf-fps-canvas', 'perf-dc-canvas', 'perf-ft-canvas', 'perf-cpu-canvas'].forEach(id => {
         const canvas = document.getElementById(id);
         if (!canvas) return;
 
