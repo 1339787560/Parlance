@@ -103,6 +103,11 @@ console_seq = 0  # 消息序号
 perf_buffer: list = []
 PERF_BUFFER_MAX = 600
 
+# HTTP /api/eval 与 /api/touch 关联: 经 game_ws 发 eval, 异步等 eval_result。
+# 串行化(单 pending future), 适配 MCP 工具顺序调用。
+_eval_lock = asyncio.Lock()
+_pending_eval_future: "asyncio.Future | None" = None
+
 # 源文件目录
 src_dir: Path = None
 
@@ -263,6 +268,91 @@ async def health():
     }
 
 
+# ---- HTTP API for MCP/agent (perf/touch/eval) ----
+
+async def _send_eval(expr: str, timeout: float = 5.0) -> dict:
+    """通过 game_ws 发 eval, 关联异步返回的 eval_result(串行, 单 pending future)。"""
+    global _pending_eval_future
+    if game_ws is None:
+        return {"error": "game not connected"}
+    async with _eval_lock:
+        loop = asyncio.get_running_loop()
+        _pending_eval_future = loop.create_future()
+        try:
+            await game_ws.send_json({"type": MsgType.EVAL, "expr": expr})
+        except Exception as e:
+            _pending_eval_future = None
+            return {"error": f"send failed: {e}"}
+        try:
+            result = await asyncio.wait_for(_pending_eval_future, timeout=timeout)
+        except asyncio.TimeoutError:
+            result = {"error": "eval timeout"}
+        finally:
+            _pending_eval_future = None
+        return result
+
+
+@app.get("/api/perf")
+async def api_perf(limit: int = 20):
+    """返回最近 N 条性能快照(FPS/DrawCall/CPU阶段/内存)。游戏不在线时 latest 为空。"""
+    n = max(0, min(limit, PERF_BUFFER_MAX))
+    return {
+        "game_connected": game_ws is not None,
+        "count": len(perf_buffer),
+        "latest": perf_buffer[-n:] if n else [],
+    }
+
+
+@app.post("/api/eval")
+async def api_eval(req: Request):
+    """在游戏运行时执行 JS 表达式, 返回 eval_result。body: {"expr": "...", "timeout"?: 5}."""
+    body = await req.json()
+    expr = body.get("expr", "")
+    if not expr:
+        return {"error": "missing expr"}
+    return await _send_eval(expr, timeout=float(body.get("timeout", 5.0)))
+
+
+# Cocos 3.8.1 触摸派发: 构造 EventTouch 在场景上 dispatch。
+# 注意: 顶层 scene.dispatchEvent 只触发 scene 自身监听器; 命中特定 UI 需在 expr 内
+# 改用 node.dispatchEvent(event) 指定目标节点(可由 cocos_touch 的 target 参数扩展)。
+def _touch_js(x: float, y: float, touch_type: str) -> str:
+    return (
+        "(function(x,y,t){try{"
+        # preview 路径: 派发浏览器 MouseEvent 到 canvas -> Cocos 原生输入管线(命中检测+传播+Button 响应)
+        "const c=document.querySelector('canvas');"
+        "if(c){"
+        "const mt=t.endsWith('start')?'mousedown':t.endsWith('move')?'mousemove':t.endsWith('cancel')?'mouseleave':'mouseup';"
+        "c.dispatchEvent(new MouseEvent(mt,{clientX:x,clientY:y,bubbles:true}));"
+        "return 'browser '+mt+' '+x+','+y;"
+        "}"
+        # 真机兜底: 无 canvas, 合成 cc.EventTouch 派发场景(无命中检测, 命中特定 UI 需 cocos_eval 指定 node.dispatchEvent)
+        "const t0=new cc.Touch(0,x,y);"
+        "const ev=new cc.EventTouch([t0],true,t);"
+        "ev.setLocation(x,y);"
+        "const s=cc.director.getScene();"
+        "if(s){s.dispatchEvent(ev);}"
+        "return 'synthetic '+t+' '+x+','+y;"
+        "}catch(e){return 'err:'+e;}"
+        f"}})({x},{y},'{touch_type}')"
+    )
+
+
+@app.post("/api/touch")
+async def api_touch(req: Request):
+    """派发触摸到游戏客户端(eval 转发, 零游戏端改动)。body: {"x","y","type"[:start|move|end|cancel]}."""
+    body = await req.json()
+    x = float(body.get("x", 0))
+    y = float(body.get("y", 0))
+    t = body.get("type", "touch-start")
+    norm = {"start": "touch-start", "down": "touch-start",
+            "move": "touch-move",
+            "end": "touch-end", "up": "touch-end",
+            "cancel": "touch-cancel"}
+    t = norm.get(t, t if t.startswith("touch-") else "touch-start")
+    return await _send_eval(_touch_js(x, y, t), timeout=3.0)
+
+
 # ---- WebSocket Handling ----
 
 async def handle_game_websocket(websocket: WebSocket):
@@ -419,6 +509,9 @@ async def handle_game_message(msg: dict):
 
     # eval 结果：直接转发给浏览器（无 type 字段，靠 eval_result 判断）
     if "eval_result" in msg:
+        # 关联 /api/eval 与 /api/touch 的 pending future(MCP HTTP 调用等结果)
+        if _pending_eval_future is not None and not _pending_eval_future.done():
+            _pending_eval_future.set_result(msg)
         await broadcast_to_browsers(msg)
 
 
