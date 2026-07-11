@@ -19,7 +19,7 @@ import asyncio
 import argparse
 from pathlib import Path
 from datetime import datetime, date
-from typing import Set
+from typing import Set, Dict
 
 try:
     import yaml  # type: ignore
@@ -31,6 +31,8 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 import uvicorn
+
+from pydantic import BaseModel
 
 
 # ---- Config ----
@@ -105,6 +107,10 @@ PERF_BUFFER_MAX = 600
 
 # 源文件目录
 src_dir: Path = None
+
+# Pending futures for REST→WS bridge (single in-flight per response key).
+# Keyed by response MsgType value: "scene_tree" / "scene_node_info" / "eval".
+_response_futures: Dict[str, "asyncio.Future"] = {}
 
 # 重要事件存储目录（按日分割 JSONL 文件）
 events_dir: Path = None
@@ -414,11 +420,13 @@ async def handle_game_message(msg: dict):
         await broadcast_to_browsers(msg)
 
     elif msg_type in (MsgType.SCENE_TREE, MsgType.SCENE_NODE_INFO):
-        # 场景树/节点详情：直接转发给浏览器
+        # 场景树/节点详情：先 resolve REST 等待中的 future，再转发给浏览器
+        _resolve_response_future(msg_type, msg)
         await broadcast_to_browsers(msg)
 
-    # eval 结果：直接转发给浏览器（无 type 字段，靠 eval_result 判断）
+    # eval 结果：resolve REST 等待中的 future（无 type 字段，靠 eval_result 判断），再转发给浏览器
     if "eval_result" in msg:
+        _resolve_response_future(MsgType.EVAL, msg)
         await broadcast_to_browsers(msg)
 
 
@@ -566,6 +574,124 @@ async def reload_runtime():
         "message": "runtime_reload sent to game",
         "ts": msg["ts"],
     }
+
+
+# ---- REST→WS Bridge (请求/响应关联, 单飞 per response_key) ----
+
+class EvalRequest(BaseModel):
+    expr: str
+    timeout: float = 5.0
+
+
+def _resolve_response_future(key: str, msg: dict) -> None:
+    """把游戏端响应消息 resolve 给等待中的 REST future (若存在)。"""
+    fut = _response_futures.pop(key, None)
+    if fut is not None and not fut.done():
+        try:
+            fut.set_result(msg)
+        except asyncio.InvalidStateError:
+            pass
+
+
+async def _send_game_and_await(msg: dict, response_key: str, timeout: float = 8.0):
+    """通过 /ws/game 发消息给游戏端, 等待匹配响应。
+
+    单飞模式: 同一 response_key 仅一个在飞 future, 新请求覆盖旧 (旧 future cancel)。
+    响应经 handle_game_message 拦截 resolve, 同时照常广播给浏览器。
+    """
+    if not game_ws:
+        return JSONResponse({
+            "ok": False,
+            "error": "game not connected",
+            "hint": "Open/refresh preview first, wait for game_connected=true",
+        }, status_code=503)
+
+    loop = asyncio.get_event_loop()
+    fut = loop.create_future()
+    stale = _response_futures.get(response_key)
+    if stale is not None and not stale.done():
+        stale.cancel()
+    _response_futures[response_key] = fut
+
+    try:
+        await game_ws.send_json(msg)
+    except Exception as e:
+        _response_futures.pop(response_key, None)
+        return JSONResponse({"ok": False, "error": f"send failed: {e}"}, status_code=500)
+
+    try:
+        return await asyncio.wait_for(fut, timeout=timeout)
+    except asyncio.TimeoutError:
+        _response_futures.pop(response_key, None)
+        return JSONResponse({"ok": False, "error": f"timeout waiting for {response_key}"}, status_code=504)
+
+
+@app.post("/api/eval")
+async def api_eval(req: EvalRequest):
+    """在游戏运行时执行 JS 表达式, 返回 {eval_result: "..."}。
+
+    Agent 调用:
+      curl -X POST http://host:5003/api/eval -H "Content-Type: application/json" \\
+           -d '{"expr":"1+1","timeout":5}'
+
+    relay 转发 {type:"eval", expr} 给 /ws/game, 等待 eval_result 返回。
+    """
+    msg = {"type": MsgType.EVAL, "expr": req.expr}
+    # 游戏端 eval 自身有 timeout; relay 等待要略宽
+    return await _send_game_and_await(msg, MsgType.EVAL, timeout=max(req.timeout + 3.0, 8.0))
+
+
+@app.get("/api/scene_tree")
+async def api_scene_tree():
+    """获取运行中场景的节点树快照 (name/path/active/components/children)。
+
+    返回 game 端原消息: {type:"scene_tree", tree:{...}}。
+    """
+    return await _send_game_and_await({"type": MsgType.SCENE_GET_TREE}, MsgType.SCENE_TREE, timeout=8.0)
+
+
+@app.get("/api/scene_node_info")
+async def api_scene_node_info(path: str):
+    """获取指定路径节点的详情 (position/scale/eulerAngles/components)。
+
+    path 形如 "Scene/Canvas/Btn_Start" (与 scene_get_tree 返回的 path 字段一致)。
+    """
+    return await _send_game_and_await(
+        {"type": MsgType.SCENE_GET_NODE_INFO, "path": path},
+        MsgType.SCENE_NODE_INFO, timeout=8.0,
+    )
+
+
+@app.get("/api/perf")
+async def api_perf(limit: int = 20):
+    """读最近 N 条 perf_snapshot (从 perf_buffer 直接切片, 无需游戏端往返)。"""
+    n = max(1, min(int(limit), len(perf_buffer)))
+    return {
+        "snapshots": perf_buffer[-n:] if n else [],
+        "count": n,
+        "buffer_total": len(perf_buffer),
+    }
+
+
+@app.get("/api/console")
+async def api_console(limit: int = 100, level: str = None, since_seq: int = 0):
+    """读 console_buffer (从内存直接切片)。limit/since_seq/level 过滤。
+
+    level 匹配 console_xxx 后缀 (log/warn/error/info)。
+    """
+    msgs = console_buffer
+    if since_seq > 0:
+        msgs = [m for m in msgs if m.get("seq", 0) > since_seq]
+    if level:
+        lv = level.lower()
+        msgs = [m for m in msgs if str(m.get("type", "")).endswith(lv)]
+    n = max(1, min(int(limit), len(msgs)))
+    return {
+        "messages": msgs[-n:] if n else [],
+        "count": n,
+        "buffer_total": len(console_buffer),
+    }
+
 
 # ---- Important Event Query API ----
 
