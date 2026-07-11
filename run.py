@@ -227,7 +227,9 @@ Hotkeys:
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         try:
-            tty.setraw(fd)
+            # 用 setcbreak 而非 setraw: setraw 关闭 OPOST 致 \n 不转 \r\n,
+            # 阻塞等按键期间 relay 日志呈阶梯状(看着没换行)。setcbreak 保留 OPOST + ISIG(Ctrl+C)。
+            tty.setcbreak(fd)
             ch = sys.stdin.read(1)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)

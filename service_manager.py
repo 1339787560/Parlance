@@ -339,8 +339,33 @@ class ManagedService:
                 capture_output=True, timeout=10,
             )
         else:
+            # POSIX 无 Job Object: 递归杀后代(debugrelay/statistic 是 infoServer 子进程),
+            # 再杀本进程; 不误杀 run.py 启动器(它是 infoServer 的父, 非子)。
+            # 旧实现 os.killpg(os.getpgid(pid)) 会连 run.py 同组一起杀, 致 r 重载时启动器先死。
+            self._kill_descendants_posix(pid)
             try:
-                os.killpg(os.getpgid(pid), signal.SIGKILL)
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    @staticmethod
+    def _kill_descendants_posix(pid: int):
+        """递归 pgrep -P 找后代并 SIGKILL(POSIX 下 Win Job Object 的等效替代)。"""
+        try:
+            out = subprocess.run(
+                ["pgrep", "-P", str(pid)],
+                capture_output=True, text=True, timeout=5,
+            ).stdout
+        except Exception:
+            return
+        for line in out.split():
+            try:
+                child = int(line.strip())
+            except ValueError:
+                continue
+            ManagedService._kill_descendants_posix(child)  # 先杀孙再杀子
+            try:
+                os.kill(child, signal.SIGKILL)
             except ProcessLookupError:
                 pass
 
