@@ -13,3 +13,4 @@ stats.db
 .codegraph
 .cursor
 diagnose*
+*.jsonl
