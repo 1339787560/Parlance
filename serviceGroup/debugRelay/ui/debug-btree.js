@@ -30,7 +30,8 @@ const state = {
     curLayer: 'base_btree',
     curTree: null,
     treeData: null,
-    diffBaseNames: null,
+    diff: null,              // {added:Set, removed:[node], baseNames:Set} | null
+    layerState: {},          // layer -> 上次打开的 tree name（切换层还原）
     collapsed: new Set(),
     runtimeTrees: [],        // [{name, tree}]
     runtimeUserid: null,
@@ -125,7 +126,7 @@ function btreeSelectLayer(layer) {
     state.curLayer = layer;
     state.curTree = null;
     state.treeData = null;
-    state.diffBaseNames = null;
+    state.diff = null;
     state.runtimeTrees = [];
     state.exec = null;
     stopPlay();
@@ -148,13 +149,20 @@ function btreeSelectLayer(layer) {
         list.appendChild(d);
     });
     setStatus('层: ' + layer + ' (' + info.trees.length + ' 棵树)');
-    btreeClearCanvas();
+    // 还原该层上次打开的树（配置浏览 tab 状态记忆）
+    const last = state.layerState[layer];
+    if (last && info.trees.indexOf(last) >= 0) {
+        btreeSelectTree(last);
+    } else {
+        btreeClearCanvas();
+    }
 }
 window.btreeSelectLayer = btreeSelectLayer;
 
 async function btreeSelectTree(name) {
     state.curTree = name;
-    document.querySelectorAll('.btree-tree-item').forEach(d => d.classList.toggle('active', d.textContent === name));
+    state.layerState[state.curLayer] = name;   // 记住该层上次打开的树
+    document.querySelectorAll('.btree-tree-item').forEach(d => d.classList.toggle('active', d.textContent.startsWith(name)));
     setStatus('加载 ' + state.curLayer + '/' + name + ' ...');
     try {
         const r = await fetch('/api/bt/tree?layer=' + encodeURIComponent(state.curLayer) + '&file=' + encodeURIComponent(name));
@@ -163,29 +171,42 @@ async function btreeSelectTree(name) {
         state.treeData = data.tree;
         state.collapsed.clear();
         state.pan = { x: 0, y: 0 }; state.zoom = 1;
-        if ($('btree-diff') && $('btree-diff').checked) await btreeLoadDiffBase(name);
-        else state.diffBaseNames = null;
+        if ($('btree-diff') && $('btree-diff').checked) await btreeLoadDiff(name);
+        else state.diff = null;
         btreeRender();
     } catch (e) { setStatus('加载失败: ' + e.message); }
 }
 
-async function btreeLoadDiffBase(name) {
+// 覆写对比: 算 added(override 有 base 无) + removed(base 有 override 无, 保留 node 对象供渲染)
+async function btreeLoadDiff(name) {
     const baseLayer = state.curLayer.replace('override_', 'base_');
-    if (baseLayer === state.curLayer) { state.diffBaseNames = null; return; }
+    if (baseLayer === state.curLayer) { state.diff = null; return; }
     try {
         const r = await fetch('/api/bt/tree?layer=' + encodeURIComponent(baseLayer) + '&file=' + encodeURIComponent(name));
-        if (!r.ok) { state.diffBaseNames = null; return; }
+        if (!r.ok) { state.diff = null; return; }
         const data = await r.json();
-        const names = new Set();
-        const nodes = (data.tree && data.tree.nodes) || {};
-        for (const id in nodes) names.add((nodes[id].name || '').toLowerCase());
-        state.diffBaseNames = names;
-    } catch (e) { state.diffBaseNames = null; }
+        const baseNodes = (data.tree && data.tree.nodes) || {};
+        const curNodes = (state.treeData && state.treeData.nodes) || {};
+        const baseNames = new Set();
+        for (const id in baseNodes) baseNames.add((baseNodes[id].name || '').toLowerCase());
+        const curNames = new Set();
+        for (const id in curNodes) curNames.add((curNodes[id].name || '').toLowerCase());
+        const added = new Set();
+        curNames.forEach(n => { if (!baseNames.has(n)) added.add(n); });
+        const removed = [];
+        const seen = new Set();
+        for (const id in baseNodes) {
+            const n = baseNodes[id];
+            const ln = (n.name || '').toLowerCase();
+            if (!curNames.has(ln) && !seen.has(ln)) { seen.add(ln); removed.push(n); }
+        }
+        state.diff = { added, removed, baseNames, curNames };
+    } catch (e) { state.diff = null; }
 }
 
 async function btreeToggleDiff() {
-    if (!$('btree-diff').checked) { state.diffBaseNames = null; btreeRender(); return; }
-    if (state.curTree && state.mode === 'config') await btreeLoadDiffBase(state.curTree);
+    if (!$('btree-diff').checked) { state.diff = null; btreeRender(); return; }
+    if (state.curTree && state.mode === 'config') await btreeLoadDiff(state.curTree);
     btreeRender();
 }
 window.btreeToggleDiff = btreeToggleDiff;
@@ -225,6 +246,16 @@ function btreeRender() {
         if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
         if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
     }
+    // 覆写对比: 移除节点簇（右侧 ghost 区）
+    let removedLayout = {};
+    if (state.diff && state.diff.removed.length) {
+        const clusterX = maxX + LEVEL_W * 1.3;
+        state.diff.removed.forEach((node, i) => {
+            removedLayout[node.id] = { x: clusterX, y: minY + (i + 1) * (NODE_H + V_GAP) };
+        });
+        maxX = clusterX + NODE_W;
+        maxY = Math.max(maxY, minY + (state.diff.removed.length + 1) * (NODE_H + V_GAP));
+    }
     const offX = PAD - minX, offY = PAD - minY;
     const vbW = (maxX - minX) + NODE_W + PAD * 2;
     const vbH = (maxY - minY) + NODE_H + PAD * 2;
@@ -255,10 +286,22 @@ function btreeRender() {
         childIds.forEach(cid => { if (visible.has(cid)) drawEdge(edgesG, state.layout[id], state.layout[cid], offX, offY); });
     }
     for (const id of visible) drawNode(nodesG, nodes[id], state.layout[id], offX, offY);
+    // 覆写对比: 渲染移除节点簇（ghost，右侧）+ 簇头
+    if (state.diff && state.diff.removed.length) {
+        const clusterX = (removedLayout[state.diff.removed[0].id] || {x:0}).x + offX;
+        const hdr = svgEl('text', { x: clusterX, y: minY + offY - 6, class: 'btree-diff-header btree-diff-removed' });
+        hdr.textContent = '— 移除 ' + state.diff.removed.length + ' —';
+        nodesG.appendChild(hdr);
+        state.diff.removed.forEach(node => {
+            const pos = removedLayout[node.id];
+            if (pos) drawNode(nodesG, node, pos, offX, offY, 'removed');
+        });
+    }
 
     let added = 0;
-    if (state.diffBaseNames) for (const id of visible) if (!state.diffBaseNames.has((nodes[id].name || '').toLowerCase())) added++;
-    const diffMsg = state.diffBaseNames ? ' · 对比基础层: 新增 ' + added + '/' + visible.size : '';
+    if (state.diff && state.diff.added) for (const id of visible) if (state.diff.added.has((nodes[id].name || '').toLowerCase())) added++;
+    const removedCount = (state.diff && state.diff.removed.length) || 0;
+    const diffMsg = state.diff ? ' · 🟢新增 ' + added + ' 🔴移除 ' + removedCount : '';
     const src = state.mode === 'runtime' ? '运行时' : state.curLayer;
     setStatus(src + '/' + (state.curTree||'?') + ' · ' + visible.size + ' 节点' + diffMsg);
     bindPanZoom(svg, vp);
@@ -280,25 +323,39 @@ function drawEdge(g, pp, cp, offX, offY) {
     }));
 }
 
-function drawNode(g, node, pos, offX, offY) {
+function drawNode(g, node, pos, offX, offY, forceStyle) {
     const x = pos.x + offX, y = pos.y + offY;
     const cat = btreeCategory(node);
     const color = CATEGORY_COLOR[cat];
     let cls = 'btree-node cat-' + cat;
-    if (state.diffBaseNames && !state.diffBaseNames.has((node.name || '').toLowerCase())) cls += ' btree-diff-added';
 
-    // 运行时调试着色：未播放=实色清晰背景；播放过=蒙雾体 + 状态色边框/badge
+    // 覆写对比 diff 样式：新增(绿) / 移除(红 ghost)
+    let diffKind = forceStyle || null;
+    if (!diffKind && state.diff && state.diff.added && state.diff.added.has((node.name || '').toLowerCase())) diffKind = 'added';
+
+    // 运行时调试着色：未播放=实色清晰；播放过=蒙雾 + 状态色边框
     const inDebug = !!state.exec;
     const execState = (inDebug && state.exec.nodeStates && state.exec.nodeStates[node.id] !== undefined) ? state.exec.nodeStates[node.id] : null;
-    let bodyFill = color, bodyOp = inDebug ? 0.30 : 0.16, stroke = color, sw = 1.4, fog = false;
-    if (execState !== null) {
+
+    let bodyFill = color, bodyOp = inDebug ? 0.30 : 0.16, stroke = color, sw = 1.4;
+    let fog = false, ghost = false, dash = null, badgeText = null, badgeColor = null;
+    if (diffKind === 'added') {
+        bodyFill = '#22c55e'; bodyOp = 0.22; stroke = '#22c55e'; sw = 2.2; dash = '5 3';
+        cls += ' btree-diff-added'; badgeText = '+新增'; badgeColor = '#22c55e';
+    } else if (diffKind === 'removed') {
+        bodyFill = '#ef4444'; bodyOp = 0.14; stroke = '#ef4444'; sw = 2.2; dash = '5 3'; ghost = true;
+        cls += ' btree-diff-removed'; badgeText = '✕移除'; badgeColor = '#ef4444';
+    } else if (execState !== null) {
         const sc = STATE_COLOR[execState] || color;
         bodyFill = sc; bodyOp = 0.14; stroke = sc; sw = 2.6; fog = true;
-        cls += ' exec-state-' + execState;
+        cls += ' exec-state-' + execState; badgeText = STATE_LABEL[execState]; badgeColor = sc;
     }
 
+    const rectAttrs = { x:0, y:0, width:NODE_W, height:NODE_H, rx:7, fill: bodyFill, 'fill-opacity':bodyOp, stroke: stroke, 'stroke-width':sw };
+    if (dash) rectAttrs['stroke-dasharray'] = dash;
     const grp = svgEl('g', { class: cls, 'data-id': node.id, transform: 'translate(' + x + ',' + y + ')' });
-    grp.appendChild(svgEl('rect', { x:0, y:0, width:NODE_W, height:NODE_H, rx:7, fill: bodyFill, 'fill-opacity':bodyOp, stroke: stroke, 'stroke-width':sw }));
+    if (ghost) grp.setAttribute('opacity', '0.5');
+    grp.appendChild(svgEl('rect', rectAttrs));
     grp.appendChild(svgEl('rect', { x:0, y:0, width:6, height:NODE_H, rx:3, fill: color }));   // 左条保留分类色
     if (fog) {
         grp.appendChild(svgEl('rect', { x:6, y:0, width:NODE_W-6, height:NODE_H, fill:'#000', 'fill-opacity':0.42 }));  // 蒙雾叠加
@@ -309,7 +366,7 @@ function drawNode(g, node, pos, offX, offY) {
     grp.appendChild(nameTxt);
 
     const badge = svgEl('text', { x:NODE_W-8, y:21, class:'btree-node-cat', 'text-anchor':'end' });
-    if (execState !== null) { badge.textContent = STATE_LABEL[execState]; badge.setAttribute('fill', STATE_COLOR[execState]); }
+    if (badgeText) { badge.textContent = badgeText; badge.setAttribute('fill', badgeColor); }
     else badge.textContent = CATEGORY_LABEL[cat];
     grp.appendChild(badge);
 
@@ -474,6 +531,12 @@ window.btreeZoomReset = btreeZoomReset;
 function btreeSwitchMode() {
     state.mode = $('btree-mode').value;
     const rt = $('btree-runtime-panel');
+    const layerTabs = $('btree-layer-tabs');
+    const diffToggle = document.querySelector('.btree-diff-toggle');
+    // 运行时: 隐藏层 tab + 覆写对比（不适用）；配置浏览: 展开
+    const showConfigUi = state.mode !== 'runtime';
+    if (layerTabs) layerTabs.style.display = showConfigUi ? '' : 'none';
+    if (diffToggle) diffToggle.style.display = showConfigUi ? '' : 'none';
     if (state.mode === 'runtime') {
         if (rt) rt.classList.remove('hidden');
         if (state.runtimeTrees.length) renderRuntimeTreeList();
@@ -532,7 +595,7 @@ async function btreeSelectRuntimeTree(name) {
     state.curTree = name;
     state.collapsed.clear();
     state.pan = { x:0, y:0 }; state.zoom = 1;
-    state.diffBaseNames = null;
+    state.diff = null;
     document.querySelectorAll('.btree-tree-item').forEach(d => d.classList.toggle('active', d.textContent.startsWith(name)));
     // 结构: runtime 优先；缺口树走 find_tree 用 config 兜底（nodeId 与 exec 一致）
     let structure = t.structure;

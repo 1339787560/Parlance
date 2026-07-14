@@ -1806,6 +1806,8 @@ html[data-theme="silverwolf"] {
 .btree-collapse-toggle { fill: var(--text); font-size: 14px; cursor: pointer; }
 .btree-node:hover rect { stroke-width: 2.6; }
 .btree-diff-added rect:first-of-type { stroke-dasharray: 4 3; stroke: var(--accent); stroke-width: 2.2; }
+.btree-diff-header { font-size: 12px; font-weight: 700; }
+.btree-diff-header.btree-diff-removed { fill: #ef4444; }
 
 /* Phase 2 运行时日志面板 */
 #btree-runtime-panel {
