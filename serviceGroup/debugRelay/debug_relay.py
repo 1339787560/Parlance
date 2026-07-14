@@ -1,25 +1,35 @@
 #!/usr/bin/env python3
 r"""
-Debug Relay Server - 真机调试中继服务
+Debug Relay Server - 真机调试中继服务（多客户端版）
 
 功能：
 - HTTP 服务：提供调试前端 UI
-- WS 服务：同时接受游戏端和浏览器端连接，消息路由转发
-- Console 全量同步：新连接获取历史消息
-- 源文件读取：从项目目录读取源码
+- WS 服务：同时接受多个游戏端和浏览器端连接，按客户端订阅路由
+- 多客户端隔离：每个游戏端独立缓冲（console/perf/断点/暂停），浏览器下拉选择，互不影响
+- Console 全量同步：新订阅获取该客户端历史消息
+- 源文件读取：从项目目录读取源码（全局共享，非 per-client）
+- 重要事件：实时按订阅路由；历史归档按日 JSONL（全局共享）
 
 用法：
     python debug_relay.py --port 9229 --src "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets"
+
+客户端标识由服务端自动生成（#序号 · IP），零游戏端改动。
+浏览器通过 {type:"select_client", client_id} 订阅；服务端 replay 该客户端的
+console/perf/断点/暂停状态。游戏数据按订阅转发，仅送达订阅该客户端的浏览器。
+REST API（/api/eval /api/touch /api/scene_tree /api/perf /api/console ...）
+支持可选 ?client= 定位；不传时单客户端自动回退，多客户端返回 409 并列出可选 id。
 """
 
 import os
 import sys
 import json
+import re
 import asyncio
 import argparse
 from pathlib import Path
 from datetime import datetime, date
-from typing import Set, Dict
+from typing import Set, Dict, Optional, Any
+from dataclasses import dataclass, field
 
 try:
     import yaml  # type: ignore
@@ -41,88 +51,202 @@ DEFAULT_PORT = 9229
 # 默认扫描 assets 下的所有 .ts / .js 文件
 DEFAULT_SRC = "../../../assets"
 
-
 # 允许的文件扩展名（仅这些类型会被索引）
 INDEXED_EXTS = [".ts", ".js"]
 
 # 消息类型枚举
 class MsgType:
     # Game -> Relay
-    CONSOLE_LOG = "console_log"        # 控制台日志
+    CONSOLE_LOG = "console_log"
     CONSOLE_WARN = "console_warn"
     CONSOLE_ERROR = "console_error"
     CONSOLE_INFO = "console_info"
-    SOURCE_LIST = "source_list"         # 源文件列表响应
-    SOURCE_CONTENT = "source_content"  # 源文件内容响应
-    BREAKPOINT_HIT = "breakpoint_hit"  # 断点命中
-    PAUSE_STATE = "pause_state"        # 暂停状态通知
-    PERF_SNAPSHOT = "perf_snapshot"    # 性能指标快照
-    PERF_MARK = "perf_mark"            # 业务段耗时 (mark/measure)
-    RUNTIME_SOURCE = "runtime_source"  # 运行时源码（hot-patch 用）
-    IMPORTANT_EVENT = "important_event"  # 重要事件（按日归档）
+    SOURCE_LIST = "source_list"
+    SOURCE_CONTENT = "source_content"
+    BREAKPOINT_HIT = "breakpoint_hit"
+    PAUSE_STATE = "pause_state"
+    PERF_SNAPSHOT = "perf_snapshot"
+    PERF_MARK = "perf_mark"
+    RUNTIME_SOURCE = "runtime_source"
+    IMPORTANT_EVENT = "important_event"
 
     # 场景节点树
-    SCENE_TREE = "scene_tree"            # 场景树快照
-    SCENE_NODE_INFO = "scene_node_info"  # 节点组件详情
+    SCENE_TREE = "scene_tree"
+    SCENE_NODE_INFO = "scene_node_info"
 
     # Relay -> Game
-    REGISTER_BREAKPOINT = "register_breakpoint"  # 注册断点
-    REMOVE_BREAKPOINT = "remove_breakpoint"      # 移除断点
-    RESUME = "resume"                  # 继续执行
-    EVAL = "eval"                      # 执行表达式
-    FETCH_RUNTIME_SOURCE = "fetch_runtime_source"  # 请求运行时源码
-    RUNTIME_RELOAD = "runtime_reload"      # 刷新 Web preview runtime
+    REGISTER_BREAKPOINT = "register_breakpoint"
+    REMOVE_BREAKPOINT = "remove_breakpoint"
+    RESUME = "resume"
+    EVAL = "eval"
+    FETCH_RUNTIME_SOURCE = "fetch_runtime_source"
+    RUNTIME_RELOAD = "runtime_reload"
 
     # Browser -> Game (场景控制)
-    SCENE_GET_TREE = "scene_get_tree"        # 请求场景树
-    SCENE_SET_ACTIVE = "scene_set_active"    # 设置节点显隐
-    SCENE_GET_NODE_INFO = "scene_get_node_info"  # 请求节点详情
-    SCENE_SET_PROPERTY = "scene_set_property"    # 修改节点/组件属性
+    SCENE_GET_TREE = "scene_get_tree"
+    SCENE_SET_ACTIVE = "scene_set_active"
+    SCENE_GET_NODE_INFO = "scene_get_node_info"
+    SCENE_SET_PROPERTY = "scene_set_property"
 
     # Relay -> Browser
-    CONSOLE_BATCH = "console_batch"    # 批量控制台消息（新连接时发送历史）
-    GAME_CONNECTED = "game_connected"  # 游戏端连接通知
-    GAME_DISCONNECTED = "game_disconnected"  # 游戏端断开通知
+    CONSOLE_BATCH = "console_batch"        # 批量控制台消息（订阅 replay）
+    GAME_CONNECTED = "game_connected"
+    GAME_DISCONNECTED = "game_disconnected"
+
+    # 多客户端协议
+    SELECT_CLIENT = "select_client"        # Browser -> Relay: 订阅某客户端
+    CLIENT_LIST = "client_list"            # Relay -> Browser: 当前所有客户端 + 本浏览器订阅
+    BREAKPOINTS_STATE = "breakpoints_state"  # Relay -> Browser: 订阅 replay 已注册断点
 
 
 # ---- State ----
 
-# 游戏端 WebSocket 连接
-game_ws: WebSocket | None = None
-
-# 游戏端是否已连接（独立于 game_ws 引用，用于新浏览器连接时查询状态）
-game_connected: bool = False
-
-# 浏览器端 WebSocket 连接集合
-browser_ws_set: Set[WebSocket] = set()
-
-# Console 消息缓冲（环形缓冲区，保持最近 1000 条）
-console_buffer: list = []
 CONSOLE_BUFFER_MAX = 50000
-console_seq = 0  # 消息序号
-
-# 性能快照环形缓冲区（最近 600 条 = 约 10 分钟 @ 1Hz）
-perf_buffer: list = []
 PERF_BUFFER_MAX = 600
 
-# HTTP /api/eval 与 /api/touch 关联: 经 game_ws 发 eval, 异步等 eval_result。
-# 串行化(单 pending future), 适配 MCP 工具顺序调用。
-_eval_lock = asyncio.Lock()
-_pending_eval_future: "asyncio.Future | None" = None
 
-# 源文件目录
+@dataclass
+class ClientCtx:
+    """单个游戏端会话状态（per-client 隔离）。"""
+    id: str
+    label: str
+    ip: str
+    ws: WebSocket
+    console_buffer: list = field(default_factory=list)
+    console_seq: int = 0
+    perf_buffer: list = field(default_factory=list)
+    # REST->WS 请求/响应关联（单飞 per response_key），per-client 隔离
+    response_futures: Dict[str, "asyncio.Future"] = field(default_factory=dict)
+    eval_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    pending_eval_future: Optional["asyncio.Future"] = None
+    # 断点集合 "file:line"（服务端记录，订阅时 replay）
+    breakpoints: set = field(default_factory=set)
+    # 暂停状态（订阅时 replay）
+    paused: bool = False
+    paused_file: Optional[str] = None
+    paused_line: Optional[Any] = None
+
+
+@dataclass(eq=False)
+class BrowserCtx:
+    """单个浏览器会话 + 当前订阅的客户端 id。
+    eq=False 保留 object 默认 identity hash，便于放入 set 去重（按连接实例）。
+    """
+    ws: WebSocket
+    subscribed: Optional[str] = None  # ClientCtx.id 或 None
+
+
+# 游戏端注册表：client_id -> ClientCtx
+clients: Dict[str, ClientCtx] = {}
+
+# 浏览器连接集合
+browsers: Set[BrowserCtx] = set()
+
+# 客户端序号（单 event loop，无需锁）
+_client_counter: int = 0
+
+# 源文件目录（全局共享，非 per-client）
 src_dir: Path = None
 
-# Pending futures for REST→WS bridge (single in-flight per response key).
-# Keyed by response MsgType value: "scene_tree" / "scene_node_info" / "eval".
-_response_futures: Dict[str, "asyncio.Future"] = {}
-
-# 重要事件存储目录（按日分割 JSONL 文件）
+# 重要事件存储目录（按日分割 JSONL 文件，全局共享）
 events_dir: Path = None
 
 # IP 白名单(可选,未启用时允许所有 IP)
 whitelist_enabled: bool = False
 whitelist_ips: set = set()
+
+# 行为树可视化配置（行为树 tab，无需游戏端连接）
+bt_layers: Dict[str, str] = {}        # layer_key -> 绝对目录路径
+bt_template_root: Path = None         # @action 节点->TS 解析根（Template/game）
+_bt_node_index: Dict[str, tuple] = {}     # lowercase(name) -> (abs_path, line)
+_bt_node_index_key: tuple = None          # (root_str, max_mtime) 缓存键
+
+
+# ---- Client / Browser helpers ----
+
+def _next_client_id(ip: str):
+    """生成自增 client_id 与展示标签。"""
+    global _client_counter
+    _client_counter += 1
+    n = _client_counter
+    return f"c{n}", f"#{n} · {ip}"
+
+
+def _client_summary(c: ClientCtx) -> dict:
+    return {"id": c.id, "label": c.label, "ip": c.ip}
+
+
+def _client_summaries() -> list:
+    return [_client_summary(c) for c in clients.values()]
+
+
+async def _send_ws(ws: WebSocket, msg: dict) -> bool:
+    """单 WS 发送，失败返回 False（供调用方清理死连接）。"""
+    try:
+        await ws.send_text(json.dumps(msg, ensure_ascii=False))
+        return True
+    except Exception:
+        return False
+
+
+async def _broadcast_client_list():
+    """向所有浏览器推送当前客户端列表（各浏览器带自己的 selected 字段）。"""
+    if not browsers:
+        return
+    summaries = _client_summaries()
+    dead = []
+    for b in browsers:
+        msg = {"type": MsgType.CLIENT_LIST, "clients": summaries, "selected": b.subscribed}
+        if not await _send_ws(b.ws, msg):
+            dead.append(b)
+    for b in dead:
+        browsers.discard(b)
+
+
+async def _send_to_subscribers(client_id: str, msg: dict):
+    """仅转发给订阅了 client_id 的浏览器。"""
+    if not browsers:
+        return
+    dead = []
+    for b in browsers:
+        if b.subscribed == client_id:
+            if not await _send_ws(b.ws, msg):
+                dead.append(b)
+    for b in dead:
+        browsers.discard(b)
+
+
+def _resolve_client(client_arg: Optional[str]):
+    """解析 REST 的 client 定位参数。
+
+    返回 (ClientCtx, None) 或 (None, JSONResponse 错误)。
+    - 指定 id：找不到 -> 404
+    - 未指定：0 个 -> 409；1 个 -> 自动回退；>1 个 -> 409 列出可选 id
+    """
+    if client_arg:
+        c = clients.get(client_arg)
+        if c is None:
+            return None, JSONResponse(
+                {"error": f"client not found: {client_arg}", "clients": _client_summaries()},
+                status_code=404,
+            )
+        return c, None
+    if len(clients) == 0:
+        return None, JSONResponse({"error": "no game client connected"}, status_code=409)
+    if len(clients) > 1:
+        return None, JSONResponse(
+            {"error": "multiple clients connected; specify ?client=<id>",
+             "clients": _client_summaries()},
+            status_code=409,
+        )
+    return next(iter(clients.values())), None
+
+
+def _stamp(msg: dict, client_id: str) -> dict:
+    """复制并打 client_id（不修改原 msg）。"""
+    out = dict(msg)
+    out["client_id"] = client_id
+    return out
 
 
 # ---- IP Whitelist ----
@@ -134,7 +258,6 @@ async def _enforce_whitelist(websocket: WebSocket) -> bool:
     client_ip = websocket.client.host if websocket.client else "<unknown>"
     if client_ip in whitelist_ips:
         return True
-    # 拒绝的连接：打印 IP + 时间 + 端点路径，便于排查未授权访问
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     path = websocket.url.path if websocket.url else "?"
     print(
@@ -155,15 +278,17 @@ def persist_important_event(msg: dict):
     """将重要事件追加到当天的 JSONL 文件中。
 
     文件路径: {events_dir}/{category}/{YYYY-MM-DD}.jsonl
-    每行一个 JSON 对象，字段: category, name, data, ts
+    每行一个 JSON 对象，字段: category, name, data, ts, client_id
+
+    历史归档全局共享（非 per-client）；client_id 仅作为记录字段，
+    便于后续按客户端过滤查询。实时推送按订阅路由（见 handle_game_message）。
     """
     if not events_dir:
         return
 
     category = msg.get("category", "unknown")
-    # 清理 category 中的路径分隔符，防止目录穿越
     safe_category = category.replace("/", "_").replace("\\", "_").replace("..", "_")
-    today = date.today().isoformat()  # YYYY-MM-DD
+    today = date.today().isoformat()
 
     day_dir = events_dir / safe_category
     day_dir.mkdir(parents=True, exist_ok=True)
@@ -175,6 +300,7 @@ def persist_important_event(msg: dict):
         "name": msg.get("name", ""),
         "data": msg.get("data", {}),
         "ts": msg.get("ts", datetime.now().isoformat()),
+        "client_id": msg.get("client_id"),
     }
 
     try:
@@ -201,7 +327,6 @@ UI_DIR = Path(__file__).parent / "ui"
 
 @app.get("/")
 async def index():
-    """调试前端入口页面"""
     idx = UI_DIR / "index.html"
     if idx.exists():
         return FileResponse(str(idx), media_type="text/html")
@@ -264,75 +389,188 @@ async def ui_scene_js():
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/debug-btree.js")
+async def ui_btree_js():
+    f = UI_DIR / "debug-btree.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
-        "game_connected": game_ws is not None,
-        "browser_count": len(browser_ws_set),
-        "console_buffer_size": len(console_buffer),
+        "clients": _client_summaries(),
+        "client_count": len(clients),
+        "browser_count": len(browsers),
     }
+
+
+# ---- Behavior Tree Visualization API（无需游戏端连接，读文件）----
+
+# 匹配 @action({name:"X"}) / @action({ name: "X" }) 等变体
+_BT_ACTION_RE = re.compile(r'@action\s*\(\s*\{\s*name\s*:\s*["\']([^"\']+)["\']')
+
+
+def _build_bt_node_index():
+    """扫描 template_root 下所有 .ts，建 lowercase(name) -> (abs_path, line) 索引。
+    按 (root, max_mtime) 缓存，Template 改动自动失效。"""
+    global _bt_node_index, _bt_node_index_key
+    if not bt_template_root or not bt_template_root.exists():
+        _bt_node_index = {}
+        _bt_node_index_key = None
+        return _bt_node_index
+
+    ts_files = list(bt_template_root.rglob("*.ts"))
+    max_mtime = 0.0
+    for f in ts_files:
+        try:
+            mt = f.stat().st_mtime
+            if mt > max_mtime:
+                max_mtime = mt
+        except Exception:
+            pass
+    cache_key = (str(bt_template_root), max_mtime)
+    if _bt_node_index_key == cache_key and _bt_node_index:
+        return _bt_node_index
+
+    index: Dict[str, tuple] = {}
+    for f in ts_files:
+        try:
+            text = f.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for m in _BT_ACTION_RE.finditer(text):
+            node_name = m.group(1).lower()
+            if node_name not in index:
+                line_no = text.count("\n", 0, m.start()) + 1
+                index[node_name] = (str(f).replace("\\", "/"), line_no)
+    _bt_node_index = index
+    _bt_node_index_key = cache_key
+    return _bt_node_index
+
+
+def _resolve_bt_node(name: str) -> dict:
+    """节点 name -> {found,file,line,vscodeUrl} 或 {notFound}。"""
+    if not name:
+        return {"notFound": True, "name": name}
+    index = _build_bt_node_index()
+    hit = index.get(name.lower())
+    if hit:
+        abs_path, line = hit
+        return {
+            "found": True,
+            "name": name,
+            "file": abs_path,
+            "line": line,
+            "vscodeUrl": f"vscode://file/{abs_path}:{line}",
+        }
+    return {"notFound": True, "name": name}
+
+
+@app.get("/api/bt/layers")
+async def bt_layers_list():
+    """列出四层行为树 + 各层 .json 树清单（.meta 自动排除）。"""
+    out = {}
+    for key, dir_path in bt_layers.items():
+        d = Path(dir_path)
+        trees = []
+        if d.exists():
+            for f in sorted(d.glob("*.json")):
+                if f.name.endswith(".meta"):
+                    continue
+                trees.append(f.stem)
+        out[key] = {"dir": dir_path, "exists": d.exists(), "trees": trees}
+    return {"layers": out}
+
+
+@app.get("/api/bt/tree")
+async def bt_tree(layer: str, file: str):
+    """返回指定层 + 树文件的解析后 JSON。"""
+    dir_path = bt_layers.get(layer)
+    if not dir_path:
+        return JSONResponse({"error": f"unknown layer: {layer}"}, status_code=404)
+    if ".." in file or "/" in file or "\\" in file:
+        return JSONResponse({"error": "invalid file name"}, status_code=403)
+    f = Path(dir_path) / f"{file}.json"
+    if not f.exists():
+        return JSONResponse({"error": f"tree not found: {file}"}, status_code=404)
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        return {"layer": layer, "file": file, "tree": data}
+    except Exception as e:
+        return JSONResponse({"error": f"parse error: {e}"}, status_code=500)
+
+
+@app.get("/api/bt/resolve")
+async def bt_resolve(name: str):
+    """节点 name -> TS 源码位置（vscode:// 跳转）。"""
+    return _resolve_bt_node(name)
+
+
+@app.get("/api/bt/search")
+async def bt_search(q: str):
+    """自由文本搜索（notFound 节点的兜底定位）。返回命中 file:line 列表。"""
+    if not q or not bt_template_root:
+        return {"results": []}
+    needle = q.lower()
+    results = []
+    for f in bt_template_root.rglob("*.ts"):
+        try:
+            text = f.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        low = text.lower()
+        idx = 0
+        while True:
+            pos = low.find(needle, idx)
+            if pos < 0:
+                break
+            line_no = text.count("\n", 0, pos) + 1
+            abs_path = str(f).replace("\\", "/")
+            results.append({
+                "file": abs_path,
+                "line": line_no,
+                "vscodeUrl": f"vscode://file/{abs_path}:{line_no}",
+            })
+            idx = pos + len(needle)
+            if len(results) >= 30:
+                return {"results": results, "truncated": True}
+    return {"results": results}
 
 
 # ---- HTTP API for MCP/agent (perf/touch/eval) ----
 
-async def _send_eval(expr: str, timeout: float = 5.0) -> dict:
-    """通过 game_ws 发 eval, 关联异步返回的 eval_result(串行, 单 pending future)。"""
-    global _pending_eval_future
-    if game_ws is None:
-        return {"error": "game not connected"}
-    async with _eval_lock:
+async def _send_eval(expr: str, ctx: ClientCtx, timeout: float = 5.0) -> dict:
+    """通过 ctx.ws 发 eval, 关联异步返回的 eval_result(串行, 单 pending future)。"""
+    async with ctx.eval_lock:
         loop = asyncio.get_running_loop()
-        _pending_eval_future = loop.create_future()
+        ctx.pending_eval_future = loop.create_future()
         try:
-            await game_ws.send_json({"type": MsgType.EVAL, "expr": expr})
+            await ctx.ws.send_json({"type": MsgType.EVAL, "expr": expr})
         except Exception as e:
-            _pending_eval_future = None
+            ctx.pending_eval_future = None
             return {"error": f"send failed: {e}"}
         try:
-            result = await asyncio.wait_for(_pending_eval_future, timeout=timeout)
+            result = await asyncio.wait_for(ctx.pending_eval_future, timeout=timeout)
         except asyncio.TimeoutError:
             result = {"error": "eval timeout"}
         finally:
-            _pending_eval_future = None
+            ctx.pending_eval_future = None
         return result
 
 
-@app.get("/api/perf")
-async def api_perf(limit: int = 20):
-    """返回最近 N 条性能快照(FPS/DrawCall/CPU阶段/内存)。游戏不在线时 latest 为空。"""
-    n = max(0, min(limit, PERF_BUFFER_MAX))
-    return {
-        "game_connected": game_ws is not None,
-        "count": len(perf_buffer),
-        "latest": perf_buffer[-n:] if n else [],
-    }
-
-
-@app.post("/api/eval")
-async def api_eval(req: Request):
-    """在游戏运行时执行 JS 表达式, 返回 eval_result。body: {"expr": "...", "timeout"?: 5}."""
-    body = await req.json()
-    expr = body.get("expr", "")
-    if not expr:
-        return {"error": "missing expr"}
-    return await _send_eval(expr, timeout=float(body.get("timeout", 5.0)))
-
-
 # Cocos 3.8.1 触摸派发: 构造 EventTouch 在场景上 dispatch。
-# 注意: 顶层 scene.dispatchEvent 只触发 scene 自身监听器; 命中特定 UI 需在 expr 内
-# 改用 node.dispatchEvent(event) 指定目标节点(可由 cocos_touch 的 target 参数扩展)。
 def _touch_js(x: float, y: float, touch_type: str) -> str:
     return (
         "(function(x,y,t){try{"
-        # preview 路径: 派发浏览器 MouseEvent 到 canvas -> Cocos 原生输入管线(命中检测+传播+Button 响应)
         "const c=document.querySelector('canvas');"
         "if(c){"
         "const mt=t.endsWith('start')?'mousedown':t.endsWith('move')?'mousemove':t.endsWith('cancel')?'mouseleave':'mouseup';"
         "c.dispatchEvent(new MouseEvent(mt,{clientX:x,clientY:y,bubbles:true}));"
         "return 'browser '+mt+' '+x+','+y;"
         "}"
-        # 真机兜底: 无 canvas, 合成 cc.EventTouch 派发场景(无命中检测, 命中特定 UI 需 cocos_eval 指定 node.dispatchEvent)
         "const t0=new cc.Touch(0,x,y);"
         "const ev=new cc.EventTouch([t0],true,t);"
         "ev.setLocation(x,y);"
@@ -346,8 +584,13 @@ def _touch_js(x: float, y: float, touch_type: str) -> str:
 
 @app.post("/api/touch")
 async def api_touch(req: Request):
-    """派发触摸到游戏客户端(eval 转发, 零游戏端改动)。body: {"x","y","type"[:start|move|end|cancel]}."""
+    """派发触摸到指定客户端(eval 转发, 零游戏端改动)。
+    body: {"x","y","type"[:start|move|end|cancel], "client"?: id}。
+    """
     body = await req.json()
+    ctx, err = _resolve_client(body.get("client"))
+    if err:
+        return err
     x = float(body.get("x", 0))
     y = float(body.get("y", 0))
     t = body.get("type", "touch-start")
@@ -356,237 +599,241 @@ async def api_touch(req: Request):
             "end": "touch-end", "up": "touch-end",
             "cancel": "touch-cancel"}
     t = norm.get(t, t if t.startswith("touch-") else "touch-start")
-    return await _send_eval(_touch_js(x, y, t), timeout=3.0)
+    return await _send_eval(_touch_js(x, y, t), ctx, timeout=3.0)
 
 
 # ---- WebSocket Handling ----
 
 async def handle_game_websocket(websocket: WebSocket):
-    """处理游戏端连接"""
+    """处理游戏端连接：注册到 clients 注册表，消息路由到订阅浏览器。"""
     if not await _enforce_whitelist(websocket):
         return
 
-    global game_ws, game_connected, console_buffer, console_seq, perf_buffer
-
-    # 游戏重连时清空旧缓冲，新会话重新累积
-    console_buffer.clear()
-    perf_buffer.clear()
-    console_seq = 0
+    ip = websocket.client.host if websocket.client else "<unknown>"
+    cid, label = _next_client_id(ip)
+    ctx = ClientCtx(id=cid, label=label, ip=ip, ws=websocket)
 
     await websocket.accept()
-    game_ws = websocket
-    game_connected = True
+    clients[cid] = ctx
+    print(f"[debug-relay] game connected: {cid} ({label})", flush=True)
 
-    # 通知所有浏览器：游戏端已连接 + 清空旧缓存重新同步
-    await broadcast_to_browsers({
-        "type": MsgType.GAME_CONNECTED,
-        "ts": datetime.now().isoformat(),
-        "clear_console": True,
+    # 通知所有浏览器：客户端列表变化
+    await _broadcast_client_list()
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+            except Exception:
+                continue
+            await handle_game_message(msg, ctx)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        clients.pop(cid, None)
+        # 通知订阅了该客户端的浏览器：已断开
+        await _send_to_subscribers(cid, {
+            "type": MsgType.GAME_DISCONNECTED,
+            "client_id": cid,
+            "ts": datetime.now().isoformat(),
+        })
+        # 刷新所有浏览器的客户端列表（该客户端已移除）
+        await _broadcast_client_list()
+        print(f"[debug-relay] game disconnected: {cid}", flush=True)
+
+
+async def handle_browser_websocket(websocket: WebSocket):
+    """处理浏览器端连接：发送 client_list，等待 select_client 订阅。"""
+    if not await _enforce_whitelist(websocket):
+        return
+
+    await websocket.accept()
+    bctx = BrowserCtx(ws=websocket)
+    browsers.add(bctx)
+
+    # 立即推送当前客户端列表（selected=null，尚未订阅）
+    await _send_ws(websocket, {
+        "type": MsgType.CLIENT_LIST,
+        "clients": _client_summaries(),
+        "selected": None,
     })
 
     try:
         while True:
             data = await websocket.receive_text()
-            msg = json.loads(data)
-            await handle_game_message(msg)
+            try:
+                msg = json.loads(data)
+            except Exception:
+                continue
+            await handle_browser_message(msg, bctx)
     except WebSocketDisconnect:
         pass
     finally:
-        game_ws = None
-        game_connected = False
-        # 通知所有浏览器：游戏端已断开
-        await broadcast_to_browsers({
-            "type": MsgType.GAME_DISCONNECTED,
-            "ts": datetime.now().isoformat(),
-        })
+        browsers.discard(bctx)
 
 
-async def handle_browser_websocket(websocket: WebSocket):
-    """处理浏览器端连接"""
-    if not await _enforce_whitelist(websocket):
+async def _replay_to_browser(bctx: BrowserCtx):
+    """订阅后向该浏览器 replay 所订阅客户端的完整状态。"""
+    cid = bctx.subscribed
+    if cid is None or cid not in clients:
         return
+    ctx = clients[cid]
+    ts = datetime.now().isoformat()
 
-    await websocket.accept()
-    browser_ws_set.add(websocket)
+    # 游戏连接状态
+    await _send_ws(bctx.ws, {"type": MsgType.GAME_CONNECTED, "client_id": cid, "ts": ts})
 
-    # 新浏览器连接时：立即发送游戏端当前连接状态
-    if game_connected:
-        await websocket.send_json({
-            "type": MsgType.GAME_CONNECTED,
-            "ts": datetime.now().isoformat(),
-        })
-    else:
-        await websocket.send_json({
-            "type": MsgType.GAME_DISCONNECTED,
-            "ts": datetime.now().isoformat(),
-        })
-
-    # 发送 console 历史
-    if console_buffer:
-        await websocket.send_json({
+    # Console 历史
+    if ctx.console_buffer:
+        await _send_ws(bctx.ws, {
             "type": MsgType.CONSOLE_BATCH,
-            "messages": console_buffer,
+            "client_id": cid,
+            "messages": ctx.console_buffer,
         })
 
-    # 发送 perf 历史（最近 600 条）
-    if perf_buffer:
-        await websocket.send_json({
+    # Perf 历史
+    if ctx.perf_buffer:
+        await _send_ws(bctx.ws, {
             "type": "perf_history",
-            "snapshots": perf_buffer,
+            "client_id": cid,
+            "snapshots": ctx.perf_buffer,
         })
 
-    try:
-        while True:
-            data = await websocket.receive_text()
-            msg = json.loads(data)
-            await handle_browser_message(msg, websocket)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        browser_ws_set.discard(websocket)
+    # 已注册断点
+    bps = []
+    for key in ctx.breakpoints:
+        f, _, l = key.partition(":")
+        bps.append({"file": f, "line": l})
+    await _send_ws(bctx.ws, {
+        "type": MsgType.BREAKPOINTS_STATE,
+        "client_id": cid,
+        "breakpoints": bps,
+    })
+
+    # 暂停状态
+    if ctx.paused:
+        await _send_ws(bctx.ws, {
+            "type": MsgType.PAUSE_STATE,
+            "client_id": cid,
+            "paused": True,
+            "file": ctx.paused_file,
+            "line": ctx.paused_line,
+        })
 
 
-async def handle_game_message(msg: dict):
-    """处理来自游戏端的消息"""
-    global console_seq
-
+async def handle_game_message(msg: dict, ctx: ClientCtx):
+    """处理来自游戏端的消息：per-client 缓冲 + 按订阅转发。"""
+    cid = ctx.id
     msg_type = msg.get("type")
 
     if msg_type in (MsgType.CONSOLE_LOG, MsgType.CONSOLE_WARN,
                     MsgType.CONSOLE_ERROR, MsgType.CONSOLE_INFO):
-        # Console 消息：添加到缓冲区并转发给浏览器
-        console_seq += 1
+        ctx.console_seq += 1
         entry = {
-            "seq": console_seq,
+            "seq": ctx.console_seq,
             "type": msg_type,
             "content": msg.get("content", ""),
             "ts": msg.get("ts", datetime.now().isoformat()),
+            "client_id": cid,
         }
-        console_buffer.append(entry)
-        # 环形缓冲区：超过上限时移除最早的
-        if len(console_buffer) > CONSOLE_BUFFER_MAX:
-            console_buffer.pop(0)
-
-        # 转发给所有浏览器
-        await broadcast_to_browsers(entry)
-
-    elif msg_type == MsgType.SOURCE_LIST:
-        # 源文件列表：直接转发给浏览器
-        await broadcast_to_browsers(msg)
-
-    elif msg_type == MsgType.SOURCE_CONTENT:
-        # 源文件内容：直接转发给浏览器
-        await broadcast_to_browsers(msg)
-
-    elif msg_type == MsgType.BREAKPOINT_HIT:
-        # 断点命中：通知所有浏览器暂停
-        await broadcast_to_browsers(msg)
-
-    elif msg_type == MsgType.PAUSE_STATE:
-        # 暂停状态通知
-        await broadcast_to_browsers(msg)
+        if msg.get("tag") is not None:
+            entry["tag"] = msg["tag"]
+        ctx.console_buffer.append(entry)
+        if len(ctx.console_buffer) > CONSOLE_BUFFER_MAX:
+            ctx.console_buffer.pop(0)
+        await _send_to_subscribers(cid, entry)
 
     elif msg_type == MsgType.PERF_SNAPSHOT:
-        # 性能指标快照：只保留最近 600 条供新连接同步
-        perf_buffer.append(msg)
-        if len(perf_buffer) > PERF_BUFFER_MAX:
-            perf_buffer.pop(0)
-        # 调试：每 30 条打一次日志
-        if len(perf_buffer) % 30 == 0:
-            print(f"[debug-relay] perf_buffer size={len(perf_buffer)} browsers={len(browser_ws_set)} latest_fps={msg.get('fps')}")
-        await broadcast_to_browsers(msg)
+        snap = _stamp(msg, cid)
+        ctx.perf_buffer.append(snap)
+        if len(ctx.perf_buffer) > PERF_BUFFER_MAX:
+            ctx.perf_buffer.pop(0)
+        if len(ctx.perf_buffer) % 30 == 0:
+            print(f"[debug-relay] {cid} perf_buffer size={len(ctx.perf_buffer)} "
+                  f"browsers={len(browsers)} latest_fps={msg.get('fps')}")
+        await _send_to_subscribers(cid, snap)
 
     elif msg_type == MsgType.PERF_MARK:
-        # 业务段耗时：转发给浏览器（mark/measure 产生，低频无需缓冲）
-        await broadcast_to_browsers(msg)
+        await _send_to_subscribers(cid, _stamp(msg, cid))
 
-    elif msg_type == MsgType.RUNTIME_SOURCE:
-        # 运行时源码：转发给浏览器（hot-patch 同步）
-        await broadcast_to_browsers(msg)
+    elif msg_type in (MsgType.SOURCE_LIST, MsgType.SOURCE_CONTENT, MsgType.RUNTIME_SOURCE):
+        await _send_to_subscribers(cid, _stamp(msg, cid))
+
+    elif msg_type == MsgType.BREAKPOINT_HIT:
+        ctx.paused = True
+        ctx.paused_file = msg.get("file")
+        ctx.paused_line = msg.get("line") if msg.get("line") is not None else msg.get("func")
+        await _send_to_subscribers(cid, _stamp(msg, cid))
+
+    elif msg_type == MsgType.PAUSE_STATE:
+        if msg.get("paused") is False:
+            ctx.paused = False
+            ctx.paused_file = None
+            ctx.paused_line = None
+        await _send_to_subscribers(cid, _stamp(msg, cid))
 
     elif msg_type == MsgType.IMPORTANT_EVENT:
-        # 重要事件：持久化到按日分割的 JSONL 文件 + 转发给浏览器
-        persist_important_event(msg)
-        await broadcast_to_browsers(msg)
+        stamped = _stamp(msg, cid)
+        persist_important_event(stamped)
+        await _send_to_subscribers(cid, stamped)
 
     elif msg_type in (MsgType.SCENE_TREE, MsgType.SCENE_NODE_INFO):
-        # 场景树/节点详情：先 resolve REST 等待中的 future，再转发给浏览器
-        _resolve_response_future(msg_type, msg)
-        await broadcast_to_browsers(msg)
+        _resolve_response_future(ctx, msg_type, msg)
+        await _send_to_subscribers(cid, _stamp(msg, cid))
 
-    # eval 结果：resolve REST 等待中的 future（无 type 字段，靠 eval_result 判断），再转发给浏览器
+    # eval 结果：resolve REST 等待中的 future（无 type 字段，靠 eval_result 判断），再转发
     if "eval_result" in msg:
-        _resolve_response_future(MsgType.EVAL, msg)
-        await broadcast_to_browsers(msg)
+        _resolve_response_future(ctx, MsgType.EVAL, msg)
+        await _send_to_subscribers(cid, _stamp(msg, cid))
 
 
-async def handle_browser_message(msg: dict, sender: WebSocket):
-    """处理来自浏览器的消息"""
-    global game_ws
-
+async def handle_browser_message(msg: dict, bctx: BrowserCtx):
+    """处理来自浏览器的消息。"""
     msg_type = msg.get("type")
 
-    if msg_type == MsgType.REGISTER_BREAKPOINT:
-        # 注册断点：转发给游戏端
-        if game_ws:
-            await game_ws.send_json(msg)
-
-    elif msg_type == MsgType.REMOVE_BREAKPOINT:
-        # 移除断点：转发给游戏端
-        if game_ws:
-            await game_ws.send_json(msg)
-
-    elif msg_type == MsgType.RESUME:
-        # 继续执行：转发给游戏端
-        if game_ws:
-            await game_ws.send_json(msg)
-
-    elif msg_type == MsgType.EVAL:
-        # 执行表达式：转发给游戏端
-        if game_ws:
-            await game_ws.send_json(msg)
-
-    elif msg_type == MsgType.RUNTIME_RELOAD:
-        # 刷新 Web preview runtime：转发给游戏端
-        if game_ws:
-            await game_ws.send_json(msg)
-
-    elif msg_type in (MsgType.SCENE_GET_TREE, MsgType.SCENE_SET_ACTIVE, MsgType.SCENE_GET_NODE_INFO, MsgType.SCENE_SET_PROPERTY):
-        # 场景控制：转发给游戏端
-        if game_ws:
-            await game_ws.send_json(msg)
-
-
-async def broadcast_to_browsers(msg: dict):
-    """广播消息给所有浏览器客户端"""
-    if not browser_ws_set:
+    if msg_type == MsgType.SELECT_CLIENT:
+        cid = msg.get("client_id")
+        bctx.subscribed = cid if (cid and cid in clients) else None
+        await _replay_to_browser(bctx)
+        # 回送 client_list（带 selected 确认）
+        await _send_ws(bctx.ws, {
+            "type": MsgType.CLIENT_LIST,
+            "clients": _client_summaries(),
+            "selected": bctx.subscribed,
+        })
         return
 
-    msg_json = json.dumps(msg)
-    # 逐个发送，移除断开的连接
-    dead_ws = set()
-    for ws in browser_ws_set:
-        try:
-            await ws.send_text(msg_json)
-        except Exception:
-            dead_ws.add(ws)
+    # 其余消息转发给所订阅客户端的游戏端
+    cid = bctx.subscribed
+    ctx = clients.get(cid) if cid else None
+    if ctx is None:
+        return
 
-    for ws in dead_ws:
-        browser_ws_set.discard(ws)
+    if msg_type == MsgType.REGISTER_BREAKPOINT:
+        key = f"{msg.get('file')}:{msg.get('line')}"
+        ctx.breakpoints.add(key)
+        await ctx.ws.send_json(msg)
+    elif msg_type == MsgType.REMOVE_BREAKPOINT:
+        key = f"{msg.get('file')}:{msg.get('line')}"
+        ctx.breakpoints.discard(key)
+        await ctx.ws.send_json(msg)
+    elif msg_type in (MsgType.RESUME, MsgType.EVAL, MsgType.RUNTIME_RELOAD,
+                      MsgType.SCENE_GET_TREE, MsgType.SCENE_SET_ACTIVE,
+                      MsgType.SCENE_GET_NODE_INFO, MsgType.SCENE_SET_PROPERTY):
+        await ctx.ws.send_json(msg)
 
 
-# ---- Source File API ----
+# ---- Source File API (全局共享，非 per-client) ----
 
 @app.get("/api/sources")
 async def list_sources():
-    """列出所有可调试的源文件"""
     if not src_dir or not src_dir.exists():
         return {"files": [], "error": "src_dir not configured (run with --src)"}
 
     files = []
     for ext in INDEXED_EXTS:
         for f in src_dir.rglob(f"*{ext}"):
-            # 跳过 .meta 文件和 node_modules 等
             if '.meta' in f.name or 'node_modules' in f.parts:
                 continue
             rel = f.relative_to(src_dir)
@@ -597,19 +844,15 @@ async def list_sources():
 
 @app.get("/api/source")
 async def get_source(path: str):
-    """获取源文件内容"""
     if not src_dir or not src_dir.exists():
         return JSONResponse({"error": "src_dir not configured (run with --src)"}, status_code=500)
 
-    # 安全检查：防止目录遍历（字符串替换，不能用 Path.replace）
     if ".." in path:
         return JSONResponse({"error": "invalid path: .. not allowed"}, status_code=403)
 
-    # 将前向斜杠转为当前系统路径分隔符
     safe_path = path.replace("/", os.sep)
     full_path = src_dir / safe_path
 
-    # 必须仍在 src_dir 内
     try:
         full_path = full_path.resolve()
         src_dir_resolved = src_dir.resolve()
@@ -628,54 +871,51 @@ async def get_source(path: str):
         return JSONResponse({"error": f"read error: {e}"}, status_code=500)
 
 
+# ---- Clients API ----
+
+@app.get("/api/clients")
+async def api_clients():
+    """列出所有已连接的游戏客户端（id/label/ip）。"""
+    return {"clients": _client_summaries(), "count": len(clients)}
+
+
 # ---- Runtime Control API ----
 
 @app.post("/api/runtime/reload")
-async def reload_runtime():
-    """刷新 Web preview runtime。
-
-    Agent 可直接调用:
-      curl -X POST http://host:5003/api/runtime/reload
-
-    relay 转发 runtime_reload 给 /ws/game；Web preview 收到后执行 location.reload()。
-    """
-    if not game_ws:
-        return JSONResponse({
-            "ok": False,
-            "error": "game not connected",
-            "hint": "Open/refresh preview first, wait for game_connected=true",
-        }, status_code=409)
-
+async def reload_runtime(client: str = None):
+    """刷新指定客户端的 Web preview runtime。?client=id（单客户端可省略）。"""
+    ctx, err = _resolve_client(client)
+    if err:
+        return err
     msg = {
         "type": MsgType.RUNTIME_RELOAD,
         "ts": datetime.now().isoformat(),
         "source": "http_api",
     }
     try:
-        await game_ws.send_json(msg)
+        await ctx.ws.send_json(msg)
     except Exception as e:
-        return JSONResponse({
-            "ok": False,
-            "error": f"send failed: {e}",
-        }, status_code=500)
+        return JSONResponse({"ok": False, "error": f"send failed: {e}"}, status_code=500)
 
     return {
         "ok": True,
         "message": "runtime_reload sent to game",
+        "client_id": ctx.id,
         "ts": msg["ts"],
     }
 
 
-# ---- REST→WS Bridge (请求/响应关联, 单飞 per response_key) ----
+# ---- REST->WS Bridge (请求/响应关联, 单飞 per response_key, per-client) ----
 
 class EvalRequest(BaseModel):
     expr: str
     timeout: float = 5.0
+    client: Optional[str] = None
 
 
-def _resolve_response_future(key: str, msg: dict) -> None:
+def _resolve_response_future(ctx: ClientCtx, key: str, msg: dict) -> None:
     """把游戏端响应消息 resolve 给等待中的 REST future (若存在)。"""
-    fut = _response_futures.pop(key, None)
+    fut = ctx.response_futures.pop(key, None)
     if fut is not None and not fut.done():
         try:
             fut.set_result(msg)
@@ -683,93 +923,83 @@ def _resolve_response_future(key: str, msg: dict) -> None:
             pass
 
 
-async def _send_game_and_await(msg: dict, response_key: str, timeout: float = 8.0):
-    """通过 /ws/game 发消息给游戏端, 等待匹配响应。
-
-    单飞模式: 同一 response_key 仅一个在飞 future, 新请求覆盖旧 (旧 future cancel)。
-    响应经 handle_game_message 拦截 resolve, 同时照常广播给浏览器。
-    """
-    if not game_ws:
-        return JSONResponse({
-            "ok": False,
-            "error": "game not connected",
-            "hint": "Open/refresh preview first, wait for game_connected=true",
-        }, status_code=503)
-
+async def _send_game_and_await(msg: dict, response_key: str, ctx: ClientCtx, timeout: float = 8.0):
+    """通过 ctx.ws 发消息给游戏端, 等待匹配响应。单飞 per response_key per client。"""
     loop = asyncio.get_event_loop()
     fut = loop.create_future()
-    stale = _response_futures.get(response_key)
+    stale = ctx.response_futures.get(response_key)
     if stale is not None and not stale.done():
         stale.cancel()
-    _response_futures[response_key] = fut
+    ctx.response_futures[response_key] = fut
 
     try:
-        await game_ws.send_json(msg)
+        await ctx.ws.send_json(msg)
     except Exception as e:
-        _response_futures.pop(response_key, None)
+        ctx.response_futures.pop(response_key, None)
         return JSONResponse({"ok": False, "error": f"send failed: {e}"}, status_code=500)
 
     try:
         return await asyncio.wait_for(fut, timeout=timeout)
     except asyncio.TimeoutError:
-        _response_futures.pop(response_key, None)
+        ctx.response_futures.pop(response_key, None)
         return JSONResponse({"ok": False, "error": f"timeout waiting for {response_key}"}, status_code=504)
 
 
 @app.post("/api/eval")
 async def api_eval(req: EvalRequest):
-    """在游戏运行时执行 JS 表达式, 返回 {eval_result: "..."}。
-
-    Agent 调用:
-      curl -X POST http://host:5003/api/eval -H "Content-Type: application/json" \\
-           -d '{"expr":"1+1","timeout":5}'
-
-    relay 转发 {type:"eval", expr} 给 /ws/game, 等待 eval_result 返回。
+    """在指定客户端执行 JS 表达式, 返回 {eval_result: "..."}。
+    body: {"expr","timeout"?,"client"?}。单客户端可省略 client。
     """
+    ctx, err = _resolve_client(req.client)
+    if err:
+        return err
     msg = {"type": MsgType.EVAL, "expr": req.expr}
-    # 游戏端 eval 自身有 timeout; relay 等待要略宽
-    return await _send_game_and_await(msg, MsgType.EVAL, timeout=max(req.timeout + 3.0, 8.0))
+    return await _send_game_and_await(msg, MsgType.EVAL, ctx, timeout=max(req.timeout + 3.0, 8.0))
 
 
 @app.get("/api/scene_tree")
-async def api_scene_tree():
-    """获取运行中场景的节点树快照 (name/path/active/components/children)。
-
-    返回 game 端原消息: {type:"scene_tree", tree:{...}}。
-    """
-    return await _send_game_and_await({"type": MsgType.SCENE_GET_TREE}, MsgType.SCENE_TREE, timeout=8.0)
+async def api_scene_tree(client: str = None):
+    """获取指定客户端运行中场景的节点树快照。?client=id。"""
+    ctx, err = _resolve_client(client)
+    if err:
+        return err
+    return await _send_game_and_await({"type": MsgType.SCENE_GET_TREE}, MsgType.SCENE_TREE, ctx, timeout=8.0)
 
 
 @app.get("/api/scene_node_info")
-async def api_scene_node_info(path: str):
-    """获取指定路径节点的详情 (position/scale/eulerAngles/components)。
-
-    path 形如 "Scene/Canvas/Btn_Start" (与 scene_get_tree 返回的 path 字段一致)。
-    """
+async def api_scene_node_info(path: str, client: str = None):
+    """获取指定客户端指定路径节点的详情。?path=&client=id。"""
+    ctx, err = _resolve_client(client)
+    if err:
+        return err
     return await _send_game_and_await(
         {"type": MsgType.SCENE_GET_NODE_INFO, "path": path},
-        MsgType.SCENE_NODE_INFO, timeout=8.0,
+        MsgType.SCENE_NODE_INFO, ctx, timeout=8.0,
     )
 
 
 @app.get("/api/perf")
-async def api_perf(limit: int = 20):
-    """读最近 N 条 perf_snapshot (从 perf_buffer 直接切片, 无需游戏端往返)。"""
-    n = max(1, min(int(limit), len(perf_buffer)))
+async def api_perf(limit: int = 20, client: str = None):
+    """读指定客户端最近 N 条 perf_snapshot（从该客户端 perf_buffer 切片）。"""
+    ctx, err = _resolve_client(client)
+    if err:
+        return err
+    n = max(1, min(int(limit), len(ctx.perf_buffer)))
     return {
-        "snapshots": perf_buffer[-n:] if n else [],
+        "client_id": ctx.id,
+        "snapshots": ctx.perf_buffer[-n:] if n else [],
         "count": n,
-        "buffer_total": len(perf_buffer),
+        "buffer_total": len(ctx.perf_buffer),
     }
 
 
 @app.get("/api/console")
-async def api_console(limit: int = 100, level: str = None, since_seq: int = 0):
-    """读 console_buffer (从内存直接切片)。limit/since_seq/level 过滤。
-
-    level 匹配 console_xxx 后缀 (log/warn/error/info)。
-    """
-    msgs = console_buffer
+async def api_console(limit: int = 100, level: str = None, since_seq: int = 0, client: str = None):
+    """读指定客户端 console_buffer（从内存切片）。limit/since_seq/level 过滤。"""
+    ctx, err = _resolve_client(client)
+    if err:
+        return err
+    msgs = ctx.console_buffer
     if since_seq > 0:
         msgs = [m for m in msgs if m.get("seq", 0) > since_seq]
     if level:
@@ -777,13 +1007,14 @@ async def api_console(limit: int = 100, level: str = None, since_seq: int = 0):
         msgs = [m for m in msgs if str(m.get("type", "")).endswith(lv)]
     n = max(1, min(int(limit), len(msgs)))
     return {
+        "client_id": ctx.id,
         "messages": msgs[-n:] if n else [],
         "count": n,
-        "buffer_total": len(console_buffer),
+        "buffer_total": len(ctx.console_buffer),
     }
 
 
-# ---- Important Event Query API ----
+# ---- Important Event Query API (历史归档全局共享) ----
 
 @app.get("/api/events")
 async def query_events(category: str = None, date: str = None, limit: int = 100):
@@ -793,24 +1024,17 @@ async def query_events(category: str = None, date: str = None, limit: int = 100)
       category: 事件分类 (如 "enter_room")，不传则返回所有分类
       date:     日期 (如 "2025-01-15")，不传则返回最近一天
       limit:    返回条数上限 (默认 100)
-
-    返回:
-      {events: [{category, name, data, ts}, ...], count, date, category}
     """
     if not events_dir or not events_dir.exists():
         return {"events": [], "count": 0, "date": date, "category": category,
                 "error": "events_dir not configured (run with --events-dir)"}
 
-    # 确定要扫描的目录
     if category:
         safe_category = category.replace("/", "_").replace("\\", "_").replace("..", "_")
         scan_dirs = [events_dir / safe_category]
     else:
         scan_dirs = [d for d in events_dir.iterdir() if d.is_dir()]
 
-    # 确定 date
-    # 注意:形参 date(str)遮蔽了 datetime.date,此处不能写 date.today()
-    # 用 datetime.now().date() 取今天,绕开遮蔽
     target_date = date or datetime.now().date().isoformat()
 
     events = []
@@ -824,7 +1048,7 @@ async def query_events(category: str = None, date: str = None, limit: int = 100)
             lines = filepath.read_text(encoding="utf-8").strip().split("\n")
             for i, line in enumerate(lines[-limit:]):
                 entry = json.loads(line)
-                entry["_idx"] = i  # 文件内原始行号，供删除定位
+                entry["_idx"] = i
                 entry["_category"] = d.name
                 events.append(entry)
         except Exception:
@@ -840,11 +1064,7 @@ async def query_events(category: str = None, date: str = None, limit: int = 100)
 
 @app.get("/api/events/dates")
 async def list_event_dates(category: str = None):
-    """列出可查询的日期列表。
-
-    参数:
-      category: 事件分类，不传则列出所有分类
-    """
+    """列出可查询的日期列表。"""
     if not events_dir or not events_dir.exists():
         return {"dates": [], "categories": [],
                 "error": "events_dir not configured"}
@@ -865,7 +1085,7 @@ async def list_event_dates(category: str = None):
         cat_name = d.name
         categories.append(cat_name)
         for f in d.glob("*.jsonl"):
-            date_str = f.stem  # YYYY-MM-DD
+            date_str = f.stem
             all_dates.append({"category": cat_name, "date": date_str})
 
     return {"dates": sorted(all_dates, key=lambda x: x["date"], reverse=True), "categories": sorted(categories)}
@@ -873,16 +1093,7 @@ async def list_event_dates(category: str = None):
 
 @app.delete("/api/events")
 async def delete_event(category: str, date: str, index: int):
-    """删除指定分类/日期下第 index 条事件记录（0-based，按文件原始顺序）。
-
-    参数:
-      category: 事件分类
-      date:     日期 (YYYY-MM-DD)
-      index:    要删除的行索引（0-based）
-
-    返回:
-      {ok, remaining, category, date}
-    """
+    """删除指定分类/日期下第 index 条事件记录（0-based）。"""
     if not events_dir or not events_dir.exists():
         return JSONResponse({"ok": False, "error": "events_dir not configured"}, status_code=500)
 
@@ -900,7 +1111,6 @@ async def delete_event(category: str, date: str, index: int):
     if index < 0 or index >= len(lines):
         return JSONResponse({"ok": False, "error": f"index out of range: {index}/{len(lines)}"}, status_code=400)
 
-    # 移除目标行，写回文件
     del lines[index]
     try:
         with open(filepath, "w", encoding="utf-8") as f:
@@ -930,7 +1140,6 @@ CONFIG_CANDIDATES = ("debug_relay.config.json", "debug_relay.config.yaml", "debu
 
 
 def _load_config(path: Path) -> dict:
-    """加载配置文件。按后缀解析: .yaml/.yml 走 PyYAML, .json 走 json。无匹配后缀先 json 再 yaml。"""
     if not path or not path.exists():
         return {}
     text = path.read_text(encoding="utf-8")
@@ -946,7 +1155,6 @@ def _load_config(path: Path) -> dict:
         except Exception as e:
             print(f"[debug-relay] 解析 JSON 配置失败 {path}: {e}")
             return {}
-    # 未知后缀:先 json 再 yaml
     try:
         return json.loads(text)
     except Exception:
@@ -979,19 +1187,15 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    # 解析源文件目录（相对于当前文件）
     src_dir = Path(args.src).resolve()
 
-    # 解析重要事件存储目录
     if args.events_dir:
         events_dir = Path(args.events_dir).resolve()
         events_dir.mkdir(parents=True, exist_ok=True)
     else:
-        # 默认: 与 debug_relay.py 同级的 events/ 目录
         events_dir = Path(__file__).parent / "events"
         events_dir.mkdir(parents=True, exist_ok=True)
 
-    # 解析 IP 白名单:CLI 显式值 > 配置文件
     cfg_path = None
     if args.config:
         cfg_path = Path(args.config).resolve()
@@ -1029,8 +1233,23 @@ if __name__ == "__main__":
     else:
         print("IP 白名单未启用,允许所有 IP 连接")
 
+    # 行为树可视化配置（行为树 tab）
+    bt_cfg = cfg.get("btree") or {} if isinstance(cfg, dict) else {}
+    bt_layers_raw = bt_cfg.get("layers") or {}
+    bt_layers = {}
+    for _k, _v in bt_layers_raw.items():
+        if _v:
+            try:
+                bt_layers[_k] = str(Path(_v).resolve())
+            except Exception:
+                bt_layers[_k] = str(_v)
+    _tpl = bt_cfg.get("template_root")
+    bt_template_root = Path(_tpl).resolve() if _tpl else None
+    if bt_layers:
+        print(f"行为树 tab: {len(bt_layers)} 层已配置, template_root={bt_template_root}")
+
     print(f"=" * 50)
-    print(f"Debug Relay Server")
+    print(f"Debug Relay Server (multi-client)")
     print(f"  Port: {args.port}")
     print(f"  Host: {args.host}")
     print(f"  Source: {src_dir}")
@@ -1038,6 +1257,7 @@ if __name__ == "__main__":
     print(f"  UI: http://{args.host}:{args.port}")
     print(f"  WS Game: ws://{args.host}:{args.port}/ws/game")
     print(f"  WS Browser: ws://{args.host}:{args.port}/ws/browser")
+    print(f"  Clients API: http://{args.host}:{args.port}/api/clients")
     print(f"=" * 50)
 
     if not src_dir.exists():

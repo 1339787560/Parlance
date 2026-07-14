@@ -372,8 +372,28 @@ function escapePerfHtml(text) {
     return d.innerHTML;
 }
 
+// ---- 切换客户端时重置面板 ----
+
+function resetPerfPanel() {
+    perfHistory.length = 0;
+    perfMarks.length = 0;
+    // 卡片复位
+    ['perf-fps', 'perf-dc', 'perf-ft', 'perf-mem', 'perf-tris', 'perf-cpu-total']
+        .forEach(id => setText(id, '-'));
+    ['perf-frame', 'perf-dc-max', 'perf-ft-max', 'perf-mem-sub', 'perf-verts', 'perf-cpu-detail']
+        .forEach(id => { const e = document.getElementById(id); if (e) e.textContent = '-'; });
+    renderPerfCharts();
+    const ml = document.getElementById('perf-marks-list');
+    if (ml) ml.innerHTML = '';
+    // Scene 工具栏徽标
+    const f = document.getElementById('scene-fps'), d = document.getElementById('scene-dc');
+    if (f) f.textContent = '-';
+    if (d) d.textContent = '-';
+}
+
 // 暴露给 debug-console.js 调用
 window.handlePerfSnapshot = handlePerfSnapshot;
 window.handlePerfHistory = handlePerfHistory;
 window.handlePerfCharts = renderPerfCharts;
 window.handlePerfMark = handlePerfMark;
+window.resetPerfPanel = resetPerfPanel;

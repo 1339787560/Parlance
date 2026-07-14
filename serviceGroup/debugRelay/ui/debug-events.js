@@ -141,6 +141,10 @@ function eventsNextDay() {
 // ---- Realtime Event ----
 
 function onRealtimeEvent(msg) {
+    // 多客户端：仅显示当前订阅客户端的实时事件（历史归档全局共享，不受此限）
+    if (msg.client_id !== undefined && msg.client_id !== null && msg.client_id !== selectedClient) {
+        return;
+    }
     // 如果当前查看的是今天的日期，实时追加
     const selDate = document.getElementById('events-date').value;
     const today = new Date().toISOString().slice(0, 10);

@@ -27,6 +27,81 @@ function scrollToBottom() {
     output.scrollTop = output.scrollHeight;
 }
 
+// ---- Client Selection (多客户端) ----
+
+let selectedClient = null;      // 当前订阅的 client_id
+let availableClients = [];      // [{id,label,ip}]
+
+function handleClientList(msg) {
+    availableClients = msg.clients || [];
+    renderClientSelect();
+
+    // 当前订阅失效（客户端已下线）-> 重置
+    if (selectedClient && !availableClients.find(c => c.id === selectedClient)) {
+        selectedClient = null;
+        resetAllPanels();
+        updateGameStatus(false, null);
+    }
+    // 仅一个客户端且未订阅 -> 自动订阅（单客户端体验与改造前一致）
+    if (!selectedClient && availableClients.length === 1) {
+        selectClient(availableClients[0].id);
+    }
+}
+
+function renderClientSelect() {
+    const sel = document.getElementById('clientSelect');
+    if (!sel) return;
+    if (availableClients.length === 0) {
+        sel.innerHTML = '<option value="">无客户端</option>';
+        return;
+    }
+    sel.innerHTML = availableClients
+        .map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`)
+        .join('');
+    if (selectedClient && availableClients.find(c => c.id === selectedClient)) {
+        sel.value = selectedClient;
+    }
+}
+
+function onClientSelectChange() {
+    const sel = document.getElementById('clientSelect');
+    selectClient(sel.value || null);
+}
+
+function selectClient(id) {
+    selectedClient = id;
+    resetAllPanels();
+    wsSend({ type: 'select_client', client_id: id });
+
+    const status = document.getElementById('game-status');
+    if (status) {
+        const c = availableClients.find(x => x.id === id);
+        if (id && c) {
+            status.textContent = `客户端: ${c.label}`;
+            status.className = 'connected';
+        } else {
+            status.textContent = '游戏: 未选择';
+            status.className = 'disconnected';
+        }
+    }
+}
+
+function resetAllPanels() {
+    // Console
+    allEntries.length = 0;
+    const out = document.getElementById('console-output');
+    if (out) out.innerHTML = '';
+    // 暂停指示器复位
+    const pauseInd = document.getElementById('pause-indicator');
+    const resumeBtn = document.getElementById('resume-btn');
+    if (pauseInd) pauseInd.classList.add('hidden');
+    if (resumeBtn) resumeBtn.classList.add('hidden');
+    // 各面板按需重置（由对应 JS 暴露的 hook）
+    if (window.resetPerfPanel) window.resetPerfPanel();
+    if (window.resetSourcesPanel) window.resetSourcesPanel();
+    if (window.resetScenePanel) window.resetScenePanel();
+}
+
 // ---- Console Display ----
 
 const allEntries = [];  // 全量消息列表
@@ -149,7 +224,8 @@ async function reloadRuntime() {
         btn.textContent = 'Reloading...';
     }
     try {
-        const resp = await fetch('/api/runtime/reload', { method: 'POST' });
+        const url = '/api/runtime/reload' + (selectedClient ? '?client=' + encodeURIComponent(selectedClient) : '');
+        const resp = await fetch(url, { method: 'POST' });
         const data = await resp.json();
         if (!resp.ok || !data.ok) {
             console.error('[runtime_reload] failed:', data);
@@ -191,6 +267,10 @@ function switchTab(tab) {
     if (tab === 'scene' && window.sceneRefreshTree) {
         sceneRefreshTree();
     }
+    // 切换到 btree 面板时初始化行为树可视化
+    if (tab === 'btree' && window.btreeInit) {
+        btreeInit();
+    }
 }
 
 function restoreActiveTab() {
@@ -218,6 +298,10 @@ function wsConnect() {
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
         }
+        // 重连后：若已有选中客户端，重新订阅触发 replay（新 WS = 新浏览器会话）
+        if (selectedClient) {
+            wsSend({ type: 'select_client', client_id: selectedClient });
+        }
     };
 
     ws.onmessage = (event) => {
@@ -243,10 +327,25 @@ function wsSend(msg) {
 }
 
 function handleBrowserMessage(msg) {
+    // 多客户端隔离：带 client_id 的消息仅处理当前订阅的客户端
+    // （client_list/console_batch 等控制消息在 replay 时 client_id == selectedClient，放行）
+    if (msg.client_id !== undefined && msg.client_id !== null && msg.client_id !== selectedClient) {
+        return;
+    }
+
     switch (msg.type) {
+        case 'client_list':
+            handleClientList(msg);
+            break;
+
         case 'console_batch':
-            // 全量历史消息
+            // 全量历史消息（订阅 replay）
             addConsoleBatch(msg.messages);
+            break;
+
+        case 'breakpoints_state':
+            // 订阅 replay：重建该客户端已注册断点
+            if (window.applyBreakpointsState) window.applyBreakpointsState(msg.breakpoints || []);
             break;
 
         case 'console_log':

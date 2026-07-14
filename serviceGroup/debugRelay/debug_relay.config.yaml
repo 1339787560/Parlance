@@ -8,3 +8,16 @@ whitelist:
   ips:
     - 127.0.0.1
     - 192.168.41.158
+
+# 行为树可视化配置（行为树 tab）
+# layers: 四层行为树目录（绝对路径）
+#   base_btree / base_popup   引擎插件基础层（CocosCreator2.0/Plugins）
+#   override_btree / override_popup  客户端覆写层（trunk/assets/resources/config）
+# template_root: 节点->TS 解析根（@action 装饰器所在，Template/game）
+btree:
+  layers:
+    base_btree: "D:/CocosCreator2.0/Plugins/btree"
+    base_popup: "D:/CocosCreator2.0/Plugins/btree/popup"
+    override_btree: "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets/resources/config/btree"
+    override_popup: "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets/resources/config/popup"
+  template_root: "D:/CocosCreator2.0/Template/game"

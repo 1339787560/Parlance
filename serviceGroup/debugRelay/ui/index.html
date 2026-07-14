@@ -3,12 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=3">
+    <link rel="stylesheet" href="debug-ui.css?v=5">
 </head>
 <body>
     <div id="toolbar">
         <span id="status-indicator" class="disconnected">● 未连接</span>
         <span id="game-status" class="disconnected">游戏: 未连接</span>
+        <select id="clientSelect" class="theme-select" title="选择对接的游戏客户端（多个真机/preview 互不影响）" onchange="onClientSelectChange()">
+            <option value="">无客户端</option>
+        </select>
         <button id="runtime-reload-btn" class="toolbar-btn" onclick="reloadRuntime()" title="刷新 preview 页面，重载运行时代码">Reload Preview</button>
         <select class="theme-select" id="themeSelect" title="切换样式">
             <option value="">深色默认</option>
@@ -29,6 +32,7 @@
         <button id="tab-perf" class="tab" onclick="switchTab('perf')">Performance</button>
         <button id="tab-events" class="tab" onclick="switchTab('events')">Events</button>
         <button id="tab-scene" class="tab" onclick="switchTab('scene')">Scene</button>
+        <button id="tab-btree" class="tab" onclick="switchTab('btree')">行为树</button>
     </div>
 
     <div id="panel-console" class="panel active">
@@ -166,6 +170,45 @@
         </div>
     </div>
 
+    <!-- BTree Panel - 行为树可视化（四层 + 节点跳 TS）-->
+    <div id="panel-btree" class="panel">
+        <div id="btree-toolbar">
+            <select id="btree-mode" onchange="btreeSwitchMode()" title="配置浏览=静态 JSON；运行时日志=Phase2">
+                <option value="config">配置浏览</option>
+                <option value="runtime">运行时日志 (Phase2)</option>
+            </select>
+            <div id="btree-layer-tabs">
+                <button class="btree-layer-btn active" onclick="btreeSelectLayer('base_btree')">基础 btree</button>
+                <button class="btree-layer-btn" onclick="btreeSelectLayer('base_popup')">基础 popup</button>
+                <button class="btree-layer-btn" onclick="btreeSelectLayer('override_btree')">覆写 btree</button>
+                <button class="btree-layer-btn" onclick="btreeSelectLayer('override_popup')">覆写 popup</button>
+            </div>
+            <label class="btree-diff-toggle" title="同名树高亮：基础层 vs 覆写层差异"><input type="checkbox" id="btree-diff" onchange="btreeToggleDiff()"> 覆写对比</label>
+            <span id="btree-status" class="btree-status"></span>
+        </div>
+        <div id="btree-body">
+            <div id="btree-sidebar">
+                <div class="btree-sidebar-title">树文件</div>
+                <div id="btree-tree-list"></div>
+            </div>
+            <div id="btree-canvas-wrap">
+                <div id="btree-runtime-panel" class="hidden">
+                    <input type="text" id="btree-log-url" placeholder="粘贴运行时日志 URL（.../btree/xxx_btrees.txt）">
+                    <button onclick="btreeImportLog()">导入</button>
+                    <span class="btree-phase2-tip">Phase 2 功能开发中</span>
+                </div>
+                <div id="btree-zoom-ctrl">
+                    <button onclick="btreeZoom(1.2)" title="放大">＋</button>
+                    <button onclick="btreeZoom(1/1.2)" title="缩小">－</button>
+                    <button onclick="btreeZoomReset()" title="重置">⤢</button>
+                </div>
+                <svg id="btree-canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+                <div id="btree-config-view" class="btree-config-view hidden"></div>
+                <div id="btree-empty" class="btree-empty">选择左侧树文件查看可视化</div>
+            </div>
+        </div>
+    </div>
+
     <!-- Quick Open Panel (Ctrl+P) -->
     <div id="quick-open" class="command-palette hidden">
         <div class="command-palette-input-wrap">
@@ -186,10 +229,11 @@
         <div id="search-results"></div>
     </div>
 
-    <script src="debug-console.js?v=7"></script>
-    <script src="debug-sources.js?v=2"></script>
-    <script src="debug-perf.js?v=3"></script>
-    <script src="debug-events.js?v=5"></script>
-    <script src="debug-scene.js?v=4"></script>
+    <script src="debug-console.js?v=9"></script>
+    <script src="debug-sources.js?v=3"></script>
+    <script src="debug-perf.js?v=4"></script>
+    <script src="debug-events.js?v=6"></script>
+    <script src="debug-scene.js?v=5"></script>
+    <script src="debug-btree.js?v=2"></script>
 </body>
 </html>

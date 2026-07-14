@@ -663,6 +663,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// ---- 多客户端：切换/订阅时重置 + 断点状态 replay ----
+
+function resetSourcesPanel() {
+    currentFile = null;
+    currentContent = null;
+    breakpoints.clear();
+    pausedFile = null;
+    pausedLine = null;
+    const header = document.getElementById('source-filename');
+    if (header) header.textContent = '未选择文件';
+    const code = document.getElementById('source-content');
+    if (code) code.innerHTML = '选择左侧文件浏览源码';
+    const pauseInd = document.getElementById('pause-indicator');
+    const resumeBtn = document.getElementById('resume-btn');
+    if (pauseInd) pauseInd.classList.add('hidden');
+    if (resumeBtn) resumeBtn.classList.add('hidden');
+}
+
+function applyBreakpointsState(bps) {
+    breakpoints.clear();
+    for (const bp of bps) {
+        if (bp && bp.file != null && bp.line != null) {
+            breakpoints.add(`${bp.file}:${bp.line}`);
+        }
+    }
+    if (currentFile && currentContent) {
+        renderSourceCode(currentFile, currentContent);
+    }
+}
+
+window.resetSourcesPanel = resetSourcesPanel;
+window.applyBreakpointsState = applyBreakpointsState;
+
 // ---- Init ----
 
 loadFileTree();

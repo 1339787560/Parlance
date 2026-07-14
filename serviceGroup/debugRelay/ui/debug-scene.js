@@ -352,7 +352,27 @@ function sceneHexToRgb(hex) {
     return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16), a: 255 } : { r: 255, g: 255, b: 255, a: 255 };
 }
 
+// ---- 多客户端：切换时重置 ----
+
+function resetScenePanel() {
+    sceneTreeData = null;
+    sceneSelectedPath = null;
+    sceneSelectedInfo = null;
+    sceneExpanded.clear();
+    const tree = document.getElementById('scene-tree');
+    if (tree) tree.innerHTML = '<div class="scene-empty">切换客户端后点刷新加载场景树</div>';
+    const detail = document.getElementById('scene-detail');
+    if (detail) detail.innerHTML = '<div class="scene-empty">点击节点查看详情</div>';
+    const fps = document.getElementById('scene-fps');
+    const dc = document.getElementById('scene-dc');
+    if (fps) fps.textContent = '-';
+    if (dc) dc.textContent = '-';
+    const st = document.getElementById('scene-status');
+    if (st) st.textContent = '';
+}
+
 window.handleSceneTree = handleSceneTree;
 window.handleSceneNodeInfo = handleSceneNodeInfo;
 window.sceneRefreshTree = sceneRefreshTree;
 window.sceneSelectNode = sceneSelectNode;
+window.resetScenePanel = resetScenePanel;
