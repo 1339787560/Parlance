@@ -14,6 +14,8 @@ const CATEGORY_LABEL = { composite:'组合', decorator:'装饰', condition:'条�
 // b3 执行状态（运行时调试着色）SUCCESS=1/FAILURE=2/RUNNING=3/ERROR=4/INTERRUPT=5
 const STATE_COLOR = { 1:'#22c55e', 2:'#ef4444', 3:'#eab308', 4:'#6b7280', 5:'#f97316' };
 const STATE_LABEL = { 1:'SUCCESS', 2:'FAILURE', 3:'RUNNING', 4:'ERROR', 5:'INTERRUPT' };
+// 弹窗 popupType 配色（popup 配置卡片用）
+const POPUP_TYPE_COLOR = { 0:'#6b7280', 1:'#3b82f6', 2:'#22c55e', 3:'#a855f7', 4:'#f59e0b', 5:'#ec4899', 6:'#14b8a6', 7:'#eab308' };
 
 const NODE_W = 172, NODE_H = 60;
 const LEVEL_W = 234;   // 水平层间距（depth -> x）
@@ -285,17 +287,22 @@ function drawNode(g, node, pos, offX, offY) {
     let cls = 'btree-node cat-' + cat;
     if (state.diffBaseNames && !state.diffBaseNames.has((node.name || '').toLowerCase())) cls += ' btree-diff-added';
 
-    // 运行时执行状态着色（覆盖填充/描边）
-    const execState = (state.exec && state.exec.nodeStates && state.exec.nodeStates[node.id] !== undefined) ? state.exec.nodeStates[node.id] : null;
-    let fill = color, fillOp = 0.16, stroke = color, sw = 1.4;
+    // 运行时调试着色：未播放=实色清晰背景；播放过=蒙雾体 + 状态色边框/badge
+    const inDebug = !!state.exec;
+    const execState = (inDebug && state.exec.nodeStates && state.exec.nodeStates[node.id] !== undefined) ? state.exec.nodeStates[node.id] : null;
+    let bodyFill = color, bodyOp = inDebug ? 0.30 : 0.16, stroke = color, sw = 1.4, fog = false;
     if (execState !== null) {
-        fill = STATE_COLOR[execState] || color; fillOp = 0.42; stroke = fill; sw = 2.2;
+        const sc = STATE_COLOR[execState] || color;
+        bodyFill = sc; bodyOp = 0.14; stroke = sc; sw = 2.6; fog = true;
         cls += ' exec-state-' + execState;
     }
 
     const grp = svgEl('g', { class: cls, 'data-id': node.id, transform: 'translate(' + x + ',' + y + ')' });
-    grp.appendChild(svgEl('rect', { x:0, y:0, width:NODE_W, height:NODE_H, rx:7, fill: fill, 'fill-opacity':fillOp, stroke: stroke, 'stroke-width':sw }));
+    grp.appendChild(svgEl('rect', { x:0, y:0, width:NODE_W, height:NODE_H, rx:7, fill: bodyFill, 'fill-opacity':bodyOp, stroke: stroke, 'stroke-width':sw }));
     grp.appendChild(svgEl('rect', { x:0, y:0, width:6, height:NODE_H, rx:3, fill: color }));   // 左条保留分类色
+    if (fog) {
+        grp.appendChild(svgEl('rect', { x:6, y:0, width:NODE_W-6, height:NODE_H, fill:'#000', 'fill-opacity':0.42 }));  // 蒙雾叠加
+    }
 
     const nameTxt = svgEl('text', { x:14, y:21, class:'btree-node-name' });
     nameTxt.textContent = node.name || '(?)';
@@ -345,20 +352,32 @@ function renderPopupConfig(data) {
     if (!view) return;
     const items = Array.isArray(data.items) ? data.items : [];
     const flagKeys = ['id','popupName','support','maxCount','cd','defaultVersion','abbr'];
-    const flags = flagKeys.filter(k => k in data).map(k => k + ': ' + JSON.stringify(data[k]));
-    let html = '<div class="btree-cfg-header"><span class="btree-cfg-name">' + escapeText(data.popupName || state.curTree) + '</span></div>';
-    if (flags.length) html += '<div class="btree-cfg-flags">' + flags.map(f => '<span class="btree-cfg-flag">' + escapeText(f) + '</span>').join('') + '</div>';
+    const flags = flagKeys.filter(k => k in data && data[k] !== '' && data[k] != null)
+        .map(k => k + ': ' + JSON.stringify(data[k]));
+    let html = '<div class="btree-cfg-header"><span class="btree-cfg-name">' + escapeText(data.popupName || state.curTree) + '</span>';
+    html += '<span class="btree-cfg-sub">弹窗配置 · ' + items.length + ' 个变体</span></div>';
+    if (flags.length) {
+        html += '<div class="btree-cfg-flags">' + flags.map(f => '<span class="btree-cfg-flag">' + escapeText(f) + '</span>').join('') + '</div>';
+    }
     html += '<div class="btree-cfg-note">⚠ 弹窗配置（非行为树）。行为树中 <code>Action_Popup</code> / <code>Con_CheckPopup</code> 通过 <code>name</code> 引用此配置。</div>';
     if (items.length) {
-        const cols = ['id','viewName','pluginName','popupType','dailyTimes','abbr','interruptOnCancel'];
-        html += '<table class="btree-cfg-table"><thead><tr>' + cols.map(c=>'<th>'+c+'</th>').join('') + '</tr></thead><tbody>';
+        html += '<div class="btree-cfg-cards">';
         items.forEach(it => {
-            html += '<tr>' + cols.map(c => {
-                const v = (it && it[c] != null) ? it[c] : '';
-                return '<td>' + escapeText(typeof v === 'object' ? JSON.stringify(v) : v) + '</td>';
-            }).join('') + '</tr>';
-        }).join('') + '</tbody></table>';
-        html += '<div class="btree-cfg-count">' + items.length + ' 个弹窗变体</div>';
+            const pt = (it && it.popupType != null) ? it.popupType : '?';
+            const color = POPUP_TYPE_COLOR[pt] || '#6b7280';
+            const meta = [];
+            if (it && it.dailyTimes != null) meta.push('daily ' + it.dailyTimes);
+            if (it && it.abbr) meta.push('abbr ' + it.abbr);
+            if (it && it.interruptOnCancel) meta.push('interruptOnCancel');
+            if (it && it.id != null) meta.push('id ' + it.id);
+            html += '<div class="btree-cfg-card" style="border-left-color:' + color + '">';
+            html += '<span class="btree-cfg-card-pt" style="background:' + color + '">type ' + escapeText(pt) + '</span>';
+            html += '<div class="btree-cfg-card-view">' + escapeText((it && it.viewName) || '(无 view)') + '</div>';
+            html += '<div class="btree-cfg-card-plugin">' + escapeText((it && it.pluginName) || '') + '</div>';
+            html += '<div class="btree-cfg-card-meta">' + escapeText(meta.join(' · ')) + '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
     } else {
         html += '<div class="btree-cfg-empty">无 items（弹窗变体）</div>';
     }
@@ -641,5 +660,17 @@ function hideTimeline() {
     const tl = $('btree-timeline');
     if (tl) tl.classList.add('hidden');
 }
+
+// 键盘单步调试（行为树面板激活 + 运行时 exec 存在时）：←/→ 单步，空格 播放/暂停
+document.addEventListener('keydown', (e) => {
+    if (!state.exec) return;
+    const panel = document.getElementById('panel-btree');
+    if (!panel || !panel.classList.contains('active')) return;
+    const tag = (e.target && e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); btreeStep(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); btreeStep(1); }
+    else if (e.key === ' ') { e.preventDefault(); btreePlay(); }
+});
 
 })();

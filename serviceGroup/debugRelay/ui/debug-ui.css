@@ -213,12 +213,23 @@ body {
 #panel-sources { flex-direction: row; }
 
 #sources-sidebar {
-  width: 200px;
+  width: 260px;
+  flex-shrink: 0;
   background: var(--card);
   border-right: 1px solid var(--border);
   overflow-y: auto;
   padding: 4px;
 }
+#file-tree { overflow-x: auto; padding-bottom: 4px; }
+#file-tree::-webkit-scrollbar { height: 5px; }
+#file-tree::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Sources 内行为树配置区 */
+#btree-config-tree { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 4px; }
+#btree-config-tree .btree-cfg-src-header {
+  color: var(--accent); font-size: 11px; padding: 2px 4px; text-transform: uppercase; letter-spacing: .5px;
+}
+#btree-config-tree .tree-file .tree-name { color: #8b949e; }
 
 #sources-sidebar::-webkit-scrollbar { width: 5px; }
 #sources-sidebar::-webkit-scrollbar-track { background: transparent; }
@@ -1855,5 +1866,19 @@ html[data-theme="silverwolf"] {
 .btree-cfg-table tr:hover td { background: var(--hover-bg); }
 .btree-cfg-count { color: var(--dim); margin-top: 10px; font-size: 11px; }
 .btree-cfg-empty { color: var(--dim); font-size: 11px; }
+.btree-cfg-sub { color: var(--dim); font-size: 11px; margin-left: 10px; }
+/* 弹窗变体卡片 */
+.btree-cfg-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-top: 4px; }
+.btree-cfg-card {
+  background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--border);
+  border-radius: 5px; padding: 8px 10px; position: relative;
+}
+.btree-cfg-card-pt {
+  position: absolute; top: 6px; right: 8px; color: #0d1117; font-size: 10px; font-weight: 700;
+  padding: 1px 7px; border-radius: 8px;
+}
+.btree-cfg-card-view { color: var(--text); font-size: 12px; font-weight: 600; margin-right: 52px; word-break: break-all; }
+.btree-cfg-card-plugin { color: var(--accent); font-size: 11px; margin-top: 3px; word-break: break-all; }
+.btree-cfg-card-meta { color: var(--dim); font-size: 10px; margin-top: 4px; }
 
 /* 鈹€鈹€ Command Palette (Quick Open / Search) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */

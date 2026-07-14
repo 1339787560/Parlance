@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=8">
+    <link rel="stylesheet" href="debug-ui.css?v=9">
 </head>
 <body>
     <div id="toolbar">
@@ -54,6 +54,10 @@
     <div id="panel-sources" class="panel">
         <div id="sources-sidebar">
             <div id="file-tree"></div>
+            <div id="btree-config-tree">
+                <div class="btree-cfg-src-header">行为树配置</div>
+                <div id="btree-config-list"></div>
+            </div>
         </div>
         <div id="source-viewer">
             <div id="source-header">
@@ -240,10 +244,10 @@
     </div>
 
     <script src="debug-console.js?v=10"></script>
-    <script src="debug-sources.js?v=4"></script>
+    <script src="debug-sources.js?v=5"></script>
     <script src="debug-perf.js?v=4"></script>
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
-    <script src="debug-btree.js?v=5"></script>
+    <script src="debug-btree.js?v=6"></script>
 </body>
 </html>

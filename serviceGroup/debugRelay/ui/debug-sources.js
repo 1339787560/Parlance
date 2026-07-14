@@ -717,6 +717,64 @@ function openExternalSource(abspath, line) {
 }
 window.openExternalSource = openExternalSource;
 
+// ---- 行为树配置文件区（四层 JSON，点击展开 raw JSON）----
+const _BT_LAYER_LABEL = { base_btree:'基础 btree', base_popup:'基础 popup', override_btree:'覆写 btree', override_popup:'覆写 popup' };
+
+async function loadBtreeConfigFiles() {
+    const container = document.getElementById('btree-config-list');
+    if (!container) return;
+    try {
+        const r = await fetch('/api/bt/layers');
+        const data = await r.json();
+        const layers = data.layers || {};
+        container.innerHTML = '';
+        Object.keys(layers).forEach(key => {
+            const info = layers[key];
+            if (!info || !info.exists || !info.trees || !info.trees.length) return;
+            const folder = document.createElement('div');
+            folder.className = 'tree-folder collapsed';
+            const header = document.createElement('div');
+            header.className = 'tree-folder-header';
+            header.innerHTML = `<span class="tree-arrow">▶</span> <span class="tree-name">${_BT_LAYER_LABEL[key] || key}/</span>`;
+            header.onclick = () => {
+                const c = folder.classList.toggle('collapsed');
+                header.querySelector('.tree-arrow').textContent = c ? '▶' : '▼';
+            };
+            const children = document.createElement('div');
+            children.className = 'tree-folder-children';
+            info.trees.forEach(name => {
+                const f = document.createElement('div');
+                f.className = 'tree-file';
+                f.innerHTML = `<span class="tree-name">${name}.json</span>`;
+                f.onclick = () => {
+                    document.querySelectorAll('.tree-file.selected').forEach(el => el.classList.remove('selected'));
+                    f.classList.add('selected');
+                    openBtreeConfigFile(key, name);
+                };
+                children.appendChild(f);
+            });
+            folder.appendChild(header);
+            folder.appendChild(children);
+            container.appendChild(folder);
+        });
+    } catch (e) { /* ignore */ }
+}
+
+async function openBtreeConfigFile(layer, name) {
+    switchTab('sources');
+    currentFile = `btree:${layer}/${name}.json`;
+    document.getElementById('source-filename').textContent = currentFile;
+    try {
+        const r = await fetch('/api/bt/tree?layer=' + encodeURIComponent(layer) + '&file=' + encodeURIComponent(name));
+        const data = await r.json();
+        if (data.error) { showSourceError(data.error); return; }
+        const content = JSON.stringify(data.tree, null, 2);
+        currentContent = content;
+        renderSourceCode(currentFile, content);
+    } catch (e) { showSourceError(e.message); }
+}
+
 // ---- Init ----
 
 loadFileTree();
+loadBtreeConfigFiles();
