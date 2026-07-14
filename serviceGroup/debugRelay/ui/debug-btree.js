@@ -473,9 +473,9 @@ async function btreeImportLog() {
     const uidT = uid.trim();
     if (!uidT) { setStatus('请输入 userid'); return; }
     const date = (($('btree-date') || {}).value || '').trim();
-    setStatus('拉取 userid=' + uidT + ' (' + (date || '今天') + ') ...');
+    setStatus('拉取整目录日志 userid=' + uidT + ' (' + (date || '今天') + ') ...');
     try {
-        const url = '/api/bt/runtime_log?userid=' + encodeURIComponent(uidT) + (date ? '&date=' + encodeURIComponent(date) : '');
+        const url = '/api/bt/runtime_session?userid=' + encodeURIComponent(uidT) + (date ? '&date=' + encodeURIComponent(date) : '');
         const r = await fetch(url);
         const data = await r.json();
         if (!r.ok) { setStatus('✗ ' + (data.error || r.status)); return; }
@@ -484,7 +484,9 @@ async function btreeImportLog() {
         state.runtimeUserid = uidT;
         state.runtimeDate = date;
         renderRuntimeTreeList();
-        setStatus('✓ ' + data.tree_count + ' 棵运行时树 · ' + (data.matched_files[0] || ''));
+        const withExec = state.runtimeTrees.filter(t => t.hasExec).length;
+        const withStruct = state.runtimeTrees.filter(t => t.hasStructure).length;
+        setStatus('✓ ' + data.tree_count + ' 棵树 · ' + withStruct + ' runtime结构 + ' + (withExec - withStruct) + ' 缺口(config兜底)');
     } catch (e) { setStatus('✗ ' + e.message); }
 }
 window.btreeImportLog = btreeImportLog;
@@ -496,8 +498,9 @@ function renderRuntimeTreeList() {
     list.innerHTML = '';
     state.runtimeTrees.forEach(t => {
         const d = document.createElement('div');
-        d.className = 'btree-tree-item';
-        d.textContent = t.name;
+        d.className = 'btree-tree-item' + (t.hasStructure ? '' : ' btree-tree-gap');
+        d.textContent = t.name + (t.hasStructure ? '' : ' ·cfg');
+        d.title = t.hasStructure ? 'runtime 结构' : '缺口树：结构用 config 兜底（nodeId 一致）';
         d.onclick = () => btreeSelectRuntimeTree(t.name);
         list.appendChild(d);
     });
@@ -508,34 +511,36 @@ async function btreeSelectRuntimeTree(name) {
     const t = state.runtimeTrees.find(x => x.name === name);
     if (!t) return;
     state.curTree = name;
-    state.treeData = t.tree;
     state.collapsed.clear();
     state.pan = { x:0, y:0 }; state.zoom = 1;
     state.diffBaseNames = null;
-    document.querySelectorAll('.btree-tree-item').forEach(d => d.classList.toggle('active', d.textContent === name));
-    btreeRender();
-    await btreeLoadExec(name);
-}
-
-// 拉取单树执行轨迹（运行时调试）-> 时间线 + 节点状态着色
-async function btreeLoadExec(name) {
+    document.querySelectorAll('.btree-tree-item').forEach(d => d.classList.toggle('active', d.textContent.startsWith(name)));
+    // 结构: runtime 优先；缺口树走 find_tree 用 config 兜底（nodeId 与 exec 一致）
+    let structure = t.structure;
+    if (!structure) {
+        setStatus('缺口树 ' + name + ': config 兜底结构 ...');
+        try {
+            const r = await fetch('/api/bt/find_tree?name=' + encodeURIComponent(name));
+            const d = await r.json();
+            if (d.found) structure = d.tree;
+        } catch (e) {}
+    }
+    if (!structure) { setStatus('✗ 未找到 ' + name + ' 的结构'); btreeClearCanvas(); return; }
+    state.treeData = structure;
+    // exec 内联（session 已整目录拉取）
     state.exec = null;
     hideTimeline();
-    if (!state.runtimeUserid) return;
-    setStatus('拉取执行轨迹 ' + name + ' ...');
-    try {
-        const url = '/api/bt/runtime_exec?userid=' + encodeURIComponent(state.runtimeUserid)
-            + '&tree=' + encodeURIComponent(name)
-            + (state.runtimeDate ? '&date=' + encodeURIComponent(state.runtimeDate) : '');
-        const r = await fetch(url);
-        if (!r.ok) { setStatus('运行时: 仅结构（无执行日志）'); return; }
-        const data = await r.json();
-        if (!data.versions || !data.versions.length) { setStatus('运行时: 无执行事件'); return; }
-        state.exec = { versions: data.versions, curVer: data.versions.length - 1, curStep: 0, nodeStates: {}, playing: false, timer: null };
+    if (t.exec && t.exec.versions && t.exec.versions.length) {
+        state.exec = { versions: t.exec.versions, curVer: t.exec.versions.length - 1, curStep: 0, nodeStates: {}, playing: false, timer: null };
+    }
+    btreeRender();
+    if (state.exec) {
         showTimeline();
         applyExecStep(0);
-        setStatus('运行时 ' + name + ' · ' + data.version_count + ' 版本, ' + data.versions[state.exec.curVer].events.length + ' 事件');
-    } catch (e) { setStatus('执行轨迹拉取失败: ' + e.message); }
+        setStatus('运行时 ' + name + ' · ' + t.exec.version_count + ' 版本, ' + state.exec.versions[state.exec.curVer].events.length + ' 事件');
+    } else {
+        setStatus('运行时 ' + name + ' · 无执行轨迹');
+    }
 }
 
 // ---- 运行时调试: 时间线 + 状态应用 ----

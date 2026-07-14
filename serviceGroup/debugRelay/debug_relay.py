@@ -698,6 +698,94 @@ async def bt_runtime_exec(userid: str, tree: str, date: str = None):
     }
 
 
+@app.get("/api/bt/find_tree")
+async def bt_find_tree(name: str):
+    """在 override_btree + base_btree 查找树结构（运行时缺口树的结构兜底，nodeId 与 exec 一致）。"""
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    if ".." in name or "/" in name or "\\" in name:
+        return JSONResponse({"error": "invalid name"}, status_code=403)
+    for layer in ("override_btree", "base_btree"):
+        dir_path = bt_layers.get(layer)
+        if not dir_path:
+            continue
+        f = Path(dir_path) / f"{name}.json"
+        if f.exists():
+            try:
+                return {"found": True, "layer": layer, "name": name,
+                        "tree": json.loads(f.read_text(encoding="utf-8"))}
+            except Exception:
+                continue
+    return JSONResponse({"found": False, "name": name}, status_code=404)
+
+
+@app.get("/api/bt/runtime_session")
+async def bt_runtime_session(userid: str, date: str = None):
+    """拉取整目录运行时日志（聚合，对应行为树调试工具的「拉所有日志」）。
+    - btrees.txt: 树结构（reset 后可能只含部分树）
+    - {userid}_{tree}.txt: 每树执行轨迹
+    树列表 = 结构树 ∪ 有 exec 文件的树（覆盖缺口树）。exec 并行拉取内联返回。
+    缺口树（无 runtime 结构）structure=None，前端走 /api/bt/find_tree 用 config 兜底（nodeId 稳定一致）。
+    """
+    if not userid:
+        return JSONResponse({"error": "userid required"}, status_code=400)
+    if not date:
+        date = datetime.now().strftime("%Y%m%d")
+    base = f"http://logdebug.tcy365.org:2505/upload/xzmk/{date}/btree/"
+    try:
+        listing = await asyncio.to_thread(_http_get_text, base)
+    except Exception as e:
+        return JSONResponse({"error": f"fetch listing failed: {e}", "listing_url": base}, status_code=502)
+
+    pat_btrees = re.compile(r'href="([^"]*_' + re.escape(userid) + r'_btrees\.txt)"')
+    pat_tree = re.compile(r'href="([^"]*_' + re.escape(userid) + r'_([a-zA-Z0-9]+)\.txt)"')
+    btrees_match = pat_btrees.findall(listing)
+    exec_map = {}
+    for fname, tname in pat_tree.findall(listing):
+        if tname == "btrees":
+            continue
+        exec_map[tname] = fname
+
+    async def fetch_text(url: str) -> Optional[str]:
+        try:
+            return await asyncio.to_thread(_http_get_text, url)
+        except Exception:
+            return None
+
+    # 并行拉 btrees.txt + 所有 exec 文件
+    btrees_task = asyncio.create_task(fetch_text(base + btrees_match[0])) if btrees_match else None
+    exec_tasks = {tname: asyncio.create_task(fetch_text(base + fname)) for tname, fname in exec_map.items()}
+    btrees_text = await btrees_task if btrees_task else None
+    exec_texts = {tname: await task for tname, task in exec_tasks.items()}
+
+    structures = {}
+    if btrees_text:
+        for t in _parse_btree_log(btrees_text):
+            structures[t["name"]] = t["tree"]
+
+    all_names = sorted(set(structures.keys()) | set(exec_map.keys()))
+    trees = []
+    for name in all_names:
+        exec_data = None
+        if name in exec_texts and exec_texts[name]:
+            versions = _parse_btree_exec(exec_texts[name])
+            exec_data = {"file": exec_map.get(name), "version_count": len(versions), "versions": versions}
+        trees.append({
+            "name": name,
+            "hasStructure": name in structures,
+            "structure": structures.get(name),
+            "hasExec": exec_data is not None,
+            "exec": exec_data,
+        })
+    return {
+        "userid": userid,
+        "date": date,
+        "dir_url": base,
+        "tree_count": len(trees),
+        "trees": trees,
+    }
+
+
 # ---- HTTP API for MCP/agent (perf/touch/eval) ----
 
 async def _send_eval(expr: str, ctx: ClientCtx, timeout: float = 5.0) -> dict:

@@ -1771,6 +1771,7 @@ html[data-theme="silverwolf"] {
 }
 .btree-tree-item:hover { background: var(--hover-bg); }
 .btree-tree-item.active { background: var(--accent); color: #0d1117; }
+.btree-tree-gap { color: var(--dim); font-style: italic; }
 .btree-tree-empty { color: var(--dim); padding: 8px 5px; font-size: 11px; word-break: break-all; }
 
 #btree-canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); min-width: 0; }
