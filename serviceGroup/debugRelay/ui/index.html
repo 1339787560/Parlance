@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=5">
+    <link rel="stylesheet" href="debug-ui.css?v=7">
 </head>
 <body>
     <div id="toolbar">
@@ -29,10 +29,10 @@
     <div id="tab-bar">
         <button id="tab-console" class="tab active" onclick="switchTab('console')">Console</button>
         <button id="tab-sources" class="tab" onclick="switchTab('sources')">Sources</button>
+        <button id="tab-btree" class="tab" onclick="switchTab('btree')">行为树</button>
         <button id="tab-perf" class="tab" onclick="switchTab('perf')">Performance</button>
         <button id="tab-events" class="tab" onclick="switchTab('events')">Events</button>
         <button id="tab-scene" class="tab" onclick="switchTab('scene')">Scene</button>
-        <button id="tab-btree" class="tab" onclick="switchTab('btree')">行为树</button>
     </div>
 
     <div id="panel-console" class="panel active">
@@ -193,9 +193,11 @@
             </div>
             <div id="btree-canvas-wrap">
                 <div id="btree-runtime-panel" class="hidden">
-                    <input type="text" id="btree-log-url" placeholder="粘贴运行时日志 URL（.../btree/xxx_btrees.txt）">
-                    <button onclick="btreeImportLog()">导入</button>
-                    <span class="btree-phase2-tip">Phase 2 功能开发中</span>
+                    <label>userid:</label>
+                    <input type="text" id="btree-userid" placeholder="如 1180138" onkeydown="if(event.key==='Enter')btreeImportLog()">
+                    <label>日期:</label>
+                    <input type="text" id="btree-date" placeholder="YYYYMMDD 空=今天" onkeydown="if(event.key==='Enter')btreeImportLog()">
+                    <button onclick="btreeImportLog()">拉取日志</button>
                 </div>
                 <div id="btree-zoom-ctrl">
                     <button onclick="btreeZoom(1.2)" title="放大">＋</button>
@@ -204,6 +206,14 @@
                 </div>
                 <svg id="btree-canvas" xmlns="http://www.w3.org/2000/svg"></svg>
                 <div id="btree-config-view" class="btree-config-view hidden"></div>
+                <div id="btree-timeline" class="btree-timeline hidden">
+                    <button id="btree-play-btn" onclick="btreePlay()" title="播放/暂停">▶</button>
+                    <button onclick="btreeStep(-1)" title="上一步" class="btree-step-btn">⏮</button>
+                    <input type="range" id="btree-scrub" min="0" max="0" value="0" oninput="btreeScrub(this.value)" title="时间线">
+                    <button onclick="btreeStep(1)" title="下一步" class="btree-step-btn">⏭</button>
+                    <select id="btree-version" onchange="btreeSelectVersion()" title="运行版本"></select>
+                    <span id="btree-step-label">0 / 0</span>
+                </div>
                 <div id="btree-empty" class="btree-empty">选择左侧树文件查看可视化</div>
             </div>
         </div>
@@ -229,11 +239,11 @@
         <div id="search-results"></div>
     </div>
 
-    <script src="debug-console.js?v=9"></script>
-    <script src="debug-sources.js?v=3"></script>
+    <script src="debug-console.js?v=10"></script>
+    <script src="debug-sources.js?v=4"></script>
     <script src="debug-perf.js?v=4"></script>
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
-    <script src="debug-btree.js?v=2"></script>
+    <script src="debug-btree.js?v=4"></script>
 </body>
 </html>

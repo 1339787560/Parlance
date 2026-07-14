@@ -540,6 +540,164 @@ async def bt_search(q: str):
     return {"results": results}
 
 
+def _http_get_text(url: str, timeout: int = 15) -> str:
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "debugRelay/btree"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", errors="ignore")
+
+
+def _parse_btree_log(content: str) -> list:
+    """解析运行时日志: 'tree <name>\\n{...json...}' 块序列 -> [{name, tree}]。"""
+    trees = []
+    lines = content.split("\n")
+    i = 0
+    n = len(lines)
+    while i < n:
+        s = lines[i].strip()
+        if s.startswith("tree "):
+            name = s[5:].strip()
+            j = i + 1
+            while j < n and not lines[j].strip():
+                j += 1
+            if j < n:
+                try:
+                    trees.append({"name": name, "tree": json.loads(lines[j])})
+                    i = j + 1
+                    continue
+                except Exception:
+                    pass
+            i += 1
+        else:
+            i += 1
+    return trees
+
+
+@app.get("/api/bt/source")
+async def bt_source(file: str):
+    """读取 Template 内 TS 源码（节点定义），供 Sources 面板展示。仅允许 template_root 下文件。"""
+    if not bt_template_root or not bt_template_root.exists():
+        return JSONResponse({"error": "template_root not configured"}, status_code=500)
+    if ".." in file:
+        return JSONResponse({"error": "invalid path"}, status_code=403)
+    try:
+        f = Path(file).resolve()
+        root = bt_template_root.resolve()
+    except Exception:
+        return JSONResponse({"error": "invalid path"}, status_code=403)
+    if not str(f).startswith(str(root)):
+        return JSONResponse({"error": "file not under template_root"}, status_code=403)
+    if not f.exists() or not f.is_file():
+        return JSONResponse({"error": "file not found"}, status_code=404)
+    try:
+        content = f.read_text(encoding="utf-8", errors="ignore")
+        return {"content": content, "path": str(f).replace("\\", "/")}
+    except Exception as e:
+        return JSONResponse({"error": f"read error: {e}"}, status_code=500)
+
+
+@app.get("/api/bt/runtime_log")
+async def bt_runtime_log(userid: str, date: str = None):
+    """按 userid + 日期拉取运行时行为树日志。
+    1) 列目录 .../xzmk/{date}/btree/
+    2) 找匹配 _{userid}_btrees.txt（多渠道 Android_/iOS_ 等，下划线锚定防部分匹配）
+    3) 拉取并解析 tree 块 -> [{name, tree}]
+    """
+    if not userid:
+        return JSONResponse({"error": "userid required"}, status_code=400)
+    if not date:
+        date = datetime.now().strftime("%Y%m%d")
+    base = f"http://logdebug.tcy365.org:2505/upload/xzmk/{date}/btree/"
+    try:
+        listing = await asyncio.to_thread(_http_get_text, base)
+    except Exception as e:
+        return JSONResponse({"error": f"fetch listing failed: {e}", "listing_url": base}, status_code=502)
+    pat = re.compile(r'href="([^"]*_' + re.escape(userid) + r'_btrees\.txt)"')
+    matches = pat.findall(listing)
+    if not matches:
+        return JSONResponse({"error": f"no btree log for userid {userid} on {date}", "listing_url": base}, status_code=404)
+    fname = matches[0]
+    log_url = base + fname
+    try:
+        content = await asyncio.to_thread(_http_get_text, log_url)
+    except Exception as e:
+        return JSONResponse({"error": f"fetch log failed: {e}", "log_url": log_url}, status_code=502)
+    trees = _parse_btree_log(content)
+    return {
+        "userid": userid,
+        "date": date,
+        "log_url": log_url,
+        "matched_files": matches,
+        "tree_count": len(trees),
+        "trees": trees,
+    }
+
+
+def _parse_btree_exec(content: str) -> list:
+    """解析单树执行日志: 'version N' + 'status <nodeId> <state> <inProps> <outProps> <debug>' 序列。
+    多个 version 块 = 多次运行。返回 [{version, events:[{nodeId,state,inProps}]}]。"""
+    versions = []
+    cur = None
+    status_re = re.compile(r'^status\s+(\S+)\s+(\d+)(?:\s+(.*))?$')
+    for raw in content.split("\n"):
+        s = raw.strip()
+        if s.startswith("version "):
+            try:
+                v = int(s[8:].strip())
+            except Exception:
+                v = 0
+            cur = {"version": v, "events": []}
+            versions.append(cur)
+        elif s.startswith("status "):
+            if cur is None:
+                cur = {"version": 0, "events": []}
+                versions.append(cur)
+            m = status_re.match(s)
+            if m:
+                rest = m.group(3) or ""
+                in_props = rest.split(" ", 1)[0] if rest else ""
+                cur["events"].append({
+                    "nodeId": m.group(1),
+                    "state": int(m.group(2)),
+                    "inProps": in_props,
+                })
+    return versions
+
+
+@app.get("/api/bt/runtime_exec")
+async def bt_runtime_exec(userid: str, tree: str, date: str = None):
+    """按 userid + 树名 + 日期拉取单棵树的执行轨迹日志（status 时间线）。
+    文件名: {platform}_{userid}_{tree}.txt（下划线锚定防部分匹配）。
+    """
+    if not userid or not tree:
+        return JSONResponse({"error": "userid and tree required"}, status_code=400)
+    if not date:
+        date = datetime.now().strftime("%Y%m%d")
+    base = f"http://logdebug.tcy365.org:2505/upload/xzmk/{date}/btree/"
+    try:
+        listing = await asyncio.to_thread(_http_get_text, base)
+    except Exception as e:
+        return JSONResponse({"error": f"fetch listing failed: {e}", "listing_url": base}, status_code=502)
+    pat = re.compile(r'href="([^"]*_' + re.escape(userid) + r'_' + re.escape(tree) + r'\.txt)"')
+    matches = pat.findall(listing)
+    if not matches:
+        return JSONResponse({"error": f"no exec log for userid {userid} tree {tree} on {date}", "listing_url": base}, status_code=404)
+    log_url = base + matches[0]
+    try:
+        content = await asyncio.to_thread(_http_get_text, log_url)
+    except Exception as e:
+        return JSONResponse({"error": f"fetch log failed: {e}", "log_url": log_url}, status_code=502)
+    versions = _parse_btree_exec(content)
+    return {
+        "userid": userid,
+        "tree": tree,
+        "date": date,
+        "log_url": log_url,
+        "version_count": len(versions),
+        "versions": versions,
+    }
+
+
 # ---- HTTP API for MCP/agent (perf/touch/eval) ----
 
 async def _send_eval(expr: str, ctx: ClientCtx, timeout: float = 5.0) -> dict:

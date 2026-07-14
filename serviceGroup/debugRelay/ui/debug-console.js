@@ -246,6 +246,9 @@ async function reloadRuntime() {
 
 // ---- Tab Switching ----
 
+// 已初始化的 tab（首次切入才加载，之后保留上次页面：DOM/状态/pan-zoom 均不重置）
+const _initedTabs = new Set();
+
 function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -256,20 +259,22 @@ function switchTab(tab) {
     // 持久化 tab 选择，刷新后恢复
     try { localStorage.setItem('debug_active_tab', tab); } catch(e) {}
 
+    // perf: 每次切入重绘图表（数据在缓冲区，重绘=保留，不重置）
     if (tab === 'perf' && window.renderPerfCharts) {
         setTimeout(window.renderPerfCharts, 50);
     }
-    // 首次切换到 events 面板时自动加载分类列表
-    if (tab === 'events' && typeof eventsLoadCategories === 'function') {
-        eventsLoadCategories();
-    }
-    // 切换到 scene 面板时自动加载场景树
-    if (tab === 'scene' && window.sceneRefreshTree) {
-        sceneRefreshTree();
-    }
-    // 切换到 btree 面板时初始化行为树可视化
-    if (tab === 'btree' && window.btreeInit) {
-        btreeInit();
+    // events/scene/btree: 首次切入才初始化，之后切回应保留上次页面
+    if (!_initedTabs.has(tab)) {
+        _initedTabs.add(tab);
+        if (tab === 'events' && typeof eventsLoadCategories === 'function') {
+            eventsLoadCategories();
+        }
+        if (tab === 'scene' && window.sceneRefreshTree) {
+            sceneRefreshTree();
+        }
+        if (tab === 'btree' && window.btreeInit) {
+            btreeInit();
+        }
     }
 }
 

@@ -696,6 +696,27 @@ function applyBreakpointsState(bps) {
 window.resetSourcesPanel = resetSourcesPanel;
 window.applyBreakpointsState = applyBreakpointsState;
 
+// ---- 行为树节点跳转入口：打开 Template 内 TS 文件并定位到行 ----
+function openExternalSource(abspath, line) {
+    switchTab('sources');
+    currentFile = abspath;
+    fetch('/api/bt/source?file=' + encodeURIComponent(abspath))
+        .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(new Error(d.error || ('HTTP ' + r.status)))))
+        .then(data => {
+            if (data.error) { showSourceError(data.error); return; }
+            currentContent = data.content;
+            renderSourceCode(abspath, data.content);
+            if (line) {
+                const container = document.getElementById('source-content');
+                container.querySelectorAll('.source-line.btree-jump').forEach(e => e.classList.remove('btree-jump'));
+                const el = container.children[line - 1];
+                if (el) { el.classList.add('btree-jump'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+            }
+        })
+        .catch(err => showSourceError(err.message));
+}
+window.openExternalSource = openExternalSource;
+
 // ---- Init ----
 
 loadFileTree();

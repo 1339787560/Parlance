@@ -1802,15 +1802,42 @@ html[data-theme="silverwolf"] {
   background: var(--card); border: 1px solid var(--border); border-radius: 6px; z-index: 5;
 }
 #btree-runtime-panel.hidden { display: none; }
+#btree-runtime-panel label { color: var(--dim); font-size: 11px; }
 #btree-runtime-panel input {
-  width: 380px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 3px;
+  width: auto; padding: 3px 6px; border: 1px solid var(--border); border-radius: 3px;
   background: var(--bg); color: var(--text); font-size: 11px; outline: none;
 }
+#btree-runtime-panel input#btree-userid { width: 120px; }
+#btree-runtime-panel input#btree-date { width: 130px; }
 #btree-runtime-panel button {
   padding: 3px 10px; border: 1px solid var(--border); border-radius: 3px;
   background: var(--bg); color: var(--text); cursor: pointer; font-size: 11px;
 }
+#btree-runtime-panel button:hover { border-color: var(--accent); color: var(--accent); }
 .btree-phase2-tip { color: var(--yellow); font-size: 10px; }
+
+/* Sources 行跳转高亮（行为树节点点击定位）*/
+.source-line.btree-jump { background: rgba(78,201,176,0.22); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* 运行时调试时间线 */
+.btree-timeline {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; background: var(--card); border-top: 1px solid var(--border); z-index: 4;
+}
+.btree-timeline.hidden { display: none; }
+.btree-timeline button {
+  padding: 3px 9px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg); color: var(--text); cursor: pointer; font-size: 12px; min-width: 32px;
+}
+.btree-timeline button:hover { border-color: var(--accent); color: var(--accent); }
+.btree-timeline #btree-play-btn { font-size: 13px; }
+.btree-timeline #btree-scrub { flex: 1; min-width: 120px; cursor: pointer; accent-color: var(--accent); }
+.btree-timeline #btree-step-label { color: var(--dim); font-size: 11px; min-width: 56px; text-align: right; }
+.btree-timeline select {
+  padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg); color: var(--text); font-size: 11px; outline: none;
+}
 
 /* 弹窗配置视图（popup-*.json 非行为树）*/
 .btree-config-view { position: absolute; inset: 0; overflow: auto; padding: 16px 20px; }
