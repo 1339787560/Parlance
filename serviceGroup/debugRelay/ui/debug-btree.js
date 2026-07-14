@@ -337,7 +337,7 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
     const inDebug = !!state.exec;
     const execState = (inDebug && state.exec.nodeStates && state.exec.nodeStates[node.id] !== undefined) ? state.exec.nodeStates[node.id] : null;
 
-    let bodyFill = color, bodyOp = inDebug ? 0.30 : 0.16, stroke = color, sw = 1.4;
+    let bodyFill = color, bodyOp = inDebug ? 0.60 : 0.18, stroke = color, sw = 1.4;
     let fog = false, ghost = false, dash = null, badgeText = null, badgeColor = null;
     if (diffKind === 'added') {
         bodyFill = '#22c55e'; bodyOp = 0.22; stroke = '#22c55e'; sw = 2.2; dash = '5 3';
@@ -346,8 +346,9 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
         bodyFill = '#ef4444'; bodyOp = 0.14; stroke = '#ef4444'; sw = 2.2; dash = '5 3'; ghost = true;
         cls += ' btree-diff-removed'; badgeText = '✕移除'; badgeColor = '#ef4444';
     } else if (execState !== null) {
+        // 已执行: 蒙雾感（淡底 + 暗雾叠加 + 状态色边框）
         const sc = STATE_COLOR[execState] || color;
-        bodyFill = sc; bodyOp = 0.14; stroke = sc; sw = 2.6; fog = true;
+        bodyFill = sc; bodyOp = 0.12; stroke = sc; sw = 2.6; fog = true;
         cls += ' exec-state-' + execState; badgeText = STATE_LABEL[execState]; badgeColor = sc;
     }
 
@@ -358,7 +359,7 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
     grp.appendChild(svgEl('rect', rectAttrs));
     grp.appendChild(svgEl('rect', { x:0, y:0, width:6, height:NODE_H, rx:3, fill: color }));   // 左条保留分类色
     if (fog) {
-        grp.appendChild(svgEl('rect', { x:6, y:0, width:NODE_W-6, height:NODE_H, fill:'#000', 'fill-opacity':0.42 }));  // 蒙雾叠加
+        grp.appendChild(svgEl('rect', { x:6, y:0, width:NODE_W-6, height:NODE_H, fill:'#000', 'fill-opacity':0.48 }));  // 蒙雾叠加
     }
 
     const nameTxt = svgEl('text', { x:14, y:21, class:'btree-node-name' });
