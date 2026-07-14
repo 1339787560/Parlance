@@ -1418,7 +1418,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Debug Relay Server")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port")
     parser.add_argument("--host", default="0.0.0.0", help="Server host")
-    parser.add_argument("--src", default=DEFAULT_SRC, help="Source directory to serve")
+    parser.add_argument("--src", default=None, help="Source directory to serve (默认读 config source_dir)")
     parser.add_argument("--events-dir", default=None,
                         help="Directory to persist important events (按日归档 JSONL)")
     parser.add_argument("--whitelist-enable", action="store_true",
@@ -1433,7 +1433,8 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    src_dir = Path(args.src).resolve()
+    # src_dir 延后解析（需读 config source_dir 兜底）-> 先占位，cfg 加载后定值
+    src_dir = None
 
     if args.events_dir:
         events_dir = Path(args.events_dir).resolve()
@@ -1454,6 +1455,9 @@ if __name__ == "__main__":
                 break
 
     cfg = _load_config(cfg_path) if cfg_path else {}
+    # 源码目录: --src > config source_dir > 默认（行为树/Sources 不依赖设备，以本机代码为准）
+    _src_arg = args.src or (cfg.get("source_dir") if isinstance(cfg, dict) else None) or DEFAULT_SRC
+    src_dir = Path(_src_arg).resolve()
     wl_cfg = cfg.get("whitelist") or {} if isinstance(cfg, dict) else {}
     cfg_enabled = bool(wl_cfg.get("enabled", False))
     cfg_ip_list = wl_cfg.get("ips") or []

@@ -1785,8 +1785,8 @@ html[data-theme="silverwolf"] {
 .btree-tree-gap { color: var(--dim); font-style: italic; }
 .btree-tree-empty { color: var(--dim); padding: 8px 5px; font-size: 11px; word-break: break-all; }
 
-#btree-canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); min-width: 0; }
-#btree-canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+#btree-canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); min-width: 0; cursor: default; }
+#btree-canvas { width: 100%; height: 100%; display: block; cursor: default; }
 .btree-empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: var(--dim); font-size: 13px; pointer-events: none;

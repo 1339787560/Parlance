@@ -397,7 +397,14 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
     });
 
     const tip = svgEl('title');
-    tip.textContent = node.name + '\n' + (node.title || '') + '\n' + formatProps(node.properties).join('\n');
+    let tipText = node.name + '\n' + (node.title || '');
+    if (formatProps(node.properties).length) tipText += '\n[配置] ' + formatProps(node.properties).join(' | ');
+    if (state.exec && state.exec.nodeStates && state.exec.nodeStates[node.id] !== undefined) {
+        tipText += '\n[运行时] ' + (STATE_LABEL[state.exec.nodeStates[node.id]] || '?');
+        const ip = state.exec.nodeInProps && state.exec.nodeInProps[node.id];
+        if (ip) tipText += '  inProps=' + ip;
+    }
+    tip.textContent = tipText;
     grp.appendChild(tip);
     g.appendChild(grp);
 }
@@ -509,7 +516,7 @@ function bindPanZoom(svg, vp) {
         state.pan.y = state.dragStart.panY + (vb.y - state.dragStart.vbY);
         vp.setAttribute('transform', vpTransform());
     };
-    const end = () => { state.dragging = false; svg.style.cursor = ''; };
+    const end = () => { state.dragging = false; svg.style.cursor = 'default'; };
     svg.onmouseup = end; svg.onmouseleave = end;
 }
 function btreeZoom(factor) {
@@ -633,9 +640,13 @@ function applyExecStep(k) {
     if (!ver) return;
     const evs = ver.events;
     k = Math.max(0, Math.min(k, evs.length));
-    const ns = {};
-    for (let i = 0; i < k; i++) ns[evs[i].nodeId] = evs[i].state;   // 末次状态胜出
+    const ns = {}, np = {};   // 末次状态 / 末次 inProps 胜出
+    for (let i = 0; i < k; i++) {
+        ns[evs[i].nodeId] = evs[i].state;
+        if (evs[i].inProps) np[evs[i].nodeId] = evs[i].inProps;
+    }
     state.exec.nodeStates = ns;
+    state.exec.nodeInProps = np;
     state.exec.curStep = k;
     const lbl = $('btree-step-label');
     if (lbl) lbl.textContent = k + ' / ' + evs.length;
