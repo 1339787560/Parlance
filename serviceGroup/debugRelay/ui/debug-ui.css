@@ -1810,6 +1810,31 @@ html[data-theme="silverwolf"] {
 .btree-diff-header { font-size: 12px; font-weight: 700; }
 .btree-diff-header.btree-diff-removed { fill: #ef4444; }
 
+/* ── Curl Panel ─────────────────────────────────────────────── */
+#panel-curl { flex-direction: column; gap: 6px; padding: 8px; }
+#curl-bar { display: flex; gap: 6px; }
+#curl-bar select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--card); color: var(--text); font-size: 12px; }
+#curl-bar input { flex: 1; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 12px; outline: none; }
+#curl-bar button { padding: 5px 16px; border: 1px solid var(--border); border-radius: 4px; background: var(--accent); color: #0d1117; cursor: pointer; font-size: 12px; font-weight: 600; }
+#curl-bar button:disabled { opacity: .5; cursor: default; }
+.curl-req-extra { display: flex; gap: 8px; }
+.curl-req-extra > div { flex: 1; }
+.curl-label { color: var(--dim); font-size: 10px; margin-bottom: 2px; }
+.curl-req-extra textarea { width: 100%; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 11px; font-family: inherit; resize: vertical; outline: none; }
+.curl-response { flex: 1; overflow: auto; background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-size: 12px; }
+.curl-empty, .curl-loading { color: var(--dim); padding: 6px; }
+.curl-error { color: var(--red); padding: 6px; }
+.curl-res-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.curl-status { color: #0d1117; font-weight: 700; padding: 2px 10px; border-radius: 10px; font-size: 13px; }
+.curl-reason { color: var(--text); }
+.curl-elapsed { color: var(--accent); font-size: 11px; }
+.curl-ctype { color: var(--dim); font-size: 11px; }
+.curl-final { color: var(--blue); font-size: 11px; margin-bottom: 6px; word-break: break-all; }
+.curl-section { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; margin: 8px 0 3px; }
+.curl-trunc { color: var(--yellow); }
+.curl-headers, .curl-body { white-space: pre-wrap; word-break: break-all; color: var(--text); font-size: 11px; margin: 0; }
+.curl-body { max-height: 60vh; overflow: auto; }
+
 /* Phase 2 运行时日志面板 */
 #btree-runtime-panel {
   position: absolute; top: 10px; left: 50%; transform: translateX(-50%);

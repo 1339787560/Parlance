@@ -397,6 +397,14 @@ async def ui_btree_js():
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/debug-curl.js")
+async def ui_curl_js():
+    f = UI_DIR / "debug-curl.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/health")
 async def health():
     return {
@@ -784,6 +792,59 @@ async def bt_runtime_session(userid: str, date: str = None):
         "tree_count": len(trees),
         "trees": trees,
     }
+
+
+# ---- Curl 工具（HTTP 连通性测试，服务端代理绕 CORS）----
+
+class CurlRequest(BaseModel):
+    url: str = ""
+    method: str = "GET"
+    headers: dict = {}
+    body: str = ""
+
+
+@app.post("/api/curl")
+async def api_curl(req: CurlRequest):
+    """服务端代理发起 HTTP 请求，返回 status/headers/body/耗时（绕浏览器 CORS）。"""
+    import urllib.request, urllib.error, time as _time
+    url = (req.url or "").strip()
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return JSONResponse({"error": "url 必须以 http:// 或 https:// 开头"}, status_code=400)
+    method = (req.method or "GET").upper()
+    headers = req.headers or {}
+
+    def _do() -> dict:
+        t0 = _time.time()
+        data = req.body.encode("utf-8") if req.body else None
+        r = urllib.request.Request(url, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(r, timeout=20) as resp:
+                raw = resp.read()
+                return {
+                    "status": resp.status,
+                    "reason": resp.reason,
+                    "headers": dict(resp.headers.items()),
+                    "body": raw.decode("utf-8", errors="ignore")[:200000],
+                    "body_truncated": len(raw) > 200000,
+                    "elapsed_ms": int((_time.time() - t0) * 1000),
+                    "content_type": resp.headers.get("Content-Type", ""),
+                    "final_url": resp.url,
+                }
+        except urllib.error.HTTPError as e:
+            try:
+                b = e.read().decode("utf-8", errors="ignore")[:200000]
+            except Exception:
+                b = ""
+            return {
+                "status": e.code, "reason": e.reason,
+                "headers": dict(e.headers.items()), "body": b,
+                "elapsed_ms": int((_time.time() - t0) * 1000),
+                "content_type": e.headers.get("Content-Type", ""), "final_url": url,
+            }
+        except Exception as e:
+            return {"error": str(e), "elapsed_ms": int((_time.time() - t0) * 1000)}
+
+    return await asyncio.to_thread(_do)
 
 
 # ---- HTTP API for MCP/agent (perf/touch/eval) ----

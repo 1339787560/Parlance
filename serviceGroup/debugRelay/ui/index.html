@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=12">
+    <link rel="stylesheet" href="debug-ui.css?v=13">
 </head>
 <body>
     <div id="toolbar">
@@ -30,6 +30,7 @@
         <button id="tab-console" class="tab active" onclick="switchTab('console')">Console</button>
         <button id="tab-sources" class="tab" onclick="switchTab('sources')">Sources</button>
         <button id="tab-btree" class="tab" onclick="switchTab('btree')">行为树</button>
+        <button id="tab-curl" class="tab" onclick="switchTab('curl')">Curl</button>
         <button id="tab-perf" class="tab" onclick="switchTab('perf')">Performance</button>
         <button id="tab-events" class="tab" onclick="switchTab('events')">Events</button>
         <button id="tab-scene" class="tab" onclick="switchTab('scene')">Scene</button>
@@ -223,6 +224,28 @@
         </div>
     </div>
 
+    <!-- Curl Panel - HTTP 连通性测试 -->
+    <div id="panel-curl" class="panel">
+        <div id="curl-bar">
+            <select id="curl-method">
+                <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>HEAD</option>
+            </select>
+            <input id="curl-url" type="text" placeholder="http://host:port/path" onkeydown="if(event.key==='Enter')curlSend()">
+            <button id="curl-send-btn" onclick="curlSend()">发送</button>
+        </div>
+        <div class="curl-req-extra">
+            <div>
+                <div class="curl-label">Headers（每行 Key: Value）</div>
+                <textarea id="curl-headers" rows="2" placeholder="Content-Type: application/json"></textarea>
+            </div>
+            <div>
+                <div class="curl-label">Body（POST/PUT）</div>
+                <textarea id="curl-body" rows="2" placeholder="请求体..."></textarea>
+            </div>
+        </div>
+        <div id="curl-response" class="curl-response"><div class="curl-empty">输入 URL 测试 HTTP 连通性</div></div>
+    </div>
+
     <!-- Quick Open Panel (Ctrl+P) -->
     <div id="quick-open" class="command-palette hidden">
         <div class="command-palette-input-wrap">
@@ -249,5 +272,6 @@
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
     <script src="debug-btree.js?v=13"></script>
+    <script src="debug-curl.js?v=1"></script>
 </body>
 </html>
