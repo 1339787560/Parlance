@@ -558,6 +558,7 @@ window.btreeZoomReset = btreeZoomReset;
 
 // ---- 模式切换 ----
 function btreeSwitchMode() {
+    stopPlay();   // 切模式前停播放，隔离 timer
     state.mode = $('btree-mode').value;
     const rt = $('btree-runtime-panel');
     const layerTabs = $('btree-layer-tabs');
@@ -638,7 +639,8 @@ async function btreeSelectRuntimeTree(name) {
     }
     if (!structure) { setStatus('✗ 未找到 ' + name + ' 的结构'); btreeClearCanvas(); return; }
     state.treeData = structure;
-    // exec 内联（session 已整目录拉取）
+    // exec 内联（session 已整目录拉取）—— 先停旧树播放再换，隔离 timer
+    stopPlay();
     state.exec = null;
     hideTimeline();
     if (t.exec && t.exec.versions && t.exec.versions.length) {
@@ -691,15 +693,18 @@ window.btreeScrub = btreeScrub;
 
 function btreePlay() {
     if (!state.exec) return;
-    const ver = state.exec.versions[state.exec.curVer];
+    const ex = state.exec;
+    const ver = ex.versions[ex.curVer];
     if (!ver || !ver.events.length) return;
-    if (state.exec.playing) { stopPlay(); return; }
-    if (state.exec.curStep >= ver.events.length) applyExecStep(0);
-    state.exec.playing = true;
+    if (ex.playing) { stopPlay(); return; }
+    if (ex.curStep >= ver.events.length) applyExecStep(0);
+    ex.playing = true;
     setPlayBtn(true);
-    state.exec.timer = setInterval(() => {
-        const v = state.exec.versions[state.exec.curVer];
-        const next = state.exec.curStep + 1;
+    // 捕获本次 exec 引用: 若已切树/切模式(state.exec 不再是 ex)则自杀, 隔离播放
+    ex.timer = setInterval(() => {
+        if (state.exec !== ex) { clearInterval(ex.timer); return; }
+        const v = ex.versions[ex.curVer];
+        const next = ex.curStep + 1;
         if (!v || next > v.events.length) { stopPlay(); return; }
         applyExecStep(next);
     }, 350);
