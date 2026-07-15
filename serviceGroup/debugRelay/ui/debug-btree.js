@@ -18,6 +18,14 @@ const STATE_LABEL = { 1:'SUCCESS', 2:'FAILURE', 3:'RUNNING', 4:'ERROR', 5:'INTER
 const POPUP_TYPE_COLOR = { 0:'#6b7280', 1:'#3b82f6', 2:'#22c55e', 3:'#a855f7', 4:'#f59e0b', 5:'#ec4899', 6:'#14b8a6', 7:'#eab308' };
 
 const NODE_W = 172, NODE_H = 72;
+const COMP_W = 58, COMP_H = 30;   // Composite 紧凑 pill 尺寸
+// Composite 节点符号（&&=Sequence, ||=Priority, M=Memory 前缀）
+const COMPOSITE_SYMBOL = {
+    Sequence:'&&', Priority:'||', MemSequence:'M&&', MemPriority:'M||',
+    Parallel:'Par', ForEach:'Each', MemPriorityRandom:'Mr||', PriorityRandom:'r||'
+};
+function isCompositeName(name) { return !!COMPOSITE_SYMBOL[name] || COMPOSITES.has(name); }
+function compositeSymbol(name) { return COMPOSITE_SYMBOL[name] || (name || '?').slice(0, 3); }
 const LEVEL_W = 234;   // 水平层间距（depth -> x）
 const V_GAP = 14;      // 兄弟节点垂直间距
 const PAD = 40;
@@ -304,7 +312,7 @@ function btreeRender() {
         const n = nodes[id];
         if (state.collapsed.has(id)) continue;
         const childIds = Array.isArray(n.children) ? n.children : (n.child ? [n.child] : []);
-        childIds.forEach(cid => { if (visible.has(cid)) drawEdge(edgesG, state.layout[id], state.layout[cid], offX, offY); });
+        childIds.forEach(cid => { if (visible.has(cid)) drawEdge(edgesG, n, state.layout[id], state.layout[cid], offX, offY); });
     }
     for (const id of visible) drawNode(nodesG, nodes[id], state.layout[id], offX, offY);
     // 覆写对比: 渲染移除节点簇（ghost，右侧）+ 簇头
@@ -332,9 +340,10 @@ window.btreeRender = btreeRender;
 function vpTransform() { return 'translate(' + state.pan.x + ',' + state.pan.y + ') scale(' + state.zoom + ')'; }
 
 // 边: 父右边中心 -> 子左边中心（右出左入）
-function drawEdge(g, pp, cp, offX, offY) {
-    const px = pp.x + offX + NODE_W;
-    const py = pp.y + offY + NODE_H / 2;
+function drawEdge(g, parentNode, pp, cp, offX, offY) {
+    const pw = (parentNode && isCompositeName(parentNode.name)) ? COMP_W : NODE_W;
+    const px = pp.x + offX + pw;
+    const py = pp.y + offY + NODE_H / 2;   // 节点垂直居中于 NODE_H 槽
     const cx = cp.x + offX;
     const cy = cp.y + offY + NODE_H / 2;
     const mx = (px + cx) / 2;
@@ -371,6 +380,44 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
         const sc = STATE_COLOR[execState] || color;
         bodyFill = sc; bodyOp = 0.12; stroke = sc; sw = 2.6; fog = true;
         cls += ' exec-state-' + execState; badgeText = STATE_LABEL[execState]; badgeColor = sc;
+    }
+
+    // Composite: 紧凑 pill + 符号（M&& / M|| / && / || ...），垂直居中于 NODE_H 槽
+    if (isCompositeName(node.name)) {
+        const cy = (NODE_H - COMP_H) / 2;
+        const grp = svgEl('g', { class: cls + ' btree-composite', 'data-id': node.id, transform: 'translate(' + x + ',' + (y + cy) + ')' });
+        if (ghost) grp.setAttribute('opacity', '0.5');
+        const rAttrs = { x:0, y:0, width:COMP_W, height:COMP_H, rx:COMP_H/2, fill: bodyFill, 'fill-opacity':bodyOp, stroke: stroke, 'stroke-width':sw };
+        if (dash) rAttrs['stroke-dasharray'] = dash;
+        grp.appendChild(svgEl('rect', rAttrs));
+        if (fog) grp.appendChild(svgEl('rect', { x:0, y:0, width:COMP_W, height:COMP_H, rx:COMP_H/2, fill:'#000', 'fill-opacity':0.48 }));
+        const sym = svgEl('text', { x:COMP_W/2, y:COMP_H/2 + 4, class:'btree-comp-sym', 'text-anchor':'middle' });
+        sym.textContent = compositeSymbol(node.name);
+        if (badgeColor) sym.setAttribute('fill', badgeColor);
+        grp.appendChild(sym);
+        if ((Array.isArray(node.children) && node.children.length) || node.child) {
+            const tog = svgEl('text', { x:COMP_W + 4, y:COMP_H - 1, class:'btree-collapse-toggle', 'font-size':10 });
+            tog.textContent = state.collapsed.has(node.id) ? '▸' : '▾';
+            tog.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (state.collapsed.has(node.id)) state.collapsed.delete(node.id);
+                else state.collapsed.add(node.id);
+                btreeRender();
+            });
+            grp.appendChild(tog);
+        }
+        grp.style.cursor = 'pointer';
+        grp.addEventListener('click', (e) => {
+            if (e.target.classList && e.target.classList.contains('btree-collapse-toggle')) return;
+            btreeResolveNode(node.name);
+        });
+        const tip = svgEl('title');
+        let tipText = node.name + ' (' + compositeSymbol(node.name) + ')' + (node.title ? '\n' + node.title : '');
+        if (execState !== null) tipText += '\n[运行时] ' + (STATE_LABEL[execState] || '?');
+        tip.textContent = tipText;
+        grp.appendChild(tip);
+        g.appendChild(grp);
+        return;
     }
 
     const rectAttrs = { x:0, y:0, width:NODE_W, height:NODE_H, rx:7, fill: bodyFill, 'fill-opacity':bodyOp, stroke: stroke, 'stroke-width':sw };
