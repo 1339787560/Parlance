@@ -1812,6 +1812,11 @@ html[data-theme="silverwolf"] {
 
 /* ── Curl Panel ─────────────────────────────────────────────── */
 #panel-curl { flex-direction: column; gap: 6px; padding: 8px; }
+.curl-cmd-wrap { display: flex; gap: 6px; }
+.curl-cmd-wrap textarea { flex: 1; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 12px; font-family: inherit; resize: vertical; outline: none; }
+.curl-cmd-wrap button { padding: 5px 16px; border: 1px solid var(--border); border-radius: 4px; background: var(--accent); color: #0d1117; cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.curl-cmd-wrap button:disabled { opacity: .5; cursor: default; }
+.curl-divider { color: var(--dim); font-size: 10px; text-align: center; margin: 2px 0; }
 #curl-bar { display: flex; gap: 6px; }
 #curl-bar select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--card); color: var(--text); font-size: 12px; }
 #curl-bar input { flex: 1; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 12px; outline: none; }

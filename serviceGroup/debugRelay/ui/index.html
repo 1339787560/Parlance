@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=13">
+    <link rel="stylesheet" href="debug-ui.css?v=14">
 </head>
 <body>
     <div id="toolbar">
@@ -226,12 +226,16 @@
 
     <!-- Curl Panel - HTTP 连通性测试 -->
     <div id="panel-curl" class="panel">
+        <div class="curl-cmd-wrap">
+            <textarea id="curl-cmd" rows="2" placeholder="粘贴 curl 命令整条，如：curl -s -X POST http://host:port/path -H &quot;Content-Type: application/json&quot; -d '{&quot;req&quot;:&quot;xxx&quot;}'" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key===&#39;Enter&#39;)curlSend()"></textarea>
+            <button id="curl-send-btn" onclick="curlSend()">发送</button>
+        </div>
+        <div class="curl-divider">或填写字段（命令框为空时生效）</div>
         <div id="curl-bar">
             <select id="curl-method">
                 <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>HEAD</option>
             </select>
             <input id="curl-url" type="text" placeholder="http://host:port/path" onkeydown="if(event.key==='Enter')curlSend()">
-            <button id="curl-send-btn" onclick="curlSend()">发送</button>
         </div>
         <div class="curl-req-extra">
             <div>
@@ -243,7 +247,7 @@
                 <textarea id="curl-body" rows="2" placeholder="请求体..."></textarea>
             </div>
         </div>
-        <div id="curl-response" class="curl-response"><div class="curl-empty">输入 URL 测试 HTTP 连通性</div></div>
+        <div id="curl-response" class="curl-response"><div class="curl-empty">粘贴 curl 命令或填 URL 测试连通性（Ctrl/Cmd+Enter 发送）</div></div>
     </div>
 
     <!-- Quick Open Panel (Ctrl+P) -->
@@ -272,6 +276,6 @@
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
     <script src="debug-btree.js?v=13"></script>
-    <script src="debug-curl.js?v=1"></script>
+    <script src="debug-curl.js?v=2"></script>
 </body>
 </html>

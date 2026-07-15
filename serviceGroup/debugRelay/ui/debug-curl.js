@@ -27,12 +27,20 @@ function statusColor(code) {
 }
 
 async function curlSend() {
-    const url = ($('curl-url') || {}).value || '';
-    const u = url.trim();
-    if (!u) { curlShow('请输入 URL', true); return; }
-    const method = ($('curl-method') || {}).value || 'GET';
-    const headers = parseHeaders(($('curl-headers') || {}).value || '');
-    const body = ($('curl-body') || {}).value || '';
+    const cmd = (($('curl-cmd') || {}).value || '').trim();
+    let payload;
+    if (cmd) {
+        payload = { cmd };
+    } else {
+        const url = (($('curl-url') || {}).value || '').trim();
+        if (!url) { curlShow('请输入 curl 命令或 URL', true); return; }
+        payload = {
+            url,
+            method: ($('curl-method') || {}).value || 'GET',
+            headers: parseHeaders(($('curl-headers') || {}).value || ''),
+            body: ($('curl-body') || {}).value || '',
+        };
+    }
     const out = $('curl-response');
     if (out) out.innerHTML = '<div class="curl-loading">请求中...</div>';
     const btn = $('curl-send-btn'); if (btn) btn.disabled = true;
@@ -40,10 +48,11 @@ async function curlSend() {
         const r = await fetch('/api/curl', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: u, method, headers, body }),
+            body: JSON.stringify(payload),
         });
         const data = await r.json();
-        renderCurlResponse(data, u);
+        const reqUrl = payload.url || (cmd.match(/https?:\/\/\S+/) || [''])[0];
+        renderCurlResponse(data, reqUrl);
     } catch (e) {
         curlShow('请求失败: ' + e.message, true);
     } finally {

@@ -801,21 +801,61 @@ class CurlRequest(BaseModel):
     method: str = "GET"
     headers: dict = {}
     body: str = ""
+    cmd: str = ""   # 原始 curl 命令（粘贴整条，优先于上面字段）
+
+
+def parse_curl_cmd(cmd: str):
+    """解析 curl 命令串 -> (url, method, headers, body)。用 shlex 分词，不 subprocess。"""
+    import shlex
+    try:
+        toks = shlex.split(cmd)
+    except Exception:
+        return None
+    url, method, headers, body = "", "GET", {}, ""
+    i = 0
+    while i < len(toks) and toks[i] == "curl":
+        i += 1
+    while i < len(toks):
+        t = toks[i]
+        if t in ("-X", "--request") and i + 1 < len(toks):
+            method = toks[i + 1]; i += 2
+        elif t in ("-H", "--header") and i + 1 < len(toks):
+            h = toks[i + 1]; i += 2
+            c = h.find(":")
+            if c > 0:
+                headers[h[:c].strip()] = h[c + 1:].strip()
+        elif t in ("-d", "--data", "--data-raw", "--data-binary") and i + 1 < len(toks):
+            body = toks[i + 1]; i += 2
+            if method == "GET":
+                method = "POST"   # -d 隐含 POST
+        elif t in ("-s", "--silent", "-S", "--show-error", "-i", "--include",
+                   "-L", "--location", "-k", "--insecure", "--compressed", "-v", "--verbose"):
+            i += 1   # 忽略这些 curl 标志
+        elif t.startswith("http://") or t.startswith("https://"):
+            url = t; i += 1
+        else:
+            i += 1
+    return url, method, headers, body
 
 
 @app.post("/api/curl")
 async def api_curl(req: CurlRequest):
-    """服务端代理发起 HTTP 请求，返回 status/headers/body/耗时（绕浏览器 CORS）。"""
+    """服务端代理发起 HTTP 请求，返回 status/headers/body/耗时（绕浏览器 CORS）。
+    支持粘贴整条 curl 命令(cmd)或结构化字段。"""
     import urllib.request, urllib.error, time as _time
-    url = (req.url or "").strip()
+    if req.cmd and req.cmd.strip():
+        parsed = parse_curl_cmd(req.cmd)
+        if not parsed:
+            return JSONResponse({"error": "curl 命令解析失败"}, status_code=400)
+        url, method, headers, body = parsed
+    else:
+        url, method, headers, body = (req.url or "").strip(), (req.method or "GET").upper(), req.headers or {}, req.body or ""
     if not url or not (url.startswith("http://") or url.startswith("https://")):
         return JSONResponse({"error": "url 必须以 http:// 或 https:// 开头"}, status_code=400)
-    method = (req.method or "GET").upper()
-    headers = req.headers or {}
 
     def _do() -> dict:
         t0 = _time.time()
-        data = req.body.encode("utf-8") if req.body else None
+        data = body.encode("utf-8") if body else None
         r = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(r, timeout=20) as resp:
