@@ -46,6 +46,9 @@ const state = {
     runtimeDate: null,
     exec: null,              // {versions, curVer, curStep, nodeStates, playing, timer}
     layout: {},              // id -> {x,y}
+    history: [],             // [{layer, tree, mode}] 浏览历史
+    histIdx: -1,
+    _navigating: false,      // 历史 nav 时抑制 navRecord
     pan: { x: 0, y: 0 },
     zoom: 1,
     vbW: 0, vbH: 0,
@@ -203,10 +206,76 @@ async function btreeSelectTree(name) {
         if ($('btree-diff') && $('btree-diff').checked) await btreeLoadDiff(name);
         else state.diff = null;
         btreeRender();
+        navRecord(state.curLayer, name, 'config');
     } catch (e) { setStatus('加载失败: ' + e.message); }
 }
 
-// 覆写对比: 算 added(override 有 base 无) + removed(base 有 override 无, 保留 node 对象供渲染)
+// ---- 浏览历史 + RunTree 跳转 ----
+function navRecord(layer, tree, mode) {
+    if (state._navigating) return;
+    state.history = state.history.slice(0, state.histIdx + 1);
+    state.history.push({ layer, tree, mode });
+    state.histIdx = state.history.length - 1;
+    updateNavButtons();
+}
+function updateNavButtons() {
+    const b = $('btree-back-btn'), f = $('btree-fwd-btn');
+    if (b) b.disabled = state.histIdx <= 0;
+    if (f) f.disabled = state.histIdx >= state.history.length - 1;
+}
+async function navBack() {
+    if (state.histIdx <= 0) return;
+    state.histIdx--;
+    await navLoad(state.history[state.histIdx]);
+    updateNavButtons();
+}
+window.navBack = navBack;
+async function navForward() {
+    if (state.histIdx >= state.history.length - 1) return;
+    state.histIdx++;
+    await navLoad(state.history[state.histIdx]);
+    updateNavButtons();
+}
+window.navForward = navForward;
+async function navLoad(e) {
+    state._navigating = true;
+    try {
+        if (e.mode === 'runtime') {
+            state.mode = 'runtime';
+            await btreeSelectRuntimeTree(e.tree);
+        } else {
+            if (state.curLayer !== e.layer) btreeSelectLayer(e.layer);
+            await btreeSelectTree(e.tree);
+        }
+    } finally { state._navigating = false; }
+}
+// RunTree 节点跳转：找目标树（config 搜四层，runtime 搜 runtimeTrees）并加载
+async function jumpToTree(target) {
+    if (!target) return false;
+    if (state.mode === 'runtime') {
+        if (state.runtimeTrees.find(x => x.name === target)) { btreeSelectRuntimeTree(target); return true; }
+        setStatus('RunTree → ' + target + ' 运行时未找到'); return false;
+    }
+    const order = [state.curLayer, 'override_btree', 'base_btree', 'override_popup', 'base_popup'];
+    const seen = new Set();
+    for (const layer of order) {
+        if (seen.has(layer)) continue; seen.add(layer);
+        const info = state.layers[layer];
+        if (info && info.trees && info.trees.indexOf(target) >= 0) {
+            if (state.curLayer !== layer) btreeSelectLayer(layer);
+            btreeSelectTree(target);
+            return true;
+        }
+    }
+    setStatus('RunTree → ' + target + ' 未找到'); return false;
+}
+function btreeNodeClick(node) {
+    if ((node.name || '').toLowerCase() === 'runtree') {
+        const target = node.properties && node.properties.actionName;
+        if (target) { jumpToTree(target); return; }
+    }
+    btreeResolveNode(node.name);
+}
 async function btreeLoadDiff(name) {
     const baseLayer = state.curLayer.replace('override_', 'base_');
     if (baseLayer === state.curLayer) { state.diff = null; return; }
@@ -409,7 +478,7 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
         grp.style.cursor = 'pointer';
         grp.addEventListener('click', (e) => {
             if (e.target.classList && e.target.classList.contains('btree-collapse-toggle')) return;
-            btreeResolveNode(node.name);
+            btreeNodeClick(node);
         });
         const tip = svgEl('title');
         let tipText = node.name + ' (' + compositeSymbol(node.name) + ')' + (node.title ? '\n' + node.title : '');
@@ -461,12 +530,15 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
     grp.style.cursor = 'pointer';
     grp.addEventListener('click', (e) => {
         if (e.target.classList && e.target.classList.contains('btree-collapse-toggle')) return;
-        btreeResolveNode(node.name);
+        btreeNodeClick(node);
     });
 
     const tip = svgEl('title');
     let tipText = node.name + '\n' + (node.title || '');
     if (formatProps(node.properties, 999).length) tipText += '\n[配置] ' + formatProps(node.properties, 999).join(' | ');
+    if ((node.name || '').toLowerCase() === 'runtree' && node.properties && node.properties.actionName) {
+        tipText += '\n→ 点击跳转树: ' + node.properties.actionName;
+    }
     if (state.exec && state.exec.nodeStates && state.exec.nodeStates[node.id] !== undefined) {
         tipText += '\n[运行时] ' + (STATE_LABEL[state.exec.nodeStates[node.id]] || '?');
         const ip = state.exec.nodeInProps && state.exec.nodeInProps[node.id];
@@ -701,6 +773,7 @@ async function btreeSelectRuntimeTree(name) {
     } else {
         setStatus('运行时 ' + name + ' · 无执行轨迹');
     }
+    navRecord(state.curLayer, name, 'runtime');
 }
 
 // ---- 运行时调试: 时间线 + 状态应用 ----

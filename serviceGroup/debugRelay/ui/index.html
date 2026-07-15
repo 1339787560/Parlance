@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=14">
+    <link rel="stylesheet" href="debug-ui.css?v=15">
 </head>
 <body>
     <div id="toolbar">
@@ -178,6 +178,10 @@
     <!-- BTree Panel - 行为树可视化（四层 + 节点跳 TS）-->
     <div id="panel-btree" class="panel">
         <div id="btree-toolbar">
+            <div id="btree-nav">
+                <button id="btree-back-btn" onclick="navBack()" title="上一个树（后退）" disabled>◀</button>
+                <button id="btree-fwd-btn" onclick="navForward()" title="下一个树（前进）" disabled>▶</button>
+            </div>
             <select id="btree-mode" onchange="btreeSwitchMode()" title="配置浏览=静态 JSON；运行时日志=Phase2">
                 <option value="config">配置浏览</option>
                 <option value="runtime">运行时日志 (Phase2)</option>
@@ -275,7 +279,7 @@
     <script src="debug-perf.js?v=4"></script>
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
-    <script src="debug-btree.js?v=13"></script>
+    <script src="debug-btree.js?v=14"></script>
     <script src="debug-curl.js?v=2"></script>
 </body>
 </html>
