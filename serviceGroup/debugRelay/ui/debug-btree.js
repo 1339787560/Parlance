@@ -269,11 +269,17 @@ async function jumpToTree(target) {
     }
     setStatus('RunTree → ' + target + ' 未找到'); return false;
 }
+// 节点点击跳转目标提取: RunTree->actionName, Action_Popup/Con_CheckPopup->name(popup 配置)
+function nodeJumpTarget(node) {
+    const nm = (node.name || '').toLowerCase();
+    const p = node.properties || {};
+    if (nm === 'runtree') return p.actionName || '';
+    if (nm === 'action_popup' || nm === 'con_checkpopup') return p.name || '';
+    return '';
+}
 function btreeNodeClick(node) {
-    if ((node.name || '').toLowerCase() === 'runtree') {
-        const target = node.properties && node.properties.actionName;
-        if (target) { jumpToTree(target); return; }
-    }
+    const target = nodeJumpTarget(node);
+    if (target) { jumpToTree(target); return; }
     btreeResolveNode(node.name);
 }
 async function btreeLoadDiff(name) {
@@ -536,9 +542,8 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
     const tip = svgEl('title');
     let tipText = node.name + '\n' + (node.title || '');
     if (formatProps(node.properties, 999).length) tipText += '\n[配置] ' + formatProps(node.properties, 999).join(' | ');
-    if ((node.name || '').toLowerCase() === 'runtree' && node.properties && node.properties.actionName) {
-        tipText += '\n→ 点击跳转树: ' + node.properties.actionName;
-    }
+    const jt = nodeJumpTarget(node);
+    if (jt) tipText += '\n→ 点击跳转: ' + jt;
     if (state.exec && state.exec.nodeStates && state.exec.nodeStates[node.id] !== undefined) {
         tipText += '\n[运行时] ' + (STATE_LABEL[state.exec.nodeStates[node.id]] || '?');
         const ip = state.exec.nodeInProps && state.exec.nodeInProps[node.id];
