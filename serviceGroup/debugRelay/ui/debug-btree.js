@@ -53,6 +53,22 @@ function svgEl(tag, attrs) {
 function setStatus(msg) { const e = $('btree-status'); if (e) e.textContent = msg || ''; }
 function shortPath(p) { const m = /\/Template\/game\/(.+)$/.exec(p||''); return m ? m[1] : (p||''); }
 
+// btree 状态持久化（层 + 各层上次树），刷新不重置
+function saveBtreePersist() {
+    try {
+        localStorage.setItem('btree_curLayer', state.curLayer);
+        localStorage.setItem('btree_layerState', JSON.stringify(state.layerState));
+    } catch (e) {}
+}
+function loadBtreePersist() {
+    try {
+        const l = localStorage.getItem('btree_curLayer');
+        if (l) state.curLayer = l;
+        const ls = localStorage.getItem('btree_layerState');
+        if (ls) state.layerState = JSON.parse(ls) || {};
+    } catch (e) {}
+}
+
 function btreeCategory(node) {
     const name = node.name || '';
     if (COMPOSITES.has(name)) return 'composite';
@@ -113,6 +129,7 @@ function computeLayout(nodes, rootId) {
 async function btreeInit() {
     if (state.inited) { btreeRender(); return; }
     state.inited = true;
+    loadBtreePersist();   // 还原上次层 + 各层树（刷新不重置）
     setStatus('加载四层...');
     try {
         const r = await fetch('/api/bt/layers');
@@ -126,6 +143,7 @@ window.btreeInit = btreeInit;
 function btreeSelectLayer(layer) {
     state.mode = 'config';
     state.curLayer = layer;
+    saveBtreePersist();   // 记住层
     state.curTree = null;
     state.treeData = null;
     state.diff = null;
@@ -164,6 +182,7 @@ window.btreeSelectLayer = btreeSelectLayer;
 async function btreeSelectTree(name) {
     state.curTree = name;
     state.layerState[state.curLayer] = name;   // 记住该层上次打开的树
+    saveBtreePersist();   // 持久化（刷新不重置）
     document.querySelectorAll('.btree-tree-item').forEach(d => d.classList.toggle('active', d.textContent.startsWith(name)));
     setStatus('加载 ' + state.curLayer + '/' + name + ' ...');
     try {
