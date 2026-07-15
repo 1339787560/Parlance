@@ -17,7 +17,7 @@ const STATE_LABEL = { 1:'SUCCESS', 2:'FAILURE', 3:'RUNNING', 4:'ERROR', 5:'INTER
 // 弹窗 popupType 配色（popup 配置卡片用）
 const POPUP_TYPE_COLOR = { 0:'#6b7280', 1:'#3b82f6', 2:'#22c55e', 3:'#a855f7', 4:'#f59e0b', 5:'#ec4899', 6:'#14b8a6', 7:'#eab308' };
 
-const NODE_W = 172, NODE_H = 60;
+const NODE_W = 172, NODE_H = 72;
 const LEVEL_W = 234;   // 水平层间距（depth -> x）
 const V_GAP = 14;      // 兄弟节点垂直间距
 const PAD = 40;
@@ -63,15 +63,17 @@ function btreeCategory(node) {
     return 'action';
 }
 
-function formatProps(props) {
+function formatProps(props, limit) {
     if (!props) return [];
+    if (limit == null) limit = 2;
     const out = [];
     for (const k in props) {
         if (!Object.prototype.hasOwnProperty.call(props, k)) continue;
         let v = props[k];
+        if (v === '' || v == null) continue;   // 跳空值，优先显有意义字段
         if (typeof v === 'object') v = JSON.stringify(v);
         out.push(k + ': ' + v);
-        if (out.length >= 2) break;
+        if (out.length >= limit) break;
     }
     return out;
 }
@@ -371,7 +373,7 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
     else badge.textContent = CATEGORY_LABEL[cat];
     grp.appendChild(badge);
 
-    formatProps(node.properties).forEach((p, i) => {
+    formatProps(node.properties, 3).forEach((p, i) => {
         const t = svgEl('text', { x:14, y: 39 + i*13, class:'btree-node-prop' });
         t.textContent = p.length > 30 ? p.slice(0,29) + '…' : p;
         grp.appendChild(t);
@@ -398,7 +400,7 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
 
     const tip = svgEl('title');
     let tipText = node.name + '\n' + (node.title || '');
-    if (formatProps(node.properties).length) tipText += '\n[配置] ' + formatProps(node.properties).join(' | ');
+    if (formatProps(node.properties, 999).length) tipText += '\n[配置] ' + formatProps(node.properties, 999).join(' | ');
     if (state.exec && state.exec.nodeStates && state.exec.nodeStates[node.id] !== undefined) {
         tipText += '\n[运行时] ' + (STATE_LABEL[state.exec.nodeStates[node.id]] || '?');
         const ip = state.exec.nodeInProps && state.exec.nodeInProps[node.id];
