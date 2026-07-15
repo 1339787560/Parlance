@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=15">
+    <link rel="stylesheet" href="debug-ui.css?v=16">
 </head>
 <body>
     <div id="toolbar">
+        <div id="global-nav">
+            <button id="nav-back" onclick="navBack()" title="后退（上一个视图/标签）" disabled>◀</button>
+            <button id="nav-fwd" onclick="navForward()" title="前进（下一个视图/标签）" disabled>▶</button>
+        </div>
         <span id="status-indicator" class="disconnected">● 未连接</span>
         <span id="game-status" class="disconnected">游戏: 未连接</span>
         <select id="clientSelect" class="theme-select" title="选择对接的游戏客户端（多个真机/preview 互不影响）" onchange="onClientSelectChange()">
@@ -178,10 +182,6 @@
     <!-- BTree Panel - 行为树可视化（四层 + 节点跳 TS）-->
     <div id="panel-btree" class="panel">
         <div id="btree-toolbar">
-            <div id="btree-nav">
-                <button id="btree-back-btn" onclick="navBack()" title="上一个树（后退）" disabled>◀</button>
-                <button id="btree-fwd-btn" onclick="navForward()" title="下一个树（前进）" disabled>▶</button>
-            </div>
             <select id="btree-mode" onchange="btreeSwitchMode()" title="配置浏览=静态 JSON；运行时日志=Phase2">
                 <option value="config">配置浏览</option>
                 <option value="runtime">运行时日志 (Phase2)</option>
@@ -274,12 +274,12 @@
         <div id="search-results"></div>
     </div>
 
-    <script src="debug-console.js?v=10"></script>
+    <script src="debug-console.js?v=11"></script>
     <script src="debug-sources.js?v=5"></script>
     <script src="debug-perf.js?v=4"></script>
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
-    <script src="debug-btree.js?v=15"></script>
+    <script src="debug-btree.js?v=16"></script>
     <script src="debug-curl.js?v=2"></script>
 </body>
 </html>

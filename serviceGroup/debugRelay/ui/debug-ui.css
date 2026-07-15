@@ -55,6 +55,15 @@ body {
 .toolbar-btn:hover { border-color: var(--accent); color: var(--accent); }
 .toolbar-btn:disabled { opacity: .5; cursor: default; }
 
+/* 全局前/后浏览历史 */
+#global-nav { display: flex; gap: 3px; }
+#global-nav button {
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg); color: var(--text); cursor: pointer; font-size: 12px;
+}
+#global-nav button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+#global-nav button:disabled { opacity: .3; cursor: default; }
+
 /* Theme selector (same style as statisticServer) */
 .theme-select {
   padding: 4px 8px;

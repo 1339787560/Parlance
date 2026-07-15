@@ -46,9 +46,6 @@ const state = {
     runtimeDate: null,
     exec: null,              // {versions, curVer, curStep, nodeStates, playing, timer}
     layout: {},              // id -> {x,y}
-    history: [],             // [{layer, tree, mode}] 浏览历史
-    histIdx: -1,
-    _navigating: false,      // 历史 nav 时抑制 navRecord
     pan: { x: 0, y: 0 },
     zoom: 1,
     vbW: 0, vbH: 0,
@@ -206,49 +203,25 @@ async function btreeSelectTree(name) {
         if ($('btree-diff') && $('btree-diff').checked) await btreeLoadDiff(name);
         else state.diff = null;
         btreeRender();
-        navRecord(state.curLayer, name, 'config');
+        navRecordBtree(state.curLayer, name, 'config');
     } catch (e) { setStatus('加载失败: ' + e.message); }
 }
 
-// ---- 浏览历史 + RunTree 跳转 ----
-function navRecord(layer, tree, mode) {
-    if (state._navigating) return;
-    state.history = state.history.slice(0, state.histIdx + 1);
-    state.history.push({ layer, tree, mode });
-    state.histIdx = state.history.length - 1;
-    updateNavButtons();
-}
-function updateNavButtons() {
-    const b = $('btree-back-btn'), f = $('btree-fwd-btn');
-    if (b) b.disabled = state.histIdx <= 0;
-    if (f) f.disabled = state.histIdx >= state.history.length - 1;
-}
-async function navBack() {
-    if (state.histIdx <= 0) return;
-    state.histIdx--;
-    await navLoad(state.history[state.histIdx]);
-    updateNavButtons();
-}
-window.navBack = navBack;
-async function navForward() {
-    if (state.histIdx >= state.history.length - 1) return;
-    state.histIdx++;
-    await navLoad(state.history[state.histIdx]);
-    updateNavButtons();
-}
-window.navForward = navForward;
-async function navLoad(e) {
-    state._navigating = true;
-    try {
-        if (e.mode === 'runtime') {
-            state.mode = 'runtime';
-            await btreeSelectRuntimeTree(e.tree);
-        } else {
-            if (state.curLayer !== e.layer) btreeSelectLayer(e.layer);
-            await btreeSelectTree(e.tree);
-        }
-    } finally { state._navigating = false; }
-}
+// ---- 浏览历史（全局 navHistory 在 debug-console.js）+ btree 视图桥接 ----
+// 供全局历史记录/恢复时读取与加载 btree 视图
+window.btreeNavState = function () { return { layer: state.curLayer, tree: state.curTree, mode: state.mode }; };
+window.btreeNavLoad = async function (layer, tree, mode) {
+    const wantMode = mode === 'runtime' ? 'runtime' : 'config';
+    const m = $('btree-mode');
+    if (m) m.value = wantMode;
+    btreeSwitchMode();   // 对齐 UI（层 tab 显隐）+ state.mode
+    if (wantMode === 'runtime') {
+        if (state.runtimeTrees.find(x => x.name === tree)) await btreeSelectRuntimeTree(tree);
+    } else {
+        if (state.curLayer !== layer) btreeSelectLayer(layer);
+        await btreeSelectTree(tree);
+    }
+};
 // RunTree 节点跳转：找目标树（config 搜四层，runtime 搜 runtimeTrees）并加载
 async function jumpToTree(target) {
     if (!target) return false;
@@ -778,7 +751,7 @@ async function btreeSelectRuntimeTree(name) {
     } else {
         setStatus('运行时 ' + name + ' · 无执行轨迹');
     }
-    navRecord(state.curLayer, name, 'runtime');
+    navRecordBtree(state.curLayer, name, 'runtime');
 }
 
 // ---- 运行时调试: 时间线 + 状态应用 ----

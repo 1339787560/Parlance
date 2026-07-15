@@ -249,7 +249,52 @@ async function reloadRuntime() {
 // 已初始化的 tab（首次切入才加载，之后保留上次页面：DOM/状态/pan-zoom 均不重置）
 const _initedTabs = new Set();
 
+// ---- 全局浏览历史（跨 tab + btree 树，浏览器式 前/后）----
+var navHistory = [];
+var navIdx = -1;
+var navNavigating = false;
+var activeTab = 'console';
+
+function navPush(loc) {
+    if (navNavigating) return;
+    const last = navHistory[navIdx];
+    if (last && last.tab === loc.tab && last.layer === loc.layer && last.tree === loc.tree && last.mode === loc.mode) return;
+    navHistory.length = navIdx + 1;   // 截断 forward
+    navHistory.push(loc);
+    navIdx = navHistory.length - 1;
+    navUpdateBtns();
+}
+function navUpdateBtns() {
+    const b = document.getElementById('nav-back'), f = document.getElementById('nav-fwd');
+    if (b) b.disabled = navIdx <= 0;
+    if (f) f.disabled = navIdx >= navHistory.length - 1;
+}
+// btree 调：记录当前 btree 视图
+function navRecordBtree(layer, tree, mode) {
+    navPush({ tab: 'btree', layer, tree, mode });
+}
+async function navRestore(loc) {
+    navNavigating = true;
+    try {
+        switchTab(loc.tab);
+        if (loc.tab === 'btree' && loc.tree && window.btreeNavLoad) {
+            await window.btreeNavLoad(loc.layer, loc.tree, loc.mode);
+        }
+    } finally { navNavigating = false; navUpdateBtns(); }
+}
+async function navBack() {
+    if (navIdx <= 0) return;
+    navIdx--;
+    await navRestore(navHistory[navIdx]);
+}
+async function navForward() {
+    if (navIdx >= navHistory.length - 1) return;
+    navIdx++;
+    await navRestore(navHistory[navIdx]);
+}
+
 function switchTab(tab) {
+    activeTab = tab;
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
 
@@ -275,6 +320,15 @@ function switchTab(tab) {
         if (tab === 'btree' && window.btreeInit) {
             btreeInit();
         }
+    }
+    // 记录浏览历史（btree 已有树则记当前视图，否则等 btreeSelectTree 自记）
+    if (tab === 'btree') {
+        if (window.btreeNavState) {
+            const bs = window.btreeNavState();
+            if (bs && bs.tree) navPush({ tab: 'btree', layer: bs.layer, tree: bs.tree, mode: bs.mode });
+        }
+    } else {
+        navPush({ tab });
     }
 }
 
