@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=17">
+    <link rel="stylesheet" href="debug-ui.css?v=18">
 </head>
 <body>
     <div id="toolbar">
@@ -193,6 +193,7 @@
                 <button class="btree-layer-btn" onclick="btreeSelectLayer('override_popup')">覆写 popup</button>
             </div>
             <label class="btree-diff-toggle" title="同名树高亮：基础层 vs 覆写层差异"><input type="checkbox" id="btree-diff" onchange="btreeToggleDiff()"> 覆写对比</label>
+            <button id="btree-edit-btn" class="toolbar-btn" onclick="btreeToggleEdit()" title="编辑当前覆写树（加节点/改属性/删除/保存）">编辑</button>
             <span id="btree-status" class="btree-status"></span>
         </div>
         <div id="btree-body">
@@ -265,6 +266,28 @@
         </div>
     </div>
 
+    <!-- BTree 编辑面板（浮动右下，编辑模式时显）-->
+    <div id="btree-edit-panel" class="btree-edit-panel hidden">
+        <div class="btree-edit-head">
+            <span>编辑 <span id="btree-edit-dirty" class="btree-edit-dirty"></span></span>
+            <button class="btree-overlay-close" onclick="btreeToggleEdit()" title="退出编辑">✕</button>
+        </div>
+        <div id="btree-edit-body"></div>
+        <div class="btree-edit-actions">
+            <button class="btree-edit-act" onclick="btreeShowPalette()" title="选类型加为选中节点的子">加子节点</button>
+            <button class="btree-edit-act" onclick="btreeDeleteNode()" title="删除选中节点（含子树）">删除</button>
+            <button class="btree-edit-save" onclick="btreeSaveEdit()">保存</button>
+        </div>
+    </div>
+
+    <!-- BTree 节点 palette overlay -->
+    <div id="btree-palette-overlay" class="btree-overlay hidden">
+        <div class="btree-overlay-box">
+            <div class="btree-overlay-head"><span>选节点类型（加为子）</span><button class="btree-overlay-close" onclick="btreeClosePalette()">✕</button></div>
+            <div id="btree-palette-body"></div>
+        </div>
+    </div>
+
     <!-- Quick Open Panel (Ctrl+P) -->
     <div id="quick-open" class="command-palette hidden">
         <div class="command-palette-input-wrap">
@@ -290,7 +313,7 @@
     <script src="debug-perf.js?v=4"></script>
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
-    <script src="debug-btree.js?v=17"></script>
+    <script src="debug-btree.js?v=18"></script>
     <script src="debug-curl.js?v=2"></script>
 </body>
 </html>

@@ -947,6 +947,44 @@ async def bt_restore(req: BtreeRestoreReq, request: Request):
     return {"restored": True, "hash": req.hash}
 
 
+_BT_CATALOG_STD = {
+    "composite": ["MemPriority", "MemSequence", "Sequence", "Priority", "Parallel", "ForEach", "MemPriorityRandom", "PriorityRandom"],
+    "decorator": ["Inverter", "Limiter", "Repeater", "ReturnSuccess", "ReturnFailure", "MaxTime", "RepeatUntilFailure", "RepeatUntilSuccess", "InterruptOnFinish", "RecorderStatus"],
+    "condition": [],
+    "action": [],
+}
+
+
+def _bt_classify(name: str) -> str:
+    n = name.lower()
+    if n.startswith("con_"): return "condition"
+    if any(c.lower() == n for c in _BT_CATALOG_STD["composite"]): return "composite"
+    if any(d.lower() == n for d in _BT_CATALOG_STD["decorator"]): return "decorator"
+    return "action"
+
+
+@app.get("/api/btree/nodes_catalog")
+async def bt_nodes_catalog():
+    """节点 palette：标准组合/装饰 + Template @action 注册表（按分类，原案例）。"""
+    catalog = {k: list(v) for k, v in _BT_CATALOG_STD.items() }
+    if bt_template_root and bt_template_root.exists():
+        seen = {n.lower() for cat in catalog.values() for n in cat}
+        for f in bt_template_root.rglob("*.ts"):
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in _BT_ACTION_RE.finditer(text):
+                orig = m.group(1)
+                if orig.lower() in seen:
+                    continue
+                seen.add(orig.lower())
+                catalog[_bt_classify(orig)].append(orig)
+    for k in catalog:
+        catalog[k].sort()
+    return {"catalog": catalog}
+
+
 # ---- Curl 工具（HTTP 连通性测试，服务端代理绕 CORS）----
 
 class CurlRequest(BaseModel):

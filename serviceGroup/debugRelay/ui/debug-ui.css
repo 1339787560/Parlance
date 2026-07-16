@@ -1819,6 +1819,36 @@ html[data-theme="silverwolf"] {
 .btree-ver-sub { color: var(--text); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btree-ver-restore { padding: 2px 10px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg); color: var(--text); cursor: pointer; font-size: 11px; }
 .btree-ver-restore:hover { border-color: var(--yellow); color: var(--yellow); }
+
+/* 编辑模式 */
+.btree-node.btree-selected rect:first-of-type { stroke: #fff !important; stroke-width: 3.5; }
+.btree-edit-panel { position: fixed; right: 14px; bottom: 14px; width: 320px; max-height: 70vh; background: var(--card); border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; z-index: 90; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.btree-edit-panel.hidden { display: none; }
+.btree-edit-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text); font-weight: 600; }
+.btree-edit-dirty { color: var(--yellow); font-size: 11px; }
+#btree-edit-body { padding: 8px 10px; overflow-y: auto; flex: 1; }
+.btree-edit-empty { color: var(--dim); font-size: 11px; padding: 8px 2px; }
+.btree-edit-node { color: var(--text); margin-bottom: 6px; }
+.btree-edit-cat { color: var(--accent); font-size: 10px; margin-left: 6px; }
+.btree-edit-row { margin-bottom: 6px; }
+.btree-edit-row label { display: block; color: var(--dim); font-size: 10px; margin-bottom: 2px; }
+.btree-edit-row input, .btree-edit-pk, .btree-edit-pv { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--text); font-size: 11px; padding: 2px 5px; outline: none; width: 100%; box-sizing: border-box; }
+.btree-edit-sec { color: var(--dim); font-size: 10px; text-transform: uppercase; margin: 8px 0 4px; }
+.btree-edit-prop { display: flex; gap: 4px; margin-bottom: 4px; align-items: center; }
+.btree-edit-pk { width: 88px; flex-shrink: 0; }
+.btree-edit-pv { flex: 1; min-width: 0; }
+.btree-edit-pdel { background: var(--bg); border: 1px solid var(--border); color: var(--red); cursor: pointer; border-radius: 3px; padding: 2px 7px; }
+.btree-edit-addprop { margin-top: 2px; background: var(--bg); border: 1px dashed var(--border); color: var(--dim); cursor: pointer; border-radius: 3px; padding: 3px 8px; font-size: 11px; width: 100%; }
+.btree-edit-actions { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); }
+.btree-edit-act, .btree-edit-save { flex: 1; padding: 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); cursor: pointer; font-size: 12px; }
+.btree-edit-save { background: var(--accent); color: #0d1117; font-weight: 600; border-color: var(--accent); }
+
+/* palette overlay */
+#btree-palette-body { overflow-y: auto; padding: 8px; max-height: 60vh; }
+.btree-pal-sec { color: var(--dim); font-size: 10px; text-transform: uppercase; margin: 8px 0 4px; }
+.btree-pal-grid { display: flex; flex-wrap: wrap; gap: 5px; }
+.btree-pal-node { padding: 3px 9px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); cursor: pointer; font-size: 11px; }
+.btree-pal-node:hover { border-color: var(--accent); color: var(--accent); }
 .btree-tree-empty { color: var(--dim); padding: 8px 5px; font-size: 11px; word-break: break-all; }
 
 #btree-canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); min-width: 0; cursor: default; }

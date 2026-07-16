@@ -46,6 +46,10 @@ const state = {
     runtimeDate: null,
     exec: null,              // {versions, curVer, curStep, nodeStates, playing, timer}
     layout: {},              // id -> {x,y}
+    editing: false,          // 编辑模式（仅覆写层）
+    selectedNodeId: null,
+    dirty: false,            // 有未保存改动
+    catalog: null,           // 节点 palette（分类）
     pan: { x: 0, y: 0 },
     zoom: 1,
     vbW: 0, vbH: 0,
@@ -155,6 +159,10 @@ function btreeSelectLayer(layer) {
     state.curTree = null;
     state.treeData = null;
     state.diff = null;
+    state.editing = false;
+    state.selectedNodeId = null;
+    state.dirty = false;
+    showEditPanel(false);
     state.runtimeTrees = [];
     state.exec = null;
     stopPlay();
@@ -261,9 +269,15 @@ function nodeJumpTarget(node) {
     return '';
 }
 function btreeNodeClick(node) {
+    if (state.editing) { btreeSelectNode(node.id); return; }   // 编辑模式：选中节点
     const target = nodeJumpTarget(node);
     if (target) { jumpToTree(target); return; }
     btreeResolveNode(node.name);
+}
+function btreeSelectNode(id) {
+    state.selectedNodeId = id;
+    btreeRender();
+    renderEditPanel();
 }
 async function btreeLoadDiff(name) {
     const baseLayer = state.curLayer.replace('override_', 'base_');
@@ -416,6 +430,7 @@ function drawNode(g, node, pos, offX, offY, forceStyle) {
     const cat = btreeCategory(node);
     const color = CATEGORY_COLOR[cat];
     let cls = 'btree-node cat-' + cat;
+    if (state.editing && state.selectedNodeId === node.id) cls += ' btree-selected';
 
     // 覆写对比 diff 样式：新增(绿) / 移除(红 ghost)
     let diffKind = forceStyle || null;
@@ -763,6 +778,155 @@ async function btreeSelectRuntimeTree(name) {
     }
     navRecordBtree(state.curLayer, name, 'runtime');
 }
+
+// ---- 编辑模式（仅覆写层，自动布局无需连线）----
+function _canEdit() { return state.mode === 'config' && (state.curLayer === 'override_btree' || state.curLayer === 'override_popup') && !!state.treeData; }
+function markDirty() { state.dirty = true; updateEditPanelHead(); }
+function showEditPanel(show) { const p = $('btree-edit-panel'); if (p) p.classList.toggle('hidden', !show); }
+function updateEditPanelHead() { const h = $('btree-edit-dirty'); if (h) h.textContent = state.dirty ? '● 未保存' : ''; }
+
+async function btreeToggleEdit() {
+    if (!_canEdit()) { setStatus('仅覆写层(override_btree/popup) 可编辑，且需选中树'); return; }
+    state.editing = !state.editing;
+    if (!state.editing) state.selectedNodeId = null;
+    showEditPanel(state.editing);
+    if (state.editing && !state.catalog) {
+        try { const r = await fetch('/api/btree/nodes_catalog'); state.catalog = (await r.json()).catalog; } catch (e) {}
+    }
+    btreeRender();
+    if (state.editing) renderEditPanel();
+    setStatus(state.editing ? '编辑模式：点节点选中，右下面板编辑/加子/删除/保存' : '');
+}
+window.btreeToggleEdit = btreeToggleEdit;
+
+function renderEditPanel() {
+    const body = $('btree-edit-body');
+    if (!body) return;
+    const node = state.selectedNodeId && state.treeData && state.treeData.nodes ? state.treeData.nodes[state.selectedNodeId] : null;
+    if (!node) { body.innerHTML = '<div class="btree-edit-empty">点选一个节点编辑</div>'; return; }
+    const cat = btreeCategory(node);
+    const props = node.properties || {};
+    let html = '<div class="btree-edit-node"><b>' + escapeText(node.name) + '</b> <span class="btree-edit-cat">' + cat + '</span></div>';
+    html += '<div class="btree-edit-row"><label>title</label><input id="btree-edit-title" value="' + escapeText(node.title || '') + '"></div>';
+    html += '<div class="btree-edit-sec">属性</div><div id="btree-edit-props">';
+    Object.keys(props).forEach(k => {
+        const v = typeof props[k] === 'object' ? JSON.stringify(props[k]) : props[k];
+        html += '<div class="btree-edit-prop"><input class="btree-edit-pk" data-oldk="' + escapeText(k) + '" value="' + escapeText(k) + '"><input class="btree-edit-pv" value="' + escapeText(v) + '"><button class="btree-edit-pdel" data-k="' + escapeText(k) + '">×</button></div>';
+    });
+    html += '</div>';
+    html += '<button class="btree-edit-addprop">+ 加属性</button>';
+    body.innerHTML = html;
+    const ti = $('btree-edit-title');
+    if (ti) ti.oninput = () => { node.title = ti.value; markDirty(); btreeRender(); };
+    body.querySelectorAll('.btree-edit-pk').forEach(pk => {
+        const pv = pk.parentElement.querySelector('.btree-edit-pv');
+        const oldk = pk.getAttribute('data-oldk');
+        pk.onchange = () => { const nk = pk.value.trim(); const v = node.properties[oldk]; delete node.properties[oldk]; node.properties[nk] = v; pk.setAttribute('data-oldk', nk); markDirty(); btreeRender(); };
+        if (pv) pv.oninput = () => { node.properties[pk.getAttribute('data-oldk')] = pv.value; markDirty(); btreeRender(); };
+    });
+    body.querySelectorAll('.btree-edit-pdel').forEach(b => b.onclick = () => btreeDelProp(b.getAttribute('data-k')));
+    const ap = body.querySelector('.btree-edit-addprop');
+    if (ap) ap.onclick = btreeAddProp;
+}
+
+function btreeAddProp() {
+    const node = state.selectedNodeId && state.treeData.nodes[state.selectedNodeId];
+    if (!node) return;
+    node.properties = node.properties || {};
+    let k = 'newProp', i = 1;
+    while (node.properties[k] !== undefined) k = 'newProp' + (++i);
+    node.properties[k] = '';
+    markDirty(); renderEditPanel(); btreeRender();
+}
+window.btreeAddProp = btreeAddProp;
+function btreeDelProp(k) {
+    const node = state.selectedNodeId && state.treeData.nodes[state.selectedNodeId];
+    if (!node || !node.properties) return;
+    delete node.properties[k];
+    markDirty(); renderEditPanel(); btreeRender();
+}
+window.btreeDelProp = btreeDelProp;
+
+function btreeShowPalette() {
+    if (!state.selectedNodeId) { setStatus('先选中一个父节点'); return; }
+    const ov = $('btree-palette-overlay');
+    if (!ov) return;
+    ov.classList.remove('hidden');
+    const body = $('btree-palette-body');
+    const cat = state.catalog || { composite: [], decorator: [], condition: [], action: [] };
+    const labels = { composite: '组合', decorator: '装饰', condition: '条件', action: '动作' };
+    body.innerHTML = '';
+    ['composite', 'decorator', 'condition', 'action'].forEach(c => {
+        const names = cat[c] || [];
+        if (!names.length) return;
+        const sec = document.createElement('div');
+        sec.innerHTML = '<div class="btree-pal-sec">' + labels[c] + '</div>';
+        const grid = document.createElement('div');
+        grid.className = 'btree-pal-grid';
+        names.forEach(n => {
+            const b = document.createElement('button');
+            b.className = 'btree-pal-node';
+            b.textContent = n;
+            b.onclick = () => { btreeAddChild(state.selectedNodeId, n); btreeClosePalette(); };
+            grid.appendChild(b);
+        });
+        sec.appendChild(grid);
+        body.appendChild(sec);
+    });
+}
+window.btreeShowPalette = btreeShowPalette;
+function btreeClosePalette() { const ov = $('btree-palette-overlay'); if (ov) ov.classList.add('hidden'); }
+window.btreeClosePalette = btreeClosePalette;
+
+function btreeAddChild(parentId, nodeName) {
+    const nodes = state.treeData.nodes;
+    const parent = nodes[parentId];
+    if (!parent) return;
+    const id = (crypto.randomUUID ? crypto.randomUUID() : 'n' + Date.now() + Math.random().toString(36).slice(2));
+    nodes[id] = { id, name: nodeName, title: '', properties: {}, display: { x: 0, y: 0 } };
+    parent.children = Array.isArray(parent.children) ? parent.children : [];
+    parent.children.push(id);
+    state.selectedNodeId = id;
+    state.dirty = true;
+    btreeRender();
+    renderEditPanel();
+    setStatus('已加 ' + nodeName + ' 为子节点（未保存）');
+}
+
+function btreeDeleteNode() {
+    const id = state.selectedNodeId;
+    if (!id || !state.treeData) return;
+    if (id === state.treeData.root) { setStatus('不能删除根节点'); return; }
+    const nodes = state.treeData.nodes;
+    const toDel = new Set();
+    (function walk(nid) { if (!nodes[nid] || toDel.has(nid)) return; toDel.add(nid); const n = nodes[nid]; if (Array.isArray(n.children)) n.children.forEach(walk); if (n.child) walk(n.child); })(id);
+    for (const pid in nodes) {
+        const p = nodes[pid];
+        if (Array.isArray(p.children)) p.children = p.children.filter(c => c !== id);
+        if (p.child === id) p.child = undefined;
+    }
+    toDel.forEach(d => delete nodes[d]);
+    state.selectedNodeId = null;
+    state.dirty = true;
+    btreeRender();
+    renderEditPanel();
+    setStatus('已删除节点（未保存）');
+}
+window.btreeDeleteNode = btreeDeleteNode;
+
+async function btreeSaveEdit() {
+    if (!state.treeData || state.curLayer.indexOf('override_') !== 0) { setStatus('仅覆写层可保存'); return; }
+    setStatus('保存 + git commit ...');
+    try {
+        const r = await fetch('/api/btree/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: state.curLayer, name: state.curTree, tree: state.treeData }) });
+        const d = await r.json();
+        if (!r.ok) { setStatus('✗ ' + (d.detail || r.status)); return; }
+        state.dirty = false;
+        updateEditPanelHead();
+        setStatus('✓ 已保存 ' + state.curTree + ' (git: ' + d.git + ')');
+    } catch (e) { setStatus('✗ ' + e.message); }
+}
+window.btreeSaveEdit = btreeSaveEdit;
 
 // ---- 拷贝基础→覆写 + 版本历史(git) ----
 async function btreeCopyTree(baseLayer, name) {
