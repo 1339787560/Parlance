@@ -26,6 +26,21 @@ const POPUP_ITEM_FIELD_ZH = {
     group:'画像组', abbr:'子游戏简称', popupInWebActivity:'内嵌活动', isAutoClose:'自动关闭',
     id:'变体ID', viewParam:'视图参数'
 };
+// 业务插件中文名（pluginName -> 中文；勘误定稿。模板插件保持英文）
+const PLUGIN_ZH = {
+    BagPlugin:'背包', ChatPlugin:'聊天', CheckInPlugin:'签到',
+    CMDailyQuestionPlugin:'每日答题', CMDecorationPlugin:'装扮', CMMonthCardPlugin:'月卡',
+    CMNewPlayerDailyGiftPlugin:'迎新礼包2', CMQuickRechargePlugin:'快速充值',
+    CommonSkinPlugin:'通用皮肤', CustomerServicePlugin:'客服', DebugPlugin:'调试',
+    EmailPlugin:'邮件', FrdRoomPlugin:'好友房', GoldBankPlugin:'金库', HallPlugin:'大厅',
+    JoyfulPlugin:'欢乐折扣', LevelDefinePlugin:'等级定义', LoginPlugin:'登录',
+    LuckyTurnTablePlugin:'幸运转盘', OpinionCollectPlugin:'我有话要说',
+    PersonalInfoPlugin:'个人信息', ReliefPlugin:'救济补助', ReportPlugin:'举报',
+    ResurrectPlugin:'复活', RulesPlugin:'玩法规则', SettingPlugin:'设置',
+    ShakePlugin:'摇一摇', ShopPlugin:'商店', TimeCountdownPlugin:'倒计时',
+    TimedLoginPlugin:'定时登录', UpgradeNoticePlugin:'升级公告',
+    WebactivityPlugin:'网页活动', WelfarePlugin:'福利'
+};
 
 const NODE_W = 172, NODE_H = 72;
 const COMP_W = 58, COMP_H = 30;   // Composite 紧凑 pill 尺寸
@@ -621,7 +636,9 @@ function renderPopupConfig(data) {
             html += '<div class="btree-cfg-card" style="border-left-color:' + color + '">';
             html += '<div class="btree-cfg-card-top"><span class="btree-cfg-card-pt" style="background:' + color + '" title="popupType=' + escapeText(pt) + '">' + escapeText(ptZh) + '</span>' + plugBadge + '</div>';
             html += '<div class="btree-cfg-card-view">' + escapeText((it && it.viewName) || '(无视图)') + '</div>';
-            html += '<div class="btree-cfg-card-plugin">' + escapeText((it && it.pluginName) || '') + '</div>';
+            const pn = (it && it.pluginName) || '';
+            const zh = (plugClass === 'business' && PLUGIN_ZH[pn]) ? PLUGIN_ZH[pn] : '';
+            html += '<div class="btree-cfg-card-plugin">' + (zh ? '<span class="btree-cfg-plug-zh">' + escapeText(zh) + '</span>' : '') + '<span class="btree-cfg-plug-name">' + escapeText(pn) + '</span></div>';
             if (kvs.length) html += '<div class="btree-cfg-card-meta">' + kvs.join('') + '</div>';
             html += '</div>';
         });

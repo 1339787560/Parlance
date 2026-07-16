@@ -1982,6 +1982,8 @@ html[data-theme="silverwolf"] {
 .btree-cfg-plug.tpl { background: rgba(139,148,158,0.18); color: #8b949e; border: 1px solid rgba(139,148,158,0.5); }
 .btree-cfg-card-view { color: var(--text); font-size: 12px; font-weight: 600; word-break: break-all; }
 .btree-cfg-card-plugin { color: var(--accent); font-size: 11px; margin-top: 3px; word-break: break-all; }
+.btree-cfg-plug-zh { color: var(--text); font-weight: 600; margin-right: 6px; }
+.btree-cfg-plug-name { color: var(--dim); font-size: 10px; }
 .btree-cfg-card-meta { margin-top: 5px; }
 .btree-cfg-kv { display: inline-block; margin-right: 10px; margin-bottom: 3px; font-size: 10px; color: var(--dim); }
 .btree-cfg-kv b { color: var(--text); font-weight: 500; }
