@@ -172,8 +172,18 @@ function btreeSelectLayer(layer) {
     info.trees.forEach(name => {
         const d = document.createElement('div');
         d.className = 'btree-tree-item';
-        d.textContent = name;
-        d.onclick = () => btreeSelectTree(name);
+        const span = document.createElement('span');
+        span.className = 'btree-tree-name';
+        span.textContent = name;
+        span.onclick = () => btreeSelectTree(name);
+        d.appendChild(span);
+        const isBase = layer.indexOf('base_') === 0;
+        const btn = document.createElement('button');
+        btn.className = 'btree-tree-act';
+        btn.title = isBase ? '拷贝到覆写层' : '版本历史(git)';
+        btn.textContent = isBase ? '⎘' : '🕓';
+        btn.onclick = (e) => { e.stopPropagation(); if (isBase) btreeCopyTree(layer, name); else btreeShowVersions(name); };
+        d.appendChild(btn);
         list.appendChild(d);
     });
     setStatus('层: ' + layer + ' (' + info.trees.length + ' 棵树)');
@@ -753,6 +763,70 @@ async function btreeSelectRuntimeTree(name) {
     }
     navRecordBtree(state.curLayer, name, 'runtime');
 }
+
+// ---- 拷贝基础→覆写 + 版本历史(git) ----
+async function btreeCopyTree(baseLayer, name) {
+    setStatus('拷贝 ' + baseLayer + '/' + name + ' → 覆写层 ...');
+    try {
+        const r = await fetch('/api/btree/copy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base_layer: baseLayer, name }) });
+        const d = await r.json();
+        if (!r.ok) { setStatus('✗ ' + (d.detail || d.error || r.status)); return; }
+        setStatus(d.copied ? ('✓ 已拷贝 ' + name + ' 到覆写层') : ('⊙ ' + name + ' 覆写层已存在，跳过'));
+        if (d.copied) {   // 刷新层列表（覆写层多了一棵）
+            const lr = await fetch('/api/bt/layers'); const ld = await lr.json(); state.layers = ld.layers || {};
+        }
+    } catch (e) { setStatus('✗ ' + e.message); }
+}
+window.btreeCopyTree = btreeCopyTree;
+
+async function btreeShowVersions(name) {
+    const ov = $('btree-versions-overlay');
+    if (!ov) return;
+    ov.classList.remove('hidden');
+    const list = $('btree-versions-list');
+    const title = $('btree-versions-title');
+    if (title) title.textContent = state.curLayer + '/' + name + ' 版本历史';
+    list.innerHTML = '<div class="btree-tree-empty">加载版本...</div>';
+    try {
+        const r = await fetch('/api/btree/versions?layer=' + encodeURIComponent(state.curLayer) + '&name=' + encodeURIComponent(name));
+        const d = await r.json();
+        if (!d.git || !d.versions.length) { list.innerHTML = '<div class="btree-tree-empty">无 git 历史</div>'; return; }
+        list.innerHTML = '';
+        d.versions.forEach(v => {
+            const row = document.createElement('div');
+            row.className = 'btree-ver-row';
+            const info = document.createElement('div');
+            info.className = 'btree-ver-info';
+            info.innerHTML = '<span class="btree-ver-hash">' + escapeText(v.hash) + '</span>'
+                + '<span class="btree-ver-date">' + escapeText(v.date) + '</span>'
+                + '<span class="btree-ver-sub">' + escapeText(v.subject) + '</span>';
+            row.appendChild(info);
+            const rb = document.createElement('button');
+            rb.className = 'btree-ver-restore';
+            rb.textContent = '回滚';
+            rb.onclick = () => btreeRestoreVersion(name, v.hash);
+            row.appendChild(rb);
+            list.appendChild(row);
+        });
+    } catch (e) { list.innerHTML = '<div class="btree-tree-empty">加载失败: ' + e.message + '</div>'; }
+}
+window.btreeShowVersions = btreeShowVersions;
+
+async function btreeRestoreVersion(name, hash) {
+    if (!confirm('回滚 ' + name + ' 到 ' + hash + '？')) return;
+    try {
+        const r = await fetch('/api/btree/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: state.curLayer, name, hash }) });
+        const d = await r.json();
+        if (!r.ok) { setStatus('✗ ' + (d.detail || r.status)); return; }
+        setStatus('✓ 已回滚 ' + name + ' → ' + hash);
+        btreeCloseVersions();
+        if (state.curTree === name) btreeSelectTree(name);   // 重载
+    } catch (e) { setStatus('✗ ' + e.message); }
+}
+window.btreeRestoreVersion = btreeRestoreVersion;
+
+function btreeCloseVersions() { const ov = $('btree-versions-overlay'); if (ov) ov.classList.add('hidden'); }
+window.btreeCloseVersions = btreeCloseVersions;
 
 // ---- 运行时调试: 时间线 + 状态应用 ----
 function applyExecStep(k) {

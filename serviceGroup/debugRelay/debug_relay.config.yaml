@@ -24,3 +24,6 @@ btree:
     override_btree: "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets/resources/config/btree"
     override_popup: "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets/resources/config/popup"
   template_root: "D:/CocosCreator2.0/Template/game"
+  write_ips:            # 写操作(编辑/拷贝/回滚) IP 白名单
+    - 127.0.0.1
+    - 192.168.41.158

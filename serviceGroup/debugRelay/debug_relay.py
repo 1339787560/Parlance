@@ -26,6 +26,7 @@ import json
 import re
 import asyncio
 import argparse
+import subprocess
 from pathlib import Path
 from datetime import datetime, date
 from typing import Set, Dict, Optional, Any
@@ -37,7 +38,7 @@ try:
 except Exception:
     _HAS_YAML = False
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 import uvicorn
@@ -158,6 +159,7 @@ whitelist_ips: set = set()
 # 行为树可视化配置（行为树 tab，无需游戏端连接）
 bt_layers: Dict[str, str] = {}        # layer_key -> 绝对目录路径
 bt_template_root: Path = None         # @action 节点->TS 解析根（Template/game）
+bt_write_ips: set = {"127.0.0.1", "192.168.41.158"}   # 写操作(编辑/拷贝/回滚) IP 白名单
 _bt_node_index: Dict[str, tuple] = {}     # lowercase(name) -> (abs_path, line)
 _bt_node_index_key: tuple = None          # (root_str, max_mtime) 缓存键
 
@@ -792,6 +794,157 @@ async def bt_runtime_session(userid: str, date: str = None):
         "tree_count": len(trees),
         "trees": trees,
     }
+
+
+# ---- Behavior Tree 编辑/写（仅覆写层，git 版本管理，IP 白名单）----
+
+_BT_OVERRIDE_LAYERS = ("override_btree", "override_popup")
+_BT_BASE_OF = {"override_btree": "base_btree", "override_popup": "base_popup"}
+
+
+def _bt_check_write(request: Request):
+    """写操作 IP 白名单守卫。非白名单 IP -> 403。"""
+    ip = request.client.host if request.client else ""
+    if ip not in bt_write_ips:
+        raise HTTPException(status_code=403, detail=f"写操作不允许来自 {ip}（仅 {sorted(bt_write_ips)}）")
+
+
+def _bt_git_root(layer_dir: str) -> Optional[str]:
+    try:
+        out = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                             cwd=str(layer_dir), capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() if out.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def _bt_git_rel(layer_dir: str, filename: str) -> Optional[str]:
+    """文件相对 git root 的路径（正斜杠）。"""
+    root = _bt_git_root(layer_dir)
+    if not root:
+        return None
+    try:
+        rel = (Path(layer_dir).resolve().relative_to(Path(root).resolve())) / filename
+    except Exception:
+        return None
+    return str(rel).replace("\\", "/")
+
+
+def _bt_git_commit(layer_dir: str, filename: str, message: str) -> str:
+    """git add + commit 单个文件（不动工作区其它改动）。"""
+    root = _bt_git_root(layer_dir)
+    rel = _bt_git_rel(layer_dir, filename)
+    if not root or not rel:
+        return "no-git"
+    subprocess.run(["git", "-C", root, "add", "--", rel], capture_output=True, text=True, timeout=10)
+    subprocess.run(["git", "-C", root, "commit", "-m", message, "--", rel],
+                   capture_output=True, text=True, timeout=10)
+    return "ok"
+
+
+class BtreeCopyReq(BaseModel):
+    base_layer: str        # base_btree | base_popup
+    name: str
+
+
+class BtreeSaveReq(BaseModel):
+    layer: str             # override_btree | override_popup
+    name: str
+    tree: dict
+    message: str = ""
+
+
+class BtreeRestoreReq(BaseModel):
+    layer: str
+    name: str
+    hash: str
+
+
+@app.post("/api/btree/copy")
+async def bt_copy(req: BtreeCopyReq, request: Request):
+    """拷贝基础层树到覆写层（非覆盖，已存在跳过）。"""
+    _bt_check_write(request)
+    if req.base_layer not in ("base_btree", "base_popup"):
+        raise HTTPException(status_code=400, detail="base_layer 必须 base_btree/base_popup")
+    if ".." in req.name or "/" in req.name or "\\" in req.name:
+        raise HTTPException(status_code=403, detail="invalid name")
+    ov_layer = "override_btree" if req.base_layer == "base_btree" else "override_popup"
+    base_dir = bt_layers.get(req.base_layer)
+    ov_dir = bt_layers.get(ov_layer)
+    if not base_dir or not ov_dir:
+        raise HTTPException(status_code=400, detail="层未配置")
+    src = Path(base_dir) / f"{req.name}.json"
+    dst = Path(ov_dir) / f"{req.name}.json"
+    if not src.exists():
+        raise HTTPException(status_code=404, detail=f"基础层未找到: {req.name}")
+    if dst.exists():
+        return {"copied": False, "reason": "exists", "name": req.name}
+    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    _bt_git_commit(ov_dir, f"{req.name}.json", f"btree copy: {ov_layer}/{req.name} (from {req.base_layer})")
+    return {"copied": True, "name": req.name}
+
+
+@app.post("/api/btree/save")
+async def bt_save(req: BtreeSaveReq, request: Request):
+    """保存覆写层树（紧凑 JSON）+ git commit。"""
+    _bt_check_write(request)
+    if req.layer not in _BT_OVERRIDE_LAYERS:
+        raise HTTPException(status_code=400, detail="仅覆写层可保存")
+    if ".." in req.name or "/" in req.name or "\\" in req.name:
+        raise HTTPException(status_code=403, detail="invalid name")
+    ov_dir = bt_layers.get(req.layer)
+    if not ov_dir:
+        raise HTTPException(status_code=400, detail="层未配置")
+    f = Path(ov_dir) / f"{req.name}.json"
+    # 紧凑 JSON 匹配原 b3 格式（最小 diff）
+    f.write_text(json.dumps(req.tree, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    msg = req.message or f"btree edit: {req.layer}/{req.name}"
+    git = _bt_git_commit(ov_dir, f"{req.name}.json", msg)
+    return {"saved": True, "name": req.name, "git": git}
+
+
+@app.get("/api/btree/versions")
+async def bt_versions(layer: str, name: str):
+    """git log 列出该覆写树的历史版本。"""
+    if layer not in _BT_OVERRIDE_LAYERS:
+        raise HTTPException(status_code=400, detail="仅覆写层有版本历史")
+    ov_dir = bt_layers.get(layer)
+    if not ov_dir:
+        return {"versions": [], "git": False}
+    root = _bt_git_root(ov_dir)
+    rel = _bt_git_rel(ov_dir, f"{name}.json")
+    if not root or not rel:
+        return {"versions": [], "git": False}
+    out = subprocess.run(["git", "-C", root, "log", "--format=%h|%ci|%s", "-n", "50", "--", rel],
+                         capture_output=True, timeout=10)
+    versions = []
+    for line in out.stdout.decode("utf-8", errors="replace").splitlines():
+        parts = line.split("|", 2)
+        if len(parts) == 3:
+            versions.append({"hash": parts[0], "date": parts[1], "subject": parts[2]})
+    return {"versions": versions, "git": True}
+
+
+@app.post("/api/btree/restore")
+async def bt_restore(req: BtreeRestoreReq, request: Request):
+    """回滚覆写树到某 git 版本（git show hash:path -> 写回 + commit）。"""
+    _bt_check_write(request)
+    if req.layer not in _BT_OVERRIDE_LAYERS:
+        raise HTTPException(status_code=400, detail="仅覆写层可回滚")
+    ov_dir = bt_layers.get(req.layer)
+    if not ov_dir:
+        raise HTTPException(status_code=400, detail="层未配置")
+    root = _bt_git_root(ov_dir)
+    rel = _bt_git_rel(ov_dir, f"{req.name}.json")
+    if not root or not rel:
+        raise HTTPException(status_code=500, detail="no git")
+    out = subprocess.run(["git", "-C", root, "show", f"{req.hash}:{rel}"],
+                         capture_output=True, timeout=10)
+    if out.returncode != 0:
+        raise HTTPException(status_code=404, detail="hash 未找到")
+    Path(ov_dir, f"{req.name}.json").write_text(out.stdout.decode("utf-8", errors="replace"), encoding="utf-8")
+    _bt_git_commit(ov_dir, f"{req.name}.json", f"btree restore: {req.layer}/{req.name} -> {req.hash}")
+    return {"restored": True, "hash": req.hash}
 
 
 # ---- Curl 工具（HTTP 连通性测试，服务端代理绕 CORS）----
@@ -1596,8 +1749,11 @@ if __name__ == "__main__":
                 bt_layers[_k] = str(_v)
     _tpl = bt_cfg.get("template_root")
     bt_template_root = Path(_tpl).resolve() if _tpl else None
+    _wips = bt_cfg.get("write_ips") or []
+    if isinstance(_wips, list) and _wips:
+        bt_write_ips = {str(x).strip() for x in _wips if str(x).strip()}
     if bt_layers:
-        print(f"行为树 tab: {len(bt_layers)} 层已配置, template_root={bt_template_root}")
+        print(f"行为树 tab: {len(bt_layers)} 层已配置, template_root={bt_template_root}, write_ips={sorted(bt_write_ips)}")
 
     print(f"=" * 50)
     print(f"Debug Relay Server (multi-client)")

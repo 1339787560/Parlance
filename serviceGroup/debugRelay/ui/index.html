@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=16">
+    <link rel="stylesheet" href="debug-ui.css?v=17">
 </head>
 <body>
     <div id="toolbar">
@@ -254,6 +254,17 @@
         <div id="curl-response" class="curl-response"><div class="curl-empty">粘贴 curl 命令或填 URL 测试连通性（Ctrl/Cmd+Enter 发送）</div></div>
     </div>
 
+    <!-- BTree 版本历史 overlay -->
+    <div id="btree-versions-overlay" class="btree-overlay hidden">
+        <div class="btree-overlay-box">
+            <div class="btree-overlay-head">
+                <span id="btree-versions-title">版本历史</span>
+                <button class="btree-overlay-close" onclick="btreeCloseVersions()">✕</button>
+            </div>
+            <div id="btree-versions-list"></div>
+        </div>
+    </div>
+
     <!-- Quick Open Panel (Ctrl+P) -->
     <div id="quick-open" class="command-palette hidden">
         <div class="command-palette-input-wrap">
@@ -279,7 +290,7 @@
     <script src="debug-perf.js?v=4"></script>
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
-    <script src="debug-btree.js?v=16"></script>
+    <script src="debug-btree.js?v=17"></script>
     <script src="debug-curl.js?v=2"></script>
 </body>
 </html>
