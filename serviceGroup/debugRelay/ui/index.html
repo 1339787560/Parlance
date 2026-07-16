@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=20">
+    <link rel="stylesheet" href="debug-ui.css?v=21">
 </head>
 <body>
     <div id="toolbar">
@@ -288,6 +288,15 @@
         </div>
     </div>
 
+    <!-- BTree popup 活动块编辑 overlay -->
+    <div id="btree-popup-item-overlay" class="btree-overlay hidden">
+        <div class="btree-overlay-box" style="min-width: 440px">
+            <div class="btree-overlay-head"><span id="btree-popitem-title">活动块</span><button class="btree-overlay-close" onclick="popupItemClose()">✕</button></div>
+            <div id="btree-popup-item-body" class="btree-popitem-body"></div>
+            <div class="btree-edit-actions"><button class="btree-edit-save" id="btree-popitem-ok">保存</button></div>
+        </div>
+    </div>
+
     <!-- Quick Open Panel (Ctrl+P) -->
     <div id="quick-open" class="command-palette hidden">
         <div class="command-palette-input-wrap">
@@ -313,7 +322,7 @@
     <script src="debug-perf.js?v=4"></script>
     <script src="debug-events.js?v=6"></script>
     <script src="debug-scene.js?v=5"></script>
-    <script src="debug-btree.js?v=20"></script>
+    <script src="debug-btree.js?v=21"></script>
     <script src="debug-curl.js?v=2"></script>
 </body>
 </html>

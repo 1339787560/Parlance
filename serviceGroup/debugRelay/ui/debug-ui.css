@@ -1984,6 +1984,14 @@ html[data-theme="silverwolf"] {
 .btree-cfg-card-plugin { color: var(--accent); font-size: 11px; margin-top: 3px; word-break: break-all; }
 .btree-cfg-plug-zh { color: var(--text); font-weight: 600; margin-right: 6px; }
 .btree-cfg-plug-name { color: var(--dim); font-size: 10px; }
+.btree-cfg-editbar { display: flex; gap: 8px; align-items: center; margin: 6px 0; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+.btree-cfg-editbar .btree-edit-dirty { color: var(--yellow); font-size: 11px; margin-right: auto; }
+.btree-cfg-card-act { display: flex; gap: 3px; margin-left: 6px; }
+.btree-cfg-card-edit, .btree-cfg-card-del { background: var(--bg); border: 1px solid var(--border); color: var(--dim); cursor: pointer; border-radius: 3px; padding: 0 7px; font-size: 13px; }
+.btree-cfg-card-edit:hover { color: var(--accent); border-color: var(--accent); }
+.btree-cfg-card-del:hover { color: var(--red); border-color: var(--red); }
+.btree-popitem-body { padding: 10px 14px; max-height: 60vh; overflow-y: auto; }
+.btree-popitem-body .btree-edit-row input, .btree-popitem-body .btree-edit-row select { width: 100%; box-sizing: border-box; }
 .btree-cfg-card-meta { margin-top: 5px; }
 .btree-cfg-kv { display: inline-block; margin-right: 10px; margin-bottom: 3px; font-size: 10px; color: var(--dim); }
 .btree-cfg-kv b { color: var(--text); font-weight: 500; }

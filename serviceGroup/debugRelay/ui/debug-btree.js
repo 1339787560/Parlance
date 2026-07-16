@@ -612,11 +612,17 @@ function renderPopupConfig(data) {
         .map(k => (POPUP_CFG_FIELD_ZH[k] || k) + ': ' + JSON.stringify(data[k]));
     let html = '<div class="btree-cfg-header"><span class="btree-cfg-name">弹窗 ' + escapeText(data.popupName || state.curTree) + '</span>';
     html += '<span class="btree-cfg-sub">' + items.length + ' 个变体</span></div>';
+    if (state.editing && state.curLayer === 'override_popup') {
+        html += '<div class="btree-cfg-editbar"><span id="btree-pop-dirty" class="btree-edit-dirty">' + (state.dirty ? '● 未保存' : '') + '</span>'
+            + '<button class="btree-edit-addprop" onclick="popupAddItem()">+ 添加活动块</button>'
+            + '<button class="btree-edit-save" onclick="btreeSaveEdit()">保存</button>'
+            + '<button class="btree-edit-act" onclick="btreeToggleEdit()">退出</button></div>';
+    }
     if (flags.length) html += '<div class="btree-cfg-flags">' + flags.map(f => '<span class="btree-cfg-flag">' + escapeText(f) + '</span>').join('') + '</div>';
     html += '<div class="btree-cfg-note">弹窗配置：行为树 <code>Action_Popup</code>/<code>Con_CheckPopup</code> 按 <code>name</code> 引用。各变体按弹窗条件(popupType)择机弹出。</div>';
     if (items.length) {
         html += '<div class="btree-cfg-cards">';
-        items.forEach(it => {
+        items.forEach((it, idx) => {
             const pt = (it && it.popupType != null) ? it.popupType : '?';
             const ptZh = POPUP_TYPE_ZH[pt] || ('type ' + pt);
             const color = POPUP_TYPE_COLOR[pt] || '#6b7280';
@@ -633,8 +639,10 @@ function renderPopupConfig(data) {
                     kvs.push('<span class="btree-cfg-kv"><b>' + (POPUP_ITEM_FIELD_ZH[k] || k) + '</b>: ' + escapeText(v) + '</span>');
                 }
             });
-            html += '<div class="btree-cfg-card" style="border-left-color:' + color + '">';
-            html += '<div class="btree-cfg-card-top"><span class="btree-cfg-card-pt" style="background:' + color + '" title="popupType=' + escapeText(pt) + '">' + escapeText(ptZh) + '</span>' + plugBadge + '</div>';
+            const dragAttr = state.editing ? (' draggable="true" ondragstart="popupDragStart(' + idx + ')" ondragover="popupDragOver(event)" ondrop="popupDrop(' + idx + ')" ondragend="popupDragEnd()" style="border-left-color:' + color + ';cursor:move"') : (' style="border-left-color:' + color + '"');
+            const editBtns = state.editing ? '<span class="btree-cfg-card-act"><button class="btree-cfg-card-edit" onclick="popupEditItem(' + idx + ')" title="编辑">✎</button><button class="btree-cfg-card-del" onclick="popupDelItem(' + idx + ')" title="删除">×</button></span>' : '';
+            html += '<div class="btree-cfg-card"' + dragAttr + '>';
+            html += '<div class="btree-cfg-card-top"><span class="btree-cfg-card-pt" style="background:' + color + '" title="popupType=' + escapeText(pt) + '">' + escapeText(ptZh) + '</span>' + plugBadge + editBtns + '</div>';
             html += '<div class="btree-cfg-card-view">' + escapeText((it && it.viewName) || '(无视图)') + '</div>';
             const pn = (it && it.pluginName) || '';
             const zh = (plugClass === 'business' && PLUGIN_ZH[pn]) ? PLUGIN_ZH[pn] : '';
@@ -653,6 +661,88 @@ function renderPopupConfig(data) {
     html += '<div class="btree-cfg-legend-body"><b>常用字段：</b>dailyTimes 每日次数 / maxCount 最大弹出数 / cd 冷却 / group 画像组 / interruptOnCancel 取消时中断 / viewName 视图 / customCondition 自定义条件。</div>';
     html += '</details>';
     view.innerHTML = html;
+}
+
+// ---- popup 活动块编辑（拖拽排序 + 增/改/删）----
+let _popupDragIdx = null;
+function popupDragStart(idx) { _popupDragIdx = idx; }
+function popupDragOver(e) { e.preventDefault(); }
+function popupDragEnd() { _popupDragIdx = null; }
+function popupDrop(idx) {
+    if (_popupDragIdx === null || _popupDragIdx === idx || !state.treeData || !state.treeData.items) return;
+    const items = state.treeData.items;
+    const [moved] = items.splice(_popupDragIdx, 1);
+    items.splice(idx, 0, moved);
+    _popupDragIdx = null;
+    state.dirty = true;
+    renderPopupConfig(state.treeData);
+}
+function popupDelItem(idx) {
+    if (!state.treeData || !Array.isArray(state.treeData.items)) return;
+    if (!confirm('删除第 ' + (idx + 1) + ' 个活动块？')) return;
+    state.treeData.items.splice(idx, 1);
+    state.dirty = true;
+    renderPopupConfig(state.treeData);
+}
+function popupAddItem() { popupItemForm(-1); }
+function popupEditItem(idx) { popupItemForm(idx); }
+window.popupDragStart = popupDragStart; window.popupDragOver = popupDragOver; window.popupDragEnd = popupDragEnd;
+window.popupDrop = popupDrop; window.popupDelItem = popupDelItem; window.popupAddItem = popupAddItem; window.popupEditItem = popupEditItem;
+
+function popupItemForm(idx) {
+    const ov = $('btree-popup-item-overlay');
+    if (!ov) return;
+    const isAdd = idx < 0;
+    const base = state.treeData || {};
+    const it = isAdd ? { popupName: base.popupName || '', pluginName: '', viewName: '', popupType: 3, dailyTimes: 999, group: '', interruptOnCancel: false, customCondition: '' }
+        : (base.items[idx] || {});
+    $('btree-popitem-title').textContent = isAdd ? '添加活动块' : '编辑活动块 #' + (idx + 1);
+    const fields = [
+        ['pluginName', '插件 pluginName', it.pluginName || '', 'text'],
+        ['viewName', '视图 viewName', it.viewName || '', 'text'],
+        ['popupType', '弹窗条件 popupType', it.popupType != null ? it.popupType : 3, 'select:' + Object.entries(POPUP_TYPE_ZH).map(([k, v]) => k + ':' + v).join(',')],
+        ['dailyTimes', '每日次数', it.dailyTimes != null ? it.dailyTimes : 999, 'number'],
+        ['group', '画像组', it.group || '', 'text'],
+        ['interruptOnCancel', '取消时中断', it.interruptOnCancel ? 1 : 0, 'check'],
+        ['customCondition', '自定义条件', it.customCondition || '', 'text'],
+    ];
+    let html = '';
+    fields.forEach(([k, label, val, type]) => {
+        const id = 'btree-popitem-' + k;
+        if (type === 'check') html += '<div class="btree-edit-row"><label><input type="checkbox" id="' + id + '" ' + (val ? 'checked' : '') + '> ' + label + '</label></div>';
+        else if (type.startsWith('select:')) {
+            const opts = type.slice(7).split(',').map(o => { const [v, l] = o.split(':'); return '<option value="' + v + '"' + (String(val) === v ? ' selected' : '') + '>' + v + '=' + l + '</option>'; }).join('');
+            html += '<div class="btree-edit-row"><label>' + label + '</label><select id="' + id + '">' + opts + '</select></div>';
+        } else html += '<div class="btree-edit-row"><label>' + label + '</label><input id="' + id + '" type="' + type + '" value="' + escapeText(val) + '"></div>';
+    });
+    $('btree-popup-item-body').innerHTML = html;
+    const ok = $('btree-popitem-ok');
+    ok.textContent = isAdd ? '添加' : '保存';
+    ok.onclick = () => popupItemSave(idx);
+    ov.classList.remove('hidden');
+}
+window.popupItemForm = popupItemForm;
+function popupItemClose() { const ov = $('btree-popup-item-overlay'); if (ov) ov.classList.add('hidden'); }
+window.popupItemClose = popupItemClose;
+
+function popupItemSave(idx) {
+    const isAdd = idx < 0;
+    const base = state.treeData || {};
+    const it = isAdd ? {} : (base.items[idx] || {});
+    it.popupName = base.popupName || '';
+    it.pluginName = (($('btree-popitem-pluginName') || {}).value || '').trim();
+    it.viewName = (($('btree-popitem-viewName') || {}).value || '').trim();
+    let pt = parseInt(($('btree-popitem-popupType') || {}).value, 10); it.popupType = isNaN(pt) ? 3 : pt;
+    let dt = parseInt(($('btree-popitem-dailyTimes') || {}).value, 10); it.dailyTimes = isNaN(dt) ? 999 : dt;
+    it.group = (($('btree-popitem-group') || {}).value || '').trim();
+    const ic = $('btree-popitem-interruptOnCancel'); if (ic) it.interruptOnCancel = !!ic.checked;
+    it.customCondition = (($('btree-popitem-customCondition') || {}).value || '').trim();
+    if (!it.viewName && !it.pluginName) { setStatus('pluginName / viewName 至少填一个'); return; }
+    base.items = Array.isArray(base.items) ? base.items : [];
+    if (isAdd) base.items.push(it);
+    state.dirty = true;
+    popupItemClose();
+    renderPopupConfig(base);
 }
 
 // ---- 节点 -> Sources 源码 ----
@@ -851,7 +941,14 @@ function updateEditPanelHead() { const h = $('btree-edit-dirty'); if (h) h.textC
 async function btreeToggleEdit() {
     if (!_canEdit()) { setStatus('仅覆写层(override_btree/popup) 可编辑，且需选中树'); return; }
     state.editing = !state.editing;
-    if (!state.editing) state.selectedNodeId = null;
+    state.selectedNodeId = null;
+    if (state.curLayer === 'override_popup') {
+        // popup 编辑：卡片可拖拽排序 / ✎改 / ×删 / +添加；不显 btree 节点面板
+        showEditPanel(false);
+        if (state.treeData && (!state.treeData.nodes)) renderPopupConfig(state.treeData);
+        setStatus(state.editing ? 'popup 编辑：拖卡片排序 / ✎编辑 / ×删除 / +添加活动块，完点保存' : '');
+        return;
+    }
     showEditPanel(state.editing);
     if (state.editing && !state.catalog) {
         try { const r = await fetch('/api/btree/nodes_catalog'); state.catalog = (await r.json()).catalog; } catch (e) {}
@@ -986,6 +1083,7 @@ async function btreeSaveEdit() {
         if (!r.ok) { setStatus('✗ ' + (d.detail || r.status)); return; }
         state.dirty = false;
         updateEditPanelHead();
+        if (state.curLayer === 'override_popup') renderPopupConfig(state.treeData);  // 刷新 popup 脏标记
         setStatus('✓ 已保存 ' + state.curTree + ' (git: ' + d.git + ')');
     } catch (e) { setStatus('✗ ' + e.message); }
 }
