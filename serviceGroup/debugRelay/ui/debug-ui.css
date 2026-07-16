@@ -1973,11 +1973,21 @@ html[data-theme="silverwolf"] {
   border-radius: 5px; padding: 8px 10px; position: relative;
 }
 .btree-cfg-card-pt {
-  position: absolute; top: 6px; right: 8px; color: #0d1117; font-size: 10px; font-weight: 700;
-  padding: 1px 7px; border-radius: 8px;
+  color: #0d1117; font-size: 10px; font-weight: 700;
+  padding: 1px 8px; border-radius: 8px;
 }
-.btree-cfg-card-view { color: var(--text); font-size: 12px; font-weight: 600; margin-right: 52px; word-break: break-all; }
+.btree-cfg-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; gap: 6px; }
+.btree-cfg-plug { font-size: 10px; padding: 1px 7px; border-radius: 8px; font-weight: 600; white-space: nowrap; }
+.btree-cfg-plug.biz { background: rgba(34,197,94,0.18); color: #22c55e; border: 1px solid rgba(34,197,94,0.5); }
+.btree-cfg-plug.tpl { background: rgba(139,148,158,0.18); color: #8b949e; border: 1px solid rgba(139,148,158,0.5); }
+.btree-cfg-card-view { color: var(--text); font-size: 12px; font-weight: 600; word-break: break-all; }
 .btree-cfg-card-plugin { color: var(--accent); font-size: 11px; margin-top: 3px; word-break: break-all; }
-.btree-cfg-card-meta { color: var(--dim); font-size: 10px; margin-top: 4px; }
+.btree-cfg-card-meta { margin-top: 5px; }
+.btree-cfg-kv { display: inline-block; margin-right: 10px; margin-bottom: 3px; font-size: 10px; color: var(--dim); }
+.btree-cfg-kv b { color: var(--text); font-weight: 500; }
+.btree-cfg-legend { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 8px; }
+.btree-cfg-legend summary { color: var(--accent); cursor: pointer; font-size: 11px; }
+.btree-cfg-legend-body { color: var(--dim); font-size: 11px; margin-top: 6px; line-height: 1.7; word-break: break-all; }
+.btree-cfg-legend-body code { color: var(--blue); background: var(--bg); padding: 0 3px; border-radius: 2px; }
 
 /* 鈹€鈹€ Command Palette (Quick Open / Search) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */

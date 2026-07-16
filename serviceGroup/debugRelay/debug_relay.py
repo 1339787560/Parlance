@@ -985,6 +985,19 @@ async def bt_nodes_catalog():
     return {"catalog": catalog}
 
 
+@app.get("/api/btree/business_plugins")
+async def bt_business_plugins():
+    """业务插件目录名（assets/plugins/* 小写），用于区分业务/模板插件。
+    pluginName 去 'Plugin' 后缀小写 -> 命中=业务插件，否则模板插件。"""
+    if not src_dir:
+        return {"plugins": []}
+    pdir = src_dir / "plugins"
+    if not pdir.exists():
+        return {"plugins": []}
+    names = [d.name for d in pdir.iterdir() if d.is_dir() and not d.name.endswith(".meta")]
+    return {"plugins": sorted(names)}
+
+
 # ---- Curl 工具（HTTP 连通性测试，服务端代理绕 CORS）----
 
 class CurlRequest(BaseModel):

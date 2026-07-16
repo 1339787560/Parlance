@@ -16,6 +16,16 @@ const STATE_COLOR = { 1:'#22c55e', 2:'#ef4444', 3:'#eab308', 4:'#6b7280', 5:'#f9
 const STATE_LABEL = { 1:'SUCCESS', 2:'FAILURE', 3:'RUNNING', 4:'ERROR', 5:'INTERRUPT' };
 // 弹窗 popupType 配色（popup 配置卡片用）
 const POPUP_TYPE_COLOR = { 0:'#6b7280', 1:'#3b82f6', 2:'#22c55e', 3:'#a855f7', 4:'#f59e0b', 5:'#ec4899', 6:'#14b8a6', 7:'#eab308' };
+// popupType 中文 (PluginPopupConditionType)
+const POPUP_TYPE_ZH = { 0:'自定义', 1:'可领奖', 2:'有红点', 3:'活动开启', 4:'剩余次数>0', 5:'可解锁', 6:'可升级' };
+// popup 字段中文映射
+const POPUP_CFG_FIELD_ZH = { popupName:'弹窗名', support:'是否支持', maxCount:'最大弹出数', cd:'冷却(秒)', defaultVersion:'默认版本', abbr:'子游戏简称', id:'配置ID' };
+const POPUP_ITEM_FIELD_ZH = {
+    viewName:'视图', pluginName:'插件', popupType:'弹窗条件', dailyTimes:'每日次数',
+    interruptOnCancel:'取消时中断', customCondition:'自定义条件', customParam:'自定义参数',
+    group:'画像组', abbr:'子游戏简称', popupInWebActivity:'内嵌活动', isAutoClose:'自动关闭',
+    id:'变体ID', viewParam:'视图参数'
+};
 
 const NODE_W = 172, NODE_H = 72;
 const COMP_W = 58, COMP_H = 30;   // Composite 紧凑 pill 尺寸
@@ -50,6 +60,7 @@ const state = {
     selectedNodeId: null,
     dirty: false,            // 有未保存改动
     catalog: null,           // 节点 palette（分类）
+    businessPlugins: null,   // Set<业务插件 dir 小写>，区分业务/模板插件
     pan: { x: 0, y: 0 },
     zoom: 1,
     vbW: 0, vbH: 0,
@@ -79,6 +90,26 @@ function loadBtreePersist() {
         const ls = localStorage.getItem('btree_layerState');
         if (ls) state.layerState = JSON.parse(ls) || {};
     } catch (e) {}
+}
+
+// 业务插件清单（区分业务/模板插件）
+async function loadBusinessPlugins() {
+    if (state.businessPlugins !== null) return;
+    try {
+        const r = await fetch('/api/btree/business_plugins');
+        const d = await r.json();
+        state.businessPlugins = new Set(d.plugins || []);
+    } catch (e) { state.businessPlugins = new Set(); }
+}
+function classifyPlugin(pluginName) {
+    const dir = (pluginName || '').replace(/Plugin$/i, '').toLowerCase();
+    const bp = state.businessPlugins;
+    if (!dir || !bp) return 'template';
+    if (bp.has(dir)) return 'business';
+    if (dir.length >= 4) {   // 宽松：业务插件目录以 stripped 开头（JoyfulPlugin->joyful 命中 joyfulgift）
+        for (const p of bp) if (p.startsWith(dir)) return 'business';
+    }
+    return 'template';
 }
 
 function btreeCategory(node) {
@@ -142,6 +173,7 @@ async function btreeInit() {
     if (state.inited) { btreeRender(); return; }
     state.inited = true;
     loadBtreePersist();   // 还原上次层 + 各层树（刷新不重置）
+    loadBusinessPlugins();   // 业务插件清单（区分业务/模板，popup 卡用）
     setStatus('加载四层...');
     try {
         const r = await fetch('/api/bt/layers');
@@ -559,36 +591,50 @@ function renderPopupConfig(data) {
     const view = $('btree-config-view');
     if (!view) return;
     const items = Array.isArray(data.items) ? data.items : [];
-    const flagKeys = ['id','popupName','support','maxCount','cd','defaultVersion','abbr'];
-    const flags = flagKeys.filter(k => k in data && data[k] !== '' && data[k] != null)
-        .map(k => k + ': ' + JSON.stringify(data[k]));
-    let html = '<div class="btree-cfg-header"><span class="btree-cfg-name">' + escapeText(data.popupName || state.curTree) + '</span>';
-    html += '<span class="btree-cfg-sub">弹窗配置 · ' + items.length + ' 个变体</span></div>';
-    if (flags.length) {
-        html += '<div class="btree-cfg-flags">' + flags.map(f => '<span class="btree-cfg-flag">' + escapeText(f) + '</span>').join('') + '</div>';
-    }
-    html += '<div class="btree-cfg-note">⚠ 弹窗配置（非行为树）。行为树中 <code>Action_Popup</code> / <code>Con_CheckPopup</code> 通过 <code>name</code> 引用此配置。</div>';
+    // 顶层标志（中文标签）
+    const flagKeys = ['support', 'maxCount', 'cd', 'defaultVersion', 'abbr', 'id'];
+    const flags = flagKeys.filter(k => data[k] !== undefined && data[k] !== '' && data[k] != null)
+        .map(k => (POPUP_CFG_FIELD_ZH[k] || k) + ': ' + JSON.stringify(data[k]));
+    let html = '<div class="btree-cfg-header"><span class="btree-cfg-name">弹窗 ' + escapeText(data.popupName || state.curTree) + '</span>';
+    html += '<span class="btree-cfg-sub">' + items.length + ' 个变体</span></div>';
+    if (flags.length) html += '<div class="btree-cfg-flags">' + flags.map(f => '<span class="btree-cfg-flag">' + escapeText(f) + '</span>').join('') + '</div>';
+    html += '<div class="btree-cfg-note">弹窗配置：行为树 <code>Action_Popup</code>/<code>Con_CheckPopup</code> 按 <code>name</code> 引用。各变体按弹窗条件(popupType)择机弹出。</div>';
     if (items.length) {
         html += '<div class="btree-cfg-cards">';
         items.forEach(it => {
             const pt = (it && it.popupType != null) ? it.popupType : '?';
+            const ptZh = POPUP_TYPE_ZH[pt] || ('type ' + pt);
             const color = POPUP_TYPE_COLOR[pt] || '#6b7280';
-            const meta = [];
-            if (it && it.dailyTimes != null) meta.push('daily ' + it.dailyTimes);
-            if (it && it.abbr) meta.push('abbr ' + it.abbr);
-            if (it && it.interruptOnCancel) meta.push('interruptOnCancel');
-            if (it && it.id != null) meta.push('id ' + it.id);
+            const plugClass = classifyPlugin(it && it.pluginName);
+            const plugBadge = plugClass === 'business'
+                ? '<span class="btree-cfg-plug biz" title="在 assets/plugins/ 内（川麻自研）">业务</span>'
+                : '<span class="btree-cfg-plug tpl" title="assets/plugins/ 无此插件（引擎模板自带）">模板</span>';
+            // 中文字段
+            const kvKeys = ['dailyTimes', 'group', 'interruptOnCancel', 'customCondition', 'customParam', 'viewParam', 'abbr', 'id'];
+            const kvs = [];
+            kvKeys.forEach(k => {
+                if (it && it[k] !== undefined && it[k] !== '' && it[k] != null && it[k] !== false) {
+                    const v = typeof it[k] === 'object' ? JSON.stringify(it[k]) : it[k];
+                    kvs.push('<span class="btree-cfg-kv"><b>' + (POPUP_ITEM_FIELD_ZH[k] || k) + '</b>: ' + escapeText(v) + '</span>');
+                }
+            });
             html += '<div class="btree-cfg-card" style="border-left-color:' + color + '">';
-            html += '<span class="btree-cfg-card-pt" style="background:' + color + '">type ' + escapeText(pt) + '</span>';
-            html += '<div class="btree-cfg-card-view">' + escapeText((it && it.viewName) || '(无 view)') + '</div>';
+            html += '<div class="btree-cfg-card-top"><span class="btree-cfg-card-pt" style="background:' + color + '" title="popupType=' + escapeText(pt) + '">' + escapeText(ptZh) + '</span>' + plugBadge + '</div>';
+            html += '<div class="btree-cfg-card-view">' + escapeText((it && it.viewName) || '(无视图)') + '</div>';
             html += '<div class="btree-cfg-card-plugin">' + escapeText((it && it.pluginName) || '') + '</div>';
-            html += '<div class="btree-cfg-card-meta">' + escapeText(meta.join(' · ')) + '</div>';
+            if (kvs.length) html += '<div class="btree-cfg-card-meta">' + kvs.join('') + '</div>';
             html += '</div>';
         });
         html += '</div>';
     } else {
-        html += '<div class="btree-cfg-empty">无 items（弹窗变体）</div>';
+        html += '<div class="btree-cfg-empty">无变体</div>';
     }
+    // 字段说明 legend
+    html += '<details class="btree-cfg-legend"><summary>字段说明 / popupType 含义 / 业务vs模板插件</summary>';
+    html += '<div class="btree-cfg-legend-body"><b>popupType 弹窗条件：</b>' + Object.entries(POPUP_TYPE_ZH).map(([k, v]) => k + '=' + v).join(' / ') + '</div>';
+    html += '<div class="btree-cfg-legend-body"><b>业务插件：</b>在 <code>assets/plugins/</code> 内（川麻自研，如 ReliefPlugin→relief）。<b>模板插件：</b>引擎自带（pluginName 去 Plugin 后缀小写后查不到，如 AdvenGiftPlugin→advengift）。</div>';
+    html += '<div class="btree-cfg-legend-body"><b>常用字段：</b>dailyTimes 每日次数 / maxCount 最大弹出数 / cd 冷却 / group 画像组 / interruptOnCancel 取消时中断 / viewName 视图 / customCondition 自定义条件。</div>';
+    html += '</details>';
     view.innerHTML = html;
 }
 
