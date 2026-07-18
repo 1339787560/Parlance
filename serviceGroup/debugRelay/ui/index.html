@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=21">
+    <link rel="stylesheet" href="debug-ui.css?v=22">
 </head>
 <body>
     <div id="toolbar">
@@ -17,6 +17,7 @@
             <option value="">无客户端</option>
         </select>
         <button id="runtime-reload-btn" class="toolbar-btn" onclick="reloadRuntime()" title="刷新 preview 页面，重载运行时代码">Reload Preview</button>
+        <button id="snapshot-btn" class="toolbar-btn" onclick="snapCapture()" title="持久化当前客户端 Console+Perf 快照（落档后给 AI 分析性能瓶颈）">📸 快照</button>
         <select class="theme-select" id="themeSelect" title="切换样式">
             <option value="">深色默认</option>
             <option value="red">朱砂红</option>
@@ -37,6 +38,7 @@
         <button id="tab-curl" class="tab" onclick="switchTab('curl')">Curl</button>
         <button id="tab-perf" class="tab" onclick="switchTab('perf')">Performance</button>
         <button id="tab-events" class="tab" onclick="switchTab('events')">Events</button>
+        <button id="tab-snapshots" class="tab" onclick="switchTab('snapshots')">Snapshots</button>
         <button id="tab-scene" class="tab" onclick="switchTab('scene')">Scene</button>
     </div>
 
@@ -90,31 +92,35 @@
                 <div class="perf-label">FPS</div>
                 <div class="perf-value" id="perf-fps">-</div>
                 <div class="perf-sub" id="perf-frame">-</div>
+                <div class="perf-peak" id="perf-fps-peak">-</div>
             </div>
             <div class="perf-card">
                 <div class="perf-label">DrawCall (avg)</div>
                 <div class="perf-value" id="perf-dc">-</div>
-                <div class="perf-sub" id="perf-dc-max">峰值 -</div>
+                <div class="perf-peak" id="perf-dc-max">峰值 -</div>
             </div>
             <div class="perf-card">
                 <div class="perf-label">FrameTime (ms)</div>
                 <div class="perf-value" id="perf-ft">-</div>
-                <div class="perf-sub" id="perf-ft-max">峰值 -</div>
+                <div class="perf-peak" id="perf-ft-max">峰值 -</div>
             </div>
             <div class="perf-card">
                 <div class="perf-label">内存 (MB)</div>
                 <div class="perf-value" id="perf-mem">-</div>
                 <div class="perf-sub" id="perf-mem-sub">JS Heap</div>
+                <div class="perf-peak" id="perf-mem-peak">-</div>
             </div>
             <div class="perf-card">
                 <div class="perf-label">三角形 / 顶点</div>
                 <div class="perf-value" id="perf-tris">-</div>
                 <div class="perf-sub" id="perf-verts">-</div>
+                <div class="perf-peak" id="perf-tris-peak">-</div>
             </div>
             <div class="perf-card">
                 <div class="perf-label">CPU 占用 (帧预算)</div>
                 <div class="perf-value" id="perf-cpu-total">-</div>
                 <div class="perf-sub" id="perf-cpu-detail">logic / phys / render / present</div>
+                <div class="perf-peak dense" id="perf-cpu-peak">-</div>
             </div>
         </div>
         <div id="perf-charts">
@@ -158,6 +164,20 @@
         </div>
         <div id="events-output">
             <div class="events-empty">选择分类和日期查看归档事件，或等待实时事件推送</div>
+        </div>
+    </div>
+
+    <!-- Snapshots Panel - 点击即落档的 Console+Perf 快照 (给 AI 分析性能) -->
+    <div id="panel-snapshots" class="panel">
+        <div id="snapshots-toolbar" style="display:flex; gap:8px; align-items:center; padding:6px 8px; border-bottom:1px solid #333; flex-wrap:wrap;">
+            <button onclick="snapCapture()" title="对当前选中客户端打快照">📸 立即快照</button>
+            <input id="snapshots-note" type="text" placeholder="备注（可选，如：进房后掉帧）" style="flex:1; min-width:200px;" onkeydown="if(event.key==='Enter')snapCapture()">
+            <button onclick="snapRefresh()" title="刷新列表">🔄</button>
+            <span id="snapshots-count" class="events-count"></span>
+            <span id="snapshots-status" class="events-status"></span>
+        </div>
+        <div id="snapshots-output">
+            <div class="events-empty">点击 "立即快照" 持久化当前 Console+Perf 数据；列表加载中...</div>
         </div>
     </div>
 
@@ -319,8 +339,9 @@
 
     <script src="debug-console.js?v=11"></script>
     <script src="debug-sources.js?v=5"></script>
-    <script src="debug-perf.js?v=4"></script>
+    <script src="debug-perf.js?v=6"></script>
     <script src="debug-events.js?v=6"></script>
+    <script src="debug-snapshots.js?v=1"></script>
     <script src="debug-scene.js?v=5"></script>
     <script src="debug-btree.js?v=21"></script>
     <script src="debug-curl.js?v=2"></script>

@@ -1,29 +1,27 @@
-# flask 程序一定要用 DEBUG OFF。
+# infoServer — ServiceGroup launcher config (走法 A: host 无 HTTP).
+#
+# host (main.py) 是纯进程启动器, 不监听任何 TCP 端口。
+# server.port 仅供 run.py 启动器预清理端口用(为 parlanceChat 让出 5001);
+# host 自身不绑定它。所有可插拔子服务在下方 services 列表声明, enabled 即装/卸。
 
 server:
   host: 0.0.0.0
-  port: 5001
-  upload_dir: ./uploads
-  max_upload_size: 1073741824  # 1GB
-  zip_chunk_size: 67108864     # 64MB chunks for streaming zip
+  port: 5001    # run.py 预清理此端口; 实际由 parlance-chat 子服务占用
 
-database:
-  path: ./data/chat.db
-
-# Managed services - launched as subprocesses
+# Managed services - launched as subprocesses by ServiceGroupManager
 # Fields: name, command, args, cwd, env, auto_restart, health_check, tags, enabled, managed, port
 #   managed=true (default): killed on parent exit via Job Object
 #   managed=false: fire-and-forget, survives parent exit
 #   port=<number>: auto-free port before start (kill occupying process)
 services:
-  - name: http-photo-server
+  - name: parlance-chat
     command: python
-    args: ["C:\\codelib\\HttpPhotoServer\\src\\main.py", "--port", "5000"]
-    cwd: C:\codelib\HttpPhotoServer\src
-    port: 5000
+    args: ["main.py", "--port", "5001"]
+    cwd: ./serviceGroup/parlanceChat
+    port: 5001
     auto_restart: true
-    tags: [media, gallery]
-    enabled: false
+    tags: [chat, parlance]
+    enabled: true
 
   - name: serviceServer
     command: python
@@ -66,12 +64,3 @@ services:
     managed: false
     tags: [cocos, mcp, editor]
     enabled: false
-
-  # - name: wechatgame-static
-  #   command: python
-  #   args: ["-m", "http.server", "8003", "--bind", "192.168.41.158"]
-  #   cwd: D:\Codlib\douque\xzmx\ClientEngineGame\trunk\build\wechatgame001
-  #   port: 8003
-  #   auto_restart: true
-  #   tags: [static, wechatgame, cocos]
-  #   enabled: true

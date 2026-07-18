@@ -1,0 +1,108 @@
+import argparse
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from chat_manager import ChatManager
+from database import Database
+from file_handler import FileHandler
+from routes import router
+from state import state
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("parlanceChat")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    upload_dir = app.state.upload_dir
+    db_path = app.state.db_path
+
+    Path(upload_dir).mkdir(parents=True, exist_ok=True)
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
+    state.db = Database(db_path)
+    state.fh = FileHandler(upload_dir)
+    # config 仅传给 ChatManager 占位; parlanceChat 自包含, 无外部 config 依赖
+    state.chat = ChatManager(state.db, {})
+
+    logger.info("parlanceChat started — upload=%s db=%s", upload_dir, db_path)
+    yield
+
+    if state.chat:
+        await state.chat.sse.shutdown()
+    if state.db:
+        state.db.close()
+    logger.info("parlanceChat shut down")
+
+
+def create_app(upload_dir: str, db_path: str) -> FastAPI:
+    app = FastAPI(lifespan=lifespan, title="Parlance Chat")
+    app.state.upload_dir = upload_dir
+    app.state.db_path = db_path
+
+    # ── CORS (允许跨端口子服务页面嵌入/调用 theme API) ──────────────────────
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # ── Static files ────────────────────────────────────────────────────────────
+    static_dir = Path(__file__).parent / "static"
+    static_dir.mkdir(exist_ok=True)
+    state.static_dir = static_dir
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    style_dir = Path(__file__).parent / "style"
+    if style_dir.exists():
+        app.mount("/style", StaticFiles(directory=str(style_dir)), name="style")
+
+    # ── Middleware ───────────────────────────────────────────────────────────────
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
+
+    app.include_router(router)
+    return app
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Parlance chat sub-service")
+    parser.add_argument("--port", type=int, default=5001, help="HTTP port (default 5001)")
+    parser.add_argument("--host", default="0.0.0.0", help="bind host")
+    parser.add_argument("--upload-dir", default="./uploads", help="upload directory")
+    parser.add_argument("--db-path", default="./data/chat.db", help="sqlite db path")
+    args = parser.parse_args()
+
+    app = create_app(args.upload_dir, args.db_path)
+    # NOTE: 端口清理由 host ServiceGroupManager 的 config `port` 字段托管
+    # (ManagedService.start 自动 _free_port)。独立直跑时若端口占用, uvicorn 会报错。
+
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        reload=False,
+        log_level="info",
+        limit_concurrency=64,
+        limit_max_requests=None,
+        timeout_graceful_shutdown=1,
+    )
+
+
+if __name__ == "__main__":
+    main()

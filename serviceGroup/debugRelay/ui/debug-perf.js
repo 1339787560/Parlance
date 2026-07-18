@@ -10,6 +10,51 @@
 const PERF_HISTORY_MAX = 300;   // 最多保留 300 条 = 5 分钟 @ 1Hz
 const perfHistory = [];         // [{ fps, draws, frame, logic, render, textureMemory, ... }]
 
+// 会话级峰值 (从首次收到 perf_snapshot 到当前, 持续累 max)。
+// 切换客户端时由 resetPerfPanel() 重置。与后端 ClientCtx.perf_peaks 对齐
+// (后端从 client 连接算, 前端从 browser 订阅算 — 后端更准, 用于快照持久化)。
+const perfPeaks = {
+    fps_min: -1,                  // fps min (跌帧谷值, 比 max 更有意义)
+    memBytes: -1, tricount: -1, verts: -1,
+    draws: -1, frameTimeMax: -1,
+    logicMs: -1, physicsMs: -1, renderMs: -1, presentMs: -1,
+    cpuTotalPct: -1,              // (logic+physics+render+present)/16.67ms 峰值
+};
+
+const FRAME_BUDGET_MS_60 = 1000 / 60;  // 60Hz 帧预算
+
+function updatePerfPeaks(snap) {
+    const up = (val, key) => {
+        if (typeof val === 'number' && isFinite(val) && val >= 0 && val > perfPeaks[key]) {
+            perfPeaks[key] = val;
+        }
+    };
+    up(snap.memBytes, 'memBytes');
+    up(getField(snap, 'tricount', 'tris', -1), 'tricount');
+    up(snap.verts, 'verts');
+    up(getField(snap, 'draws', 'drawCall', -1), 'draws');
+    up(snap.frameTimeMax, 'frameTimeMax');
+    up(snap.logic, 'logicMs');
+    up(snap.physics, 'physicsMs');
+    up(snap.render, 'renderMs');
+    up(snap.present, 'presentMs');
+    // fps min (双向, min 是坏信号)
+    if (typeof snap.fps === 'number' && isFinite(snap.fps) && snap.fps >= 0) {
+        if (perfPeaks.fps_min < 0 || snap.fps < perfPeaks.fps_min) perfPeaks.fps_min = snap.fps;
+    }
+    // CPU 总和峰值 (%)
+    const parts = [snap.logic, snap.physics, snap.render, snap.present]
+        .filter(v => typeof v === 'number' && v >= 0);
+    if (parts.length > 0) {
+        const totalPct = parts.reduce((a, b) => a + b, 0) / FRAME_BUDGET_MS_60 * 100;
+        if (totalPct > perfPeaks.cpuTotalPct) perfPeaks.cpuTotalPct = totalPct;
+    }
+}
+
+function resetPerfPeaks() {
+    Object.keys(perfPeaks).forEach(k => { perfPeaks[k] = -1; });
+}
+
 /** 兼容读取：优先新字段名，fallback 旧字段名 */
 function getField(snap, newName, oldName, defaultVal = -1) {
     if (snap[newName] !== undefined && snap[newName] !== null) return snap[newName];
@@ -32,6 +77,7 @@ function handlePerfSnapshot(snap) {
     renderPerfCards(snap);
     renderPerfCharts();
     updateScenePerfBadges(snap);
+    updatePerfPeaks(snap);
 }
 
 function handlePerfHistory(snapshots) {
@@ -71,34 +117,47 @@ function renderPerfCards(snap) {
     // FrameTime — 新字段 frame, 旧字段 frameTime
     const frameTime = getField(snap, 'frame', 'frameTime', 0);
     const frameTimeMax = snap.frameTimeMax ?? 0;
-    setText('perf-frame', `frameTime ${f1(frameTime)}ms · max ${f1(frameTimeMax)}ms`);
+    setText('perf-frame', `frameTime ${f1(frameTime)}ms`);
+    // FPS 卡会话峰值: fps 谷值 + frameTimeMax 峰值
+    const fpsMinPk = perfPeaks.fps_min >= 0 ? perfPeaks.fps_min.toFixed(1) : '-';
+    const ftMaxPk = perfPeaks.frameTimeMax >= 0 ? f1(perfPeaks.frameTimeMax) : '-';
+    setPeakText('perf-fps-peak', `会话峰值: fps谷 ${fpsMinPk} · ftMax ${ftMaxPk}ms`);
 
-    // DrawCall — 新字段 draws, 旧字段 drawCall
+    // DrawCall — 新字段 draws, 旧字段 drawCall。峰值用会话级 perfPeaks.draws
     const draws = getField(snap, 'draws', 'drawCall', -1);
     const drawCallMax = snap.drawCallMax ?? -1;
     setText('perf-dc', draws >= 0 ? String(draws) : 'N/A',
         draws < 0 ? '' : draws <= 100 ? 'good' : draws <= 200 ? 'warn' : 'bad');
-    setText('perf-dc-max', `峰值 ${drawCallMax >= 0 ? drawCallMax : '-'}`);
+    const dcPeak = perfPeaks.draws >= 0 ? perfPeaks.draws : drawCallMax;
+    setPeakText('perf-dc-max', `会话峰值 ${dcPeak >= 0 ? dcPeak : '-'}`);
 
     setText('perf-ft', frameTime > 0 ? f1(frameTime) : 'N/A',
         frameTime <= 0 ? '' : frameTime <= 20 ? 'good' : frameTime <= 33 ? 'warn' : 'bad');
-    setText('perf-ft-max', `峰值 ${f1(frameTimeMax)}ms`);
+    // FT 峰值: 会话级 frameTimeMax (真实帧间峰值, 含 vsync/阻塞等待)
+    const ftPeak = perfPeaks.frameTimeMax >= 0 ? perfPeaks.frameTimeMax : frameTimeMax;
+    setPeakText('perf-ft-max', `会话峰值 ${f1(ftPeak)}ms`);
 
-    // 内存
+    // 内存 + 会话峰值 (sub=JS Heap, peak=会话峰值, 拆行)
     if (snap.memBytes > 0) {
         const mb = (snap.memBytes / 1024 / 1024).toFixed(1);
         setText('perf-mem', mb, parseFloat(mb) < 80 ? 'good' : parseFloat(mb) < 150 ? 'warn' : 'bad');
         setText('perf-mem-sub', 'JS Heap');
+        const peakMb = perfPeaks.memBytes > 0 ? (perfPeaks.memBytes / 1024 / 1024).toFixed(1) : '-';
+        setPeakText('perf-mem-peak', `会话峰值 ${peakMb} MB`);
     } else {
         setText('perf-mem', 'N/A');
         setText('perf-mem-sub', '不可用');
+        setPeakText('perf-mem-peak', '-');
     }
 
-    // 三角面 — 新字段 tricount, 旧字段 tris
+    // 三角面 / 顶点 + 会话峰值 (sub=verts, peak=tri/v 峰值, 拆行)
     const tricount = getField(snap, 'tricount', 'tris', -1);
     const verts = snap.verts ?? -1;
     setText('perf-tris', tricount >= 0 ? formatNumber(tricount) : 'N/A');
-    setText('perf-verts', verts >= 0 ? formatNumber(verts) : 'N/A');
+    setText('perf-verts', `verts ${verts >= 0 ? formatNumber(verts) : '-'}`);
+    const triPk = perfPeaks.tricount >= 0 ? formatNumber(perfPeaks.tricount) : '-';
+    const vertPk = perfPeaks.verts >= 0 ? formatNumber(perfPeaks.verts) : '-';
+    setPeakText('perf-tris-peak', `峰值 tri ${triPk} / v ${vertPk}`);
 
     // CPU 阶段（占 60Hz 帧预算 16.67ms 的百分比，近似 CPU 占用率）
     // profiler.stats 给的是 ms，转 % 更直观。基准 16.67ms = 100%。
@@ -117,8 +176,10 @@ function renderPerfCards(snap) {
         const pct = (v) => (typeof v === 'number' && v >= 0)
             ? (v / FRAME_BUDGET_MS * 100).toFixed(0) + '%'
             : '-';
+        const cpuPeak = perfPeaks.cpuTotalPct >= 0 ? perfPeaks.cpuTotalPct.toFixed(0) + '%' : '-';
         setText('perf-cpu-detail',
             `logic ${pct(logic)} · phys ${pct(physics)} · render ${pct(render)} · present ${pct(present)}`);
+        setPeakText('perf-cpu-peak', `会话峰值 ${cpuPeak}`, true);  // dense=长文本缩字号
     } else {
         setText('perf-cpu-total', 'N/A');
         setText('perf-cpu-detail', '不可用');
@@ -130,6 +191,14 @@ function setText(id, text, klass) {
     if (!el) return;
     el.textContent = text;
     el.className = 'perf-value' + (klass ? ' ' + klass : '');
+}
+
+/** 写会话峰值元素: 强制 perf-peak class (琥珀色贴底), dense=长文本缩字号 */
+function setPeakText(id, text, dense) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'perf-peak' + (dense ? ' dense' : '');
 }
 
 function formatNumber(n) {
@@ -377,11 +446,19 @@ function escapePerfHtml(text) {
 function resetPerfPanel() {
     perfHistory.length = 0;
     perfMarks.length = 0;
+    resetPerfPeaks();
     // 卡片复位
     ['perf-fps', 'perf-dc', 'perf-ft', 'perf-mem', 'perf-tris', 'perf-cpu-total']
         .forEach(id => setText(id, '-'));
-    ['perf-frame', 'perf-dc-max', 'perf-ft-max', 'perf-mem-sub', 'perf-verts', 'perf-cpu-detail']
+    ['perf-frame', 'perf-mem-sub', 'perf-verts', 'perf-cpu-detail']
         .forEach(id => { const e = document.getElementById(id); if (e) e.textContent = '-'; });
+    // peak 元素用 setPeakText 复位 (保留 perf-peak class, 不被 setText 覆盖成 perf-value)
+    setPeakText('perf-fps-peak', '-');
+    setPeakText('perf-dc-max', '-');
+    setPeakText('perf-ft-max', '-');
+    setPeakText('perf-mem-peak', '-');
+    setPeakText('perf-tris-peak', '-');
+    setPeakText('perf-cpu-peak', '-', true);
     renderPerfCharts();
     const ml = document.getElementById('perf-marks-list');
     if (ml) ml.innerHTML = '';

@@ -545,6 +545,9 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 98px;
 }
 
 .perf-label {
@@ -571,6 +574,26 @@ body {
   font-size: 10px;
   color: var(--dim);
   margin-top: 2px;
+}
+
+/* 会话峰值: 独立成行, 琥珀色区分, margin-top:auto 贴底 (父 .perf-card flex column) */
+.perf-peak {
+  font-size: 10px;
+  color: #e8a847;
+  margin-top: auto;
+  padding-top: 6px;
+  font-weight: 500;
+  font-family: 'Consolas', monospace;
+  line-height: 1.3;
+  letter-spacing: -0.2px;
+  border-top: 1px dashed rgba(232, 168, 71, 0.25);
+  word-break: keep-all;
+}
+/* 长文本(CPU 阶段分解)专用: 更小字号防挤压 */
+.perf-peak.dense {
+  font-size: 9px;
+  letter-spacing: -0.4px;
+  line-height: 1.2;
 }
 
 #perf-charts {

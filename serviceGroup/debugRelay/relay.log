@@ -1,0 +1,20 @@
+IP 白名单已启用: ['127.0.0.1', '192.168.0.253', '192.168.41.158'] (来源: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\debugRelay\debug_relay.config.yaml)
+行为树 tab: 4 层已配置, template_root=D:\CocosCreator2.0\Template\game, write_ips=['127.0.0.1', '192.168.41.158']
+==================================================
+Debug Relay Server (multi-client)
+  Port: 5003
+  Host: 0.0.0.0
+  Source: D:\Codlib\douque\xzmx\ClientEngineGame\trunk\assets
+  Events: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\debugRelay\events
+  Snapshots: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\debugRelay\snapshots
+  UI: http://0.0.0.0:5003
+  WS Game: ws://0.0.0.0:5003/ws/game
+  WS Browser: ws://0.0.0.0:5003/ws/browser
+  Clients API: http://0.0.0.0:5003/api/clients
+==================================================
+INFO:     Started server process [40876]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 10048] error while attempting to bind on address ('0.0.0.0', 5003): 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.

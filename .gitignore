@@ -1,9 +1,11 @@
 __pycache__
 .deepseek
-data/*
+data/
 *.db
-style/*
-uploads/*
+*.db-shm
+*.db-wal
+style/
+uploads/
 .gstack/
 .env
 .env.*
@@ -14,3 +16,4 @@ stats.db
 .cursor
 diagnose*
 *.jsonl
+*snapshots/

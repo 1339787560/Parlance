@@ -27,6 +27,7 @@ import re
 import asyncio
 import argparse
 import subprocess
+from math import isfinite
 from pathlib import Path
 from datetime import datetime, date
 from typing import Set, Dict, Optional, Any
@@ -106,6 +107,53 @@ CONSOLE_BUFFER_MAX = 50000
 PERF_BUFFER_MAX = 600
 
 
+def _new_perf_peaks() -> dict:
+    """ClientCtx.perf_peaks 初值。会话级峰值 (连接→当前最大), 每条 perf_snapshot 更新。"""
+    return {
+        "connected_at": None,
+        "sample_count": 0,
+        "fps_max": -1, "fps_min": -1,
+        "frame_ms": -1, "logic_ms": -1, "physics_ms": -1,
+        "render_ms": -1, "present_ms": -1,
+        "frameTimeMax_ms": -1,
+        "draws": -1, "tricount": -1, "memBytes": -1,
+    }
+
+
+def _update_perf_peaks(peaks: dict, snap: dict) -> None:
+    """用一条 perf_snapshot 更新会话级峰值 (连接→当前出现过的最大值)。
+
+    ClientCtx 每次新建 (新连接) → peaks 自动重置 (新会话)。
+    """
+    if peaks.get("connected_at") is None:
+        peaks["connected_at"] = snap.get("ts") or datetime.now().isoformat()
+    peaks["sample_count"] = peaks.get("sample_count", 0) + 1
+
+    def up_max(field_name, store_key):
+        v = snap.get(field_name)
+        if isinstance(v, (int, float)) and isfinite(v) and v >= 0:
+            if v > peaks[store_key]:
+                peaks[store_key] = v
+
+    up_max("frame", "frame_ms")
+    up_max("logic", "logic_ms")
+    up_max("physics", "physics_ms")
+    up_max("render", "render_ms")
+    up_max("present", "present_ms")
+    up_max("frameTimeMax", "frameTimeMax_ms")
+    up_max("draws", "draws")
+    up_max("tricount", "tricount")
+    up_max("memBytes", "memBytes")
+
+    # fps 双向: max (最好) + min (最差, 信号更有意义)
+    fps = snap.get("fps")
+    if isinstance(fps, (int, float)) and isfinite(fps) and fps >= 0:
+        if fps > peaks["fps_max"]:
+            peaks["fps_max"] = fps
+        if peaks["fps_min"] < 0 or fps < peaks["fps_min"]:
+            peaks["fps_min"] = fps
+
+
 @dataclass
 class ClientCtx:
     """单个游戏端会话状态（per-client 隔离）。"""
@@ -116,6 +164,8 @@ class ClientCtx:
     console_buffer: list = field(default_factory=list)
     console_seq: int = 0
     perf_buffer: list = field(default_factory=list)
+    # 会话级峰值 (连接→当前最大), 每条 perf_snapshot 更新; 给快照与 /api/perf
+    perf_peaks: dict = field(default_factory=_new_perf_peaks)
     # REST->WS 请求/响应关联（单飞 per response_key），per-client 隔离
     response_futures: Dict[str, "asyncio.Future"] = field(default_factory=dict)
     eval_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -151,6 +201,9 @@ src_dir: Path = None
 
 # 重要事件存储目录（按日分割 JSONL 文件，全局共享）
 events_dir: Path = None
+
+# 快照存储目录（点击即落档 Console+Perf 单文件，按 client 分目录，给 AI 性能分析）
+snapshots_dir: Path = None
 
 # IP 白名单(可选,未启用时允许所有 IP)
 whitelist_enabled: bool = False
@@ -312,6 +365,292 @@ def persist_important_event(msg: dict):
         print(f"[debug-relay] failed to persist event: {e}")
 
 
+# ---- Snapshot Persistence (Console + Perf 点击即落档) ----
+#
+# 目的: 用户点击"持久化快照"→ 切片当前 console_buffer + perf_buffer 单文件落档,
+# 自带 perf_summary + hot_frames + AI hints, 供 AI agent 一次性 Read 推断瓶颈。
+# 不清空 buffer, 可多次点击产生独立快照。
+# 文件路径: {snapshots_dir}/{client_id}/{snap_id}.json + .summary.md
+
+def _percentile(sorted_vals: list, p: float) -> float:
+    """线性插值百分位。p∈[0,100]。空表返回 0。"""
+    if not sorted_vals:
+        return 0.0
+    if len(sorted_vals) == 1:
+        return float(sorted_vals[0])
+    k = (len(sorted_vals) - 1) * p / 100.0
+    f = int(k)
+    c = min(f + 1, len(sorted_vals) - 1)
+    if f == c:
+        return float(sorted_vals[f])
+    return float(sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f))
+
+
+def _summarize_perf(perf_tail: list) -> dict:
+    """从 perf_tail 切片算统计汇总 + 高热帧。单位约定: fps 为 fps, 其余 *ms* 字段。"""
+    if not perf_tail:
+        return {"window_seconds": 0, "fps": {}, "hot_frames": [], "hot_frames_count": 0}
+
+    def col(key):
+        out = []
+        for s in perf_tail:
+            v = s.get(key)
+            if isinstance(v, (int, float)) and isfinite(v) and v >= 0:
+                out.append(v)
+        return out
+
+    def ms_stat(key):
+        vals = sorted(col(key))
+        if not vals:
+            return {"min_ms": -1, "avg_ms": -1, "max_ms": -1, "p50": -1, "p95": -1}
+        return {
+            "min_ms": round(vals[0], 2),
+            "avg_ms": round(sum(vals) / len(vals), 2),
+            "max_ms": round(vals[-1], 2),
+            "p50": round(_percentile(vals, 50), 2),
+            "p95": round(_percentile(vals, 95), 2),
+        }
+
+    fps_vals = sorted(col("fps"))
+    fps_stat = {
+        "min": round(fps_vals[0], 1) if fps_vals else -1,
+        "avg": round(sum(fps_vals) / len(fps_vals), 1) if fps_vals else -1,
+        "max": round(fps_vals[-1], 1) if fps_vals else -1,
+        "p50": round(_percentile(fps_vals, 50), 1) if fps_vals else -1,
+        "p95": round(_percentile(fps_vals, 95), 1) if fps_vals else -1,
+    }
+
+    # 高热帧: 任一 CPU 阶段 > 5ms / frameTimeMax > 50ms / fps 跌破 30
+    hot = []
+    for s in perf_tail:
+        logic = s.get("logic", -1) or 0
+        render = s.get("render", -1) or 0
+        physics = s.get("physics", -1) or 0
+        ftmax = s.get("frameTimeMax", -1) or 0
+        fps = s.get("fps", -1) or 0
+        is_hot = (
+            (isinstance(logic, (int, float)) and logic > 5) or
+            (isinstance(render, (int, float)) and render > 5) or
+            (isinstance(physics, (int, float)) and physics > 5) or
+            (isinstance(ftmax, (int, float)) and ftmax > 50) or
+            (isinstance(fps, (int, float)) and 0 < fps < 30)
+        )
+        if is_hot:
+            hot.append({
+                "ts": s.get("ts"),
+                "fps": fps,
+                "frame_ms": s.get("frame", -1),
+                "logic_ms": logic,
+                "physics_ms": physics,
+                "render_ms": render,
+                "present_ms": s.get("present", -1),
+                "frameTimeMax_ms": ftmax,
+                "draws": s.get("draws", -1),
+            })
+    hot = hot[-50:]  # 最多 50 条防爆
+
+    tricount_vals = col("tricount")
+    mem_peak = max(col("memBytes")) if col("memBytes") else 0
+    ftmax_peak = max(col("frameTimeMax")) if col("frameTimeMax") else 0
+    draws_vals = col("draws")
+
+    return {
+        "window_seconds": len(perf_tail),  # ~1Hz push
+        "fps": fps_stat,
+        "frame": ms_stat("frame"),
+        "logic": ms_stat("logic"),
+        "physics": ms_stat("physics"),
+        "render": ms_stat("render"),
+        "present": ms_stat("present"),
+        "draws": {
+            "avg": round(sum(draws_vals) / len(draws_vals)) if draws_vals else -1,
+            "max": max(draws_vals) if draws_vals else -1,
+        },
+        "tricount_avg": round(sum(tricount_vals) / len(tricount_vals)) if tricount_vals else -1,
+        "mem_bytes_peak": mem_peak,
+        "frameTimeMax_peak_ms": round(ftmax_peak, 2),
+        "hot_frames_count": len(hot),
+        "hot_frames": hot,
+    }
+
+
+def _ai_hints(ps: dict) -> list:
+    """自动瓶颈推断。返回 markdown bullet 列表。"""
+    hints = []
+    fps_avg = ps.get("fps", {}).get("avg", -1)
+    logic_avg = ps.get("logic", {}).get("avg_ms", -1)
+    physics_avg = ps.get("physics", {}).get("avg_ms", -1)
+    render_avg = ps.get("render", {}).get("avg_ms", -1)
+    present_avg = ps.get("present", {}).get("avg_ms", -1)
+    logic_p95 = ps.get("logic", {}).get("p95", -1)
+    render_p95 = ps.get("render", {}).get("p95", -1)
+    ftmax_peak = ps.get("frameTimeMax_peak_ms", 0)
+    if isinstance(logic_avg, (int, float)) and logic_avg > 5:
+        hints.append(f"- **logic avg {logic_avg}ms / p95 {logic_p95}ms** 偏高 → 游戏逻辑重, 查业务 update/事件分发/行为树 tick")
+    if isinstance(render_avg, (int, float)) and render_avg > 10:
+        hints.append(f"- **render avg {render_avg}ms / p95 {render_p95}ms** 偏高 → 渲染重, 查 draw call / shader / 节点/batch")
+    if isinstance(physics_avg, (int, float)) and physics_avg > 5:
+        hints.append(f"- **physics avg {physics_avg}ms** 偏高 → 物理模拟重, 查碰撞体/刚体数")
+    if isinstance(present_avg, (int, float)) and present_avg > 5:
+        hints.append(f"- **present avg {present_avg}ms** 偏高 → 提交/swapbuffers 慢, 查 GFX 设备/GPU 队列")
+    if isinstance(fps_avg, (int, float)) and 0 < fps_avg < 30:
+        hints.append(f"- **fps avg {fps_avg} < 30** 帧率偏低; 若 CPU 阶段均低, 查 GPU/vsync/帧率上限")
+    if isinstance(ftmax_peak, (int, float)) and ftmax_peak > 50:
+        hints.append(f"- **frameTimeMax 峰值 {ftmax_peak}ms** 存在单帧尖刺, 对照 hot_frames.ts 与 console_tail 定位")
+    if not hints:
+        hints.append("- 无明显 CPU 瓶颈信号 (logic/render/physics/present avg 均低). 若 fps 仍低, 查 GPU/vsync/帧率上限配置.")
+    return hints
+
+
+def _render_snapshot_summary_md(snap_id: str, data: dict) -> str:
+    """生成快照 markdown 摘要 (人 + AI 友好)。"""
+    meta = data.get("meta", {})
+    ps = data.get("perf_summary", {})
+    fps = ps.get("fps", {})
+    L = []
+    L.append(f"# Snapshot {snap_id}")
+    L.append("")
+    L.append(f"- **Client**: {meta.get('client_label')} (`{meta.get('client_id')}`, ip={meta.get('ip')})")
+    L.append(f"- **Click TS**: {meta.get('click_ts')}")
+    if meta.get("note"):
+        L.append(f"- **Note**: {meta.get('note')}")
+    L.append(f"- **Window**: console_tail={meta.get('console_tail_count')} / perf_tail={meta.get('perf_tail_count')} (~{ps.get('window_seconds',0)}s @1Hz)")
+    L.append(f"- **Buffer total at click**: console={meta.get('console_buffer_total')} / perf={meta.get('perf_buffer_total')}")
+    L.append("")
+    L.append("## Perf Summary")
+    L.append("")
+    L.append("| metric | min | avg | p50 | p95 | max |")
+    L.append("|---|---|---|---|---|---|")
+    L.append(f"| fps | {fps.get('min','-')} | {fps.get('avg','-')} | {fps.get('p50','-')} | {fps.get('p95','-')} | {fps.get('max','-')} |")
+    for k, label in [("frame", "frame (ms, engine active work)"),
+                     ("logic", "logic (ms)"), ("physics", "physics (ms)"),
+                     ("render", "render (ms)"), ("present", "present (ms)")]:
+        s = ps.get(k, {})
+        L.append(f"| {label} | {s.get('min_ms','-')} | {s.get('avg_ms','-')} | {s.get('p50','-')} | {s.get('p95','-')} | {s.get('max_ms','-')} |")
+    draws = ps.get("draws", {})
+    L.append(f"| draws | - | {draws.get('avg','-')} | - | - | {draws.get('max','-')} |")
+    L.append(f"| tricount_avg | - | {ps.get('tricount_avg','-')} | - | - | - |")
+    L.append(f"| frameTimeMax_peak_ms | - | - | - | - | {ps.get('frameTimeMax_peak_ms','-')} |")
+    L.append(f"| mem_bytes_peak | - | - | - | - | {ps.get('mem_bytes_peak','-')} |")
+    L.append("")
+    L.append("> 注: `frame` = 引擎每帧活跃工作量 (beforeUpdate→afterPresent), 不含 vsync/RAF 等待; 真实帧间隔 ≈ 1000/fps。")
+    L.append("")
+    hot = ps.get("hot_frames", [])
+    if hot:
+        L.append(f"## Hot Frames ({len(hot)})")
+        L.append("")
+        L.append("| ts | fps | frame_ms | logic_ms | physics_ms | render_ms | present_ms | ftMax_ms | draws |")
+        L.append("|---|---|---|---|---|---|---|---|---|")
+        for h in hot[-15:]:
+            L.append(f"| {h.get('ts','-')} | {h.get('fps','-')} | {h.get('frame_ms','-')} | {h.get('logic_ms','-')} | {h.get('physics_ms','-')} | {h.get('render_ms','-')} | {h.get('present_ms','-')} | {h.get('frameTimeMax_ms','-')} | {h.get('draws','-')} |")
+        L.append("")
+    # Session Peaks (连接→当前, 会话级最大值)
+    sp = data.get("session_peaks") or {}
+    if sp:
+        L.append("## Session Peaks (连接→当前)")
+        L.append("")
+        conn = sp.get("connected_at", "-")
+        samples = sp.get("sample_count", 0)
+        L.append(f"- **Connected**: {conn}  | **Samples**: {samples}")
+        L.append(f"- **fps**: max {sp.get('fps_max', -1)} / min {sp.get('fps_min', -1)}")
+        for k, label in [("frame_ms", "frame_ms peak"),
+                         ("logic_ms", "logic_ms peak"),
+                         ("physics_ms", "physics_ms peak"),
+                         ("render_ms", "render_ms peak"),
+                         ("present_ms", "present_ms peak"),
+                         ("frameTimeMax_ms", "frameTimeMax_ms peak")]:
+            L.append(f"- **{label}**: {sp.get(k, -1)}")
+        L.append(f"- **draws peak**: {sp.get('draws', -1)}")
+        L.append(f"- **tricount peak**: {sp.get('tricount', -1)}")
+        mem_peak = sp.get("memBytes", -1)
+        if isinstance(mem_peak, (int, float)) and mem_peak > 0:
+            mem_mb = f"{mem_peak / (1024 * 1024):.1f} MB"
+        else:
+            mem_mb = "-"
+        L.append(f"- **memBytes peak**: {mem_peak} ({mem_mb})")
+        L.append("")
+    L.append("## AI Hints")
+    L.append("")
+    L.extend(_ai_hints(ps))
+    L.append("")
+    L.append("## Raw")
+    L.append("")
+    L.append(f"- JSON 全量 (含 console_tail/perf_tail): `{snap_id}.json`")
+    L.append("")
+    return "\n".join(L)
+
+
+def persist_snapshot(ctx, note: str = "",
+                     console_tail_n: int = 500, perf_tail_n: int = 300) -> dict:
+    """切片 ctx.console_buffer + ctx.perf_buffer 落档单文件 + summary.md。
+
+    不清空 buffer, 可多次点击产生独立快照。
+    返回 dict: ok / snapshot_id / paths / perf_summary / counts。
+    """
+    if not snapshots_dir:
+        return {"ok": False, "error": "snapshots_dir not configured"}
+
+    click_ts = datetime.now()
+    ts_label = click_ts.strftime("%Y%m%d-%H%M%S")
+    ms = click_ts.strftime("%f")[:3]
+    snap_id = f"{ctx.id}-{ts_label}-{ms}"
+
+    client_dir = snapshots_dir / ctx.id
+    client_dir.mkdir(parents=True, exist_ok=True)
+
+    console_tail = list(ctx.console_buffer[-console_tail_n:]) if console_tail_n > 0 else list(ctx.console_buffer)
+    perf_tail = list(ctx.perf_buffer[-perf_tail_n:]) if perf_tail_n > 0 else list(ctx.perf_buffer)
+
+    data = {
+        "snapshot_id": snap_id,
+        "schema_version": 1,
+        "meta": {
+            "client_id": ctx.id,
+            "client_label": ctx.label,
+            "ip": ctx.ip,
+            "click_ts": click_ts.isoformat(),
+            "note": note or "",
+            "console_buffer_total": len(ctx.console_buffer),
+            "perf_buffer_total": len(ctx.perf_buffer),
+            "console_tail_count": len(console_tail),
+            "perf_tail_count": len(perf_tail),
+        },
+        "perf_summary": _summarize_perf(perf_tail),
+        "session_peaks": dict(ctx.perf_peaks),
+        "console_tail": console_tail,
+        "perf_tail": perf_tail,
+    }
+
+    json_path = client_dir / f"{snap_id}.json"
+    summary_path = client_dir / f"{snap_id}.summary.md"
+
+    try:
+        json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        return {"ok": False, "error": f"write json failed: {e}"}
+
+    try:
+        summary_path.write_text(_render_snapshot_summary_md(snap_id, data), encoding="utf-8")
+    except Exception as e:
+        print(f"[debug-relay] snapshot summary write failed: {e}")
+
+    print(f"[debug-relay] snapshot persisted: {json_path} "
+          f"(console={len(console_tail)} perf={len(perf_tail)} "
+          f"hot={data['perf_summary'].get('hot_frames_count', 0)})")
+
+    return {
+        "ok": True,
+        "snapshot_id": snap_id,
+        "client_id": ctx.id,
+        "json_path": str(json_path),
+        "summary_path": str(summary_path),
+        "perf_summary": data["perf_summary"],
+        "session_peaks": data["session_peaks"],
+        "console_tail_count": len(console_tail),
+        "perf_tail_count": len(perf_tail),
+    }
+
+
 # ---- FastAPI App ----
 
 app = FastAPI(title="Debug Relay Server")
@@ -378,6 +717,14 @@ async def ui_perf_js():
 @app.get("/debug-events.js")
 async def ui_events_js():
     f = UI_DIR / "debug-events.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
+@app.get("/debug-snapshots.js")
+async def ui_snapshots_js():
+    f = UI_DIR / "debug-snapshots.js"
     if f.exists():
         return FileResponse(str(f), media_type="application/javascript")
     return JSONResponse({"error": "not found"}, status_code=404)
@@ -1300,6 +1647,7 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
         ctx.perf_buffer.append(snap)
         if len(ctx.perf_buffer) > PERF_BUFFER_MAX:
             ctx.perf_buffer.pop(0)
+        _update_perf_peaks(ctx.perf_peaks, snap)
         if len(ctx.perf_buffer) % 30 == 0:
             print(f"[debug-relay] {cid} perf_buffer size={len(ctx.perf_buffer)} "
                   f"browsers={len(browsers)} latest_fps={msg.get('fps')}")
@@ -1541,6 +1889,7 @@ async def api_perf(limit: int = 20, client: str = None):
         "snapshots": ctx.perf_buffer[-n:] if n else [],
         "count": n,
         "buffer_total": len(ctx.perf_buffer),
+        "peaks": ctx.perf_peaks,
     }
 
 
@@ -1673,6 +2022,105 @@ async def delete_event(category: str, date: str, index: int):
     return {"ok": True, "remaining": len(lines), "category": category, "date": date}
 
 
+# ---- Snapshot API (click-time Console+Perf 持久化) ----
+
+class SnapshotRequest(BaseModel):
+    """POST /api/snapshot 请求体。全部可选。"""
+    client_id: Optional[str] = None
+    note: str = ""
+    console_tail: int = 500
+    perf_tail: int = 300
+
+
+@app.post("/api/snapshot")
+async def api_snapshot(req: SnapshotRequest):
+    """触发快照: 切片当前 console_buffer + perf_buffer 落档单文件 + summary.md。
+
+    Body: {"client_id": "c5", "note": "...", "console_tail": 500, "perf_tail": 300}
+    client_id 不传 + 单客户端自动回退, 多客户端 409。
+    """
+    ctx, err = _resolve_client(req.client_id)
+    if err:
+        return err
+    return persist_snapshot(ctx, note=req.note,
+                            console_tail_n=req.console_tail, perf_tail_n=req.perf_tail)
+
+
+@app.get("/api/snapshots")
+async def api_snapshots_list(client: str = None, limit: int = 50):
+    """列出快照。client 指定则只列该客户端, 不指定列全部。limit 上限 50。"""
+    if not snapshots_dir or not snapshots_dir.exists():
+        return {"snapshots": [], "count": 0, "error": "snapshots_dir not configured"}
+    limit = max(1, min(int(limit), 200))
+    if client:
+        client_dirs = [snapshots_dir / client] if (snapshots_dir / client).exists() else []
+    else:
+        client_dirs = [d for d in snapshots_dir.iterdir() if d.is_dir()]
+    out = []
+    for cd in client_dirs:
+        for jf in sorted(cd.glob("*.json"), reverse=True):
+            try:
+                full = json.loads(jf.read_text(encoding="utf-8"))
+                meta = full.get("meta", {})
+                ps = full.get("perf_summary", {})
+                out.append({
+                    "snapshot_id": full.get("snapshot_id"),
+                    "client_id": meta.get("client_id"),
+                    "client_label": meta.get("client_label"),
+                    "click_ts": meta.get("click_ts"),
+                    "note": meta.get("note", ""),
+                    "perf_tail_count": meta.get("perf_tail_count"),
+                    "console_tail_count": meta.get("console_tail_count"),
+                    "hot_frames_count": ps.get("hot_frames_count", 0),
+                    "fps_avg": ps.get("fps", {}).get("avg"),
+                    "size_bytes": jf.stat().st_size,
+                    "json_path": str(jf),
+                })
+            except Exception:
+                continue
+            if len(out) >= limit:
+                break
+        if len(out) >= limit:
+            break
+    return {"snapshots": out, "count": len(out)}
+
+
+@app.get("/api/snapshot/{snapshot_id}")
+async def api_snapshot_get(snapshot_id: str, format: str = "full"):
+    """读快照。format=full(默认, 全量 JSON) | summary(只返 markdown+perf_summary) | meta(只 meta+perf_summary)。
+
+    snapshot_id 形如 c5-20260717-170300-123。在所有 client 子目录中查找。
+    """
+    if not snapshots_dir or not snapshots_dir.exists():
+        return JSONResponse({"ok": False, "error": "snapshots_dir not configured"}, status_code=500)
+    # 防路径穿越: snapshot_id 只允许字母数字-.
+    if not re.match(r"^[A-Za-z0-9_.\-]+$", snapshot_id):
+        return JSONResponse({"ok": False, "error": "invalid snapshot_id"}, status_code=400)
+    target = None
+    for cd in snapshots_dir.iterdir():
+        if not cd.is_dir():
+            continue
+        cand = cd / f"{snapshot_id}.json"
+        if cand.exists():
+            target = cand
+            break
+    if not target:
+        return JSONResponse({"ok": False, "error": f"snapshot not found: {snapshot_id}"}, status_code=404)
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"read failed: {e}"}, status_code=500)
+    if format == "summary":
+        sf = target.parent / f"{snapshot_id}.summary.md"
+        text = sf.read_text(encoding="utf-8") if sf.exists() else ""
+        return {"ok": True, "snapshot_id": snapshot_id,
+                "summary_md": text, "perf_summary": data.get("perf_summary")}
+    if format == "meta":
+        return {"ok": True, "snapshot_id": snapshot_id,
+                "meta": data.get("meta"), "perf_summary": data.get("perf_summary")}
+    return {"ok": True, "snapshot_id": snapshot_id, "data": data}
+
+
 # ---- WebSocket Routes ----
 
 @app.websocket("/ws/game")
@@ -1726,6 +2174,8 @@ def parse_args():
     parser.add_argument("--src", default=None, help="Source directory to serve (默认读 config source_dir)")
     parser.add_argument("--events-dir", default=None,
                         help="Directory to persist important events (按日归档 JSONL)")
+    parser.add_argument("--snapshots-dir", default=None,
+                        help="Directory to persist click-time snapshots (Console+Perf 单文件, 按 client 分目录)")
     parser.add_argument("--whitelist-enable", action="store_true",
                         help="启用 IP 白名单(仅白名单内 IP 可连 WS)")
     parser.add_argument("--whitelist-ips", default="",
@@ -1747,6 +2197,12 @@ if __name__ == "__main__":
     else:
         events_dir = Path(__file__).parent / "events"
         events_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.snapshots_dir:
+        snapshots_dir = Path(args.snapshots_dir).resolve()
+    else:
+        snapshots_dir = Path(__file__).parent / "snapshots"
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
 
     cfg_path = None
     if args.config:
@@ -1812,6 +2268,7 @@ if __name__ == "__main__":
     print(f"  Host: {args.host}")
     print(f"  Source: {src_dir}")
     print(f"  Events: {events_dir}")
+    print(f"  Snapshots: {snapshots_dir}")
     print(f"  UI: http://{args.host}:{args.port}")
     print(f"  WS Game: ws://{args.host}:{args.port}/ws/game")
     print(f"  WS Browser: ws://{args.host}:{args.port}/ws/browser")
