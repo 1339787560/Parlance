@@ -23,7 +23,7 @@ services:
     port: 5000
     auto_restart: true
     tags: [media, gallery]
-    enabled: false
+    enabled: true
 
   - name: serviceServer
     command: python
