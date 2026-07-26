@@ -19,8 +19,9 @@ import subprocess
 import sys
 import threading
 import time
+from multiprocessing.connection import Connection, Listener
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,6 +43,162 @@ if os.name != "nt":
     import termios
 
 PROJECT_DIR = Path(__file__).resolve().parent
+
+
+# ── Control surface ──────────────────────────────────────────────────
+# Cross-platform control socket: lets external agents (e.g. Claude Code)
+# drive reload/quit/status WITHOUT sharing the keyboard loop's tty stdin.
+#
+# Wire  : multiprocessing.connection (length-prefixed pickle frame).
+# Msg   : JSON-RPC 2.0 dict shape (method/id/params/result/error).
+# Client: ctl_client.py (Python CLI front-end).
+#
+# Coexists with keyboard loop — both run as independent daemon threads.
+# Security: local trusted IPC only. Any local process can connect; do NOT
+# expose this socket across hosts.
+
+CTL_PIPE_WIN = r"\\.\pipe\infoserver_ctl"
+CTL_SOCKET_POSIX = "/tmp/infoserver_ctl.sock"
+
+_ERR_PARSE = -32700
+_ERR_METHOD_NOT_FOUND = -32601
+_ERR_INTERNAL = -32603
+
+
+def _ctl_address():
+    """Return (address, family) for the control socket on this platform."""
+    if os.name == "nt":
+        return (CTL_PIPE_WIN, "AF_PIPE")
+    return (CTL_SOCKET_POSIX, "AF_UNIX")
+
+
+class _MethodNotFound(Exception):
+    pass
+
+
+class ControlServer:
+    """JSON-RPC control server, coexisting with the Launcher keyboard loop."""
+
+    def __init__(self, launcher: "Launcher"):
+        self.launcher = launcher
+        self._listener: Optional[Listener] = None
+        self._thread: Optional[threading.Thread] = None
+        self._stop = threading.Event()
+        self._address, self._family = _ctl_address()
+
+    @property
+    def address(self) -> str:
+        return self._address
+
+    def start(self):
+        # Clear stale UDS file (posix only; Named Pipe is kernel-managed on win)
+        if self._family == "AF_UNIX" and os.path.exists(self._address):
+            try:
+                os.unlink(self._address)
+            except OSError:
+                pass
+        try:
+            self._listener = Listener(self._address, family=self._family)
+        except Exception as e:
+            logger.warning("ControlServer bind failed (%s): %s", self._address, e)
+            return
+        self._thread = threading.Thread(
+            target=self._accept_loop, name="ctl-accept", daemon=True
+        )
+        self._thread.start()
+        logger.info("ControlServer listening on %s", self._address)
+
+    def stop(self):
+        self._stop.set()
+        if self._listener is not None:
+            try:
+                self._listener.close()
+            except Exception:
+                pass
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+
+    def _accept_loop(self):
+        while not self._stop.is_set():
+            try:
+                conn = self._listener.accept()
+            except (OSError, EOFError):
+                break
+            except Exception:
+                if self._stop.is_set():
+                    break
+                continue
+            t = threading.Thread(
+                target=self._handle_conn, args=(conn,),
+                name="ctl-conn", daemon=True,
+            )
+            t.start()
+
+    def _handle_conn(self, conn: Connection):
+        try:
+            while not self._stop.is_set():
+                try:
+                    raw = conn.recv()
+                except (EOFError, OSError):
+                    break
+                response = self._handle_request(raw)
+                if response is None:
+                    continue
+                try:
+                    conn.send(response)
+                except (OSError, BrokenPipeError):
+                    break
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def _handle_request(self, raw) -> Optional[dict]:
+        if not isinstance(raw, dict):
+            return self._error(None, _ERR_PARSE, "Expected JSON object")
+        req_id = raw.get("id")
+        method = raw.get("method")
+        params = raw.get("params") or {}
+        if not isinstance(method, str):
+            return self._error(req_id, _ERR_PARSE, "Missing 'method'")
+        try:
+            result = self._dispatch(method, params)
+        except _MethodNotFound:
+            return self._error(req_id, _ERR_METHOD_NOT_FOUND,
+                               f"Method not found: {method}")
+        except Exception as e:
+            logger.exception("ControlServer dispatch error: %s", e)
+            return self._error(req_id, _ERR_INTERNAL, str(e))
+        if req_id is None:
+            return None  # JSON-RPC notification → no response
+        return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+    def _dispatch(self, method: str, params: dict) -> dict:
+        lc = self.launcher
+        if method == "reload":
+            lc.reload()
+            return {"ok": True}
+        if method == "status":
+            return lc.status_dict()
+        if method == "quit":
+            # Defer shutdown so the response flushes before process exit.
+            def _deferred():
+                time.sleep(0.2)
+                lc.shutdown()
+            threading.Thread(target=_deferred, daemon=True).start()
+            return {"ok": True}
+        if method == "start":
+            return {"ok": bool(lc.start())}
+        if method == "stop":
+            lc.stop()
+            return {"ok": True}
+        raise _MethodNotFound(method)
+
+    @staticmethod
+    def _error(req_id, code: int, message: str) -> dict:
+        return {"jsonrpc": "2.0", "id": req_id,
+                "error": {"code": code, "message": message}}
 
 
 def _load_port() -> int:
@@ -159,6 +316,7 @@ class Launcher:
         self._running = True
         self._reloading = False
         self._lock = threading.Lock()
+        self._ctl_server: Optional[ControlServer] = None
 
     def start(self) -> bool:
         logger.info("Starting infoServer (port %d)...", self.port)
@@ -193,12 +351,22 @@ class Launcher:
         finally:
             self._reloading = False
 
+    def status_dict(self) -> dict:
+        svc = self.service
+        return {
+            "running": bool(svc.running),
+            "status": svc.status,
+            "pid": svc.pid,
+            "uptime": round(svc.uptime, 1) if svc.uptime else None,
+            "port": self.port,
+            "last_error": svc._last_error,
+        }
+
     def status(self):
+        d = self.status_dict()
         logger.info(
             "Status: %s | PID: %s | uptime: %s",
-            self.service.status,
-            self.service.pid,
-            round(self.service.uptime, 1) if self.service.uptime else None,
+            d["status"], d["pid"], d["uptime"],
         )
 
     @staticmethod
@@ -264,6 +432,9 @@ Hotkeys:
         if not self.start():
             sys.exit(1)
 
+        self._ctl_server = ControlServer(self)
+        self._ctl_server.start()
+
         if _is_interactive() and not no_input:
             t = threading.Thread(target=self._input_loop, daemon=True)
             t.start()
@@ -274,6 +445,8 @@ Hotkeys:
         except KeyboardInterrupt:
             logger.info("Ctrl+C received")
         finally:
+            if self._ctl_server is not None:
+                self._ctl_server.stop()
             self.shutdown()
             logger.info("Launcher exited")
 
