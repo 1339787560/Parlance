@@ -16,6 +16,7 @@ server:
 services:
   - name: parlance-chat
     command: python
+    command_mac: ./.venv/bin/python
     args: ["main.py", "--port", "5001"]
     cwd: ./serviceGroup/parlanceChat
     port: 5001
