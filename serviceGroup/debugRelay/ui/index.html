@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=22">
+    <link rel="stylesheet" href="debug-ui.css?v=28">
 </head>
 <body>
     <div id="toolbar">
@@ -18,6 +18,7 @@
         </select>
         <button id="runtime-reload-btn" class="toolbar-btn" onclick="reloadRuntime()" title="刷新 preview 页面，重载运行时代码">Reload Preview</button>
         <button id="snapshot-btn" class="toolbar-btn" onclick="snapCapture()" title="持久化当前客户端 Console+Perf 快照（落档后给 AI 分析性能瓶颈）">📸 快照</button>
+        <button id="launcher-link-btn" class="toolbar-btn" onclick="switchTab('launcher')" title="切到 Launcher tab（多窗口启动 + 批量积分/银两/金币发放；独立页 /launcher 仍保留为 legacy 入口）">🚀 Launcher</button>
         <select class="theme-select" id="themeSelect" title="切换样式">
             <option value="">深色默认</option>
             <option value="red">朱砂红</option>
@@ -37,9 +38,11 @@
         <button id="tab-btree" class="tab" onclick="switchTab('btree')">行为树</button>
         <button id="tab-curl" class="tab" onclick="switchTab('curl')">Curl</button>
         <button id="tab-perf" class="tab" onclick="switchTab('perf')">Performance</button>
+        <button id="tab-leak" class="tab" onclick="switchTab('leak')">Leak</button>
         <button id="tab-events" class="tab" onclick="switchTab('events')">Events</button>
         <button id="tab-snapshots" class="tab" onclick="switchTab('snapshots')">Snapshots</button>
         <button id="tab-scene" class="tab" onclick="switchTab('scene')">Scene</button>
+        <button id="tab-launcher" class="tab" onclick="switchTab('launcher')">Launcher</button>
     </div>
 
     <div id="panel-console" class="panel active">
@@ -147,6 +150,17 @@
         </div>
     </div>
 
+    <!-- Leak Panel - 泄漏探针 (川麻 3 局发烫根因度量) -->
+    <div id="panel-leak" class="panel">
+        <div id="leak-cards" class="perf-cards"></div>
+        <div class="leak-legend">
+            数据来自 perf_snapshot.leak (PerfBridge 1Hz, 客户端 LeakProbe 采样) ·
+            <span style="color:#ff4757">红=超警戒</span> ·
+            <span style="color:#ffa502">黄=非零(应归 0 字段)</span> ·
+            <span>灰=正常</span> · 峰值=本次订阅会话最高
+        </div>
+    </div>
+
     <!-- Events Panel - 重要事件按日归档查阅 -->
     <div id="panel-events" class="panel">
         <div id="events-toolbar">
@@ -169,15 +183,12 @@
 
     <!-- Snapshots Panel - 点击即落档的 Console+Perf 快照 (给 AI 分析性能) -->
     <div id="panel-snapshots" class="panel">
-        <div id="snapshots-toolbar" style="display:flex; gap:8px; align-items:center; padding:6px 8px; border-bottom:1px solid #333; flex-wrap:wrap;">
-            <button onclick="snapCapture()" title="对当前选中客户端打快照">📸 立即快照</button>
-            <input id="snapshots-note" type="text" placeholder="备注（可选，如：进房后掉帧）" style="flex:1; min-width:200px;" onkeydown="if(event.key==='Enter')snapCapture()">
-            <button onclick="snapRefresh()" title="刷新列表">🔄</button>
+        <div id="snapshots-toolbar" style="display:flex; gap:8px; align-items:center; padding:6px 8px; border-bottom:1px solid var(--border); flex-wrap:wrap;">
             <span id="snapshots-count" class="events-count"></span>
             <span id="snapshots-status" class="events-status"></span>
         </div>
         <div id="snapshots-output">
-            <div class="events-empty">点击 "立即快照" 持久化当前 Console+Perf 数据；列表加载中...</div>
+            <div class="events-empty">列表加载中...（打快照请用工具栏 "📸 快照" 按钮）</div>
         </div>
     </div>
 
@@ -196,6 +207,51 @@
             <div id="scene-detail">
                 <div class="scene-empty">点击节点查看详情</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Launcher Panel - 多窗口启动 + 批量积分/银两/金币发放 (原 /launcher 独立页并入 tab) -->
+    <!-- sidebar 顶部=货币发放 / 底部=启动约定项 / 右侧=iframe 网格; 默认折叠 -->
+    <div id="panel-launcher" class="panel">
+        <div id="launcher-body">
+            <div id="launcher-sidebar" class="launcher-sidebar collapsed">
+                <div class="launcher-sidebar-header" onclick="launcherToggleSidebar()">
+                    <span>💰 批量发放</span><span id="launcher-sidebar-arrow">▶</span>
+                </div>
+                <div id="launcher-sidebar-body">
+                    <!-- 顶部: 货币发放控制 (积分/银两/金币) -->
+                    <div class="launcher-sidebar-top">
+                        <div class="launcher-tabs">
+                            <button class="launcher-tab active" data-currency="points" onclick="launcherSelectCurrency('points')">积分</button>
+                            <button class="launcher-tab" data-currency="silver" onclick="launcherSelectCurrency('silver')">银两</button>
+                            <button class="launcher-tab" data-currency="gold" onclick="launcherSelectCurrency('gold')">金币</button>
+                        </div>
+                        <label class="launcher-field-label">数量</label>
+                        <input id="launcher-amount" type="number" value="1000" placeholder="数量" class="launcher-input">
+                        <div id="launcher-accounts" class="launcher-accounts">
+                            <div class="launcher-empty">启动窗口后自动收集 userId</div>
+                        </div>
+                        <button id="launcher-grant-btn" class="launcher-grant-btn" onclick="launcherGrant()">💰 发放到游戏</button>
+                        <div id="launcher-grant-result" class="launcher-grant-result"></div>
+                    </div>
+                    <div class="launcher-sidebar-divider"></div>
+                    <!-- 底部: 启动约定项 (预览URL/窗口数/?K/启动/重载/全关) -->
+                    <div class="launcher-sidebar-bottom">
+                        <label class="launcher-field-label">预览 URL</label>
+                        <input id="launcher-preview-url" type="text" value="http://localhost:7456" placeholder="http://host:port" class="launcher-input">
+                        <label class="launcher-field-label">窗口数</label>
+                        <input id="launcher-window-count" type="number" value="4" min="1" max="10" class="launcher-input" style="width:60px;">
+                        <label class="launcher-field-label" title="每个窗口的 ?K 账号后缀 (debugconfig 切账号)"><input type="checkbox" id="launcher-suffix" checked> ?K 切账号</label>
+                        <div class="launcher-bottom-btns">
+                            <button onclick="launcherStart()">启动</button>
+                            <button onclick="launcherReloadAll()" title="重载所有 iframe (拉最新 preview bundle)">🔄 重载</button>
+                            <button onclick="launcherCloseAll()" title="关闭所有窗口">✕ 全关</button>
+                        </div>
+                        <div id="launcher-status" class="events-status"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="launcher-iframe-grid"></div>
         </div>
     </div>
 
@@ -227,6 +283,8 @@
                     <input type="text" id="btree-userid" placeholder="如 1180138" onkeydown="if(event.key==='Enter')btreeImportLog()">
                     <label>日期:</label>
                     <input type="text" id="btree-date" placeholder="YYYYMMDD 空=今天" onkeydown="if(event.key==='Enter')btreeImportLog()">
+                    <label>缩写:</label>
+                    <input type="text" id="btree-abbrev" value="xzmk" placeholder="xzmk/xzmp/..." title="游戏缩写（logdebug 上传目录段，默认 xzmk）" onkeydown="if(event.key==='Enter')btreeImportLog()">
                     <button onclick="btreeImportLog()">拉取日志</button>
                 </div>
                 <div id="btree-zoom-ctrl">
@@ -340,10 +398,12 @@
     <script src="debug-console.js?v=11"></script>
     <script src="debug-sources.js?v=5"></script>
     <script src="debug-perf.js?v=6"></script>
+    <script src="debug-leak.js?v=1"></script>
     <script src="debug-events.js?v=6"></script>
-    <script src="debug-snapshots.js?v=1"></script>
+    <script src="debug-snapshots.js?v=2"></script>
     <script src="debug-scene.js?v=5"></script>
     <script src="debug-btree.js?v=21"></script>
     <script src="debug-curl.js?v=2"></script>
+    <script src="debug-launcher.js?v=7"></script>
 </body>
 </html>

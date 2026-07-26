@@ -12,7 +12,7 @@ Debug Relay Server (multi-client)
   WS Browser: ws://0.0.0.0:5003/ws/browser
   Clients API: http://0.0.0.0:5003/api/clients
 ==================================================
-INFO:     Started server process [40876]
+INFO:     Started server process [5848]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ERROR:    [Errno 10048] error while attempting to bind on address ('0.0.0.0', 5003): 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。

@@ -78,6 +78,8 @@ function handlePerfSnapshot(snap) {
     renderPerfCharts();
     updateScenePerfBadges(snap);
     updatePerfPeaks(snap);
+    // 泄漏探针: leak 字段嵌在 perf_snapshot 内, 同 1Hz 频率
+    if (window.handleLeakSample) window.handleLeakSample(snap);
 }
 
 function handlePerfHistory(snapshots) {

@@ -147,8 +147,8 @@ function snapRender(snapshots) {
     const countEl = document.getElementById('snapshots-count');
     if (!snapshots || snapshots.length === 0) {
         output.innerHTML =
-            '<div class="events-empty">暂无快照。点击工具栏 "📸 快照" 或下方 "立即快照" ' +
-            '对当前客户端打一份 Console+Perf 快照 (落档后给 AI Read 推断瓶颈)。</div>';
+            '<div class="events-empty">暂无快照。点工具栏 "📸 快照" 对当前选中客户端打一份 Console+Perf 快照 ' +
+            '(落档后给 AI Read 推断瓶颈)。</div>';
         countEl.textContent = '';
         return;
     }

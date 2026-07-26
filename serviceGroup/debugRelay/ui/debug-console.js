@@ -100,6 +100,7 @@ function resetAllPanels() {
     if (window.resetPerfPanel) window.resetPerfPanel();
     if (window.resetSourcesPanel) window.resetSourcesPanel();
     if (window.resetScenePanel) window.resetScenePanel();
+    if (window.resetLeakPanel) window.resetLeakPanel();
 }
 
 // ---- Console Display ----

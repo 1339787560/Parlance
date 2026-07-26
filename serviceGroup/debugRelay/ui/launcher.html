@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Debug Launcher - 多窗口启动 + 批量发放</title>
+    <link rel="stylesheet" href="debug-ui.css?v=26">
+    <style>
+        /* standalone page 专属: 全屏布局, 不走主 SPA 的 .panel active 切换 */
+        html, body { height: 100%; margin: 0; }
+        body.launcher-page {
+            background: var(--bg, #0d1117);
+            color: var(--text, #d4d4d4);
+            font-family: 'Microsoft YaHei', 'Consolas', sans-serif;
+            overflow: hidden;
+        }
+        #panel-launcher {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body class="launcher-page">
+    <div id="panel-launcher">
+        <div id="launcher-toolbar">
+            <strong style="color:#e8a847;">🚀 Launcher</strong>
+            <label>预览:</label>
+            <input id="launcher-preview-url" type="text" value="http://localhost:7456" placeholder="http://host:port">
+            <label>窗口数:</label>
+            <input id="launcher-window-count" type="number" value="4" min="1" max="10" style="width:60px;">
+            <button onclick="launcherStart()">启动</button>
+            <button onclick="launcherReloadAll()" title="重载所有 iframe (拉最新 preview bundle, 等 cocos 重编译后用)">🔄 重载全部</button>
+            <button onclick="launcherCloseAll()" title="关闭所有窗口">✕ 全关</button>
+            <label title="每个窗口的 ?K 账号后缀 (debugconfig 切账号)"><input type="checkbox" id="launcher-suffix" checked> ?K 切账号</label>
+            <span style="flex:1;"></span>
+            <a href="/" target="_blank" style="font-size:11px; color:var(--dim);">← 返回主调试台</a>
+            <span id="launcher-status" class="events-status"></span>
+        </div>
+        <div id="launcher-body">
+            <div id="launcher-sidebar" class="launcher-sidebar">
+                <div class="launcher-sidebar-header" onclick="launcherToggleSidebar()">
+                    <span>💰 批量发放</span><span id="launcher-sidebar-arrow">◀</span>
+                </div>
+                <div id="launcher-sidebar-body">
+                    <div class="launcher-tabs">
+                        <button class="launcher-tab active" data-currency="points" onclick="launcherSelectCurrency('points')">积分</button>
+                        <button class="launcher-tab" data-currency="silver" onclick="launcherSelectCurrency('silver')">银两</button>
+                        <button class="launcher-tab" data-currency="gold" onclick="launcherSelectCurrency('gold')">金币</button>
+                    </div>
+                    <label class="launcher-field-label">数量</label>
+                    <input id="launcher-amount" type="number" value="1000" placeholder="数量" class="launcher-input">
+                    <div id="launcher-accounts" class="launcher-accounts">
+                        <div class="launcher-empty">启动窗口后自动收集 userId</div>
+                    </div>
+                    <button id="launcher-grant-btn" class="launcher-grant-btn" onclick="launcherGrant()">💰 发放到游戏</button>
+                    <div id="launcher-grant-result" class="launcher-grant-result"></div>
+                </div>
+            </div>
+            <div id="launcher-iframe-grid"></div>
+        </div>
+    </div>
+    <script src="debug-launcher.js?v=6"></script>
+</body>
+</html>

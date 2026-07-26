@@ -104,7 +104,7 @@ class MsgType:
 # ---- State ----
 
 CONSOLE_BUFFER_MAX = 50000
-PERF_BUFFER_MAX = 600
+PERF_BUFFER_MAX = 1800  # ~30min @ 1Hz, 覆盖完整 3 局趋势分析
 
 
 def _new_perf_peaks() -> dict:
@@ -474,6 +474,54 @@ def _summarize_perf(perf_tail: list) -> dict:
     }
 
 
+def _compute_slopes(perf_buffer: list) -> dict:
+    """对 perf_buffer 做线性回归, 算关键字段随时间斜率 (泄漏率代理).
+
+    返回 {window_seconds, slopes_per_min: {field: value_per_minute}}.
+    正值 = 字段随时间增长 (泄漏信号); 0/负 = 稳定/下降.
+
+    x 轴假设 1Hz (perf_snapshot 推送频率), 用 sample index 当秒数.
+    全 buffer 计算覆盖 ~30min, 适合看局间漂移; 短窗口请直接读 /api/perf 切片.
+    """
+    n = len(perf_buffer)
+    if n < 2:
+        return {"window_seconds": n, "slopes_per_min": {}, "leak_slopes_per_min": {}}
+
+    flat_fields = ["memBytes", "draws", "tricount",
+                   "frame", "logic", "physics", "render", "present", "frameTimeMax"]
+    # 嵌套在 s['leak'][field], 由客户端 LeakProbe 1Hz 推 (perf_snapshot.leak)
+    leak_fields = ["result_ani_listeners_win", "result_ani_listeners_fail",
+                   "socket_send_pipe_handlers", "socket_recv_pipe_handlers",
+                   "res_cache_total_refs", "trigger_map_size", "third_info_map_size",
+                   "total_scene_node_count"]
+
+    def _slope(getter):
+        # getter: (sample) -> number | None; 缺值跳过不影响 x 轴对齐 (用 sample index 当秒数)
+        pts = []
+        for i, s in enumerate(perf_buffer):
+            v = getter(s)
+            if isinstance(v, (int, float)) and isfinite(v) and v >= 0:
+                pts.append((i, v))
+        m = len(pts)
+        if m < 2:
+            return 0.0
+        mx = sum(p[0] for p in pts) / m
+        my = sum(p[1] for p in pts) / m
+        num = sum((p[0] - mx) * (p[1] - my) for p in pts)
+        den = sum((p[0] - mx) ** 2 for p in pts)
+        slope_per_sec = (num / den) if den != 0 else 0.0
+        return round(slope_per_sec * 60.0, 4)  # per minute
+
+    out = {f: _slope(lambda s, f=f: s.get(f)) for f in flat_fields}
+    leak_out = {f: _slope(lambda s, f=f: (s.get("leak") or {}).get(f)) for f in leak_fields}
+
+    return {
+        "window_seconds": n,
+        "slopes_per_min": out,
+        "leak_slopes_per_min": leak_out,
+    }
+
+
 def _ai_hints(ps: dict) -> list:
     """自动瓶颈推断。返回 markdown bullet 列表。"""
     hints = []
@@ -617,6 +665,8 @@ def persist_snapshot(ctx, note: str = "",
         },
         "perf_summary": _summarize_perf(perf_tail),
         "session_peaks": dict(ctx.perf_peaks),
+        "session_slopes": _compute_slopes(ctx.perf_buffer),
+        "leak_latest": dict(perf_tail[-1].get("leak", {})) if perf_tail else {},
         "console_tail": console_tail,
         "perf_tail": perf_tail,
     }
@@ -646,6 +696,8 @@ def persist_snapshot(ctx, note: str = "",
         "summary_path": str(summary_path),
         "perf_summary": data["perf_summary"],
         "session_peaks": data["session_peaks"],
+        "session_slopes": data["session_slopes"],
+        "leak_latest": data["leak_latest"],
         "console_tail_count": len(console_tail),
         "perf_tail_count": len(perf_tail),
     }
@@ -672,6 +724,15 @@ async def index():
     if idx.exists():
         return FileResponse(str(idx), media_type="text/html")
     return {"status": "debug_relay_ready"}
+
+
+@app.get("/launcher")
+async def launcher_page():
+    """独立 Launcher 页 (多窗口启动 + 批量积分/银两发放), 不与主 SPA tab 堆叠。"""
+    p = UI_DIR / "launcher.html"
+    if p.exists():
+        return FileResponse(str(p), media_type="text/html")
+    return JSONResponse({"error": "launcher.html not found"}, status_code=404)
 
 
 @app.get("/debug-ui.css")
@@ -714,6 +775,14 @@ async def ui_perf_js():
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/debug-leak.js")
+async def ui_leak_js():
+    f = UI_DIR / "debug-leak.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/debug-events.js")
 async def ui_events_js():
     f = UI_DIR / "debug-events.js"
@@ -725,6 +794,14 @@ async def ui_events_js():
 @app.get("/debug-snapshots.js")
 async def ui_snapshots_js():
     f = UI_DIR / "debug-snapshots.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
+@app.get("/debug-launcher.js")
+async def ui_launcher_js():
+    f = UI_DIR / "debug-launcher.js"
     if f.exists():
         return FileResponse(str(f), media_type="application/javascript")
     return JSONResponse({"error": "not found"}, status_code=404)
@@ -953,10 +1030,22 @@ async def bt_source(file: str):
         return JSONResponse({"error": f"read error: {e}"}, status_code=500)
 
 
+_BT_ABBREV_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+
+def _bt_normalize_abbrev(abbrev: str) -> str:
+    """规范化游戏缩写（默认 xzmk），仅允许字母数字/下划线/短横，防路径注入。"""
+    a = (abbrev or "xzmk").strip() or "xzmk"
+    if not _BT_ABBREV_RE.match(a):
+        raise HTTPException(status_code=400, detail=f"invalid abbrev: {a!r}")
+    return a
+
+
 @app.get("/api/bt/runtime_log")
-async def bt_runtime_log(userid: str, date: str = None):
+async def bt_runtime_log(userid: str, date: str = None, abbrev: str = "xzmk"):
     """按 userid + 日期拉取运行时行为树日志。
-    1) 列目录 .../xzmk/{date}/btree/
+    abbrev=游戏缩写（xzmk/xzmp/...，默认 xzmk，决定 logdebug 上传目录段）。
+    1) 列目录 .../{abbrev}/{date}/btree/
     2) 找匹配 _{userid}_btrees.txt（多渠道 Android_/iOS_ 等，下划线锚定防部分匹配）
     3) 拉取并解析 tree 块 -> [{name, tree}]
     """
@@ -964,7 +1053,8 @@ async def bt_runtime_log(userid: str, date: str = None):
         return JSONResponse({"error": "userid required"}, status_code=400)
     if not date:
         date = datetime.now().strftime("%Y%m%d")
-    base = f"http://logdebug.tcy365.org:2505/upload/xzmk/{date}/btree/"
+    abbrev = _bt_normalize_abbrev(abbrev)
+    base = f"http://logdebug.tcy365.org:2505/upload/{abbrev}/{date}/btree/"
     try:
         listing = await asyncio.to_thread(_http_get_text, base)
     except Exception as e:
@@ -982,6 +1072,7 @@ async def bt_runtime_log(userid: str, date: str = None):
     trees = _parse_btree_log(content)
     return {
         "userid": userid,
+        "abbrev": abbrev,
         "date": date,
         "log_url": log_url,
         "matched_files": matches,
@@ -1022,15 +1113,17 @@ def _parse_btree_exec(content: str) -> list:
 
 
 @app.get("/api/bt/runtime_exec")
-async def bt_runtime_exec(userid: str, tree: str, date: str = None):
+async def bt_runtime_exec(userid: str, tree: str, date: str = None, abbrev: str = "xzmk"):
     """按 userid + 树名 + 日期拉取单棵树的执行轨迹日志（status 时间线）。
+    abbrev=游戏缩写（默认 xzmk）。
     文件名: {platform}_{userid}_{tree}.txt（下划线锚定防部分匹配）。
     """
     if not userid or not tree:
         return JSONResponse({"error": "userid and tree required"}, status_code=400)
     if not date:
         date = datetime.now().strftime("%Y%m%d")
-    base = f"http://logdebug.tcy365.org:2505/upload/xzmk/{date}/btree/"
+    abbrev = _bt_normalize_abbrev(abbrev)
+    base = f"http://logdebug.tcy365.org:2505/upload/{abbrev}/{date}/btree/"
     try:
         listing = await asyncio.to_thread(_http_get_text, base)
     except Exception as e:
@@ -1047,6 +1140,7 @@ async def bt_runtime_exec(userid: str, tree: str, date: str = None):
     versions = _parse_btree_exec(content)
     return {
         "userid": userid,
+        "abbrev": abbrev,
         "tree": tree,
         "date": date,
         "log_url": log_url,
@@ -1077,8 +1171,9 @@ async def bt_find_tree(name: str):
 
 
 @app.get("/api/bt/runtime_session")
-async def bt_runtime_session(userid: str, date: str = None):
+async def bt_runtime_session(userid: str, date: str = None, abbrev: str = "xzmk"):
     """拉取整目录运行时日志（聚合，对应行为树调试工具的「拉所有日志」）。
+    abbrev=游戏缩写（默认 xzmk）。
     - btrees.txt: 树结构（reset 后可能只含部分树）
     - {userid}_{tree}.txt: 每树执行轨迹
     树列表 = 结构树 ∪ 有 exec 文件的树（覆盖缺口树）。exec 并行拉取内联返回。
@@ -1088,7 +1183,8 @@ async def bt_runtime_session(userid: str, date: str = None):
         return JSONResponse({"error": "userid required"}, status_code=400)
     if not date:
         date = datetime.now().strftime("%Y%m%d")
-    base = f"http://logdebug.tcy365.org:2505/upload/xzmk/{date}/btree/"
+    abbrev = _bt_normalize_abbrev(abbrev)
+    base = f"http://logdebug.tcy365.org:2505/upload/{abbrev}/{date}/btree/"
     try:
         listing = await asyncio.to_thread(_http_get_text, base)
     except Exception as e:
@@ -1136,6 +1232,7 @@ async def bt_runtime_session(userid: str, date: str = None):
         })
     return {
         "userid": userid,
+        "abbrev": abbrev,
         "date": date,
         "dir_url": base,
         "tree_count": len(trees),
@@ -1884,12 +1981,17 @@ async def api_perf(limit: int = 20, client: str = None):
     if err:
         return err
     n = max(1, min(int(limit), len(ctx.perf_buffer)))
+    _last_leak = (ctx.perf_buffer[-1].get("leak") or {}) if ctx.perf_buffer else {}
+    _slopes = _compute_slopes(ctx.perf_buffer)
     return {
         "client_id": ctx.id,
         "snapshots": ctx.perf_buffer[-n:] if n else [],
         "count": n,
         "buffer_total": len(ctx.perf_buffer),
         "peaks": ctx.perf_peaks,
+        "slopes": _slopes,
+        "leak_latest": dict(_last_leak),
+        "leak_slopes": _slopes.get("leak_slopes_per_min", {}),
     }
 
 
@@ -2083,6 +2185,105 @@ async def api_snapshots_list(client: str = None, limit: int = 50):
         if len(out) >= limit:
             break
     return {"snapshots": out, "count": len(out)}
+
+
+def _load_snapshot_data(snapshot_id: str) -> Optional[dict]:
+    """通过 snapshot_id 在所有 client 子目录找 .json, 返回解析后 dict; 找不到返 None.
+
+    供 /api/snapshots/diff 复用, 路径穿越防护同 /api/snapshot/{id}.
+    """
+    if not snapshots_dir or not snapshots_dir.exists():
+        return None
+    if not re.match(r"^[A-Za-z0-9_.\-]+$", snapshot_id):
+        return None
+    for cd in snapshots_dir.iterdir():
+        if not cd.is_dir():
+            continue
+        cand = cd / f"{snapshot_id}.json"
+        if cand.exists():
+            try:
+                return json.loads(cand.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+    return None
+
+
+@app.get("/api/snapshots/diff")
+async def api_snapshots_diff(a: str, b: str):
+    """对比两快照 Δ = b - a. 用于验证优化效果 (baseline a vs 修复后 b).
+
+    典型用法: 同一会话内 round 1 快照 = a, round 3 快照 = b,
+    看 Δmem/Δlisteners/Δframe_time 是否随局数累积.
+    数值字段算 b - a 差值, 非数值或缺失返 None.
+    """
+    da = _load_snapshot_data(a)
+    db = _load_snapshot_data(b)
+    if da is None:
+        return JSONResponse({"ok": False, "error": f"snapshot not found: {a}"}, status_code=404)
+    if db is None:
+        return JSONResponse({"ok": False, "error": f"snapshot not found: {b}"}, status_code=404)
+
+    ps_a = da.get("perf_summary", {})
+    ps_b = db.get("perf_summary", {})
+    sp_a = da.get("session_peaks", {})
+    sp_b = db.get("session_peaks", {})
+    sl_a = da.get("session_slopes", {}).get("slopes_per_min", {})
+    sl_b = db.get("session_slopes", {}).get("slopes_per_min", {})
+    lk_a = da.get("leak_latest", {})
+    lk_b = db.get("leak_latest", {})
+
+    def delta(va, vb):
+        if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
+            return round(vb - va, 4)
+        return None
+
+    perf_delta = {
+        "fps_avg": delta(ps_a.get("fps", {}).get("avg"), ps_b.get("fps", {}).get("avg")),
+        "logic_avg_ms": delta(ps_a.get("logic", {}).get("avg_ms"), ps_b.get("logic", {}).get("avg_ms")),
+        "render_avg_ms": delta(ps_a.get("render", {}).get("avg_ms"), ps_b.get("render", {}).get("avg_ms")),
+        "physics_avg_ms": delta(ps_a.get("physics", {}).get("avg_ms"), ps_b.get("physics", {}).get("avg_ms")),
+        "present_avg_ms": delta(ps_a.get("present", {}).get("avg_ms"), ps_b.get("present", {}).get("avg_ms")),
+        "frameTimeMax_peak_ms": delta(ps_a.get("frameTimeMax_peak_ms"), ps_b.get("frameTimeMax_peak_ms")),
+        "mem_bytes_peak": delta(ps_a.get("mem_bytes_peak"), ps_b.get("mem_bytes_peak")),
+        "hot_frames_count": delta(ps_a.get("hot_frames_count"), ps_b.get("hot_frames_count")),
+        "draws_avg": delta(ps_a.get("draws", {}).get("avg"), ps_b.get("draws", {}).get("avg")),
+        "tricount_avg": delta(ps_a.get("tricount_avg"), ps_b.get("tricount_avg")),
+    }
+    peaks_delta = {
+        k: delta(sp_a.get(k), sp_b.get(k))
+        for k in ("frame_ms", "logic_ms", "physics_ms", "render_ms", "present_ms",
+                  "frameTimeMax_ms", "draws", "tricount", "memBytes",
+                  "fps_min", "fps_max")
+    }
+    slopes_delta = {
+        k: delta(sl_a.get(k), sl_b.get(k))
+        for k in set(sl_a) | set(sl_b)
+    }
+    leak_delta = {
+        k: delta(lk_a.get(k), lk_b.get(k))
+        for k in set(lk_a) | set(lk_b)
+    }
+
+    def meta(d: dict) -> dict:
+        m = d.get("meta", {})
+        return {
+            "snapshot_id": d.get("snapshot_id"),
+            "client_id": m.get("client_id"),
+            "click_ts": m.get("click_ts"),
+            "note": m.get("note", ""),
+            "perf_tail_count": m.get("perf_tail_count"),
+            "perf_buffer_total": m.get("perf_buffer_total"),
+        }
+
+    return {
+        "ok": True,
+        "a": meta(da),
+        "b": meta(db),
+        "perf_summary_delta": perf_delta,
+        "session_peaks_delta": peaks_delta,
+        "session_slopes_delta": slopes_delta,
+        "leak_latest_delta": leak_delta,
+    }
 
 
 @app.get("/api/snapshot/{snapshot_id}")

@@ -860,9 +860,12 @@ async function btreeImportLog() {
     const uidT = uid.trim();
     if (!uidT) { setStatus('请输入 userid'); return; }
     const date = (($('btree-date') || {}).value || '').trim();
-    setStatus('拉取整目录日志 userid=' + uidT + ' (' + (date || '今天') + ') ...');
+    const abbrev = (($('btree-abbrev') || {}).value || '').trim() || 'xzmk';
+    setStatus('拉取整目录日志 userid=' + uidT + ' (' + (date || '今天') + ', ' + abbrev + ') ...');
     try {
-        const url = '/api/bt/runtime_session?userid=' + encodeURIComponent(uidT) + (date ? '&date=' + encodeURIComponent(date) : '');
+        const url = '/api/bt/runtime_session?userid=' + encodeURIComponent(uidT)
+            + '&abbrev=' + encodeURIComponent(abbrev)
+            + (date ? '&date=' + encodeURIComponent(date) : '');
         const r = await fetch(url);
         const data = await r.json();
         if (!r.ok) { setStatus('✗ ' + (data.error || r.status)); return; }
