@@ -52,6 +52,17 @@ services:
     tags: [debug, game, cocos]
     enabled: true
 
+  - name: np-reader
+    command_mac: /Users/liz/codlib/python/Novel-Pineline/.venv/bin/np
+    command_win: np
+    args: ["reader", "serve", "--port", "8000"]
+    args_mac: ["reader", "serve", "--port", "8000", "--library", "/Users/liz/codlib/python/Novel-Pineline/library"]
+    cwd: /Users/liz/codlib/python/Novel-Pineline
+    port: 8000
+    auto_restart: true
+    tags: [reader, novel, web]
+    enabled: true
+
   - name: cocos-creator
     command: "D:\\IDE\\Cocos Download\\Creator\\Creator\\3.8.1\\CocosCreator.exe"
     command_mac: "/Applications/Cocos/Creator/3.8.1/CocosCreator.app/Contents/MacOS/CocosCreator"
