@@ -54,11 +54,12 @@ services:
     enabled: true
 
   - name: np-reader
+    command: D:\Codlib\VscodeCodlib\Python\Novel-Pineline\.venv\Scripts\np.exe
     command_mac: /Users/liz/codlib/python/Novel-Pineline/.venv/bin/np
-    command_win: np
-    args: ["reader", "serve", "--port", "8000"]
-    args_mac: ["reader", "serve", "--port", "8000", "--library", "/Users/liz/codlib/python/Novel-Pineline/library"]
-    cwd: /Users/liz/codlib/python/Novel-Pineline
+    args: ["reader", "serve", "--host", "0.0.0.0", "--port", "8000", "--library", "D:\\Codlib\\VscodeCodlib\\Python\\Novel-Pineline\\library"]
+    args_mac: ["reader", "serve", "--host", "0.0.0.0", "--port", "8000", "--library", "/Users/liz/codlib/python/Novel-Pineline/library"]
+    cwd: D:\Codlib\VscodeCodlib\Python\Novel-Pineline
+    cwd_mac: /Users/liz/codlib/python/Novel-Pineline
     port: 8000
     auto_restart: true
     tags: [reader, novel, web]
