@@ -831,6 +831,14 @@ async def ui_curl_js():
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/debug-theme.js")
+async def ui_theme_js():
+    f = UI_DIR / "debug-theme.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/health")
 async def health():
     return {

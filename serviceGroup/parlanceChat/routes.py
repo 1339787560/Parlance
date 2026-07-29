@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, Body
 from fastapi.responses import HTMLResponse, StreamingResponse
 
@@ -174,6 +175,29 @@ async def sse_events(request: Request):
 @router.get("/api/whoami")
 async def whoami(request: Request):
     return {"ip": _get_client_ip(request)}
+
+
+CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
+
+
+def _load_shared_theme_config() -> dict:
+    """读根 config.yaml shared_theme 段 (单一真相源)。
+    parlance 是主题 provider, 此处破 main.py '自包含无 config 依赖' 注释,
+    以提供可配置的共享主题开关 (子服务前端经 /api/theme/config 查询)。"""
+    try:
+        data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        st = data.get("shared_theme") or {}
+        return {
+            "enabled": bool(st.get("enabled", True)),
+            "exclude": list(st.get("exclude") or []),
+        }
+    except Exception:
+        return {"enabled": True, "exclude": []}
+
+
+@router.get("/api/theme/config")
+async def get_theme_config():
+    return _load_shared_theme_config()
 
 
 @router.get("/api/theme")

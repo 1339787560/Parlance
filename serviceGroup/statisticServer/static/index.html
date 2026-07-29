@@ -364,6 +364,20 @@ function applyTheme(theme) {
   }
 }
 
+const SERVICE_NAME = 'statistic';
+let _sharedMode = null;
+
+async function getSharedMode() {
+  // 查 infoServer 共享开关; enabled=false 或本服务在 exclude → 纯本地主题 (localStorage)
+  if (_sharedMode !== null) return _sharedMode;
+  try {
+    const r = await fetch(getInfoServerUrl() + '/api/theme/config');
+    const cfg = await r.json();
+    _sharedMode = cfg.enabled !== false && !(cfg.exclude || []).includes(SERVICE_NAME);
+  } catch (_) { _sharedMode = false; }  // infoServer 离线 = 纯本地
+  return _sharedMode;
+}
+
 function getInfoServerUrl() {
   return 'http://' + (window.location.hostname || '127.0.0.1') + ':5001';
 }
@@ -381,19 +395,23 @@ async function syncThemeToServer(theme) {
 async function setTheme(theme) {
   applyTheme(theme);
   localStorage.setItem('stats_theme', theme);
-  await syncThemeToServer(theme);
+  if (await getSharedMode()) await syncThemeToServer(theme);
 }
 
 async function restoreTheme() {
-  try {
-    const r = await fetch(getInfoServerUrl() + '/api/theme');
-    const data = await r.json();
-    if (data.theme && THEMES.includes(data.theme)) {
-      applyTheme(data.theme);
-      localStorage.setItem('stats_theme', data.theme);
-      return;
-    }
-  } catch (_) { /* infoServer unreachable, use local */ }
+  if (await getSharedMode()) {
+    // 共享: 优先服务端 (同一 IP 跨子服务同步)
+    try {
+      const r = await fetch(getInfoServerUrl() + '/api/theme');
+      const data = await r.json();
+      if (data.theme && THEMES.includes(data.theme)) {
+        applyTheme(data.theme);
+        localStorage.setItem('stats_theme', data.theme);
+        return;
+      }
+    } catch (_) { /* infoServer unreachable, fall through to local */ }
+  }
+  // 纯本地 (共享关 / 本服务 excluded / 服务端无记录)
   const saved = localStorage.getItem('stats_theme');
   if (saved && THEMES.includes(saved)) {
     applyTheme(saved);

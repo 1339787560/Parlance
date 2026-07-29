@@ -8,6 +8,14 @@ server:
   host: 0.0.0.0
   port: 5001    # run.py 预清理此端口; 实际由 parlance-chat 子服务占用
 
+# 共享主题开关 (parlance :5001 /api/theme/config 暴露给子服务前端)
+# enabled=false → 全局关共享, 所有子服务前端走纯本地主题 (localStorage)
+# exclude → 列表内服务名前端走纯本地 (不 fetch /api/theme, 不引 5001 背景图)
+# 已知服务名: statistic / debugRelay / np-reader (前端硬编码 SERVICE_NAME)
+shared_theme:
+  enabled: true
+  exclude: [np-reader]
+
 # Managed services - launched as subprocesses by ServiceGroupManager
 # Fields: name, command, args, cwd, env, auto_restart, health_check, tags, enabled, managed, port
 #   managed=true (default): killed on parent exit via Job Object

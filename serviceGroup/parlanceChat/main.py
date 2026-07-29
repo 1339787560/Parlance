@@ -57,13 +57,16 @@ def create_app(upload_dir: str, db_path: str) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Static files ────────────────────────────────────────────────────────────
-    static_dir = Path(__file__).parent / "static"
-    static_dir.mkdir(exist_ok=True)
+    # ── Static files (共享资产位于 infoServer 根 static/) ──────────────────────
+    # parlanceChat 是 infoserver 门面 + 主题 provider; 样式/背景图/前端资产归
+    # infoServer/static/, 由本服务 (:5001) mount 提供给所有托管子服务跨端口引用
+    # (集成指南见 docs/theme-integration.md)。路径: main.py → parlanceChat →
+    # serviceGroup → infoServer, 上溯 3 级。
+    static_dir = Path(__file__).resolve().parent.parent.parent / "static"
     state.static_dir = static_dir
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-    style_dir = Path(__file__).parent / "style"
+    style_dir = static_dir / "style"
     if style_dir.exists():
         app.mount("/style", StaticFiles(directory=str(style_dir)), name="style")
 
