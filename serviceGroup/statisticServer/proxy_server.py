@@ -7,6 +7,12 @@ Supports both formats:
 - Anthropic: /v1/messages → https://api.deepseek.com/anthropic/v1/messages
 - OpenAI:    /chat/completions or /v1/chat/completions → https://api.deepseek.com/v1/chat/completions
 - OpenAI:    /v1/models → https://api.deepseek.com/v1/models
+
+计费 (2026-07 起 DeepSeek V4):
+- 模型映射: claude-haiku/sonnet → deepseek-v4-flash; claude-opus → deepseek-v4-pro;
+  旧别名 deepseek-chat/deepseek-reasoner 已退役且均为 Flash 档, 重写为 deepseek-v4-flash。
+- 峰谷计价: 北京时间每日 09:00-12:00 / 14:00-18:00 高峰翻倍, 按请求时刻落库 cost。
+- 缓存命中段不重复计费: cost = miss*miss价 + hit*hit价 + out*out价。
 """
 
 import os, re, json, time, uuid, sqlite3
@@ -31,36 +37,190 @@ TARGET = os.environ.get("TARGET", ANTHROPIC_TARGET)
 PORT = int(os.environ.get("PORT", "8080"))
 DB_PATH = Path(os.environ.get("DB_PATH", "stats.db"))
 
-MODEL_MAP = [
-    (re.compile(r"claude-.*-(haiku|sonnet)"), "deepseek-chat"),
-    (re.compile(r"claude-.*-opus"), "deepseek-reasoner"),
-    (re.compile(r"deepseek-.*"), None),
-]
-
+# ---- 定价（元 / 百万 tokens, DeepSeek V4 平时价, 2026-07 起）----
+# V4 峰谷计价: 北京时间每日 09:00-12:00 / 14:00-18:00 高峰翻倍 (含起点不含终点)
+# 旧别名 deepseek-chat / deepseek-reasoner 已于 2026-07-24 23:59 北京时间退役,
+# 且两者均为 V4-Flash 档 (deepseek-reasoner = Flash 思考档, 绝非 Pro!)
 PRICING = {
-    "deepseek-chat":     {"miss": 1, "hit": 0.02, "out": 2, "label": "Flash"},
-    "deepseek-reasoner": {"miss": 3, "hit": 0.025, "out": 6, "label": "Pro"},
+    "deepseek-v4-flash": {"miss": 1, "hit": 0.02, "out": 2, "label": "Flash"},
+    "deepseek-v4-pro":   {"miss": 3, "hit": 0.025, "out": 6, "label": "Pro"},
 }
+PEAK_WINDOWS = [(9, 12), (14, 18)]  # 北京时间高峰时段 (含起始不含结束)
+PEAK_MULTIPLIER = 2.0
+
+MODEL_MAP = [
+    (re.compile(r"claude-.*(haiku|sonnet).*"), "deepseek-v4-flash"),
+    # 兼容新旧 opus 命名: claude-opus-4-8 / claude-3-opus-20240229 都必须走 Pro
+    (re.compile(r"claude-.*opus.*"), "deepseek-v4-pro"),
+    (re.compile(r"deepseek-chat"), "deepseek-v4-flash"),     # 旧别名 → Flash 非思考
+    (re.compile(r"deepseek-reasoner"), "deepseek-v4-flash"), # 旧别名 → Flash 思考 (非 Pro!)
+    (re.compile(r"deepseek-.*"), None),                      # deepseek-v4-* 已是最新名, 透传
+]
 
 def map_model(m: str) -> str:
     for pat, repl in MODEL_MAP:
         if pat.match(m):
             return repl or m
-    return "deepseek-chat"
+    return "deepseek-v4-flash"
 
 def get_pricing(model: str) -> dict:
-    for key, p in PRICING.items():
-        if key in model:
-            return p
-    # Fallback: pro/reasoner → Pro pricing
-    if any(k in model for k in ("pro", "reasoner")):
-        return PRICING["deepseek-reasoner"]
-    return PRICING["deepseek-chat"]
+    """定价档位: deepseek-v4-pro → Pro; 其余(flash/chat/reasoner 旧别名) → Flash。"""
+    m = (model or "").lower()
+    if "deepseek-v4-pro" in m or m.endswith("pro"):
+        return PRICING["deepseek-v4-pro"]
+    return PRICING["deepseek-v4-flash"]
 
-def calc_cost(model: str, prompt: int, hit: int, out: int) -> float:
-    """cost = input*hit_price + cache_hit*hit_price + output*output_price."""
+def is_peak_time(ts) -> bool:
+    """北京时间峰谷判定。ts 为服务器本地 naive ISO(中国时区本地=UTC+8 即北京时间)。"""
+    if not ts:
+        return False
+    if isinstance(ts, str):
+        try:
+            ts = datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            return False
+    h = ts.hour
+    return any(lo <= h < hi for lo, hi in PEAK_WINDOWS)
+
+def calc_cost(model: str, prompt: int, hit: int, out: int, ts=None) -> float:
+    """费用(元) = 未命中×未命中价 + 命中×命中价 + 输出×输出价, 高峰时段翻倍。
+
+    prompt 为总输入(含命中), miss = prompt - hit, 避免缓存命中段重复计费。
+    峰谷按请求时刻 ts 判定, 故聚合查询必须用落库 cost 求和, 不能再按 token 汇总重算。
+    """
     p = get_pricing(model)
-    return (prompt * p["miss"] + hit * p["hit"] + out * p["out"]) / 1_000_000
+    miss = max(int(prompt or 0) - int(hit or 0), 0)
+    cost = (miss * p["miss"] + int(hit or 0) * p["hit"] + int(out or 0) * p["out"]) / 1_000_000
+    if is_peak_time(ts):
+        cost *= PEAK_MULTIPLIER
+    return cost
+
+
+# ---- 会话缓存策略建议 (重置 vs 继续) ----
+
+SESSION_ADVICE_WINDOW = 10   # 近 N 次请求的统计窗口
+ADVICE_HORIZON = 32          # "还要发起多少次请求"的评估视界 (继续成本 = N次 × 每请求命中成本)
+
+def _avg(vals):
+    return sum(vals) / len(vals) if vals else 0
+
+def _split_tasks(rows, gap_param="", mode=""):
+    """把按 ts ASC 的请求行切分为任务 (复用自适应间隔算法 Median+2×MAD)。
+
+    行格式: (ts, session_id, model, prompt, completion, total, hit, latency, miss, cost)
+    返回: 任务 dict 列表 (chronological, 最旧在前); 含 hit_cost/miss_cost 累计(按请求时刻算好)。
+    """
+    gap = 60
+    if mode != "fixed" and len(rows) >= 3:
+        ts_list = []
+        for r in rows:
+            try:
+                ts_list.append(datetime.fromisoformat(r[0]))
+            except Exception:
+                continue
+        gaps = [(ts_list[i + 1] - ts_list[i]).total_seconds() for i in range(len(ts_list) - 1)]
+        sorted_gaps = sorted(gaps)
+        n = len(sorted_gaps)
+        median = sorted_gaps[n // 2]
+        mad = sorted([abs(g - median) for g in gaps])[n // 2]
+        gap = max(median + 2 * mad, 10)
+        gap = min(gap, 600)
+    else:
+        gap = int(gap_param) if gap_param else 60  # default 60s
+    tasks = []
+    cur = None
+    prev_ts = None
+    prev_session = None
+    for r in rows:
+        try:
+            this_ts = datetime.fromisoformat(r[0])
+        except Exception:
+            continue
+        row_session = r[1] or ""
+        # New task: different session, or gap > threshold within same session
+        is_new = (cur is None or
+                  row_session != prev_session or
+                  (prev_ts is not None and row_session == prev_session and
+                   (this_ts - prev_ts).total_seconds() > gap))
+        if is_new:
+            cur = {
+                "task_id": len(tasks) + 1,
+                "start": r[0], "end": r[0],
+                "requests": 0, "session": row_session,
+                "prompt_tokens": 0, "completion_tokens": 0,
+                "total_tokens": 0,
+                "cache_hit_tokens": 0,
+                "cache_miss_tokens": 0,
+                "total_latency_ms": 0, "cost": 0.0, "peak_requests": 0,
+            }
+            tasks.append(cur)
+        cur["end"] = r[0]
+        cur["requests"] += 1
+        if is_peak_time(r[0]):  # 高峰时段请求数 (北京时间 9-12 / 14-18)
+            cur["peak_requests"] += 1
+        cur["prompt_tokens"] += r[3] or 0
+        cur["completion_tokens"] += r[4] or 0
+        cur["total_tokens"] += r[5] or 0
+        cur["cache_hit_tokens"] += r[6] or 0
+        cur["cache_miss_tokens"] += r[8] or 0
+        cur["total_latency_ms"] += r[7] or 0
+        cur["cost"] += r[9] or 0  # 落库 cost 已含峰谷计价
+        prev_ts = this_ts
+        prev_session = row_session
+    return tasks
+
+def session_advice(session: str) -> dict:
+    """给选中会话给出「重置 vs 继续同一会话」的 token 开销建议 (按请求粒度, 原价不计峰谷)。
+
+    重置成本  = 当前会话未命中总额 × 未命中价 (重新预热所需的一次性开销)。
+    继续成本  = ADVICE_HORIZON 次请求 × 近10次最大命中/请求 × 命中价
+              (若还要发起这么多请求, 继续消耗命中缓存的 token 价格)。
+    近10次最大命中: 每请求命中受缓存上下文大小约束, 实测无高值极端(max/median≤1.5),
+             用最大值天然免疫 0/极低命中请求对平均值的干扰。
+    判定     = 重置成本 < 继续成本 → 建议重置; 否则建议继续。
+    """
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT ts, model, cache_hit_tokens, cache_miss_tokens "
+        "FROM requests WHERE session_id=? AND (prompt_tokens>0 OR completion_tokens>0) "
+        "ORDER BY ts ASC", (session,)).fetchall()
+    if not rows:
+        return {"verdict": "insufficient", "reason": "该会话暂无有效请求", "requests": 0}
+    n = len(rows)
+
+    total_miss = sum(r[3] or 0 for r in rows)
+    hits = [r[2] or 0 for r in rows]
+    recent_hit = max(hits[-SESSION_ADVICE_WINDOW:])
+
+    pricing = get_pricing(rows[-1][1])
+    reset_cost = total_miss * pricing["miss"] / 1_000_000
+    per_req_hit_cost = recent_hit * pricing["hit"] / 1_000_000
+    continue_cost = ADVICE_HORIZON * per_req_hit_cost
+
+    if total_miss <= 0:
+        verdict, reason = "continue", "当前会话无未命中, 缓存由共享前缀维持, 重置无必要"
+    elif recent_hit <= 0:
+        verdict, reason = "continue", "近10次无缓存命中, 继续执行无命中开销, 重置无收益"
+    elif reset_cost < continue_cost:
+        verdict, reason = "reset", (f"未命中总额 ¥{reset_cost:.3f} < {ADVICE_HORIZON}次请求命中 ¥{continue_cost:.3f}, "
+                                     "重启会话更省")
+    else:
+        verdict, reason = "continue", (f"未命中总额 ¥{reset_cost:.3f} ≥ {ADVICE_HORIZON}次请求命中 ¥{continue_cost:.3f}, "
+                                       "继续更省")
+    break_even = int(reset_cost / per_req_hit_cost) + 1 if per_req_hit_cost > 0 else None
+
+    return {
+        "session": session, "requests": n, "verdict": verdict, "reason": reason,
+        "total_miss_tokens": int(total_miss),
+        "reset_cost": round(reset_cost, 6),
+        "recent_window": SESSION_ADVICE_WINDOW,
+        "recent_hit_tokens": int(round(recent_hit)),
+        "recent_hit_cost": round(per_req_hit_cost, 6),
+        "horizon": ADVICE_HORIZON,
+        "continue_cost": round(continue_cost, 6),
+        "break_even_requests": break_even,
+        "tier": pricing["label"], "hit_price": pricing["hit"], "miss_price": pricing["miss"],
+    }
 
 
 # ---- Format detection ----
@@ -190,6 +350,22 @@ def init_db():
         except sqlite3.OperationalError:
             conn.execute("ALTER TABLE requests ADD COLUMN format TEXT DEFAULT 'anthropic'")
             conn.commit()
+        # Migrate: add cost column if missing (峰谷计价: 每次请求落库即按请求时刻算好费用)
+        try:
+            conn.execute("SELECT cost FROM requests LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE requests ADD COLUMN cost REAL DEFAULT 0")
+            conn.commit()
+        # Backfill: 旧行按修正后公式补算 cost (ts 视为北京时间; 修复缓存双重计费 + 接入峰谷)
+        rows = conn.execute(
+            "SELECT id, ts, model, prompt_tokens, cache_hit_tokens, completion_tokens "
+            "FROM requests WHERE (cost IS NULL OR cost = 0) AND (prompt_tokens > 0 OR completion_tokens > 0)"
+        ).fetchall()
+        for rid, ts, model, prompt, hit, out in rows:
+            c = calc_cost(model, prompt, hit, out, ts)
+            if c:
+                conn.execute("UPDATE requests SET cost=? WHERE id=?", (c, rid))
+        conn.commit()
     except sqlite3.OperationalError:
         raise
     return conn
@@ -209,18 +385,22 @@ async def broadcast(event: str, data: dict = None):
 
 async def record(d: dict):
     conn = get_db()
+    # 峰谷计价按请求时刻 ts 判定, 落库时一次算好, 聚合只做 SUM(cost)
+    cost = calc_cost(d.get("model", ""), d.get("prompt_tokens", 0),
+                     d.get("cache_hit_tokens", 0), d.get("completion_tokens", 0),
+                     d.get("ts"))
     conn.execute("""
         INSERT OR REPLACE INTO requests
         (id, ts, session_id, model, prompt_tokens, completion_tokens,
-         total_tokens, cache_hit_tokens, cache_miss_tokens, latency_ms, status, format)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         total_tokens, cache_hit_tokens, cache_miss_tokens, latency_ms, status, format, cost)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         d["id"], d.get("ts"), d.get("session_id", ""), d.get("model", ""),
         d.get("prompt_tokens", 0), d.get("completion_tokens", 0),
         d.get("total_tokens", 0), d.get("cache_hit_tokens", 0),
         d.get("cache_miss_tokens", 0),
         d.get("latency_ms", 0), d.get("status", "ok"),
-        d.get("format", "anthropic"),
+        d.get("format", "anthropic"), cost,
     ))
     conn.commit()
     await broadcast("new_data")
@@ -433,7 +613,8 @@ async def handle_api(request: Request, path: str):
                    COALESCE(SUM(total_tokens),0),
                    COALESCE(SUM(cache_hit_tokens),0),
                    COALESCE(SUM(latency_ms),0),
-                   COALESCE(SUM(cache_miss_tokens),0)
+                   COALESCE(SUM(cache_miss_tokens),0),
+                   COALESCE(SUM(cost),0)
             FROM requests GROUP BY day, model ORDER BY day DESC
         """).fetchall()
         days = {}
@@ -454,7 +635,7 @@ async def handle_api(request: Request, path: str):
             d["cache_hit_tokens"] += r[6]
             d["total_latency_ms"] += r[7]
             d["cache_miss_tokens"] += r[8]
-            c = calc_cost(r[1], r[3], r[6], r[4])
+            c = r[9]  # 落库 cost 已含峰谷计价, 直接求和
             d["cost"] += c
             d["model_costs"][r[1]] = round(c, 6)
         result = []
@@ -478,74 +659,13 @@ async def handle_api(request: Request, path: str):
             params_task = [session]
         rows = conn.execute(f"""
             SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,
-                   cache_hit_tokens,latency_ms,cache_miss_tokens
+                   cache_hit_tokens,latency_ms,cache_miss_tokens,cost
             FROM requests{where_task} ORDER BY ts ASC
         """, params_task).fetchall()
 
-        # Adaptive gap detection: use median + 2*MAD of inter-request gaps
-        if mode != "fixed" and len(rows) >= 3:
-            ts_list = []
-            for r in rows:
-                try:
-                    ts_list.append(datetime.fromisoformat(r[0]))
-                except Exception:
-                    continue
-            gaps = [(ts_list[i+1] - ts_list[i]).total_seconds() for i in range(len(ts_list)-1)]
-            sorted_gaps = sorted(gaps)
-            n = len(sorted_gaps)
-            median = sorted_gaps[n // 2]
-            mad = sorted([abs(g - median) for g in gaps])[n // 2]
-            gap = max(median + 2 * mad, 10)
-            gap = min(gap, 600)
-        else:
-            gap = int(gap_param) if gap_param else 60  # default 60s
+        tasks = _split_tasks(rows, gap_param, mode)
 
-        tasks = []
-        cur = None
-        prev_ts = None
-        prev_session = None
-        for r in rows:
-            try:
-                this_ts = datetime.fromisoformat(r[0])
-            except Exception:
-                continue
-            row_session = r[1] or ""
-            # New task: different session, or gap > threshold within same session
-            is_new = (cur is None or
-                      row_session != prev_session or
-                      (prev_ts is not None and row_session == prev_session and
-                       (this_ts - prev_ts).total_seconds() > gap))
-            model = r[2] or "unknown"
-            if is_new:
-                cur = {
-                    "task_id": len(tasks) + 1,
-                    "start": r[0], "end": r[0],
-                    "requests": 0, "session": row_session,
-                    "prompt_tokens": 0, "completion_tokens": 0,
-                    "total_tokens": 0,
-                    "cache_hit_tokens": 0,
-                    "cache_miss_tokens": 0,
-                    "total_latency_ms": 0,
-                    "_model_prompt": {},  # model -> total prompt_tokens
-                    "_model_hit": {},
-                    "_model_completion": {},
-                }
-                tasks.append(cur)
-            cur["end"] = r[0]
-            cur["requests"] += 1
-            cur["prompt_tokens"] += r[3] or 0
-            cur["completion_tokens"] += r[4] or 0
-            cur["total_tokens"] += r[5] or 0
-            cur["cache_hit_tokens"] += r[6] or 0
-            cur["cache_miss_tokens"] += r[8] or 0
-            cur["total_latency_ms"] += r[7] or 0
-            cur["_model_prompt"][model] = cur["_model_prompt"].get(model, 0) + (r[3] or 0)
-            cur["_model_hit"][model] = cur["_model_hit"].get(model, 0) + (r[6] or 0)
-            cur["_model_completion"][model] = cur["_model_completion"].get(model, 0) + (r[4] or 0)
-            prev_ts = this_ts
-            prev_session = row_session
-
-        # Compute total wall time + cost per task
+        # Compute total wall time + round cost (cost 已按请求累计, 含峰谷计价)
         for t in tasks:
             try:
                 s = datetime.fromisoformat(t["start"])
@@ -553,20 +673,20 @@ async def handle_api(request: Request, path: str):
                 t["wall_time_ms"] = int((e - s).total_seconds() * 1000)
             except Exception:
                 t["wall_time_ms"] = t["total_latency_ms"]
-            # Cost per model
-            cost = 0.0
-            for model in t["_model_prompt"]:
-                cost += calc_cost(model, t["_model_prompt"][model],
-                                  t["_model_hit"].get(model, 0),
-                                  t["_model_completion"].get(model, 0))
-            t["cost"] = round(cost, 6)
-            del t["_model_prompt"]
-            del t["_model_hit"]
-            del t["_model_completion"]
+            t["cost"] = round(t["cost"], 6)
+            t["is_peak"] = t["peak_requests"] > 0  # 任务含高峰请求 → 前端标 ×2
 
         tasks.reverse()
         tasks = tasks[:limit]
         return tasks
+
+    # 会话缓存策略建议 (重置 vs 继续)
+    if path == "api/stats/session/advice":
+        sid = request.query_params.get("session", "")
+        if not sid:
+            return {"verdict": "insufficient", "reason": "缺少 session 参数", "requests": 0}
+        return session_advice(sid)
+
     session = request.query_params.get("session")
     if session:
         where = " WHERE session_id=?"
@@ -581,7 +701,8 @@ async def handle_api(request: Request, path: str):
                COALESCE(SUM(cache_hit_tokens),0),
                COALESCE(AVG(latency_ms),0),
                COALESCE(SUM(latency_ms),0),
-               COALESCE(SUM(cache_miss_tokens),0)
+               COALESCE(SUM(cache_miss_tokens),0),
+               COALESCE(SUM(cost),0)
         FROM requests{where}
     """, params).fetchone()
 
@@ -590,22 +711,18 @@ async def handle_api(request: Request, path: str):
 
     total_hit = row[4]
     total_miss = row[7]
+    total_cost = row[8]
 
-    # Cost per model
+    # Cost per model (落库 cost 已含峰谷计价, 直接按模型求和)
     cost_rows = conn.execute(f"""
-        SELECT model, SUM(prompt_tokens), SUM(cache_hit_tokens), SUM(completion_tokens)
+        SELECT model, SUM(prompt_tokens), SUM(cache_hit_tokens), SUM(completion_tokens),
+               SUM(cost)
         FROM requests{where} GROUP BY model
     """, params).fetchall()
 
-    total_cost = 0.0
     model_costs = {}
-    for m, prompt, hit, out in cost_rows:
-        prompt = prompt or 0
-        hit = hit or 0
-        out = out or 0
-        c = calc_cost(m, prompt, hit, out)
-        model_costs[m] = round(c, 6)
-        total_cost += c
+    for m, prompt, hit, out, c in cost_rows:
+        model_costs[m] = round(c or 0, 6)
 
     # Sessions
     sessions = []
@@ -614,16 +731,16 @@ async def handle_api(request: Request, path: str):
             SELECT session_id, MIN(ts), MAX(ts), COUNT(*), COALESCE(SUM(total_tokens),0)
             FROM requests WHERE session_id != '' GROUP BY session_id ORDER BY MAX(ts) DESC LIMIT 50
         """).fetchall()
-        # Cost per session (query per-model totals for each session)
+        # Cost per session (落库 cost 已含峰谷计价, 直接求和)
         sess_cost_rows = conn.execute("""
             SELECT session_id, model,
-                   SUM(prompt_tokens), SUM(cache_hit_tokens), SUM(completion_tokens)
+                   SUM(prompt_tokens), SUM(cache_hit_tokens), SUM(completion_tokens),
+                   SUM(cost)
             FROM requests WHERE session_id != '' GROUP BY session_id, model
         """).fetchall()
         sess_costs = {}
-        for sid, m, pt, ht, ct in sess_cost_rows:
-            c = calc_cost(m, pt or 0, ht or 0, ct or 0)
-            sess_costs[sid] = sess_costs.get(sid, 0.0) + c
+        for sid, m, pt, ht, ct, c in sess_cost_rows:
+            sess_costs[sid] = sess_costs.get(sid, 0.0) + (c or 0)
         sessions = [{"id": r[0], "first": r[1], "last": r[2],
                       "count": r[3], "tokens": r[4],
                       "cost": round(sess_costs.get(r[0], 0.0), 6)} for r in sess_rows]

@@ -14,6 +14,10 @@ Usage:
     python ctl_client.py start
     python ctl_client.py stop
     python ctl_client.py <method> --params '{"k": "v"}'
+    python ctl_client.py --socket svc services
+    python ctl_client.py --socket svc restart --params '{"port": 5000}'
+
+--socket: ctl=launcher (run.py, 默认) / svc=服务组 (main.py, services|restart)
 
 Exit codes:
     0  success (response carries no JSON-RPC error)
@@ -30,6 +34,9 @@ from multiprocessing.connection import Client
 CTL_PIPE_WIN = r"\\.\pipe\infoserver_ctl"
 CTL_SOCKET_POSIX = "/tmp/infoserver_ctl.sock"
 
+SVC_CTL_PIPE_WIN = r"\\.\pipe\infoserver_svc"
+SVC_CTL_SOCKET_POSIX = "/tmp/infoserver_svc.sock"
+
 
 def _ctl_address():
     if os.name == "nt":
@@ -37,14 +44,23 @@ def _ctl_address():
     return (CTL_SOCKET_POSIX, "AF_UNIX")
 
 
+def _svc_ctl_address():
+    if os.name == "nt":
+        return (SVC_CTL_PIPE_WIN, "AF_PIPE")
+    return (SVC_CTL_SOCKET_POSIX, "AF_UNIX")
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="infoServer control client")
     parser.add_argument("method",
-                        help="JSON-RPC method: reload|quit|status|start|stop")
+                        help="JSON-RPC method: ctl=reload|quit|status|start|stop, svc=services|restart")
     parser.add_argument("--params", default="{}",
                         help="JSON object params (default {})")
     parser.add_argument("--id", type=int, default=1,
                         help="request id (default 1)")
+    parser.add_argument("--socket", choices=["ctl", "svc"], default="ctl",
+                        help="target control socket: ctl=launcher (run.py, default), "
+                             "svc=service group (main.py, services/restart)")
     args = parser.parse_args(argv)
 
     try:
@@ -53,7 +69,7 @@ def main(argv=None) -> int:
         print(f"invalid --params JSON: {e}", file=sys.stderr)
         return 1
 
-    address, family = _ctl_address()
+    address, family = (_svc_ctl_address() if args.socket == "svc" else _ctl_address())
     request = {
         "jsonrpc": "2.0",
         "id": args.id,

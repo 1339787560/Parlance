@@ -27,16 +27,39 @@ console = Console()
 
 # --- Config ---
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-chat"
+DEFAULT_MODEL = "deepseek-v4-flash"
 CONFIG_DIR = Path.home() / ".deepseek_stats"
 HISTORY_FILE = CONFIG_DIR / "history.json"
 
-# Pricing (per 1M tokens, RMB) — DeepSeek v4 Pro
+# Pricing (per 1M tokens, RMB) — DeepSeek V4 (2026-07 起), 高峰翻倍
 PRICING = {
-    "cache_hit": 0.025,
-    "cache_miss": 3,
-    "completion": 6,
+    "deepseek-v4-flash": {"cache_hit": 0.02, "cache_miss": 1, "completion": 2},
+    "deepseek-v4-pro":   {"cache_hit": 0.025, "cache_miss": 3, "completion": 6},
 }
+PEAK_WINDOWS = [(9, 12), (14, 18)]  # 北京时间高峰时段 (含起始不含结束)
+PEAK_MULTIPLIER = 2.0
+
+
+def get_pricing(model: str) -> dict:
+    """定价档位: deepseek-v4-pro → Pro; 其余(flash/chat/reasoner 旧别名) → Flash。
+    旧别名 deepseek-chat/deepseek-reasoner 已退役且均为 Flash 档。"""
+    m = (model or "").lower()
+    if "deepseek-v4-pro" in m or m.endswith("pro"):
+        return PRICING["deepseek-v4-pro"]
+    return PRICING["deepseek-v4-flash"]
+
+
+def is_peak_time(ts) -> bool:
+    """北京时间峰谷判定 (ts 为本地 naive ISO, 中国时区本地=UTC+8)。"""
+    if not ts:
+        return False
+    if isinstance(ts, str):
+        try:
+            ts = datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            return False
+    h = ts.hour
+    return any(lo <= h < hi for lo, hi in PEAK_WINDOWS)
 
 
 @dataclass
@@ -60,11 +83,13 @@ class RequestRecord:
 
     @property
     def cost(self) -> float:
-        return (
-            self.cache_hit_tokens * PRICING["cache_hit"]
-            + self.cache_miss_tokens * PRICING["cache_miss"]
-            + self.completion_tokens * PRICING["completion"]
+        p = get_pricing(self.model)
+        base = (
+            self.cache_hit_tokens * p["cache_hit"]
+            + self.cache_miss_tokens * p["cache_miss"]
+            + self.completion_tokens * p["completion"]
         ) / 1_000_000
+        return base * PEAK_MULTIPLIER if is_peak_time(self.timestamp) else base
 
 
 @dataclass
@@ -114,8 +139,11 @@ class SessionStats:
 
     @property
     def cost_saved_by_cache(self) -> float:
-        """How much $ saved vs if all cache-hit tokens were cache-miss."""
-        return self.total_cache_hit * (PRICING["cache_miss"] - PRICING["cache_hit"]) / 1_000_000
+        """How much $ saved vs if all cache-hit tokens were cache-miss (按各请求模型定价)."""
+        return sum(
+            r.cache_hit_tokens * (get_pricing(r.model)["cache_miss"] - get_pricing(r.model)["cache_hit"])
+            / 1_000_000 for r in self.requests
+        )
 
 
 class DeepSeekStatsClient:
@@ -543,17 +571,20 @@ def cmd_history(args):
 
 
 def cmd_cost_estimate(args):
-    """Estimate cost for a given token count."""
+    """Estimate cost for a given token count (按模型档位 + 当前是否高峰)."""
     prompt = args.prompt_tokens or 0
     completion = args.completion_tokens or 0
     cache_hit_rate = args.cache_hit_rate or 0
 
     miss = prompt * (1 - cache_hit_rate / 100)
     hit = prompt * (cache_hit_rate / 100)
+    p = get_pricing(args.model)
+    peak = is_peak_time(datetime.now().isoformat())
+    mult = PEAK_MULTIPLIER if peak else 1.0
 
-    cost_miss = miss * PRICING["cache_miss"] / 1_000_000
-    cost_hit = hit * PRICING["cache_hit"] / 1_000_000
-    cost_comp = completion * PRICING["completion"] / 1_000_000
+    cost_miss = miss * p["cache_miss"] / 1_000_000 * mult
+    cost_hit = hit * p["cache_hit"] / 1_000_000 * mult
+    cost_comp = completion * p["completion"] / 1_000_000 * mult
     total = cost_miss + cost_hit + cost_comp
 
     table = Table(show_header=False, box=box.ROUNDED)
@@ -561,11 +592,14 @@ def cmd_cost_estimate(args):
     table.add_column("Tokens", justify="right", width=12)
     table.add_column("Cost", justify="right", width=12)
 
+    table.add_row("Model", args.model, "")
     table.add_row("Prompt (miss)", f"{miss:,.0f}", f"${cost_miss:.6f}")
     table.add_row("Prompt (hit)", f"{hit:,.0f}", f"${cost_hit:.6f}")
     table.add_row("Completion", f"{completion:,}", f"${cost_comp:.6f}")
     table.add_row("")
     table.add_row("Total", f"{prompt + completion:,}", f"[bold]${total:.6f}[/bold]")
+    if peak:
+        table.add_row("", "", "[yellow]高峰时段 ×2[/yellow]")
 
     console.print(Panel(table, title="[bold]💰 Cost Estimate[/bold]", border_style="yellow"))
 

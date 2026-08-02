@@ -20,18 +20,22 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:5002 claude
 ## 功能
 
 ### 透明代理
-- 自动映射 Claude 模型 → DeepSeek 模型（`claude-sonnet` → `deepseek-chat`，`claude-opus` → `deepseek-reasoner`）
+- 自动映射 Claude 模型 → DeepSeek V4 模型（`claude-sonnet/haiku` → `deepseek-v4-flash`，`claude-opus` → `deepseek-v4-pro`）
+- 旧别名 `deepseek-chat` / `deepseek-reasoner` 已随 V4 退役（2026-07-24），且均为 **Flash 档**（reasoner = Flash 思考档，非 Pro），自动重写为 `deepseek-v4-flash`
 - 支持流式（SSE）和非流式请求
 - 透传 `x-claude-code-session-id` 头标识会话
 
-### 费用计算
+### 费用计算（DeepSeek V4 峰谷计价，元 / 百万 tokens）
 
-| 模型 | 输入未命中 | 输入命中 | 输出 |
-|------|-----------|---------|------|
-| Flash (`deepseek-chat`) | ¥1/M | ¥0.02/M | ¥2/M |
-| Pro (`deepseek-reasoner`) | ¥3/M | ¥0.02/M | ¥6/M |
+| 模型 | 计费项 | 平时 | 高峰(北京时间 9:00-12:00 / 14:00-18:00) |
+|------|--------|------|------|
+| Flash (`deepseek-v4-flash`) | 输入未命中 / 输入命中 / 输出 | ¥1 / ¥0.02 / ¥2 | ¥2 / ¥0.04 / ¥4 |
+| Pro (`deepseek-v4-pro`) | 输入未命中 / 输入命中 / 输出 | ¥3 / ¥0.025 / ¥6 | ¥6 / ¥0.05 / ¥12 |
 
-费用 = `(输入未命中 × 未命中单价 + 缓存命中 × 命中单价 + 输出 × 输出单价) / 1_000_000`
+费用 = `(输入未命中 × 未命中单价 + 缓存命中 × 命中单价 + 输出 × 输出单价) / 1_000_000`，高峰时段整体 ×2。
+
+> 缓存命中段不重复计费：`输入未命中` = `prompt_tokens - cache_hit_tokens`。
+> 每次请求按请求时刻落库 `cost`，聚合统计直接 `SUM(cost)`，保证峰谷计价精确（旧数据启动时自动迁移补算）。
 
 ### 统计看板
 

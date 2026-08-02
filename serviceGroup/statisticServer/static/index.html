@@ -35,6 +35,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .card-value{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
 .card-sub{font-size:11px;color:var(--dim);margin-top:2px}
 .green{color:var(--green)}.yellow{color:var(--yellow)}.red{color:var(--red)}.blue{color:var(--blue)}.purple{color:var(--purple)}.cyan{color:var(--cyan)}
+.peak-badge{display:inline-block;background:var(--red);color:#fff;border-radius:3px;padding:0 4px;font-size:11px;line-height:15px;margin-left:4px;vertical-align:1px;cursor:help}
 .section{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden}
 .section-title{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--dim);display:flex;justify-content:space-between}
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -241,6 +242,11 @@ html[data-theme="silverwolf"] {
 
 <div id="tab-sessions" style="display:none">
   <div id="sessionCards" class="cards" style="display:none">
+    <div class="card" id="sessionAdviceCard" style="display:none;grid-column:span 2;min-width:340px">
+      <div class="card-label">Token 缓存策略（重置 vs 继续） <span id="sessionAdviceBadge"></span></div>
+      <div class="card-value" id="sessionAdviceVerdict" style="font-size:14px;white-space:normal;line-height:1.5">加载中...</div>
+      <div class="card-sub" id="sessionAdviceSub" style="white-space:normal;line-height:1.5">-</div>
+    </div>
     <div class="card"><div class="card-label">请求次数</div><div class="card-value blue" id="ss-req">-</div></div>
     <div class="card"><div class="card-label">总 Token</div><div class="card-value" id="ss-total">-</div></div>
     <div class="card"><div class="card-label">输入未命中 / 缓存命中 / 输出</div>
@@ -430,6 +436,22 @@ document.addEventListener('DOMContentLoaded', () => {
 function fmt(n){return n===null||n===undefined?'-':n.toLocaleString()}
 function fmtCost(n){if(n===null||n===undefined)return'-';if(n<.001)return'¥'+n.toFixed(6);if(n<1)return'¥'+n.toFixed(4);return'¥'+n.toFixed(2)}
 function fmtTime(ts){if(!ts)return'-';try{return new Date(ts).toLocaleTimeString()}catch(e){return ts}}
+// 定价档位 (仅展示用; 实际 cost 由后端按请求时刻+峰谷算好返回):
+// deepseek-reasoner / deepseek-chat 旧别名均为 Flash 档, 只有 ...pro 才走 Pro
+function tierInfo(m){
+  return ((m||'').toLowerCase().includes('pro'))
+    ? {miss:3, hit:.025, out:6, label:'Pro'}
+    : {miss:1, hit:.02, out:2, label:'Flash'};
+}
+function bjHour(){
+  try{ return parseInt(new Date().toLocaleString('en-US',{hour:'2-digit',hour12:false,timeZone:'Asia/Shanghai'}),10); }
+  catch(e){ return new Date().getHours(); }
+}
+function isBjPeak(){
+  const h=bjHour();
+  return (h>=9&&h<12)||(h>=14&&h<18);
+}
+function peakNote(){ return isBjPeak() ? ' · <span style="color:#f87171">当前高峰×2</span>' : ''; }
 
 function switchTab(name, el) {
   if (!el) el = document.querySelector(`.tab[data-tab="${name}"]`);
@@ -462,12 +484,10 @@ function fillCards(data){
   const mc=document.getElementById('modelCosts');
   if(data.model_costs&&Object.keys(data.model_costs).length){
     mc.innerHTML=Object.entries(data.model_costs).map(([m,c])=>{
-      const p=m.includes('reason')||m.includes('pro')?
-        {miss:3, hit:.025, out:6, label:'Pro'}:
-        {miss:1, hit:.02, out:2, label:'Flash'};
+      const p=tierInfo(m);
       return `<div style="margin-bottom:4px"><strong>${p.label}</strong> ${m}: `+
         `输入命中 ¥${p.hit}/M · 输入未命中 ¥${p.miss}/M · 输出 ¥${p.out}/M → `+
-        `<span style="color:var(--purple)">${fmtCost(c)}</span></div>`;
+        `<span style="color:var(--purple)">${fmtCost(c)}</span>${peakNote()}</div>`;
     }).join('');
   } else { mc.innerHTML='<span style="color:var(--dim)">暂无数据</span>'; }
 }
@@ -498,7 +518,7 @@ async function refresh(){
         <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
         <td><strong>${fmt(t.total_tokens)}</strong></td>
         <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
-        <td class="purple">${fmtCost(t.cost)}</td>
+        <td class="purple">${fmtCost(t.cost)}${t.peak_requests>0?` <span class="peak-badge" title="高峰时段价格翻倍 (${t.peak_requests}/${t.requests} 请求在 9-12/14-18 高峰)">×2</span>`:''}</td>
       </tr>`;
     }).join('');
   } else { tt.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--dim)">暂无任务</td></tr>'; }
@@ -551,29 +571,19 @@ async function refresh(){
       const tasksDiv = document.getElementById('sessionTasks');
       if (tasks.length) {
         tasksDiv.style.display = 'block';
-        tb.innerHTML = tasks.map(t=>{
-          const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
-            : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
-          return `<tr>
-          <td>#${t.task_id}</td>
-          <td>${t.requests}</td>
-          <td style="color:#f87171">${fmt(miss)}</td>
-          <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
-          <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
-          <td><strong>${fmt(t.total_tokens)}</strong></td>
-          <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
-          <td class="purple">${fmtCost(t.cost)}</td>
-        </tr>`;
-        }).join('');
+        tb.innerHTML = tasks.map(sessionTaskRowHTML).join('');
+      } else {
+        tasksDiv.style.display = 'none';
       }
     });
+    renderSessionAdvice(_currentSessionId);
   }
 
   const detail=await fetchDetail();
   const tb=document.getElementById('reqTable');
   if(detail.length){
     tb.innerHTML=detail.map(r=>{
-      const modelLabel=r.model&&r.model.includes('reason')?'Pro':'Flash';
+      const modelLabel=tierInfo(r.model).label;
       const miss = (r.cache_miss != null) ? r.cache_miss
         : Math.max(0, (r.prompt||0) - (r.cache_hit||0));
       return `<tr>
@@ -587,6 +597,50 @@ async function refresh(){
       </tr>`;
     }).join('');
   } else { tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--dim)">暂无请求</td></tr>'; }
+}
+
+// 会话任务行渲染（showSession 与 refresh 共用，避免两处模板分叉 → ×2 徽标丢失）
+function sessionTaskRowHTML(t) {
+  const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
+    : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
+  return `<tr>
+    <td>#${t.task_id}</td>
+    <td>${t.requests}</td>
+    <td style="color:#f87171">${fmt(miss)}</td>
+    <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
+    <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
+    <td><strong>${fmt(t.total_tokens)}</strong></td>
+    <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
+    <td class="purple">${fmtCost(t.cost)}${t.peak_requests>0?` <span class="peak-badge" title="高峰时段价格翻倍 (${t.peak_requests}/${t.requests} 请求在 9-12/14-18 高峰)">×2</span>`:''}</td>
+  </tr>`;
+}
+
+// Token 缓存策略建议：重置 vs 继续（选中会话后展示，置于顶部卡片行）
+function renderSessionAdvice(sid) {
+  const card = document.getElementById('sessionAdviceCard');
+  if (!card) return;
+  if (!sid) { card.style.display = 'none'; return; }
+  fetch(`/api/stats/session/advice?session=${encodeURIComponent(sid)}`).then(r=>r.json()).then(a=>{
+    const badge = document.getElementById('sessionAdviceBadge');
+    const verdict = document.getElementById('sessionAdviceVerdict');
+    const sub = document.getElementById('sessionAdviceSub');
+    if (!a || a.verdict === 'insufficient') {
+      badge.innerHTML = '';
+      verdict.textContent = '暂无足够数据判断缓存策略';
+      sub.textContent = '';
+      card.style.display = 'block';
+      return;
+    }
+    const isReset = a.verdict === 'reset';
+    const col = isReset ? 'var(--red)' : 'var(--green)';
+    const breakEven = (a.break_even_requests != null)
+      ? ` · 剩余 ≥${a.break_even_requests} 次请求时重启更划算`
+      : '';
+    badge.innerHTML = `<span class="peak-badge" style="background:${col};padding:2px 8px;font-size:11px;cursor:default">${isReset ? '⚠ 建议重置' : '✓ 建议继续'}</span>`;
+    verdict.innerHTML = `未命中总额 <b>${fmtCost(a.reset_cost)}</b> vs ${a.horizon}次请求命中 <b>${fmtCost(a.continue_cost)}</b> → <b style="color:${col}">${isReset ? '建议重置' : '继续更省'}</b>`;
+    sub.innerHTML = `未命中总额 ${fmt(a.total_miss_tokens)} token · 近${a.recent_window || 10}次最大命中 ${fmt(a.recent_hit_tokens)} token/请求 · 每请求 ${fmtCost(a.recent_hit_cost)} · ${a.tier} 档原价${breakEven}`;
+    card.style.display = 'block';
+  }).catch(()=>{});
 }
 
 // Sessions
@@ -630,24 +684,13 @@ function showSession(sid) {
     const tb = document.getElementById('sessionTaskTable');
     if (tasks.length) {
       tasksDiv.style.display = 'block';
-      tb.innerHTML = tasks.map(t=>{
-        const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
-          : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
-        return `<tr>
-        <td>#${t.task_id}</td>
-        <td>${t.requests}</td>
-        <td style="color:#f87171">${fmt(miss)}</td>
-        <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
-        <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
-        <td><strong>${fmt(t.total_tokens)}</strong></td>
-        <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
-        <td class="purple">${fmtCost(t.cost)}</td>
-      </tr>`;
-      }).join('');
+      tb.innerHTML = tasks.map(sessionTaskRowHTML).join('');
     } else {
       tasksDiv.style.display = 'none';
     }
   });
+
+  renderSessionAdvice(sid);
 }
 
 function renderSessions(sessions) {

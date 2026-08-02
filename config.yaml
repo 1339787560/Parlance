@@ -73,6 +73,16 @@ services:
     tags: [reader, novel, web]
     enabled: true
 
+  - name: hair-sim
+    command_mac: /Users/liz/codlib/python/hair-sim/.venv/bin/python
+    command_win: python
+    args: ["-m", "uvicorn", "hair_sim.web.app:app", "--port", "8765"]
+    cwd: /Users/liz/codlib/python/hair-sim
+    port: 8765
+    auto_restart: true
+    tags: [hair, appearance, web, 3d]
+    enabled: true
+
   - name: cocos-creator
     command: "D:\\IDE\\Cocos Download\\Creator\\Creator\\3.8.1\\CocosCreator.exe"
     command_mac: "/Applications/Cocos/Creator/3.8.1/CocosCreator.app/Contents/MacOS/CocosCreator"
