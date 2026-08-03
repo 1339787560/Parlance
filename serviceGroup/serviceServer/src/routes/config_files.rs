@@ -69,3 +69,14 @@ pub async fn list_files(
 
     Ok(Json(ListResp { success: true, files }))
 }
+
+/// GET /api/config — 返回 config.json 全文 (与旧 Flask jsonify(config) 对齐)。
+pub async fn get_config(State(state): State<AppState>) -> Result<Json<serde_json::Value>> {
+    state.path_map.refresh(&state.config_path)?;
+    if !state.config_path.exists() {
+        return Err(AppError::NotFound);
+    }
+    let raw = std::fs::read_to_string(&state.config_path)?;
+    let value: serde_json::Value = serde_json::from_str(&raw)?;
+    Ok(Json(value))
+}

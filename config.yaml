@@ -33,7 +33,7 @@ services:
     enabled: true
 
   - name: serviceServer-rust
-    command: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\target\v3\release\service-server.exe
+    command: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\target\v4\release\service-server.exe
     cwd: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer
     port: 5000
     auto_restart: true

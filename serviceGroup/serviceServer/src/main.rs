@@ -63,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/api/config/files", get(config_files::list_files))
+        .route("/api/config", get(config_files::get_config))
         .route("/api/config/file/content", get(config_file::get_content))
         .route("/api/config/file/save", axum::routing::post(config_file::save_file))
         .route("/api/config/file/branches", get(branches::list_branches))

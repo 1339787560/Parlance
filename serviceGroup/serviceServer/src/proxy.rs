@@ -85,6 +85,8 @@ const DEAD_PREFIXES: &[&str] = &[
     "/api/makedeal",
     "/A2AManager",
     "/a2a",
+    "/fileontimer",
+    "/api/fileontimer",
 ];
 
 pub fn is_dead_path(path: &str) -> bool {
@@ -127,6 +129,8 @@ mod tests {
     #[case("/api/config/files", false)]
     #[case("/deposit", false)]
     #[case("/api/services/status", false)]
+    #[case("/fileontimer", true)]
+    #[case("/api/fileontimer/list", true)]
     fn test_is_dead_path_matrix(#[case] path: &str, #[case] dead: bool) {
         assert_eq!(is_dead_path(path), dead);
     }
