@@ -36,15 +36,18 @@ cargo run            # 跑 :5000 (需 config.json, 默认 cwd, 或 SERVICESVR_CO
 - ✅ Cargo.toml + axum 骨架 (:5000)
 - ✅ PathMap + path_check (cargo test 15 通过)
 - ✅ /api/config/files 轻量端点
-- ⬜ T1 Win32 status 半: status_cache + windows crate (SCM/QueryServiceStatus/toolhelp32/IP Helper) + /api/services/status + /api/config/services/running
-- ⬜ T2 配置编辑簇: 原子写 (temp+os.replace) + 滚动备份 max3 (.config_history/) + 编码探测 (BOM sniff + strict decode)
-- ⬜ T3 其余保留簇: ~40 路由逐条契约对齐 (path/method/resp 不变), 参考 service-svr 旧 Flask (D:\Codlib\VscodeCodlib\Python\serviceServer)
-- ⬜ T4 PyO3 兜底 (PyO3+pyembed 嵌入) + 删除 RAG/A2A/AI/src 副本
-- ⬜ T5 迁入 infoServer config.yaml + workspaces.yaml + .gitignore 收尾
+- ✅ T1 全 (path 半 + Win32 status 半: windows crate SCM + status_cache TTL)
+- ✅ T2 配置编辑簇 (原子写 + 滚动备份 max3 + 编码探测 + content/save 路由)
+- ✅ T3 config 分支路由 (branches/create/switch/remove + checks)
+- ✅ Strangler 反代 (proxy.rs fallback → legacy Flask) + Phase 1 上线验证 (Rust:5000 + legacy:5099)
+- ✅ Phase 2 物理整合 (Flask 搬 infoServer/serviceGroup/serviceServer-legacy/)
+- ⬜ T3 其余簇 (货币调控/文件浏览/SVN/模板/抓取, ~30 路由, legacy 渐进迁)
+- ⬜ T4 PyO3 兜底 (待具体不支持 API 触发) + 删除清理
+- cargo test 53 通过, release exe 3.7MB
 
 ## 旧版参考源
 
-`D:\Codlib\VscodeCodlib\Python\serviceServer\` (Flask, 删除清单内的死功能不迁):
+`D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer-legacy\` (旧 Flask, 被 Rust 反代, 删除清单内的死功能不迁):
 - `CustomRoute/ServiceRoute.py` — 路由逻辑与契约源头
 - `Service.py` — `get_all_service_status` / `read_file_content` / `save_file_content` (逻辑参照, 实现重写规避旧 bug)
 - `JsonConfigParser.py` — config.json schema

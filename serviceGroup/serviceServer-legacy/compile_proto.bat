@@ -1,0 +1,1 @@
+protoc.exe --proto_path=./CommonTools/xzmpDB --python_out=./CommonTools/xzmpDB ./CommonTools/xzmpDB/tqvip.proto

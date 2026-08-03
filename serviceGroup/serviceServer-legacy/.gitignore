@@ -1,0 +1,14 @@
+__pycache__
+.svn
+exeDir
+src
+# 重型二进制与数据 (Phase 2 搬入后补, 不入 infoServer 仓)
+*.exe
+*.pdb
+*.sqlite3
+chroma_data
+doc
+models
+logs
+tmp
+servicesvr.log

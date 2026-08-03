@@ -1,0 +1,55 @@
+# OSS tcgamelog hostID 注册表
+# 配合 spideOnlineLog.py --source oss 使用。
+#
+# OSS path 约定:
+#   {service}/{hostID}/{log|Record}/{service}-{YYYYMMDD}{HHMMSS}-{log|Record}.zip
+# zip 内层 (单层, GBK 编码):
+#   {service}{YYYYMMDD}.log          主运行日志 (默认 grep 目标)
+#   {service}_daily_{YYYYMMDD}.log   日汇总
+#   DayLoginRecord/LogoutRecord/NewPlayerRecord{YYYYMMDD}.log  业务记录
+#
+# 代号 (xzmp=四川麻将逻辑总称; 服务端/客户端细分):
+#   服务端: xzmo / xzmo2 = 血流血战(金+银)   xzms = 血流六红中(金)
+#   客户端: xzmp = 小程序端                  xzmk = Lua端 + Creator平台包
+# OSS service 前缀按"所服务的客户端代号"分族: {service}{xzmo|xzms|xzmp|xzmk}
+#   - 同一血战主机(如 3718)在 roomsvrxzmo 与 roomsvrxzmp 下都有活跃日志: 前者按血战服务代号, 后者按小程序端客户端代号; 两条都合法, 按客诉客户端类型选。
+#   - xzmo2 不在 OSS 单列前缀, 复用 xzmo 前缀(不同 hostID)。
+# 主查路径: 按"大区/玩法"维度走 xzmo/xzms (本注册表); 按"客户端"维度走 xzmp/xzmk。
+# 服务名: roomsvr/roommpsvr/{代}svr/{代}mpsvr/{代}assitsvr/{代}assitmpsvr/{代}chunklog/{代}chunksvr/robottool{代}
+# 注意: hostID 每 service 独立空间。room 的 hostID ≠ chunklog 的 hostID。
+#
+# 用途: 客诉 >2 天历史日志查询。<2 天走黑大厅; 后台流水走 landlord-analysis。
+# 金币不到账最相关服务: assist(发奖) + chunklog(流水)。
+#
+# 维护: 新增 host 先跑 probe_oss_layout.py 确认 service 归属 (hostID 跨 service 复用, 勿臆断)。
+
+# === roomsvr 房间/对局服务 host (客诉默认入口) ===
+roomsvrxzms:
+  3291: {region: 血流六红中1区, no: 19972, ver: 金币, note: 初级场}
+  3058: {region: 血流六红中2区, no: 20323, ver: 金币, note: 初级场}
+  3153: {region: 血流六红中3区, no: 20451, ver: 金币, note: 初级场}
+  3335: {region: 血流六红中4区, no: 23055, ver: 金币, note: 不含初级场}
+
+roomsvrxzmo:
+  3718: {region: 血战到底, no: 3974, ver: 金币}
+  3292: {region: 血流成河, no: 3975, ver: 金币}
+  3701: {region: 血战大区, no: 4438, ver: 银子}
+  3728: {region: 血流大区, no: 4439, ver: 银子}
+
+# === chunklog 流水服务 host (金币不到账/流水核查) ===
+# hostID 独立于 room; 当前活跃 = 4001 (与 room 的废弃 4001 同 ID 不同 service, 勿混)
+xzmochunklog:
+  4001: {region: 川麻流水聚合, ver: 金币, note: 当前活跃}
+  # 历史主机 (IP):
+  116.62.36.4: {note: 历史主机, max: 20230725}
+  120.55.64.162: {note: 历史主机, max: 20210812}
+
+# === assist 发奖服务 host (与 room hostID 同空间, xzmo 代号下) ===
+xzmoassitsvr:
+  3718: {region: 血战到底, ver: 金币, note: 与 roomsvrxzmo/3718 同主机}
+  3301: {note: 历史主机, max: 20250618}
+xzmoassitmpsvr:
+  3718: {region: 血战到底, ver: 金币, note: mp 变体}
+
+# 废弃 hostID (room 维度, 勿查):
+#   4001 — room 服务下已无数据 (chunklog 下仍活跃, 见上)

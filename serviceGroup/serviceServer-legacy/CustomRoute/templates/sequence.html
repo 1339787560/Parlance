@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服务启动序列管理</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .breadcrumb {
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        .breadcrumb a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        
+        .breadcrumb .current-page-title {
+            font-weight: bold;
+            color: #343a40;
+        }
+        
+        /* 夜间模式下的面包屑样式 */
+        body.dark-theme .breadcrumb {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .breadcrumb a {
+            color: #6cb7ff;
+        }
+        
+        body.dark-theme .breadcrumb a:hover {
+            color: #3a98ff;
+        }
+        
+        body.dark-theme .breadcrumb .current-page-title {
+            color: #f0f0f0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        
+        h2 {
+            color: #666;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        body.dark-theme .card {
+            background: rgba(31, 41, 55, 0.2);
+        }
+        
+        .service-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .service-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            cursor: move;
+        }
+        
+        .service-item.dragging {
+            opacity: 0.5;
+            background: #e9ecef;
+        }
+        
+        .service-info {
+            flex: 1;
+            margin-left: 10px;
+        }
+        
+        .service-name {
+            font-weight: bold;
+        }
+        
+        .service-type {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        button.execute {
+            background-color: #28a745;
+        }
+        
+        button.execute:hover {
+            background-color: #218838;
+        }
+        
+        button.clear {
+            background-color: #dc3545;
+        }
+        
+        button.clear:hover {
+            background-color: #bd2130;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .result.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .result.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .sequence-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        body.dark-theme .sequence-info {
+            background-color: rgba(55, 65, 81, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/">主页</a> &gt; <span class="current-page-title">序列管理</span>
+        </div>
+        <h1>服务启动序列管理</h1>
+        
+        <div class="card">
+            <h2>启动序列配置</h2>
+            <div class="sequence-info">
+                <p>在此页面您可以：</p>
+                <ol>
+                    <li>从现有服务中选择需要按顺序启动的服务</li>
+                    <li>通过拖拽调整服务启动顺序</li>
+                    <li>执行启动序列，系统将严格按照顺序依次启动服务</li>
+                    <li>查看执行结果：全部成功或第一个失败的服务信息</li>
+                </ol>
+            </div>
+            
+            <div class="controls">
+                <button id="refresh-btn">刷新服务列表</button>
+                <button id="execute-btn" class="execute" disabled>执行启动序列</button>
+                <button id="clear-btn" class="clear">清空序列</button>
+                <button id="save-btn" class="save">保存序列</button>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>正在执行启动序列，请稍候...</p>
+            </div>
+            
+            <div class="result" id="result"></div>
+            
+            <h3>可用服务</h3>
+            <div class="service-list" id="available-services">
+                <!-- 可用服务将通过JavaScript动态生成 -->
+            </div>
+            
+            <h3>启动序列</h3>
+            <div class="service-list" id="sequence-services">
+                <!-- 启动序列服务将通过拖拽添加 -->
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let allServices = {};
+        let sequenceServices = [];
+        
+        // 页面加载时获取服务列表
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshServices();
+            
+            // 绑定按钮事件
+            document.getElementById('refresh-btn').addEventListener('click', refreshServices);
+            document.getElementById('execute-btn').addEventListener('click', executeSequence);
+            document.getElementById('clear-btn').addEventListener('click', clearSequence);
+            document.getElementById('save-btn').addEventListener('click', saveSequence);
+        });
+        
+        // 刷新服务列表
+        function refreshServices() {
+            fetch('/api/services/status')
+                .then(response => response.json())
+                .then(data => {
+                    allServices = data;
+                    updateAvailableServices();
+                })
+                .catch(error => {
+                    console.error('获取服务列表失败:', error);
+                });
+        }
+        
+        // 更新可用服务列表
+        function updateAvailableServices() {
+            const container = document.getElementById('available-services');
+            container.innerHTML = '';
+            
+            // 只显示已部署且未运行的服务
+            for (const [serviceId, serviceInfo] of Object.entries(allServices)) {
+                // 跳过已在序列中的服务
+                if (sequenceServices.includes(serviceId)) continue;
+                
+                // 只显示已部署的服务
+                if (serviceInfo.status !== '未部署') {
+                    const serviceItem = createServiceItem(serviceInfo, serviceId);
+                    container.appendChild(serviceItem);
+                }
+            }
+        }
+        
+        // 创建服务项元素
+        function createServiceItem(serviceInfo, serviceId) {
+            const item = document.createElement('div');
+            item.className = 'service-item';
+            item.draggable = true;
+            item.dataset.serviceId = serviceId;
+            
+            // 添加拖拽事件
+            item.addEventListener('dragstart', handleDragStart);
+            item.addEventListener('dragover', handleDragOver);
+            item.addEventListener('drop', handleDrop);
+            item.addEventListener('dragenter', handleDragEnter);
+            item.addEventListener('dragleave', handleDragLeave);
+            
+            item.innerHTML = `
+                <div>⋮⋮</div>
+                <div class="service-info">
+                    <div class="service-name">${serviceInfo.display_name}</div>
+                    <div class="service-type">${serviceInfo.type} (${serviceInfo.exe})</div>
+                </div>
+            `;
+            
+            // 添加点击事件，将服务添加到序列中
+            item.addEventListener('click', function() {
+                addToSequence(serviceId);
+            });
+            
+            return item;
+        }
+        
+        // 添加到启动序列
+        function addToSequence(serviceId) {
+            if (!sequenceServices.includes(serviceId)) {
+                sequenceServices.push(serviceId);
+                updateSequenceDisplay();
+                updateAvailableServices();
+                updateExecuteButton();
+            }
+        }
+        
+        // 从启动序列中移除
+        function removeFromSequence(serviceId) {
+            const index = sequenceServices.indexOf(serviceId);
+            if (index > -1) {
+                sequenceServices.splice(index, 1);
+                updateSequenceDisplay();
+                updateAvailableServices();
+                updateExecuteButton();
+            }
+        }
+        
+        // 更新启动序列显示
+        function updateSequenceDisplay() {
+            const container = document.getElementById('sequence-services');
+            container.innerHTML = '';
+            
+            sequenceServices.forEach((serviceId, index) => {
+                const serviceInfo = allServices[serviceId];
+                if (serviceInfo) {
+                    const item = document.createElement('div');
+                    item.className = 'service-item';
+                    item.draggable = true;
+                    item.dataset.serviceId = serviceId;
+                    item.dataset.index = index;
+                    
+                    // 添加拖拽事件
+                    item.addEventListener('dragstart', handleDragStart);
+                    item.addEventListener('dragover', handleDragOver);
+                    item.addEventListener('drop', handleDrop);
+                    item.addEventListener('dragenter', handleDragEnter);
+                    item.addEventListener('dragleave', handleDragLeave);
+                    
+                    item.innerHTML = `
+                        <div>⋮⋮</div>
+                        <div class="service-info">
+                            <div class="service-name">${serviceInfo.display_name}</div>
+                            <div class="service-type">${serviceInfo.type} (${serviceInfo.exe})</div>
+                        </div>
+                        <button class="clear" onclick="removeFromSequence('${serviceId}')" style="margin-left: 10px;">移除</button>
+                    `;
+                    
+                    container.appendChild(item);
+                }
+            });
+        }
+        
+         // 保存启动序列
+         function saveSequence() {
+            const sequenceName = prompt('请输入序列名称:');
+            
+            if (!sequenceName || sequenceName.trim() === '') {
+                alert('序列名称不能为空');
+                return;
+            }
+            
+            // 问题1：引用了不存在的元素ID 'sequence-list'
+            // 正确的序列列表元素ID是 'sequence-services'
+            // const sequenceList = document.getElementById('sequence-list');
+            // const sequenceItems = sequenceList.querySelectorAll('.sequence-item');
+            
+            // 问题2：尝试获取不存在的类名 '.sequence-item'
+            // 正确的类名是 '.service-item'
+            const sequenceItems = document.querySelectorAll('#sequence-services .service-item');
+            
+            // 问题3：我们需要从全局变量 sequenceServices 中获取服务ID，而不是从DOM中查找
+            // 构建符合API要求的start_order数组
+            const startOrder = [];
+            
+            // 使用现有的全局变量 sequenceServices，它已经包含了正确的服务ID顺序
+            sequenceServices.forEach(serviceId => {
+                const serviceInfo = allServices[serviceId];
+                if (serviceInfo) {
+                    // 按照后端API要求的格式构建服务对象
+                    startOrder.push({
+                        name: serviceInfo.name,
+                        type: serviceInfo.type,
+                        exe: serviceInfo.exe,
+                        display_name: serviceInfo.display_name
+                    });
+                }
+            });
+            
+            if (startOrder.length === 0) {
+                alert('序列不能为空');
+                return;
+            }
+            
+            // 发送保存请求到后端API
+            fetch('/api/script/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: sequenceName.trim(), start_order: startOrder })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.success) {
+                    // 保存成功后可以选择跳转到index.html或刷新当前页面
+                    // window.location.href = '/'; // 可选：跳转到首页
+                }
+            })
+            .catch(error => {
+                alert('保存序列失败: ' + error.message);
+            });
+        }
+        // 拖拽相关变量
+        let dragSrcElement = null;
+        // 处理拖拽开始
+        function handleDragStart(e) {
+            dragSrcElement = this;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', this.innerHTML);
+        }
+        
+        // 处理拖拽经过
+        function handleDragOver(e) {
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+        
+        // 处理进入目标元素
+        function handleDragEnter(e) {
+            this.classList.add('dragover');
+        }
+        
+        // 处理离开目标元素
+        function handleDragLeave(e) {
+            this.classList.remove('dragover');
+        }
+        
+        // 处理放置
+        function handleDrop(e) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            
+            if (dragSrcElement != this) {
+                // 交换序列中的位置
+                const srcIndex = parseInt(dragSrcElement.dataset.index);
+                const destIndex = parseInt(this.dataset.index);
+                
+                if (!isNaN(srcIndex) && !isNaN(destIndex)) {
+                    // 交换数组中的元素
+                    [sequenceServices[srcIndex], sequenceServices[destIndex]] = 
+                    [sequenceServices[destIndex], sequenceServices[srcIndex]];
+                    
+                    updateSequenceDisplay();
+                }
+            }
+            
+            this.classList.remove('dragover');
+            return false;
+        }
+        
+        // 更新执行按钮状态
+        function updateExecuteButton() {
+            const executeBtn = document.getElementById('execute-btn');
+            executeBtn.disabled = sequenceServices.length === 0;
+        }
+        
+        // 清空序列
+        function clearSequence() {
+            sequenceServices = [];
+            updateSequenceDisplay();
+            updateAvailableServices();
+            updateExecuteButton();
+        }
+        
+        // 执行启动序列
+        function executeSequence() {
+            if (sequenceServices.length === 0) return;
+            
+            // 显示加载状态
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('execute-btn').disabled = true;
+            
+            // 执行启动序列
+            executeSequenceStep(0, [])
+                .then(result => {
+                    // 隐藏加载状态
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('execute-btn').disabled = false;
+                    
+                    // 显示结果
+                    showResult(result.success, result.message);
+                })
+                .catch(error => {
+                    // 隐藏加载状态
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('execute-btn').disabled = false;
+                    
+                    // 显示错误结果
+                    showResult(false, '执行过程中发生错误: ' + error.message);
+                });
+        }
+        
+        // 执行序列中的单个步骤
+        function executeSequenceStep(index, results) {
+            // 如果已经处理完所有服务
+            if (index >= sequenceServices.length) {
+                return Promise.resolve({
+                    success: true,
+                    message: '所有服务已成功启动:\n' + results.join('\n')
+                });
+            }
+            
+            const serviceId = sequenceServices[index];
+            const serviceInfo = allServices[serviceId];
+            
+            if (!serviceInfo) {
+                return Promise.reject(new Error(`服务 ${serviceId} 不存在`));
+            }
+            
+            // 调用API启动服务
+            return fetch('/api/services/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: serviceInfo.name,
+                    type: serviceInfo.type,
+                    exe: serviceInfo.exe
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 等待一段时间让服务启动完成
+                return new Promise(resolve => {
+                    setTimeout(() => {
+                        // 检查服务状态
+                        fetch('/api/services/status')
+                            .then(response => response.json())
+                            .then(statusData => {
+                                const updatedService = statusData[serviceId];
+                                if (updatedService && (updatedService.status === '运行中' || updatedService.status === '启动中')) {
+                                    results.push(`✓ ${serviceInfo.display_name}: 启动成功`);
+                                    // 继续执行下一个服务
+                                    resolve(executeSequenceStep(index + 1, results));
+                                } else {
+                                    // 服务启动失败
+                                    resolve({
+                                        success: false,
+                                        message: `✗ ${serviceInfo.display_name}: 启动失败\n${results.join('\n')}`
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                resolve({
+                                    success: false,
+                                    message: `✗ ${serviceInfo.display_name}: 检查状态时出错\n${results.join('\n')}`
+                                });
+                            });
+                    }, 2000); // 等待2秒
+                });
+            })
+            .catch(error => {
+                return {
+                    success: false,
+                    message: `✗ ${serviceInfo.display_name}: 启动请求失败 - ${error.message}\n${results.join('\n')}`
+                };
+            });
+        }
+        
+        // 显示执行结果
+        function showResult(success, message) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result ' + (success ? 'success' : 'error');
+            resultDiv.textContent = message;
+        }
+        
+        // 使 removeFromSequence 函数全局可用
+        window.removeFromSequence = removeFromSequence;
+    </script>
+</body>
+</html>

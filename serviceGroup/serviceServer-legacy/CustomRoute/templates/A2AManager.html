@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/icon/tabIcon.ico" type="image/x-icon">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <title>A2A 文件管理</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .page-background {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -2; background-size: cover; background-position: center;
+            background-repeat: no-repeat; opacity: 0.15;
+        }
+
+        .page-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1;
+            background: linear-gradient(135deg, rgba(15,15,26,0.95) 0%, rgba(20,20,35,0.92) 100%);
+        }
+
+        .container {
+            width: 100%; max-width: 1200px; margin: 0 auto; padding: 30px 20px;
+        }
+
+        .breadcrumb {
+            margin-bottom: 20px; font-size: 14px; color: #888;
+        }
+        .breadcrumb a { color: #6cb7ff; text-decoration: none; }
+        .breadcrumb a:hover { text-decoration: underline; }
+        .breadcrumb .path-item { color: #9ca3af; }
+
+        /* 文件路径面包屑 */
+        .path-breadcrumb {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 16px; padding: 12px 16px;
+            background: rgba(255,255,255,0.04); border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .path-breadcrumb .back-btn {
+            padding: 6px 12px; border-radius: 6px;
+            background: rgba(108,183,255,0.15); border: 1px solid rgba(108,183,255,0.3);
+            color: #6cb7ff; cursor: pointer; transition: all 0.2s;
+            display: flex; align-items: center; gap: 4px;
+        }
+        .path-breadcrumb .back-btn:hover { background: rgba(108,183,255,0.25); }
+        .path-breadcrumb .back-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .path-breadcrumb .path-nav {
+            display: flex; align-items: center; gap: 4px; flex: 1;
+            font-size: 14px;
+        }
+        .path-breadcrumb .path-nav a {
+            color: #6cb7ff; text-decoration: none; padding: 4px 8px;
+            border-radius: 4px; transition: background 0.15s;
+        }
+        .path-breadcrumb .path-nav a:hover { background: rgba(255,255,255,0.1); }
+        .path-breadcrumb .path-nav .separator { color: #6b7280; }
+        .path-breadcrumb .path-nav .current { color: #e0e0e0; font-weight: 600; }
+
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 30px; flex-wrap: wrap; gap: 15px;
+        }
+
+        .header h1 {
+            font-size: 28px; font-weight: 700;
+            background: linear-gradient(135deg, #6cb7ff, #a78bfa);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+        .btn {
+            padding: 10px 20px; border-radius: 8px; border: none;
+            cursor: pointer; font-size: 14px; font-weight: 600;
+            transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #6cb7ff, #4a9eff);
+            color: #fff; box-shadow: 0 4px 15px rgba(108,183,255,0.3);
+        }
+        .btn-primary:hover { box-shadow: 0 6px 20px rgba(108,183,255,0.4); }
+
+        .btn-purple {
+            background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+            color: #fff; box-shadow: 0 4px 15px rgba(167,139,250,0.3);
+        }
+        .btn-purple:hover { box-shadow: 0 6px 20px rgba(167,139,250,0.4); }
+
+        .btn-success {
+            background: linear-gradient(135deg, #34d399, #10b981);
+            color: #fff; box-shadow: 0 4px 15px rgba(52,211,153,0.3);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f87171, #ef4444);
+            color: #fff; box-shadow: 0 4px 15px rgba(248,113,113,0.3);
+        }
+
+        /* 文件列表区域 */
+        .file-section {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 24px; margin-bottom: 30px;
+        }
+
+        .file-section h2 {
+            font-size: 18px; margin-bottom: 16px; color: #6cb7ff;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        /* 长条列表样式 */
+        .file-list {
+            display: flex; flex-direction: column; gap: 4px;
+        }
+
+        .file-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 16px; border-radius: 10px;
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        .file-item:hover { background: rgba(255,255,255,0.08); border-color: rgba(108,183,255,0.2); }
+        .file-item.selected { border-color: #6cb7ff; background: rgba(108,183,255,0.1); }
+
+        .file-item-left {
+            display: flex; align-items: center; gap: 12px;
+            flex: 1; min-width: 0;
+        }
+
+        .file-icon {
+            font-size: 20px; width: 28px; text-align: center;
+        }
+        .file-icon.folder { color: #fbbf24; }
+        .file-icon.md { color: #6cb7ff; }
+        .file-icon.py { color: #34d399; }
+        .file-icon.json { color: #a78bfa; }
+
+        .file-name {
+            font-weight: 600; color: #e0e0e0;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        .file-item-right {
+            display: flex; align-items: center; gap: 16px;
+        }
+
+        .file-size {
+            font-size: 13px; color: #6b7280; min-width: 70px; text-align: right;
+        }
+
+        .file-actions {
+            display: flex; gap: 8px;
+        }
+
+        .btn-small {
+            padding: 6px 12px; border-radius: 6px; font-size: 13px;
+        }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center; padding: 40px 20px; color: #6b7280;
+        }
+        .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+        /* 加载状态 */
+        .loading-state {
+            text-align: center; padding: 40px 20px; color: #6b7280;
+        }
+        .spinner {
+            display: inline-block; width: 40px; height: 40px;
+            border: 3px solid rgba(255,255,255,0.2);
+            border-top-color: #6cb7ff; border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 文件预览区域 */
+        .preview-section {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 24px; margin-bottom: 30px;
+        }
+
+        .preview-section h2 {
+            font-size: 18px; margin-bottom: 16px; color: #a78bfa;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .preview-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px; flex-wrap: wrap; gap: 10px;
+        }
+
+        .preview-info {
+            font-size: 14px; color: #9ca3af;
+        }
+
+        /* Git 历史 */
+        .history-box {
+            background: rgba(255,255,255,0.04); border-radius: 12px;
+            padding: 16px; margin-bottom: 20px;
+        }
+
+        .history-title {
+            font-size: 14px; color: #fbbf24; margin-bottom: 12px;
+            display: flex; align-items: center; gap: 6px;
+        }
+
+        .history-list {
+            display: flex; flex-direction: column; gap: 6px;
+        }
+
+        .history-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 12px; border-radius: 8px;
+            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04);
+            cursor: pointer; transition: all 0.15s ease;
+        }
+        .history-item:hover { background: rgba(255,255,255,0.06); }
+
+        .history-hash {
+            font-size: 12px; color: #6cb7ff; font-weight: 600;
+            background: rgba(108,183,255,0.15); padding: 2px 8px; border-radius: 4px;
+        }
+
+        .history-date {
+            font-size: 13px; color: #9ca3af;
+        }
+
+        .history-msg {
+            font-size: 14px; color: #d1d5db; flex: 1; min-width: 0;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        /* 内容预览 */
+        .preview-content {
+            border-radius: 12px; padding: 20px; font-size: 14px;
+            line-height: 1.8; color: #d1d5db;
+            background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05);
+            max-height: 600px; overflow-y: auto;
+        }
+
+        .preview-content.has-markdown {
+            background: rgba(108,183,255,0.06);
+        }
+
+        .preview-content h1 { font-size: 24px; color: #e0e0e0; margin: 20px 0 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
+        .preview-content h2 { font-size: 20px; color: #c4b5fd; margin: 16px 0 8px; }
+        .preview-content h3 { font-size: 17px; color: #a78bfa; margin: 14px 0 6px; }
+        .preview-content p { margin: 8px 0; }
+        .preview-content ul, .preview-content ol { padding-left: 24px; margin: 8px 0; }
+        .preview-content li { margin: 4px 0; }
+        .preview-content strong { color: #fbbf24; }
+        .preview-content em { color: #6cb7ff; }
+        .preview-content code { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+        .preview-content pre { background: rgba(0,0,0,0.4); padding: 16px; border-radius: 10px; overflow-x: auto; margin: 12px 0; }
+        .preview-content pre code { background: none; padding: 0; }
+        .preview-content blockquote { border-left: 4px solid #a78bfa; padding-left: 16px; margin: 12px 0; color: #9ca3af; }
+        .preview-content table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+        .preview-content th, .preview-content td { border: 1px solid rgba(255,255,255,0.1); padding: 8px 12px; }
+        .preview-content th { background: rgba(255,255,255,0.05); color: #c4b5fd; }
+
+        /* 代码高亮 */
+        .preview-content.code-view {
+            background: rgba(0,0,0,0.3);
+        }
+        .preview-content.code-view pre {
+            margin: 0; padding: 0;
+        }
+        .preview-content.code-view code {
+            background: none; white-space: pre;
+        }
+
+        /* 编辑器 */
+        .editor-box {
+            margin-bottom: 20px;
+        }
+
+        .editor-textarea {
+            width: 100%; min-height: 400px; padding: 16px;
+            border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.3); color: #e0e0e0;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px; line-height: 1.6; resize: vertical;
+        }
+        .editor-textarea:focus { outline: none; border-color: #6cb7ff; }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 600;
+            z-index: 9999; opacity: 0; transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        .toast.show { opacity: 1; }
+        .toast.success { background: rgba(52,211,153,0.9); color: #fff; }
+        .toast.error { background: rgba(248,113,113,0.9); color: #fff; }
+        .toast.info { background: rgba(108,183,255,0.9); color: #fff; }
+
+        /* 新建文件模态框 */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 1000;
+            display: none; justify-content: center; align-items: center;
+        }
+        .modal-overlay.show { display: flex; }
+
+        .modal-box {
+            background: rgba(30,30,45,0.95); border-radius: 16px;
+            padding: 24px; min-width: 400px; max-width: 90%;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .modal-title {
+            font-size: 18px; color: #6cb7ff; margin-bottom: 20px;
+        }
+
+        .modal-input {
+            width: 100%; padding: 12px 16px; border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3);
+            color: #e0e0e0; font-size: 14px; margin-bottom: 16px;
+        }
+        .modal-input:focus { outline: none; border-color: #6cb7ff; }
+
+        .modal-actions {
+            display: flex; gap: 12px; justify-content: flex-end;
+        }
+
+        
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .container { padding: 20px 12px; }
+            .header h1 { font-size: 22px; }
+            .file-item { padding: 10px 12px; }
+            .file-size { display: none; }
+            .btn-small { padding: 4px 8px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="bg-container" class="page-background"></div>
+    <div class="page-overlay"></div>
+
+    <div class="container">
+        <div class="breadcrumb" id="breadcrumb">
+            <a href="/">主页</a> &gt; <span class="path-item">A2A管理</span>
+        </div>
+
+        <div class="header">
+            <h1>A2A 文件管理</h1>
+            <div class="header-actions">
+                <button class="btn btn-success" onclick="createNewFile()">
+                    + 新建文件
+                </button>
+                <button class="btn btn-primary" onclick="refreshList()">
+                    &#8635; 刷新
+                </button>
+            </div>
+        </div>
+
+        <!-- 文件列表 -->
+        <div class="file-section" id="file-section">
+            <!-- 文件路径面包屑 -->
+            <div class="path-breadcrumb" id="path-breadcrumb">
+                <button class="back-btn" id="back-btn-path" onclick="goBackPath()" disabled>
+                    &#8592; 返回
+                </button>
+                <div class="path-nav" id="path-nav">
+                    <a href="javascript:void(0)" onclick="loadFileList('')">根目录</a>
+                </div>
+            </div>
+            <div id="file-list-container">
+                <div class="loading-state"><div class="spinner"></div><br>加载中...</div>
+            </div>
+        </div>
+
+        <!-- 文件预览/编辑区域 (初始隐藏) -->
+        <div class="preview-section" id="preview-section" style="display:none;">
+            <div class="preview-header">
+                <h2>&#128196; <span id="preview-title">文件预览</span></h2>
+                <div class="preview-info">
+                    <span id="preview-size-info"></span>
+                </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div style="display:flex;gap:12px;margin-bottom:16px;">
+                <button class="btn btn-small btn-primary" onclick="toggleEditMode()" id="edit-btn">
+                    &#9998; 编辑
+                </button>
+                <button class="btn btn-small btn-danger" onclick="deleteCurrentFile()" id="delete-btn">
+                    &#128465; 删除
+                </button>
+                <button class="btn btn-small btn-purple" onclick="backToList()" id="back-btn">
+                    &#8592; 返回列表
+                </button>
+            </div>
+
+            <!-- Git 历史 -->
+            <div class="history-box" id="history-box">
+                <div class="history-title">&#128197; Git 提交记录</div>
+                <div class="history-list" id="history-list">
+                    <div style="color:#6b7280;">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 编辑器 -->
+            <div class="editor-box" id="editor-box" style="display:none;">
+                <textarea class="editor-textarea" id="editor-textarea"></textarea>
+                <div style="display:flex;gap:12px;margin-top:12px;">
+                    <button class="btn btn-success" onclick="saveFile()">&#128190; 保存</button>
+                    <button class="btn btn-small" onclick="toggleEditMode()">取消</button>
+                </div>
+            </div>
+
+            <!-- 内容预览 -->
+            <div class="preview-content" id="preview-content"></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- 新建文件模态框 -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title">新建文件</div>
+            <input type="text" class="modal-input" id="new-file-name" placeholder="文件名 (如: test.md)">
+            <div style="font-size:13px;color:#6b7280;margin-bottom:16px;">
+                支持的扩展名: .md, .py, .json
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-small" onclick="closeModal()">取消</button>
+                <button class="btn btn-success" onclick="confirmCreateFile()">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 当前状态
+        let currentPath = '';
+        let currentFile = null;
+        let editMode = false;
+        let pathHistory = []; // 路径历史记录
+
+        // Toast 通知
+        function showToast(msg, type = 'info') {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.className = 'toast ' + type + ' show';
+            setTimeout(() => { el.className = 'toast ' + type; }, 2500);
+        }
+
+        // 格式化文件大小
+        function formatSize(bytes) {
+            if (bytes === 0) return '-';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // 获取文件图标
+        function getFileIcon(type, ext) {
+            if (type === 'folder') return '&#128193;';
+            if (ext === '.md') return '&#128196;';
+            if (ext === '.py') return '&#128013;';
+            if (ext === '.json') return '&#128203;';
+            return '&#128196;';
+        }
+
+        // HTML 转义
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // 加载文件列表
+        async function loadFileList(path = '') {
+            // 记录路径历史（如果不是当前路径的子目录，清空历史）
+            if (path !== currentPath) {
+                if (!path.startsWith(currentPath) || currentPath === '') {
+                    pathHistory = currentPath ? [currentPath] : [];
+                }
+                pathHistory.push(path);
+            }
+
+            currentPath = path;
+
+            try {
+                const res = await fetch('/api/a2a/list?path=' + encodeURIComponent(path));
+                const data = await res.json();
+
+                if (data.success) {
+                    renderFileList(data.files);
+                    updatePathBreadcrumb(path);
+                    updateBackButton();
+                } else {
+                    showToast(data.message || '加载失败', 'error');
+                }
+            } catch (e) {
+                showToast('加载失败', 'error');
+            }
+        }
+
+        // 渲染文件列表
+        function renderFileList(files) {
+            const container = document.getElementById('file-list-container');
+
+            if (!files || files.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128193;</div><div>当前目录为空</div></div>';
+                return;
+            }
+
+            container.innerHTML = '';
+            const fileList = document.createElement('div');
+            fileList.className = 'file-list';
+
+            files.forEach(f => {
+                const icon = getFileIcon(f.type, f.extension);
+                const iconClass = f.type === 'folder' ? 'folder' : (f.extension ? f.extension.substring(1) : '');
+                const sizeText = f.type === 'folder' ? '' : formatSize(f.size);
+                const actionText = f.type === 'folder' ? '进入' : '查看';
+
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.onclick = () => handleItemClick(f.path, f.type);
+
+                fileItem.innerHTML = `
+                    <div class="file-item-left">
+                        <span class="file-icon ${iconClass}">${icon}</span>
+                        <span class="file-name">${escapeHtml(f.name)}</span>
+                    </div>
+                    <div class="file-item-right">
+                        <span class="file-size">${sizeText}</span>
+                        <button class="btn btn-small btn-primary">${actionText}</button>
+                    </div>
+                `;
+
+                // 为按钮添加点击事件
+                const btn = fileItem.querySelector('button');
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    handleItemClick(f.path, f.type);
+                };
+
+                fileList.appendChild(fileItem);
+            });
+
+            container.appendChild(fileList);
+        }
+
+        // 更新路径面包屑
+        function updatePathBreadcrumb(path) {
+            const pathNav = document.getElementById('path-nav');
+            let html = '<a href="javascript:void(0)" onclick="loadFileList(\'\')">根目录</a>';
+
+            if (path) {
+                const parts = path.split('/');
+                let accPath = '';
+                parts.forEach((part, idx) => {
+                    accPath += (idx > 0 ? '/' : '') + part;
+                    html += ` <span class="separator">/</span> `;
+                    if (idx === parts.length - 1) {
+                        html += `<span class="current">${escapeHtml(part)}</span>`;
+                    } else {
+                        html += `<a href="javascript:void(0)" onclick="loadFileList('${escapeHtml(accPath)}')">${escapeHtml(part)}</a>`;
+                    }
+                });
+            }
+
+            pathNav.innerHTML = html;
+        }
+
+        // 更新返回按钮状态
+        function updateBackButton() {
+            const backBtn = document.getElementById('back-btn-path');
+            // 如果有多于一个历史记录，启用返回按钮
+            backBtn.disabled = pathHistory.length <= 1;
+        }
+
+        // 返回上一个路径
+        function goBackPath() {
+            if (pathHistory.length > 1) {
+                pathHistory.pop(); // 移除当前路径
+                const prevPath = pathHistory[pathHistory.length - 1];
+                // 不记录历史
+                currentPath = prevPath;
+                fetchAndRenderList(prevPath, false);
+            }
+        }
+
+        // 获取并渲染列表（可选是否记录历史）
+        async function fetchAndRenderList(path = '', recordHistory = true) {
+            if (recordHistory && path !== currentPath) {
+                if (!path.startsWith(currentPath) || currentPath === '') {
+                    pathHistory = currentPath ? [currentPath] : [];
+                }
+                pathHistory.push(path);
+            }
+
+            currentPath = path;
+
+            try {
+                const res = await fetch('/api/a2a/list?path=' + encodeURIComponent(path));
+                const data = await res.json();
+
+                if (data.success) {
+                    renderFileList(data.files);
+                    updatePathBreadcrumb(path);
+                    updateBackButton();
+                } else {
+                    showToast(data.message || '加载失败', 'error');
+                }
+            } catch (e) {
+                showToast('加载失败', 'error');
+            }
+        }
+
+        // 处理条目点击
+        function handleItemClick(path, type) {
+            if (type === 'folder') {
+                loadFileList(path);
+                hidePreview();
+            } else {
+                openFile(path);
+            }
+        }
+
+        // 打开文件
+        async function openFile(path) {
+            currentFile = path;
+
+            try {
+                const res = await fetch('/api/a2a/get?path=' + encodeURIComponent(path));
+                const data = await res.json();
+
+                if (data.success) {
+                    // 立即显示预览，不等待历史加载
+                    showPreview(path, data.content, data.extension, data.size);
+                    // 异步加载历史记录（不阻塞显示）
+                    loadHistory(path);
+                } else {
+                    showToast(data.message || '读取失败', 'error');
+                }
+            } catch (e) {
+                showToast('读取失败: ' + e.message, 'error');
+            }
+        }
+
+        // 显示预览
+        function showPreview(path, content, ext, size) {
+            document.getElementById('preview-section').style.display = 'block';
+            document.getElementById('file-section').style.display = 'none';
+
+            const title = path.split('/').pop();
+            document.getElementById('preview-title').textContent = title;
+            document.getElementById('preview-size-info').textContent = formatSize(size);
+
+            const previewContent = document.getElementById('preview-content');
+            previewContent.style.display = 'block';
+            document.getElementById('editor-box').style.display = 'none';
+
+            // 使用 setTimeout 延迟渲染大文件，避免阻塞 UI
+            setTimeout(() => {
+                if (ext === '.md') {
+                    previewContent.className = 'preview-content has-markdown';
+                    previewContent.innerHTML = marked.parse(content);
+                } else if (ext === '.json') {
+                    previewContent.className = 'preview-content code-view';
+                    try {
+                        const formatted = JSON.stringify(JSON.parse(content), null, 2);
+                        previewContent.innerHTML = '<pre><code>' + escapeHtml(formatted) + '</code></pre>';
+                    } catch {
+                        previewContent.innerHTML = '<pre><code>' + escapeHtml(content) + '</code></pre>';
+                    }
+                } else {
+                    previewContent.className = 'preview-content code-view';
+                    previewContent.innerHTML = '<pre><code>' + escapeHtml(content) + '</code></pre>';
+                }
+            }, 0);
+
+            // 存储原始内容用于编辑
+            document.getElementById('editor-textarea').value = content;
+            editMode = false;
+            document.getElementById('edit-btn').innerHTML = '&#9998; 编辑';
+
+            // 显示历史加载提示
+            document.getElementById('history-list').innerHTML = '<div style="color:#6b7280;">加载中...</div>';
+        }
+
+        // 加载 Git 历史
+        async function loadHistory(path) {
+            try {
+                const res = await fetch('/api/a2a/history?path=' + encodeURIComponent(path));
+                const data = await res.json();
+
+                if (data.success) {
+                    renderHistory(data.commits);
+                } else {
+                    document.getElementById('history-list').innerHTML = '<div style="color:#6b7280;">暂无历史记录</div>';
+                }
+            } catch (e) {
+                document.getElementById('history-list').innerHTML = '<div style="color:#6b7280;">加载失败</div>';
+            }
+        }
+
+        // 渲染历史记录
+        function renderHistory(commits) {
+            const el = document.getElementById('history-list');
+
+            if (!commits || commits.length === 0) {
+                el.innerHTML = '<div style="color:#6b7280;">暂无历史记录</div>';
+                return;
+            }
+
+            let html = '';
+            commits.forEach(c => {
+                html += `
+                    <div class="history-item" onclick="loadVersion('${c.hash}')">
+                        <span class="history-hash">${c.hash}</span>
+                        <span class="history-date">${c.date}</span>
+                        <span class="history-msg">${escapeHtml(c.message)}</span>
+                    </div>
+                `;
+            });
+            el.innerHTML = html;
+        }
+
+        // 加载历史版本
+        async function loadVersion(hash) {
+            if (!currentFile) return;
+
+            try {
+                const res = await fetch('/api/a2a/version?path=' + encodeURIComponent(currentFile) + '&hash=' + encodeURIComponent(hash));
+                const data = await res.json();
+
+                if (data.success) {
+                    showToast('已加载版本 ' + hash, 'info');
+                    document.getElementById('editor-textarea').value = data.content;
+
+                    // 进入编辑模式查看历史版本
+                    editMode = true;
+                    document.getElementById('editor-box').style.display = 'block';
+                    document.getElementById('preview-content').style.display = 'none';
+                    document.getElementById('edit-btn').innerHTML = '&#128065; 预览';
+                } else {
+                    showToast(data.message || '加载版本失败', 'error');
+                }
+            } catch (e) {
+                showToast('加载版本失败', 'error');
+            }
+        }
+
+        // 切换编辑模式
+        function toggleEditMode() {
+            editMode = !editMode;
+            const editorBox = document.getElementById('editor-box');
+            const previewContent = document.getElementById('preview-content');
+            const editBtn = document.getElementById('edit-btn');
+
+            if (editMode) {
+                editorBox.style.display = 'block';
+                previewContent.style.display = 'none';
+                editBtn.innerHTML = '&#128065; 预览';
+            } else {
+                // 从编辑器内容重新渲染预览
+                const content = document.getElementById('editor-textarea').value;
+                if (currentFile) {
+                    const ext = currentFile.split('.').pop();
+                    showPreview(currentFile, content, '.' + ext, content.length);
+                }
+            }
+        }
+
+        // 保存文件
+        async function saveFile() {
+            if (!currentFile) return;
+
+            const content = document.getElementById('editor-textarea').value;
+
+            try {
+                const res = await fetch('/api/a2a/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: currentFile, content })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showToast('保存成功', 'success');
+                    loadHistory(currentFile);
+                    // 更新预览
+                    const ext = currentFile.split('.').pop();
+                    showPreview(currentFile, content, '.' + ext, content.length);
+                } else {
+                    showToast(data.message || '保存失败', 'error');
+                }
+            } catch (e) {
+                showToast('保存失败', 'error');
+            }
+        }
+
+        // 删除文件
+        async function deleteCurrentFile() {
+            if (!currentFile) return;
+
+            if (!confirm('确定要删除 ' + currentFile + ' 吗？')) return;
+
+            try {
+                const res = await fetch('/api/a2a/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: currentFile })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showToast('删除成功', 'success');
+                    backToList();
+                    refreshList();
+                } else {
+                    showToast(data.message || '删除失败', 'error');
+                }
+            } catch (e) {
+                showToast('删除失败', 'error');
+            }
+        }
+
+        // 返回列表
+        function backToList() {
+            hidePreview();
+        }
+
+        // 隐藏预览
+        function hidePreview() {
+            document.getElementById('preview-section').style.display = 'none';
+            document.getElementById('file-section').style.display = 'block';
+            currentFile = null;
+        }
+
+        // 刷新列表
+        async function refreshList() {
+            showToast('正在刷新...', 'info');
+            await loadRoleTabs();
+            await loadFileList(currentPath);
+            showToast('刷新完成', 'success');
+        }
+
+        // 新建文件
+        function createNewFile() {
+            document.getElementById('new-file-name').value = '';
+            document.getElementById('modal-overlay').classList.add('show');
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.remove('show');
+        }
+
+        // 确认创建文件
+        async function confirmCreateFile() {
+            const name = document.getElementById('new-file-name').value.trim();
+
+            if (!name) {
+                showToast('请输入文件名', 'error');
+                return;
+            }
+
+            const ext = name.split('.').pop();
+            if (!['md', 'py', 'json'].includes(ext)) {
+                showToast('只支持 .md, .py, .json 文件', 'error');
+                return;
+            }
+
+            const path = currentPath ? currentPath + '/' + name : name;
+
+            try {
+                const res = await fetch('/api/a2a/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    closeModal();
+                    showToast('创建成功', 'success');
+                    refreshList();
+                    openFile(path);
+                } else {
+                    showToast(data.message || '创建失败', 'error');
+                }
+            } catch (e) {
+                showToast('创建失败', 'error');
+            }
+        }
+
+        // 初始化
+        async function init() {
+            // 加载背景图
+            try {
+                const res = await fetch('/api/fetch-background');
+                const data = await res.json();
+                if (data.success && data.bg_url) {
+                    document.getElementById('bg-container').style.backgroundImage = `url('${data.bg_url}')`;
+                }
+            } catch(e) {}
+
+            loadFileList();
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件下载 - FileOnTimer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        body.dark-theme {
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+        
+        .breadcrumb {
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        .breadcrumb a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        
+        .breadcrumb .current-page-title {
+            font-weight: bold;
+            color: #343a40;
+        }
+        
+        /* 夜间模式下的面包屑样式 */
+        body.dark-theme .breadcrumb {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .breadcrumb a {
+            color: #6cb7ff;
+        }
+        
+        body.dark-theme .breadcrumb a:hover {
+            color: #3a98ff;
+        }
+        
+        body.dark-theme .breadcrumb .current-page-title {
+            color: #f0f0f0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #ddd;
+        }
+        
+        .dark-theme .header {
+            border-bottom-color: #444;
+        }
+        
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .dark-theme .breadcrumb {
+            background-color: #2d2d2d;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .breadcrumb-item {
+            margin-right: 5px;
+            cursor: pointer;
+            color: #007bff;
+            text-decoration: none;
+        }
+        
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+        
+        .breadcrumb-separator {
+            margin: 0 5px;
+            color: #666;
+        }
+        
+        .file-list {
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .dark-theme .file-list {
+            background-color: #2d2d2d;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .dark-theme .file-item {
+            border-bottom-color: #444;
+        }
+        
+        .file-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .dark-theme .file-item:hover {
+            background-color: #3d3d3d;
+        }
+        
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        
+        .file-icon {
+            margin-right: 15px;
+            font-size: 24px;
+        }
+        
+        .file-info {
+            flex: 1;
+        }
+        
+        .file-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .file-size {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .dark-theme .file-size {
+            color: #aaa;
+        }
+        
+        .folder-icon {
+            color: #ffa500;
+        }
+        
+        .file-icon-text {
+            color: #007bff;
+        }
+        
+        .back-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .back-btn:hover {
+            background-color: #5a6268;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .dark-theme .loading {
+            color: #aaa;
+        }
+        
+        .theme-toggle {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .theme-toggle:hover {
+            background-color: #0056b3;
+        }
+
+        .settings-btn {
+            background-color: #6f42c1;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        .settings-btn:hover {
+            background-color: #5a2d91;
+        }
+        
+        .dark-theme .settings-btn {
+            background-color: #6f42c1;
+        }
+        
+        .dark-theme .settings-btn:hover {
+            background-color: #5a2d91;
+        }
+        
+        /* 设置面板样式 */
+        .settings-panel {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            max-width: 90%;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            padding: 20px;
+        }
+        
+        .dark-theme .settings-panel {
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+        }
+        
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .dark-theme .settings-header {
+            border-bottom-color: #444;
+        }
+        
+        .settings-title {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #666;
+        }
+        
+        .dark-theme .close-btn {
+            color: #aaa;
+        }
+        
+        .settings-content {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .command-list {
+            margin-bottom: 20px;
+        }
+        
+        .command-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        .dark-theme .command-item {
+            background-color: #3d3d3d;
+        }
+        
+        .command-input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        
+        .dark-theme .command-input {
+            background-color: #2d2d2d;
+            border-color: #555;
+            color: #e0e0e0;
+        }
+        
+        .remove-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .remove-btn:hover {
+            background-color: #c82333;
+        }
+        
+        .add-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        .add-btn:hover {
+            background-color: #218838;
+        }
+        
+        .save-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .save-btn:hover {
+            background-color: #0056b3;
+        }
+        
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+        
+        .empty-message {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+        
+        .dark-theme .empty-message {
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>FileOnTimer 文件下载</h1>
+            <div>
+                <button class="settings-btn" id="settings-btn">
+                    ⚙️ 设置面板
+                </button>
+                <button class="theme-toggle" id="theme-toggle">
+                    <span id="theme-icon">🌙</span> 夜间模式
+                </button>
+            </div>
+        </div>
+        
+        <div class="breadcrumb">
+            <a href="/">主页</a> &gt; <span class="current-page-title">文件定时器</span>
+        </div>
+        
+        <div class="file-list" id="file-list">
+            <div class="loading">加载中...</div>
+        </div>
+
+        <!-- 设置面板 -->
+        <div class="overlay" id="overlay"></div>
+        <div class="settings-panel" id="settings-panel">
+            <div class="settings-header">
+                <h2 class="settings-title">spideOnlineLog 命令配置</h2>
+                <button class="close-btn" id="close-settings">×</button>
+            </div>
+            <div class="settings-content">
+                <div class="command-list" id="command-list">
+                    <div class="empty-message">暂无命令配置</div>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <div>
+                        <button class="add-btn" id="add-command">添加命令</button>
+                        <button class="save-btn" id="save-commands">保存配置</button>
+                    </div>
+                    <button class="save-btn" id="execute-commands">执行命令</button>
+                </div>
+            </div>
+        </div>
+        
+
+    </div>
+    
+    <script>
+        // 夜间模式功能
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        
+        // 检查本地存储中的主题偏好
+        const isDarkMode = localStorage.getItem('darkMode') === 'true';
+        
+        // 应用保存的主题
+        if (isDarkMode) {
+            document.body.classList.add('dark-theme');
+            themeIcon.textContent = '☀️';
+        }
+        
+        // 添加主题切换事件
+        themeToggle.addEventListener('click', function() {
+            const isDark = document.body.classList.toggle('dark-theme');
+            themeIcon.textContent = isDark ? '☀️' : '🌙';
+            localStorage.setItem('darkMode', isDark);
+        });
+        
+        // 文件浏览器功能
+        let currentPath = 'FileOnTimer';
+        
+        // 加载文件列表
+        function loadFileList(path) {
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = '<div class="loading">加载中...</div>';
+            
+            fetch(`/api/fileontimer/list?path=${encodeURIComponent(path)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayFileList(data.files, path);
+                        updateBreadcrumb(path);
+                    } else {
+                        fileList.innerHTML = `<div class="loading">加载失败: ${data.message}</div>`;
+                    }
+                })
+                .catch(error => {
+                    fileList.innerHTML = `<div class="loading">加载失败: ${error.message}</div>`;
+                });
+        }
+        
+        // 显示文件列表
+        function displayFileList(files, path) {
+            const fileList = document.getElementById('file-list');
+            
+            if (files.length === 0) {
+                fileList.innerHTML = '<div class="loading">文件夹为空</div>';
+                return;
+            }
+            
+            let html = '';
+            
+            files.forEach(file => {
+                const isDirectory = file.is_directory;
+                const filePath = path + '/' + file.name;
+                const icon = isDirectory ? '📁' : '📄';
+                const size = isDirectory ? '' : formatFileSize(file.size);
+                const typeClass = isDirectory ? 'folder-icon' : 'file-icon-text';
+                
+                html += `
+                    <div class="file-item" onclick="${isDirectory ? `enterFolder('${filePath}')` : `downloadFile('${filePath}')`}">
+                        <div class="file-icon ${typeClass}">${icon}</div>
+                        <div class="file-info">
+                            <div class="file-name">${file.name}</div>
+                            ${size ? `<div class="file-size">${size}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            fileList.innerHTML = html;
+        }
+        
+        // 进入文件夹
+        function enterFolder(path) {
+            currentPath = path;
+            loadFileList(path);
+        }
+        
+        // 下载文件
+        function downloadFile(filePath) {
+            window.open(`/api/fileontimer/download?path=${encodeURIComponent(filePath)}`, '_blank');
+        }
+        
+        // 更新面包屑导航
+        function updateBreadcrumb(path) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            const parts = path.split('/');
+            
+            let html = '<a href="/" class="breadcrumb-item">首页</a>';
+            
+            let currentPath = '';
+            parts.forEach((part, index) => {
+                currentPath += (currentPath ? '/' : '') + part;
+                if (index < parts.length - 1) {
+                    html += `<span class="breadcrumb-separator">/</span><span class="breadcrumb-item" onclick="enterFolder('${currentPath}')">${part}</span>`;
+                } else {
+                    html += `<span class="breadcrumb-separator">/</span><span class="breadcrumb-item current">${part}</span>`;
+                }
+            });
+            
+            breadcrumb.innerHTML = html;
+        }
+        
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 设置面板功能
+        const settingsBtn = document.getElementById('settings-btn');
+        const settingsPanel = document.getElementById('settings-panel');
+        const overlay = document.getElementById('overlay');
+        const closeSettings = document.getElementById('close-settings');
+        const addCommandBtn = document.getElementById('add-command');
+        const saveCommandsBtn = document.getElementById('save-commands');
+        const executeCommandsBtn = document.getElementById('execute-commands');
+        const commandList = document.getElementById('command-list');
+        
+        let commands = [];
+        
+        // 打开设置面板
+        settingsBtn.addEventListener('click', function() {
+            loadCommands();
+            settingsPanel.style.display = 'block';
+            overlay.style.display = 'block';
+        });
+        
+        // 关闭设置面板
+        closeSettings.addEventListener('click', closeSettingsPanel);
+        overlay.addEventListener('click', closeSettingsPanel);
+        
+        function closeSettingsPanel() {
+            settingsPanel.style.display = 'none';
+            overlay.style.display = 'none';
+        }
+        
+        // 添加命令
+        addCommandBtn.addEventListener('click', function() {
+            commands.push('');
+            renderCommands();
+        });
+        
+        // 保存命令配置
+        saveCommandsBtn.addEventListener('click', function() {
+            saveCommands();
+        });
+        
+        // 执行命令
+        executeCommandsBtn.addEventListener('click', function() {
+            executeCommands();
+        });
+        
+        // 加载命令配置
+        function loadCommands() {
+            fetch('/api/spideorder/get')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        commands = data.commands || [];
+                        renderCommands();
+                    } else {
+                        alert('加载配置失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('加载配置失败: ' + error.message);
+                });
+        }
+        
+        // 渲染命令列表
+        function renderCommands() {
+            if (commands.length === 0) {
+                commandList.innerHTML = '<div class="empty-message">暂无命令配置</div>';
+                return;
+            }
+            
+            let html = '';
+            commands.forEach((command, index) => {
+                html += `
+                    <div class="command-item">
+                        <input type="text" class="command-input" value="${command}" 
+                               placeholder="输入spideOnlineLog.py执行命令" 
+                               oninput="updateCommand(${index}, this.value)">
+                        <button class="remove-btn" onclick="removeCommand(${index})">删除</button>
+                    </div>
+                `;
+            });
+            commandList.innerHTML = html;
+        }
+        
+        // 更新命令
+        function updateCommand(index, value) {
+            commands[index] = value;
+        }
+        
+        // 删除命令
+        function removeCommand(index) {
+            commands.splice(index, 1);
+            renderCommands();
+        }
+        
+        // 保存命令配置
+        function saveCommands() {
+            fetch('/api/spideorder/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ commands: commands })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('配置保存成功');
+                } else {
+                    alert('保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('保存失败: ' + error.message);
+            });
+        }
+        
+        // 执行命令
+        function executeCommands() {
+            fetch('/api/spideorder/execute', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('命令执行成功');
+                } else {
+                    alert('执行失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('执行失败: ' + error.message);
+            });
+        }
+        
+        // 初始化加载文件列表
+        loadFileList(currentPath);
+    </script>
+</body>
+</html>

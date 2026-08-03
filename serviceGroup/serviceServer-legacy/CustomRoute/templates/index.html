@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/icon/tabIcon.ico" type="image/x-icon">
+    <title>Windows服务管理工具 By Liz</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0; /* 移除body的padding，由container控制 */
+            background-color: transparent; /* 背景透明以露出底层背景图 */
+            display: flex; /* 使用flex布局 */
+            min-height: 100vh; /* 确保页面至少和视口一样高 */
+        }
+
+        .container {
+            display: flex;
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        .sidebar-wrapper {
+            display: flex;
+            align-items: center;
+            height: 100vh;
+            position: sticky;
+            top: 0;
+            z-index: 1001;
+            flex-shrink: 0;
+        }
+
+        .sidebar {
+            width: 0;
+            flex: 0 0 0;
+            background: rgba(255, 255, 255, 0.25); /* 降低背景不透明度 */
+            backdrop-filter: blur(15px); /* 增强玻璃模糊效果 */
+            -webkit-backdrop-filter: blur(15px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 4px 0 10px rgba(0,0,0,0.05);
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            height: 100%;
+        }
+
+        body.dark-theme .sidebar {
+            background: rgba(20, 20, 20, 0.3);
+            border-right-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .sidebar.expanded {
+            width: min(300px, 33vw);
+            flex: 0 0 min(300px, 33vw);
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 15px;
+            background: rgba(0, 123, 255, 0.4); /* 降低不透明度 */
+            color: white;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            width: 300px;
+            backdrop-filter: blur(5px);
+        }
+
+        body.dark-theme .sidebar-header {
+            background: rgba(0, 86, 179, 0.4);
+        }
+
+        .sidebar-header h3 {
+            margin: 0;
+            font-size: 1.2em;
+            font-weight: 600;
+            letter-spacing: 1px;
+            white-space: nowrap;
+        }
+
+        .toggle-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 20px 6px;
+            border-radius: 0 8px 8px 0;
+            cursor: pointer;
+            font-size: 0.9em;
+            box-shadow: 4px 0 8px rgba(0,123,255,0.3);
+            transition: all 0.2s ease;
+            margin-left: -1px;
+            z-index: 1002;
+        }
+
+        .toggle-button:hover {
+            background-color: #0056b3;
+            padding-right: 10px;
+        }
+
+        .sidebar-content {
+            width: 300px;
+            max-height: calc(100vh - 60px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 15px;
+        }
+
+        #friendlinks-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        #friendlinks-list li {
+            margin-bottom: 12px;
+            transition: transform 0.2s ease;
+        }
+
+        #friendlinks-list li:hover {
+            transform: translateX(5px);
+        }
+
+        #friendlinks-list a {
+            text-decoration: none;
+            color: #333;
+            display: flex;
+            flex-direction: row; /* 强制水平排列 */
+            align-items: center; /* 垂直居中对齐 */
+            padding: 10px 15px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.4); /* 半透明 */
+            backdrop-filter: blur(5px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.2s ease;
+            height: 60px; /* 增加高度以适应较大图标 */
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        body.dark-theme #friendlinks-list a {
+            background: rgba(45, 45, 45, 0.4);
+            color: #e0e0e0;
+            border-color: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        #friendlinks-list a:hover {
+            background: #f0f7ff;
+            border-color: #007bff;
+            color: #007bff;
+            box-shadow: 0 4px 12px rgba(0,123,255,0.15);
+        }
+
+        body.dark-theme #friendlinks-list a:hover {
+            background: #3a3a3a;
+            border-color: #007bff;
+            color: #007bff;
+        }
+
+        .friendlink-icon {
+            width: 40px; /* 增大图标以匹配图片 */
+            height: 40px;
+            margin-right: 15px;
+            border-radius: 8px;
+            object-fit: cover;
+            background: #fff;
+            padding: 0;
+            flex-shrink: 0;
+            display: block;
+            border: 1px solid #eee;
+        }
+
+        .friendlink-name {
+            font-size: 15px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1;
+            flex-grow: 1;
+        }
+
+        /* 页面背景图容器 */
+        .page-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -2; /* 最底层 */
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            opacity: 0.9; /* 显著提高透明度，使背景图清晰可见 */
+            transition: background-image 1s ease-in-out;
+        }
+
+        /* 背景遮罩，确保内容可读性 */
+        .page-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1; /* 背景图之上，内容之下 */
+            background: linear-gradient(135deg, rgba(245, 245, 245, 0.2) 0%, rgba(245, 245, 245, 0.1) 100%);
+            pointer-events: none;
+        }
+
+        body.dark-theme .page-overlay {
+            background: linear-gradient(135deg, rgba(18, 18, 18, 0.4) 0%, rgba(18, 18, 18, 0.2) 100%);
+        }
+
+        .main-content {
+            flex-grow: 1;
+            padding: 20px;
+            position: relative;
+            max-width: 1200px; /* 限制主内容的最大宽度 */
+            margin: 0 auto; /* 居中显示 */
+            width: 100%; /* 确保在小屏幕下占满全宽 */
+        }
+        
+        .breadcrumb {
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        .breadcrumb a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        
+        .breadcrumb .current-page-title {
+            font-weight: bold;
+            color: #343a40;
+        }
+        
+        /* 夜间模式下的面包屑样式 */
+        body.dark-theme .breadcrumb {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .breadcrumb a {
+            color: #6cb7ff;
+        }
+        
+        body.dark-theme .breadcrumb a:hover {
+            color: #3a98ff;
+        }
+        
+        body.dark-theme .breadcrumb .current-page-title {
+            color: #f0f0f0;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        
+        h2 {
+            color: #666;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.15); /* 显著降低背景不透明度，增强穿透感 */
+            backdrop-filter: blur(15px); /* 增强模糊感 */
+            -webkit-backdrop-filter: blur(15px);
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        body.dark-theme .card {
+            background: rgba(20, 20, 20, 0.2); /* 暗色模式下也更透明 */
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .service-grid {
+            display: block;
+            width: 100%;
+        }
+        
+        .game-panel {
+            background: rgba(255, 255, 255, 0.08); /* 极高透明度 */
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        body.dark-theme .game-panel {
+            background: rgba(20, 20, 20, 0.15);
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        .panel-header {
+            background-color: rgba(255, 255, 255, 0.1); /* 几乎全透明 */
+            padding: 15px 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: background-color 0.2s;
+        }
+
+        .panel-header:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        body.dark-theme .panel-header {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        body.dark-theme .panel-header:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        .panel-header h3 {
+            margin: 0;
+            color: #333;
+        }
+        
+        .toggle-icon {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .panel-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        
+        .panel-content.expanded {
+            max-height: 10000px; /* 增加最大高度以适应更多内容 */
+        }
+        
+        .panel-content .service-item {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .panel-content .service-item:last-child {
+            border-bottom: none;
+        }
+
+        .game-stats {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .game-stats span {
+            margin-left: 15px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-running {
+            background-color: rgba(212, 237, 218, 0.6);
+            color: #155724;
+        }
+        
+        .status-stopped {
+            background-color: rgba(248, 215, 218, 0.6);
+            color: #721c24;
+        }
+        
+        .status-starting {
+            background-color: rgba(255, 243, 205, 0.6);
+            color: #856404;
+        }
+        
+        .status-failed {
+            background-color: rgba(248, 215, 218, 0.6);
+            color: #721c24;
+        }
+        
+        .status-undeployed {
+            background-color: rgba(209, 236, 241, 0.6);
+            color: #0c5460;
+        }
+        
+        button {
+            background-color: rgba(0, 123, 255, 0.7); /* 半透明蓝色 */
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin-right: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            backdrop-filter: blur(2px);
+            transition: all 0.2s ease;
+        }
+        
+        button:hover {
+            background-color: rgba(0, 86, 179, 0.9);
+            transform: translateY(-1px);
+        }
+        
+        button:disabled {
+            background-color: rgba(108, 117, 125, 0.5);
+            cursor: not-allowed;
+        }
+        
+        button.stop {
+            background-color: rgba(220, 53, 69, 0.7);
+        }
+        
+        button.stop:hover {
+            background-color: rgba(189, 33, 48, 0.9);
+        }
+        
+        button.restart {
+            background-color: rgba(255, 193, 7, 0.7);
+            color: #212529;
+        }
+        
+        button.restart:hover {
+            background-color: rgba(224, 168, 0, 0.9);
+        }
+        
+        button.delete {
+            background-color: rgba(217, 83, 79, 0.7);
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            margin-left: 5px;
+            cursor: pointer;
+        }
+        button.delete:hover {
+            background-color: rgba(201, 48, 44, 0.9);
+        }
+        
+        button.deploy {
+            background-color: rgba(23, 162, 184, 0.7);
+        }
+        
+        button.deploy:hover {
+            background-color: rgba(19, 132, 150, 0.9);
+        }
+
+        button.update {
+            background-color: rgba(52, 58, 64, 0.7); /* 半透明深灰色 */
+        }
+
+        button.update:hover {
+            background-color: rgba(35, 39, 43, 0.9);
+        }
+        
+        /* 新增样式：使服务项更宽，适合单行显示 */
+        .service-item {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .service-info {
+            flex: 1;
+            min-width: 300px;
+        }
+        
+        .service-actions {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .sequence-item {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        body.dark-theme .sequence-item {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+        
+        .sequence-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .sequence-name {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .sequence-services {
+            font-size: 14px;
+            color: #666;
+            margin-left: 20px;
+        }
+        
+        .create-sequence-btn {
+            background-color: #28a745;
+        }
+        
+        .create-sequence-btn:hover {
+            background-color: #218838;
+        }
+        
+        .execute-sequence-btn {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .execute-sequence-btn:hover {
+            background-color: #e0a800;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .loading-content {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .sequence-controls {
+            margin-bottom: 15px;
+        }
+
+        .sequence-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .sequence-item {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: #f9f9f9;
+        }
+
+        .sequence-item h4 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .loading, .no-sequences, .error {
+            padding: 20px;
+            text-align: center;
+            color: #666;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        
+        .sequence-container {
+            background: rgba(255, 255, 255, 0.08); /* 提升穿透感 */
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .sequence-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .sequence-list {
+            margin-bottom: 15px;
+        }
+        
+        .sequence-item {
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .sequence-item:hover {
+            background-color: rgba(240, 247, 255, 0.3);
+        }
+        
+        .button {
+            display: inline-block;
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        
+        .button:hover {
+            background-color: #0b7dda;
+        }
+        
+        .create-sequence-btn {
+            background-color: #28a745;
+        }
+        
+        .create-sequence-btn:hover {
+            background-color: #218838;
+        }
+        
+        .loading, .no-sequences, .error {
+            padding: 20px;
+            text-align: center;
+            color: #666;
+        }
+        .error {
+            color: #f44336;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            text-decoration: none;
+        }
+
+        .button:hover {
+            background-color: #0b7dda;
+        }
+        
+        @media (max-width: 768px) {
+            .service-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .service-info {
+                min-width: 100%;
+            }
+        }
+
+        /* 工具栏样式 */
+        .toolbar {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+        }
+        
+        /* 夜间模式按钮样式 */
+        .theme-toggle {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0;
+        }
+        
+        .theme-toggle:hover {
+            background-color: #0056b3;
+        }
+        
+        .theme-toggle:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: -30px;
+            right: 0;
+            background-color: #333;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1001;
+        }
+        
+        /* 夜间模式样式 */
+        body.dark-theme {
+            background-color: transparent; /* 保持透明以露出背景图 */
+            color: #e0e0e0;
+        }
+        
+        body.dark-theme .card,
+        body.dark-theme .game-panel,
+        body.dark-theme .loading-content,
+        body.dark-theme .sequence-container {
+            background: rgba(30, 30, 30, 0.4);
+            color: #e0e0e0;
+        }
+        
+        body.dark-theme h1,
+        body.dark-theme h2,
+        body.dark-theme h3,
+        body.dark-theme h4 {
+            color: #f0f0f0;
+        }
+        
+        body.dark-theme .panel-header {
+            background-color: rgba(30, 30, 30, 0.2);
+            border-bottom-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        body.dark-theme .panel-content .service-item {
+            border-bottom-color: #444;
+        }
+        
+        body.dark-theme .game-stats {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .toggle-icon {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .sequence-item {
+            background-color: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        body.dark-theme .sequence-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        body.dark-theme .sequence-name {
+            color: #f0f0f0;
+        }
+        
+        body.dark-theme .sequence-services {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .loading,
+        body.dark-theme .no-sequences {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .error {
+            color: #ff6b6b;
+        }
+
+        .config-btn {
+            background-color: rgba(0, 123, 255, 0.7);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            backdrop-filter: blur(2px);
+        }
+        
+        .config-btn:hover {
+            background-color: rgba(0, 86, 179, 0.9);
+        }
+
+        /* 夜间模式下的配置按钮样式 */
+        body.dark-theme .config-btn {
+            background-color: rgba(0, 123, 255, 0.6);
+        }
+        
+        body.dark-theme .config-btn:hover {
+            background-color: rgba(0, 86, 179, 0.8);
+        }
+
+        .currency-btn {
+            background-color: rgba(40, 167, 69, 0.7);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            backdrop-filter: blur(2px);
+        }
+        
+        .currency-btn:hover {
+            background-color: rgba(33, 136, 56, 0.9);
+        }
+        
+        /* 夜间模式下的设置货币按钮样式 */
+        body.dark-theme .currency-btn {
+            background-color: rgba(40, 167, 69, 0.6);
+        }
+        
+        body.dark-theme .currency-btn:hover {
+            background-color: rgba(33, 136, 56, 0.8);
+        }
+
+        .download-log-btn {
+            background-color: rgba(23, 162, 184, 0.7);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            backdrop-filter: blur(2px);
+        }
+        
+        .download-log-btn:hover {
+            background-color: rgba(19, 132, 150, 0.9);
+        }
+        
+        /* 夜间模式下的下载日志按钮样式 */
+        body.dark-theme .download-log-btn {
+            background-color: rgba(23, 162, 184, 0.6);
+        }
+        
+        body.dark-theme .download-log-btn:hover {
+            background-color: rgba(19, 132, 150, 0.8);
+        }
+
+        .server-status-btn {
+            background-color: rgba(111, 66, 193, 0.7);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            backdrop-filter: blur(2px);
+        }
+        
+        .server-status-btn:hover {
+            background-color: rgba(90, 45, 145, 0.9);
+        }
+        
+        /* 夜间模式下的服务器状态按钮样式 */
+        body.dark-theme .server-status-btn {
+            background-color: rgba(111, 66, 193, 0.6);
+        }
+        
+        body.dark-theme .server-status-btn:hover {
+            background-color: rgba(90, 45, 145, 0.8);
+        }
+
+        .svn-update-btn {
+            background-color: rgba(40, 167, 69, 0.7); /* 半透明绿色 */
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            backdrop-filter: blur(2px);
+        }
+
+        .svn-update-btn:hover {
+            background-color: rgba(33, 136, 56, 0.9);
+        }
+
+        .svn-update-btn:disabled {
+            background-color: #6c757d; /* 灰色 */
+            cursor: not-allowed;
+        }
+
+        /* 不活动提示信息样式 */
+        .inactivity-hint {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            color: rgba(255, 255, 255, 0.7); /* 醒目但不过于突兀 */
+            font-size: 14px; /* 较小 */
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 8px 12px;
+            border-radius: 5px;
+            z-index: 9999; /* 确保在最上层 */
+            display: none; /* 默认隐藏 */
+        }
+
+        /* AI管理按钮样式 */
+        .ai-manager-btn {
+            background-color: rgba(156, 39, 176, 0.7);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            backdrop-filter: blur(2px);
+        }
+
+        .ai-manager-btn:hover {
+            background-color: rgba(123, 31, 162, 0.9);
+        }
+
+        body.dark-theme .ai-manager-btn {
+            display: inline-block !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="bg-container" class="page-background"></div>
+    <div class="page-overlay"></div>
+    <div class="container">
+        <div class="sidebar-wrapper">
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <h3>友情链接</h3>
+                </div>
+                <div class="sidebar-content" id="friendlinks-content">
+                    <ul id="friendlinks-list">
+                        <!-- 友链将在这里动态加载 -->
+                    </ul>
+                </div>
+            </div>
+            <button id="toggle-friendlinks" class="toggle-button">▶</button>
+        </div>
+
+        <div class="main-content">
+            <div class="breadcrumb">
+                <span class="current-page-title">主页</span>
+            </div>
+            <h1>Windows服务管理工具 By Liz</h1>
+            <div class="toolbar">
+                <button id="svn-update-btn" class="svn-update-btn" onclick="updateSvn()">
+                    <span id="svn-status-text">检查SVN状态...</span>
+                </button>
+                <button class="config-btn" onclick="window.location.href='/onlineConfigModify'">⚙️ 在线配置修改</button>
+                <button class="server-status-btn" onclick="window.location.href='/serverstatus'">🖥️ 服务器状态</button>
+                <button class="currency-btn" onclick="window.location.href='/deposit'">💰 设置货币</button>
+                <button class="download-log-btn" onclick="window.location.href='/fileontimer'">📥 下载日志</button>
+                <button id="ai-manager-btn" class="ai-manager-btn" onclick="window.location.href='/ai-manager'" style="display:none;">🤖 AI管理</button>
+                <button id="theme-toggle" class="theme-toggle">
+                    <span id="theme-icon">🌙</span> 夜间模式
+                </button>
+            </div>
+
+            <!-- 序列管理区域 -->
+            <div class="sequence-container">
+                <div class="sequence-header">
+                    <h2>使用启动序列启动服务（会跳过已启动的服务）</h2>
+                    <a href="/sequence" class="button create-sequence-btn">去添加序列</a>
+                </div>
+                
+                <div class="sequence-list" id="sequence-list">
+                    <div id="sequence-loading" class="loading">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 加载遮罩层 -->
+            <div class="loading-overlay" id="loading-overlay" style="display: none;">
+                <div class="loading-content">
+                    <p id="loading-message">正在执行启动序列，请稍候...</p>
+                </div>
+            </div>
+
+
+            <h2 id="service-status-title">服务状态</h2>
+            <div class="service-grid" id="service-grid">
+                <!-- 服务项将通过JavaScript动态生成 -->
+            </div>
+
+            <!-- 隐藏的文件选择框 -->
+            <input type="file" id="service-file-input" style="display: none;" onchange="handleFileSelect(event)" multiple>
+        </div>
+    </div>
+    <div id="inactivity-hint" class="inactivity-hint">左键点击恢复状态</div>
+    
+    <script>
+        // 全局变量，用于存储当前正在更新的服务信息
+        let currentUpdateService = null;
+
+        function triggerUpdateFile(name, type, exe) {
+            currentUpdateService = { name, type, exe };
+            document.getElementById('service-file-input').click();
+        }
+
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0 || !currentUpdateService) return;
+
+            let exeFile = null;
+            let pdbFile = null;
+
+            // 遍历选中的文件，找到 .exe 和 .pdb
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const fileNameLower = file.name.toLowerCase();
+                if (fileNameLower.endsWith('.exe')) {
+                    exeFile = file;
+                } else if (fileNameLower.endsWith('.pdb')) {
+                    pdbFile = file;
+                }
+            }
+
+            // 验证文件选择
+            if (!exeFile) {
+                alert('请选择一个 .exe 文件进行更新。');
+                event.target.value = '';
+                return;
+            }
+            if (!pdbFile) {
+                alert('请选择一个 .pdb 文件进行更新。');
+                event.target.value = '';
+                return;
+            }
+
+            // 验证文件名是否匹配 (基本名称)
+            const exeBaseName = exeFile.name.toLowerCase().replace(/\.exe$/, '');
+            const pdbBaseName = pdbFile.name.toLowerCase().replace(/\.pdb$/, '');
+
+            if (exeBaseName !== pdbBaseName) {
+                alert(`选中的 .exe 文件 (${exeFile.name}) 和 .pdb 文件 (${pdbFile.name}) 的文件名不匹配！`);
+                event.target.value = '';
+                return;
+            }
+
+            // 验证 .exe 文件名是否与当前服务配置的 .exe 名称一致
+            if (exeFile.name.toLowerCase() !== currentUpdateService.exe.toLowerCase()) {
+                alert(`选中的 .exe 文件名 ${exeFile.name} 与配置的 ${currentUpdateService.exe} 不匹配！`);
+                event.target.value = '';
+                return;
+            }
+
+            if (!confirm(`确定要更新服务 ${currentUpdateService.name} (${currentUpdateService.type}) 的文件吗？\n将替换 ${exeFile.name} 和 ${pdbFile.name}。\n服务将被停止，替换文件后重新启动。`)) {
+                event.target.value = '';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file_exe', exeFile);
+            formData.append('file_pdb', pdbFile); // 添加 PDB 文件
+            formData.append('name', currentUpdateService.name);
+            formData.append('type', currentUpdateService.type);
+            formData.append('exe', currentUpdateService.exe);
+
+            // 显示加载遮罩
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const loadingMessage = document.getElementById('loading-message');
+            loadingOverlay.style.display = 'flex';
+            loadingMessage.textContent = `正在更新服务 ${currentUpdateService.name}...`;
+
+            fetch('/api/services/update', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingOverlay.style.display = 'none';
+                if (data.success) {
+                    alert('服务更新成功！');
+                    updateServiceStatus();
+                } else {
+                    alert('服务更新失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                loadingOverlay.style.display = 'none';
+                console.error('Error:', error);
+                alert('更新服务时发生错误');
+            })
+            .finally(() => {
+                event.target.value = ''; // 清空选择
+                currentUpdateService = null;
+            });
+        }
+
+        const themeToggleButtons = document.querySelectorAll('.theme-toggle');
+        const themeIcons = document.querySelectorAll('#theme-icon');
+        
+        // 检查本地存储中的主题偏好
+        const isDarkMode = localStorage.getItem('darkMode') === 'true';
+        
+        // 应用保存的主题
+        if (isDarkMode) {
+            document.body.classList.add('dark-theme');
+            themeIcons.forEach(icon => {
+                icon.textContent = '☀️';
+            });
+        }
+        
+        // 为所有夜间模式按钮添加主题切换事件
+        themeToggleButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const isDark = document.body.classList.toggle('dark-theme');
+                
+                // 更新所有图标
+                themeIcons.forEach(icon => {
+                    icon.textContent = isDark ? '☀️' : '🌙';
+                });
+                
+                // 保存主题偏好到本地存储
+        localStorage.setItem('darkMode', isDark);
+    });
+});
+
+        // SVN 更新相关逻辑
+        const svnUpdateButton = document.getElementById('svn-update-btn');
+        const svnStatusText = document.getElementById('svn-status-text');
+
+        async function checkSvnStatus() {
+            try {
+                const response = await fetch('/api/svn/status');
+                const data = await response.json();
+
+                if (data.success) {
+                    if (data.is_latest) {
+                        svnStatusText.textContent = '已经是最新版本';
+                        svnUpdateButton.disabled = true;
+                        svnUpdateButton.style.backgroundColor = '#6c757d'; // 灰色
+                        svnUpdateButton.style.cursor = 'not-allowed';
+                    } else {
+                        svnStatusText.textContent = '更新到最新版本';
+                        svnUpdateButton.disabled = false;
+                        svnUpdateButton.style.backgroundColor = '#28a745'; // 绿色
+                        svnUpdateButton.style.cursor = 'pointer';
+                    }
+                } else {
+                    svnStatusText.textContent = `SVN状态检查失败: ${data.message}`;
+                    svnUpdateButton.disabled = true;
+                    svnUpdateButton.style.backgroundColor = '#dc3545'; // 红色
+                    svnUpdateButton.style.cursor = 'not-allowed';
+                }
+            } catch (error) {
+                console.error('获取SVN状态失败:', error);
+                svnStatusText.textContent = 'SVN状态检查失败';
+                svnUpdateButton.disabled = true;
+                svnUpdateButton.style.backgroundColor = '#dc3545'; // 红色
+                svnUpdateButton.style.cursor = 'not-allowed';
+            }
+        }
+
+        async function updateSvn() {
+            if (svnUpdateButton.disabled) return;
+
+            if (!confirm('确定要执行SVN更新吗？')) {
+                return;
+            }
+
+            svnStatusText.textContent = '正在更新SVN...';
+            svnUpdateButton.disabled = true;
+            svnUpdateButton.style.backgroundColor = '#ffc107'; // 黄色
+            svnUpdateButton.style.cursor = 'not-allowed';
+
+            try {
+                const response = await fetch('/api/svn/update', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('SVN更新成功！');
+                } else {
+                    alert('SVN更新失败: ' + data.message);
+                }
+            } catch (error) {
+                console.error('执行SVN更新失败:', error);
+                alert('执行SVN更新失败: ' + error.message);
+            } finally {
+                checkSvnStatus(); // 更新完成后重新检查状态
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            updateServiceStatus(); // 初始加载服务状态
+            checkSvnStatus();
+            setInterval(checkSvnStatus, 30000); // 每30秒更新一次SVN状态
+            updateSequenceList(); // 初始加载序列列表
+            loadFriendLinks(); // 加载友链
+            loadPageBackground(); // 加载背景图
+        });
+
+        // 加载背景图
+        async function loadPageBackground(force = false) {
+            try {
+                const response = await fetch(`/api/fetch-background${force ? '?force=true' : ''}`);
+                const data = await response.json();
+                if (data.success && data.bg_url) {
+                    const bgContainer = document.getElementById('bg-container');
+                    // 添加时间戳防止浏览器缓存
+                    const bgUrlWithTimestamp = force ? `${data.bg_url}?t=${Date.now()}` : data.bg_url;
+                    bgContainer.style.backgroundImage = `url('${bgUrlWithTimestamp}')`;
+                    return data;
+                }
+                return data;
+            } catch (error) {
+                console.error('加载背景图失败:', error);
+                throw error;
+            }
+        }
+
+        /* 测试背景爬取函数已移除 */
+
+        // 友链折叠/展开功能
+        document.getElementById('toggle-friendlinks').addEventListener('click', function() {
+            const sidebar = document.querySelector('.sidebar');
+            const button = this;
+            sidebar.classList.toggle('expanded');
+            if (sidebar.classList.contains('expanded')) {
+                button.textContent = '◀';
+            } else {
+                button.textContent = '▶';
+            }
+        });
+
+        // 加载友链
+        async function loadFriendLinks() {
+            try {
+                const response = await fetch('/api/friendlinks');
+                const data = await response.json();
+
+                if (data.success) {
+                    const friendlinksList = document.getElementById('friendlinks-list');
+                    friendlinksList.innerHTML = ''; // 清空现有列表
+
+                    for (const link of data.friendlinks) {
+                        let displayName = link.name;
+                        // 统一默认图标为 defaultIcon.webp
+                        let defaultIcon = '/static/icon/defaultIcon.webp';
+                        let faviconUrl = defaultIcon;
+                        
+                        // 预解析域名
+                        let domain = '';
+                        try {
+                            const urlObj = new URL(link.url.startsWith('http') ? link.url : 'http://' + link.url);
+                            domain = urlObj.hostname;
+                        } catch(e) {}
+
+                        // 备选方案列表
+                        const fallbacks = [
+                            `https://www.google.com/s2/favicons?domain=${domain}&sz=128`, // 增大尺寸
+                            `https://icon.horse/icon/${domain}`,
+                            defaultIcon
+                        ];
+                        let currentFallbackIdx = 0;
+
+                        // 创建列表项
+                        const listItem = document.createElement('li');
+                        const linkElement = document.createElement('a');
+                        linkElement.href = link.url;
+                        linkElement.target = '_blank';
+                        
+                        // 先渲染基础结构，displayName 缺省时显示 '正在获取名称...'
+                        linkElement.innerHTML = `
+                            <img src="${faviconUrl}" class="friendlink-icon" onerror="this.src='${defaultIcon}'; this.onerror=null;">
+                            <span class="friendlink-name">${displayName || '正在获取名称...'}</span>
+                        `;
+                        
+                        const iconImg = linkElement.querySelector('.friendlink-icon');
+                        const nameSpan = linkElement.querySelector('.friendlink-name');
+
+                        // 设置 onerror 链式处理
+                        iconImg.onerror = function() {
+                            if (currentFallbackIdx < fallbacks.length) {
+                                this.src = fallbacks[currentFallbackIdx++];
+                            } else {
+                                this.src = defaultIcon;
+                                this.onerror = null;
+                            }
+                        };
+
+                        // 异步获取元数据（标题和图标）
+                        (async () => {
+                            try {
+                                const metaResponse = await fetch(`/api/fetch-metadata?url=${encodeURIComponent(link.url)}`);
+                                const metaData = await metaResponse.json();
+                                if (metaData.success) {
+                                    // 无论如何，只要 JSON 里没给名称，就优先使用爬取到的标题
+                                    if (!link.name && metaData.title) {
+                                        nameSpan.textContent = metaData.title;
+                                    } else if (!link.name) {
+                                        nameSpan.textContent = link.url; // 实在拿不到标题才显示 URL
+                                    }
+                                    
+                                    if (metaData.favicon) {
+                                        iconImg.src = metaData.favicon;
+                                    }
+                                } else {
+                                    if (!displayName) nameSpan.textContent = link.url;
+                                    iconImg.src = fallbacks[currentFallbackIdx++];
+                                }
+                            } catch (error) {
+                                if (!displayName) nameSpan.textContent = link.url;
+                                iconImg.src = fallbacks[currentFallbackIdx++];
+                            }
+                        })();
+
+                        listItem.appendChild(linkElement);
+                        friendlinksList.appendChild(listItem);
+                    }
+                } else {
+                    console.error('获取友链失败:', data.message);
+                }
+            } catch (error) {
+                console.error('加载友链时发生错误:', error);
+            }
+        }
+        
+
+        let expandedGames = new Set();
+        function updateServiceStatus() {
+                    fetch('/api/services/status')
+                        .then(response => response.json())
+                        .then(data => {
+                            const serviceGrid = document.getElementById('service-grid');
+                            serviceGrid.innerHTML = '';
+                            
+                            // 获取所有服务配置（从数据中提取所有唯一的游戏名称和服务配置）
+// 这里我们需要确保即使未部署的服务也会显示
+                            // 为了简化，我们将当前数据作为所有配置的来源
+                            // 实际应用中可能需要从专门的API获取所有配置
+                            const allServices = {};
+                            const gameGroups = {};
+                            
+                            // 按游戏名称分组服务
+                            for (const [serviceId, serviceInfo] of Object.entries(data)) {
+                                if (!gameGroups[serviceInfo.name]) {
+                                    gameGroups[serviceInfo.name] = [];
+                                }
+                                gameGroups[serviceInfo.name].push(serviceInfo);
+                            }
+                            
+                            // 为每个游戏创建折叠面板
+                            for (const [gameName, services] of Object.entries(gameGroups)) {
+                                // 创建游戏折叠面板容器
+                                const gamePanel = document.createElement('div');
+                                gamePanel.className = 'game-panel';
+                                
+                                // 创建面板标题栏
+                                const panelHeader = document.createElement('div');
+                                panelHeader.className = 'panel-header';
+                                panelHeader.innerHTML = `
+                                    <h3>${gameName} <span class="toggle-icon">▼</span></h3>
+                                    <div class="game-stats">
+                                        <span>总服务数: ${services.length}</span>
+                                        <span>运行中: ${services.filter(s => s.status === '运行中').length}</span>
+                                    </div>
+                                `;
+                                
+                                // 创建面板内容区域
+                                const panelContent = document.createElement('div');
+                                panelContent.className = 'panel-content';
+                                
+                                // 根据存储的状态决定是否展开
+                                if (expandedGames.has(gameName)) {
+                                    panelContent.classList.add('expanded');
+                                    panelHeader.querySelector('.toggle-icon').textContent = '▲';
+                                }
+                                
+                                // 添加该游戏下的所有服务
+                                services.forEach(serviceInfo => {
+                                    const serviceItem = document.createElement('div');
+                                    serviceItem.className = 'service-item';
+                                    
+                                    let statusClass = 'status-stopped';
+                                    if (serviceInfo.status === '运行中') statusClass = 'status-running';
+                                    if (serviceInfo.status === '启动中') statusClass = 'status-starting';
+                                    if (serviceInfo.status === '启动失败') statusClass = 'status-failed';
+                                    // 添加未部署状态样式
+                                    if (serviceInfo.status === '未部署') statusClass = 'status-undeployed';
+                                    
+                                    // 检查服务是否正在启动或已经启动
+                                    const isRunning = serviceInfo.status === '运行中' || serviceInfo.status === '启动中';
+                                    // 检查服务是否已部署
+                                    const isDeployed = serviceInfo.status !== '未部署';
+                                    
+                                    // 根据服务状态设置不同的操作按钮
+                                    let actionButtons = '';
+                                    if (isDeployed) {
+                                        actionButtons = `
+                                            <button class="update" onclick="triggerUpdateFile('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">更新</button>
+                                            <button onclick="startService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')" 
+                                                    ${isRunning ? 'disabled' : ''}>启动</button>
+                                            <button class="stop" onclick="stopService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')" 
+                                                    ${!isRunning ? 'disabled' : ''}>停止</button>
+                                            <button class="restart" onclick="restartService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')" 
+                                                    ${serviceInfo.status === '启动中' ? 'disabled' : ''}>重启</button>
+                                            <button class="delete" onclick="deleteService('${serviceInfo.name}', '${serviceInfo.type}')">删除部署</button>
+                                        `;
+                                    } else {
+                                        actionButtons = `
+                                            <button class="deploy" onclick="deployService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">部署服务</button>
+                                        `;
+                                    }
+                                    
+                                    serviceItem.innerHTML = `
+                                        <div class="service-info">
+                                            <h4>${serviceInfo.display_name}</h4>
+                                            <p>类型: ${serviceInfo.type}</p>
+                                            <p>可执行文件: ${serviceInfo.exe}</p>
+                                            <p>端口: ${serviceInfo.ports || 'N/A'}</p>
+                                            <div class="status ${statusClass}">${serviceInfo.status}</div>
+                                        </div>
+                                        <div class="service-actions">
+                                            ${actionButtons}
+                                        </div>
+                                    `;
+                                    
+                                    panelContent.appendChild(serviceItem);
+                                });
+                                
+                                // 添加点击事件，实现折叠/展开功能
+                                panelHeader.addEventListener('click', function() {
+                                    const isExpanded = panelContent.classList.contains('expanded');
+                                    
+                                    if (isExpanded) {
+                                        panelContent.classList.remove('expanded');
+                                        panelHeader.querySelector('.toggle-icon').textContent = '▼';
+                                        expandedGames.delete(gameName);
+                                    } else {
+                                        panelContent.classList.add('expanded');
+                                        panelHeader.querySelector('.toggle-icon').textContent = '▲';
+                                        expandedGames.add(gameName);
+                                    }
+                                });
+                                
+                                // 将标题栏和内容区域添加到面板容器
+                                gamePanel.appendChild(panelHeader);
+                                gamePanel.appendChild(panelContent);
+                                
+                                // 将游戏面板添加到网格中
+                                serviceGrid.appendChild(gamePanel);
+                            }
+                        });
+        }
+        // 启动服务
+        function startService(name, type, exe) {
+            fetch('/api/services/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, type: type, exe: exe })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除alert提示
+                updateServiceStatus();
+            });
+        }
+        
+        // 启动所有服务
+        function startAllServices() {
+            if (!confirm('确定要启动所有服务吗？')) return;
+            fetch('/api/services/start-all', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    updateServiceStatus();
+                });
+        }
+
+        // 更新所有服务状态
+        function updateAllServices() {
+            updateServiceStatus();
+            checkSvnStatus();
+            alert('状态已更新');
+        }
+
+        // 停止服务
+        function stopService(name, type, exe) {
+            // 移除confirm确认框
+            fetch('/api/services/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, type: type, exe: exe })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除alert提示
+                updateServiceStatus();
+            });
+        }
+        
+        // 重启服务中的stop调用也需要修改
+        function restartService(name, type, exe) {
+            // 先停止服务，然后再启动服务
+            fetch('/api/services/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, type: type, exe: exe })
+            })
+            .then(() => {
+                // 等待1秒后启动服务
+                setTimeout(() => {
+                    startService(name, type, exe);
+                }, 1000);
+            });
+        }
+
+        function deleteService(name, type) {
+            if (confirm('确定要删除这个服务的部署吗？配置信息将被保留。')) {
+                fetch('/api/services/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({name: name, type: type})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 刷新服务列表
+                        updateServiceStatus();
+                    } else {
+                        alert('删除失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('删除服务时发生错误');
+                });
+            }
+        }
+        function deployService(name, type, exe) {
+            fetch('/api/services/deploy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, type: type, exe: exe })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 更新服务列表
+                    updateServiceStatus();
+                } else {
+                    alert('部署失败: ' + data.message);
+                }
+            });
+        }
+        
+        // 初始加载和定期更新服务状态
+        updateServiceStatus();
+        setInterval(updateServiceStatus, 3000); // 每3秒更新一次
+    </script>
+
+    <script>
+        function updateSequenceList() {
+            const sequenceList = document.getElementById('sequence-list');
+            const loadingElement = document.getElementById('sequence-loading');
+            
+            // 显示加载状态
+            loadingElement.style.display = 'block';
+            
+            // 获取所有序列
+            fetch('/api/script/get-all')
+                .then(response => response.json())
+                .then(data => {
+                    sequenceList.innerHTML = '';
+                    
+                    // 隐藏加载状态
+                    loadingElement.style.display = 'none';
+                    
+                    // 检查响应是否成功
+                    if (!data || !data.success) {
+                        sequenceList.innerHTML = '<div class="error">' + (data ? data.message : '加载序列列表失败') + '</div>';
+                        return;
+                    }
+                    
+                    // 获取scripts数组
+                    const scripts = data.scripts || [];
+                    
+                    // 检查是否有序列
+                    if (scripts.length === 0) {
+                        sequenceList.innerHTML = '<div class="no-sequences">暂无保存的序列</div>';
+                        return;
+                    }
+                    
+                    // 生成序列列表项
+                    scripts.forEach(scriptItem => {
+                        const sequenceItem = document.createElement('div');
+                        sequenceItem.className = 'sequence-item';
+                        sequenceItem.textContent = scriptItem.name;
+                        
+                        // 添加点击事件，执行序列
+                        sequenceItem.addEventListener('click', function() {
+                            executeNamedSequence(scriptItem.name);
+                        });
+                        
+                        sequenceList.appendChild(sequenceItem);
+                    });
+                })
+                .catch(error => {
+                    console.error('加载序列列表失败:', error);
+                    loadingElement.style.display = 'none';
+                    sequenceList.innerHTML = '<div class="error">加载序列列表时发生错误</div>';
+                });
+        }
+        // 执行指定名称的序列
+        function executeNamedSequence(sequenceName) {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const loadingMessage = document.getElementById('loading-message');
+            
+            // 显示加载遮罩
+            loadingOverlay.style.display = 'flex';
+            loadingMessage.textContent = `正在执行序列 "${sequenceName}"，请稍候...`;
+            
+            // 调用API执行序列
+            fetch(`/api/script/execute/${sequenceName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 隐藏加载遮罩
+                loadingOverlay.style.display = 'none';
+                
+                // 显示操作结果
+                if (data.success) {
+                    alert(`序列 "${sequenceName}" 执行成功！`);
+                } else {
+                    alert(`序列 "${sequenceName}" 执行失败: ${data.message || '未知错误'}`);
+                }
+            })
+            .catch(error => {
+                console.error('执行序列失败:', error);
+                loadingOverlay.style.display = 'none';
+                alert(`执行序列 "${sequenceName}" 时发生错误`);
+            });
+        }
+        // 初始加载序列列表
+        updateSequenceList();
+        
+        // 定期更新序列列表（每30秒）
+        // setInterval(updateSequenceList, 30000);
+
+        // 不活动检测功能
+        let inactivityTimeout;
+        let isHidden = false;
+        let hideForBGEnabled = false; // 从config.json加载
+
+        const elementsToHide = [
+            document.querySelector('.sidebar-wrapper'),
+            document.querySelector('.toolbar'),
+            document.querySelector('.sequence-container'),
+            document.querySelector('h1'), // Windows服务管理工具 By Liz
+            document.querySelector('.breadcrumb'),
+            document.getElementById('service-status-title'),
+            document.getElementById('service-grid')
+        ];
+        const inactivityHint = document.getElementById('inactivity-hint');
+
+        // 从config.json加载hideForBG配置
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config'); // 假设有一个API端点来获取config.json
+                const config = await response.json();
+                if (config && typeof config.hideForBG !== 'undefined') {
+                    hideForBGEnabled = config.hideForBG;
+                }
+            } catch (error) {
+                console.error('加载config.json失败:', error);
+            }
+        }
+
+        function hideElements() {
+            if (!hideForBGEnabled) return;
+            if (isHidden) return;
+
+            elementsToHide.forEach(el => {
+                if (el) el.style.display = 'none';
+            });
+            if (inactivityHint) inactivityHint.style.display = 'block';
+            isHidden = true;
+        }
+
+        function showElements() {
+            if (!hideForBGEnabled) return;
+            if (!isHidden) return;
+
+            elementsToHide.forEach(el => {
+                if (el) el.style.display = ''; // 恢复默认显示
+            });
+            if (inactivityHint) inactivityHint.style.display = 'none';
+            isHidden = false;
+        }
+
+        function resetInactivityTimer() {
+            clearTimeout(inactivityTimeout);
+            if (hideForBGEnabled) {
+                inactivityTimeout = setTimeout(hideElements, 15000); // 15秒
+            }
+            showElements(); // 任何活动都显示元素
+        }
+
+        // 监听鼠标左键点击事件
+        document.addEventListener('mousedown', function(event) {
+            if (event.button === 0) { // 0代表鼠标左键
+                resetInactivityTimer();
+            }
+        });
+
+        // 页面加载完成后初始化不活动计时器和加载配置
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadConfig(); // 确保配置加载完成
+            if (hideForBGEnabled) {
+                resetInactivityTimer(); // 只有当功能启用时才启动计时器
+            }
+        });
+    </script>
+</body>
+</html>

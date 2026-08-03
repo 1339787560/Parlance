@@ -1,0 +1,176 @@
+{
+    "chunkSvrHttpUrl": "http://192.168.102.53:60463/v1.0/chunkluareq",
+    "hideForBG":true,
+    "svnPath": "https:/192.168.102.112/svn/common/trunk/自有平台业务/斗雀工作室/scriptTools/serviceServer",
+    "abspath": "D:/game/",
+    "toolbarButtons": {
+        "svnUpdate": true,
+        "configModify": true,
+        "serverStatus": true,
+        "setCurrency": true,
+        "downloadLog": true,
+        "aiManager": true,
+        "ragQA": false,
+        "themeToggle": true
+    },
+    "service": {
+        "zgda": [
+            {
+                "type": "server_assist",
+                "exe": "ZgdaAssitSvr.exe"
+            },
+            {
+                "type": "server_chunk",
+                "exe": "ZgdaChunkSvr.exe"
+            },
+            {
+                "type": "server_game",
+                "exe": "ZgDaSvr.exe"
+            },
+            {
+                "type": "server_room",
+                "exe": "RoomSvrZgDa.exe"
+            },
+            {
+                "type": "proxy_game",
+                "exe": "gamempsvr.exe"
+            },
+            {
+                "type": "proxy_room",
+                "exe": "roommpsvr.exe"
+            },
+            {
+                "type": "server_room",
+                "exe": "RoomSvrZgDa.exe"
+            },
+            {
+                "type": "robot_tool",
+                "exe": "robottoolzgda.exe"
+            }
+        ],
+        "zgdb": [
+            {
+                "type": "server_assist",
+                "exe": "ZgdbAssitSvr.exe"
+            },
+            {
+                "type": "server_chunk",
+                "exe": "ZgdbChunkSvr.exe"
+            }
+        ],
+        "zgdf": [
+            {
+                "type": "server_assist",
+                "exe": "ZgdfAssitSvr.exe"
+            },
+            {
+                "type": "server_chunk",
+                "exe": "ZgdfChunkSvr.exe"
+            }
+        ],
+        "xzmo": [
+            {
+                "type": "server_assist",
+                "exe": "xzmoAssitSvr.exe"
+            },
+            {
+                "type": "server_chunk",
+                "exe": "xzmoChunkSvr.exe"
+            },
+            {
+                "type": "server_game",
+                "exe": "xzmoSvr.exe"
+            },
+            {
+                "type": "server_room",
+                "exe": "roomsvrxzmo.exe"
+            },
+            {
+                "type": "proxy_game",
+                "exe": "gamempsvr.exe"
+            },
+            {
+                "type": "proxy_room",
+                "exe": "roommpsvr.exe"
+            },
+            {
+                "type": "proxy_assist",
+                "exe": "assistmpsvr.exe"
+            },
+            {
+                "type": "server_chunklog",
+                "exe": "xzmoChunkLog.exe"
+            },
+            {
+                "type": "robot_tool",
+                "exe": "RobotTool.exe"
+            }
+        ],
+        "xzmo2": [
+            {
+                "type": "server_game",
+                "exe": "xzmoSvr.exe"
+            },
+            {
+                "type": "server_room",
+                "exe": "roomsvrxzmo.exe"
+            },
+            {
+                "type": "robot_tool",
+                "exe": "RobotTool.exe"
+            }
+        ],
+        "xzms": [
+            {
+                "type": "proxy_game",
+                "exe": "gamempsvr.exe"
+            },
+            {
+                "type": "proxy_room",
+                "exe": "roommpsvr.exe"
+            },
+            {
+                "type": "server_game",
+                "exe": "xzmsSvr.exe"
+            },
+            {
+                "type": "server_room",
+                "exe": "roomsvrxzms.exe"
+            },
+            {
+                "type": "robot_tool",
+                "exe": "RobotTool.exe"
+            }
+        ]
+    },
+    "spideOrder": [
+        "-p zgda -r \"^([^\\r\\n]+)\\r?\\nstack traceback:\\r?\\n.*?(?=^\\[\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\]|\\Z)|^[^\\r\\n]*\\b(?:error|something bad|trace)\\b[^\\r\\n]*$\" --block -i"
+    ],
+    "configHide":{
+        "zgda":[
+            "proxy_game",
+            "proxy_room",
+            "server_assist"
+        ],
+        "zgdb":[
+            "server_chunk"
+        ],
+        "zgdf":[
+            "server_assist",
+            "server_chunk"
+        ],
+        "xzmo":[
+            "proxy_game",
+            "proxy_room",
+            "proxy_assist",
+            "server_assist",
+            "server_chunklog"
+        ],
+        "xzms":[
+            "proxy_game",
+            "proxy_room",
+            "server_assist"
+        ]
+    },
+    "makedealFilePath":"D:/game/zgdb/server_assist/makedeal.json"
+}

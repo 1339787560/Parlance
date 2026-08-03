@@ -1,0 +1,82 @@
+{
+    "scripts": [
+        {
+            "name": "启动四川麻将",
+            "sequence": [
+                {
+                    "name": "xzmo",
+                    "type": "server_chunklog",
+                    "exe": "xzmoChunkLog.exe",
+                    "display_name": "同城游_xzmo_server_chunklog"
+                },
+                {
+                    "name": "xzmo",
+                    "type": "server_chunk",
+                    "exe": "xzmoChunkSvr.exe",
+                    "display_name": "同城游_xzmo_server_chunk"
+                },
+                {
+                    "name": "xzmo",
+                    "type": "server_assist",
+                    "exe": "xzmoAssitSvr.exe",
+                    "display_name": "同城游_xzmo_server_assist"
+                },
+                {
+                    "name": "xzmo",
+                    "type": "server_game",
+                    "exe": "xzmoSvr.exe",
+                    "display_name": "同城游_xzmo_server_game"
+                },
+                {
+                    "name": "xzmo",
+                    "type": "server_room",
+                    "exe": "roomsvrxzmo.exe",
+                    "display_name": "同城游_xzmo_server_room"
+                },
+                {
+                    "name": "xzms",
+                    "type": "server_game",
+                    "exe": "xzmsSvr.exe",
+                    "display_name": "同城游_xzms_server_game"
+                },
+                {
+                    "name": "xzms",
+                    "type": "server_room",
+                    "exe": "roomsvrxzms.exe",
+                    "display_name": "同城游_xzms_server_room"
+                },
+                {
+                    "name": "xzmo",
+                    "type": "proxy_assist",
+                    "exe": "assistmpsvr.exe",
+                    "display_name": "同城游_xzmo_proxy_assist"
+                },
+                {
+                    "name": "xzmo",
+                    "type": "proxy_game",
+                    "exe": "gamempsvr.exe",
+                    "display_name": "同城游_xzmo_proxy_game"
+                },
+                {
+                    "name": "xzmo",
+                    "type": "proxy_room",
+                    "exe": "roommpsvr.exe",
+                    "display_name": "同城游_xzmo_proxy_room"
+                },
+                {
+                    "name": "xzms",
+                    "type": "proxy_game",
+                    "exe": "gamempsvr.exe",
+                    "display_name": "同城游_xzms_proxy_game"
+                },
+                {
+                    "name": "xzms",
+                    "type": "proxy_room",
+                    "exe": "roommpsvr.exe",
+                    "display_name": "同城游_xzms_proxy_room"
+                }
+            ],
+            "created_at": "2025-11-05 14:28:23"
+        }
+    ]
+}

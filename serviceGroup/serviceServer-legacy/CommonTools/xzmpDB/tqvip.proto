@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package xzmpDB; // 根据你的模块结构，这里可能需要调整
+
+message TQVip_PlayerData {
+   int32 experience = 1;
+   int32 grade = 2;
+   int32 maxexperience = 3;
+   int32 maxgrade = 4;
+   repeated int32 rewardstatus = 5;
+   int32 datetag = 6;
+   int32 lastshowanigrade = 7;
+   int32 isdemoteani = 8;
+}
+
+message TQMonthCard_Cache {
+   TQMonthCard_Player player = 1;
+}
+
+message TQMonthCard_Player {
+   TQMonthCard_PlayerCardInfo monthcard = 1;
+   TQMonthCard_PlayerCardInfo weekcard = 2;
+}
+
+message TQMonthCard_PlayerCardInfo {
+   int32 datetag = 1;
+   int64 starttime = 2;
+   int64 endtime = 3;
+}
+
+message PropsCache{
+   repeated Item items = 1;
+}
+
+message Item{
+   repeated int32 propid = 1;
+   CommonInfo commoninfo = 2;
+   BaoPeiKaInfo baopeikainfo = 3;
+}
+
+message CommonInfo {
+   repeated NumberItem numberitems = 1;
+   TimeItem timeitem = 2;
+}
+
+message BaoPeiKaInfo {
+   int64 gettime = 1;
+	int64 endtime = 2;
+	int32 datetag = 3;
+	int64 opcount = 4;
+}
+
+message NumberItem{
+   int64 count = 1;
+   int64 gettime = 2;
+}
+message TimeItem{
+   int64 expiredate = 1;
+   int64 gettime = 2;
+}

@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置货币 - Windows服务管理工具 By Liz</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            /* max-width: 800px; */ /* 移除最大宽度限制 */
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 20px;
+        }
+        
+        .tab-button {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            margin-right: 10px;
+        }
+        
+        .tab-button.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .option-group {
+            margin-bottom: 20px;
+        }
+        
+        .option-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        .radio-option {
+            margin-bottom: 10px;
+            display: flex; /* 使用 Flexbox 布局 */
+            align-items: center; /* 垂直居中对齐 */
+        }
+        
+        .inline-radio-group {
+            display: flex;
+            gap: 20px; /* 增加一些间距 */
+            margin-top: 5px; /* 调整与标签的间距 */
+        }
+
+        .inline-checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        .checkbox-option {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 100px;
+        }
+        
+        .submit-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .submit-btn:hover {
+            background-color: #0056b3;
+        }
+        
+        .back-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+        
+        .back-btn:hover {
+            background-color: #5a6268;
+        }
+        
+        .breadcrumb {
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        .breadcrumb a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        
+        .breadcrumb .current-page-title {
+            font-weight: bold;
+            color: #343a40;
+        }
+        
+        /* 夜间模式下的面包屑样式 */
+        body.dark-theme .breadcrumb {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .breadcrumb a {
+            color: #6cb7ff;
+        }
+        
+        body.dark-theme .breadcrumb a:hover {
+            color: #3a98ff;
+        }
+        
+        body.dark-theme .breadcrumb .current-page-title {
+            color: #f0f0f0;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .result.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .result.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        /* 夜间模式样式 */
+        body.dark-theme {
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        
+        body.dark-theme .container {
+            background: #1e1e1e;
+            color: #e0e0e0;
+        }
+        
+        body.dark-theme h1 {
+            color: #f0f0f0;
+        }
+        
+        body.dark-theme .tabs {
+            border-bottom-color: #444;
+        }
+        
+        body.dark-theme .tab-button {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .tab-button.active {
+            color: #007bff;
+        }
+        
+        body.dark-theme .form-group input,
+        body.dark-theme .form-group textarea {
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border-color: #444;
+        }
+        
+        body.dark-theme .result.success {
+            background-color: #1e3a2a;
+            color: #d4edda;
+        }
+        
+        body.dark-theme .result.error {
+            background-color: #3a1e1e;
+            color: #f8d7da;
+        }
+
+        /* 新增模板相关样式 */
+        .save-template-btn {
+            background-color: #28a745; /* 绿色 */
+            margin-left: 10px;
+        }
+        .save-template-btn:hover {
+            background-color: #218838;
+        }
+
+        .template-container {
+            margin-top: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .template-container h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .template-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .template-item:last-child {
+            border-bottom: none;
+        }
+
+        .template-name {
+            cursor: pointer;
+            color: #007bff;
+            text-decoration: underline;
+            flex-grow: 1; /* 占据剩余空间 */
+        }
+
+        .template-name:hover {
+            color: #0056b3;
+        }
+
+        .delete-template-btn {
+            background-color: #dc3545; /* 红色 */
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+
+        .delete-template-btn:hover {
+            background-color: #c82333;
+        }
+
+        /* 夜间模式下的模板样式 */
+        body.dark-theme .template-container {
+            background: #1e1e1e;
+        }
+        body.dark-theme .template-container h2 {
+            color: #f0f0f0;
+            border-bottom-color: #444;
+        }
+        body.dark-theme .template-item {
+            border-bottom-color: #444;
+        }
+        body.dark-theme .template-name {
+            color: #6cb7ff;
+        }
+        body.dark-theme .template-name:hover {
+            color: #3a98ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/">主页</a> &gt; <span class="current-page-title">设置货币</span>
+        </div>
+        <h1>设置货币</h1>
+        
+        <!-- 选项卡 -->
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('gold')">金币</button>
+            <button class="tab-button" onclick="switchTab('points')">积分</button>
+            <button class="tab-button" onclick="switchTab('silver')">银两</button>
+            <button class="tab-button" onclick="switchTab('tqvip')">荣耀特权</button>
+            <button class="tab-button" onclick="switchTab('weekcard')">周卡</button>
+            <button class="tab-button" onclick="switchTab('monthcard')">月卡</button>
+            <button class="tab-button" onclick="switchTab('costume')">装扮查询</button>
+            <button class="tab-button" onclick="switchTab('newplayergift')">迎新礼包</button>
+        </div>
+        
+        <!-- 金币选项卡内容 -->
+        <div id="gold" class="tab-content active">
+            <div class="option-group">
+                <label>选择操作类型：</label>
+                <div class="radio-option">
+                    <input type="radio" id="singleGold" name="operationGold" value="single" checked>
+                    <label for="singleGold">设置单个玩家金币</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="multiGold" name="operationGold" value="multi">
+                    <label for="multiGold">设置多个玩家金币</label>
+                </div>
+            </div>
+            
+            <div id="single-form-gold" class="form-content">
+                <div class="form-group">
+                    <label for="user-id-gold">玩家ID：</label>
+                    <input type="text" id="user-id-gold" placeholder="请输入玩家ID">
+                </div>
+            </div>
+            
+            <div id="multi-form-gold" class="form-content" style="display: none;">
+                <div class="form-group">
+                    <label for="user-ids-gold">玩家ID列表（逗号分隔）：</label>
+                    <input type="text" id="user-ids-gold" placeholder="请输入玩家ID列表，逗号分隔">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="gold-count">金币数量：</label>
+                <input type="number" id="gold-count" placeholder="请输入金币数量" min="1">
+            </div>
+            
+            <button class="submit-btn" onclick="submitGoldSetting()">提交设置</button>
+            <button class="submit-btn save-template-btn" onclick="saveTemplate('gold')">存储模板</button>
+            
+            <div id="resultGold" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- 积分选项卡内容 -->
+        <div id="points" class="tab-content">
+            <div class="option-group">
+                <label>选择操作类型：</label>
+                <div class="radio-option">
+                    <input type="radio" id="opidPoints0" name="opidPoints" value="0" checked>
+                    <label for="opidPoints0">设置相应的值</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="opidPoints1" name="opidPoints" value="1">
+                    <label for="opidPoints1">增加</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="opidPoints2" name="opidPoints" value="2">
+                    <label for="opidPoints2">减少</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="user-id-points">玩家ID列表（逗号分隔）：</label>
+                <input type="text" id="user-id-points" value="440624,440625,440626" placeholder="请输入玩家ID列表，逗号分隔">
+            </div>
+            <div class="form-group">
+                <label for="points-count">积分数量：</label>
+                <input type="number" id="points-count" value="1000" placeholder="请输入积分数量">
+            </div>
+            <div class="form-group">
+                <label for="game-id-points">游戏ID：</label>
+                <input type="number" id="game-id-points" value="105" placeholder="请输入游戏ID">
+            </div>
+            <button class="submit-btn" onclick="submitPointsSetting()">提交设置</button>
+            <button class="submit-btn save-template-btn" onclick="saveTemplate('points')">存储模板</button>
+            <div id="resultPoints" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- 银两选项卡内容 -->
+        <div id="silver" class="tab-content">
+            <div class="option-group">
+                <label>选择操作类型：</label>
+                <div class="radio-option">
+                    <input type="radio" id="opidSilver1" name="opidSilver" value="1" checked>
+                    <label for="opidSilver1">设置保险箱的银子</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="opidSilver2" name="opidSilver" value="2">
+                    <label for="opidSilver2">设置游戏里的银子</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="opidSilver3" name="opidSilver" value="3">
+                    <label for="opidSilver3">后备箱</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" id="opidSilver4" name="opidSilver" value="4">
+                    <label for="opidSilver4">保险柜</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="user-id-silver">玩家ID列表（逗号分隔）：</label>
+                <input type="text" id="user-id-silver" value="440624" placeholder="请输入玩家ID列表，逗号分隔">
+            </div>
+            <div class="form-group">
+                <label for="silver-count">银两数量：</label>
+                <input type="number" id="silver-count" value="1000" placeholder="请输入银两数量">
+            </div>
+            <div class="form-group">
+                <label for="game-id-silver">游戏ID：</label>
+                <input type="number" id="game-id-silver" value="105" placeholder="请输入游戏ID">
+            </div>
+            <button class="submit-btn" onclick="submitSilverSetting()">提交设置</button>
+            <button class="submit-btn save-template-btn" onclick="saveTemplate('silver')">存储模板</button>
+            <div id="resultSilver" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- 荣耀特权选项卡内容 -->
+        <div id="tqvip" class="tab-content">
+            <div class="form-group">
+                <label for="user-ids-tqvip">玩家ID列表（逗号分隔）：</label>
+                <input type="text" id="user-ids-tqvip" placeholder="请输入玩家ID列表，逗号分隔">
+            </div>
+            <div class="form-group">
+                <label for="tqvip-experience">经验值：</label>
+                <input type="number" id="tqvip-experience" placeholder="请输入经验值" min="0" oninput="updateTQVIPGrade()">
+            </div>
+            <div class="form-group">
+                <label>自动计算当前等级：</label>
+                <input type="text" id="tqvip-grade-display" value="0" readonly>
+            </div>
+            <div class="form-group">
+                <label>当前级内经验：</label>
+                <input type="text" id="tqvip-in-grade-display" value="0" readonly>
+                <small style="color:#888;">= 经验值 - 该等级累计下限；写入 chunkSvr experience 字段</small>
+            </div>
+            <div class="form-group">
+                <label for="tqvip-last-login">上次登录时间：</label>
+                <input type="datetime-local" id="tqvip-last-login" step="1">
+                <small style="color:#888;">存储时自动转换为 datetag（YYYYMMDD）</small>
+            </div>
+            <div class="form-group">
+                <label>是否降级动画：</label>
+                <div class="inline-radio-group">
+                    <div class="radio-option">
+                        <input type="radio" id="tqvip-isdemoteani-0" name="tqvip-isdemoteani" value="0" checked>
+                        <label for="tqvip-isdemoteani-0">否 (0)</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="tqvip-isdemoteani-1" name="tqvip-isdemoteani" value="1">
+                        <label for="tqvip-isdemoteani-1">是 (1)</label>
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>已领取一次性奖励（勾选=已领取，相当于帮玩家领取奖励）：</label>
+                <div id="tqvip-rewardstatus" class="inline-checkbox-group">
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-0" value="0"><label for="tqvip-rs-0">等级0</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-1" value="1"><label for="tqvip-rs-1">等级1</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-2" value="2"><label for="tqvip-rs-2">等级2</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-3" value="3"><label for="tqvip-rs-3">等级3</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-4" value="4"><label for="tqvip-rs-4">等级4</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-5" value="5"><label for="tqvip-rs-5">等级5</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-6" value="6"><label for="tqvip-rs-6">等级6</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-7" value="7"><label for="tqvip-rs-7">等级7</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-8" value="8"><label for="tqvip-rs-8">等级8</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-9" value="9"><label for="tqvip-rs-9">等级9</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-10" value="10"><label for="tqvip-rs-10">等级10</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-11" value="11"><label for="tqvip-rs-11">等级11</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-12" value="12"><label for="tqvip-rs-12">等级12</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-13" value="13"><label for="tqvip-rs-13">等级13</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-14" value="14"><label for="tqvip-rs-14">等级14</label></div>
+                    <div class="checkbox-option"><input type="checkbox" id="tqvip-rs-15" value="15"><label for="tqvip-rs-15">等级15</label></div>
+                </div>
+                <small style="color:#888;">全部不勾选 = 清空已领取状态</small>
+            </div>
+            <button class="submit-btn" onclick="submitTQVipSetting()">提交设置</button>
+            <button class="submit-btn save-template-btn" onclick="saveTemplate('tqvip')">存储模板</button>
+            <div id="resultTQVip" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- 周卡选项卡内容 -->
+        <div id="weekcard" class="tab-content">
+            <div class="form-group">
+                <label for="user-ids-weekcard">玩家ID列表（逗号分隔）：</label>
+                <input type="text" id="user-ids-weekcard" placeholder="请输入玩家ID列表，逗号分隔">
+            </div>
+            <div class="form-group">
+                <label for="weekcard-days">天数：</label>
+                <input type="number" id="weekcard-days" placeholder="请输入周卡天数(0=已过期)" min="0">
+            </div>
+            <button class="submit-btn" onclick="submitWeekCardSetting()">提交设置</button>
+            <button class="submit-btn save-template-btn" onclick="saveTemplate('weekcard')">存储模板</button>
+            <div id="resultWeekCard" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- 月卡选项卡内容 -->
+        <div id="monthcard" class="tab-content">
+            <div class="form-group">
+                <label for="user-ids-monthcard">玩家ID列表（逗号分隔）：</label>
+                <input type="text" id="user-ids-monthcard" placeholder="请输入玩家ID列表，逗号分隔">
+            </div>
+            <div class="form-group">
+                <label for="monthcard-days">天数：</label>
+                <input type="number" id="monthcard-days" placeholder="请输入月卡天数(0=已过期)" min="0">
+            </div>
+            <button class="submit-btn" onclick="submitMonthCardSetting()">提交设置</button>
+            <button class="submit-btn save-template-btn" onclick="saveTemplate('monthcard')">存储模板</button>
+            <div id="resultMonthCard" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- 装扮查询选项卡内容 -->
+        <div id="costume" class="tab-content">
+            <div class="form-group">
+                <label for="user-id-costume">玩家ID：</label>
+                <input type="text" id="user-id-costume" placeholder="请输入玩家ID">
+            </div>
+            <button class="submit-btn" onclick="submitCostumeQuery()">查询装扮</button>
+            <button class="submit-btn save-template-btn" onclick="saveTemplate('costume')">存储模板</button>
+
+            <div id="resultCostume" class="result" style="display: none;"></div>
+            <div id="costume-detail" style="margin-top: 15px;"></div>
+        </div>
+
+        <!-- 迎新礼包选项卡内容 -->
+        <div id="newplayergift" class="tab-content">
+            <div class="form-group">
+                <label for="user-ids-newplayergift">玩家ID列表（逗号分隔）：</label>
+                <input type="text" id="user-ids-newplayergift" placeholder="请输入玩家ID列表，逗号分隔">
+            </div>
+            <div class="form-group">
+                <label>设置模式：</label>
+                <div class="checkbox-option">
+                    <input type="radio" id="newplayergift-mode-received" name="newplayergift-mode" value="received" checked>
+                    <label for="newplayergift-mode-received">按已领天数（设为已领 N 天）</label>
+                </div>
+                <div class="checkbox-option">
+                    <input type="radio" id="newplayergift-mode-receivable" name="newplayergift-mode" value="receivable">
+                    <label for="newplayergift-mode-receivable">按可领天数（设为第 N 天可领）</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="newplayergift-days" id="newplayergift-days-label">已领取天数（0-7）：</label>
+                <input type="number" id="newplayergift-days" placeholder="请输入领取天数" min="0" max="7">
+            </div>
+            <div class="form-group">
+                <div class="checkbox-option">
+                    <input type="checkbox" id="newplayergift-cancel" value="1">
+                    <label for="newplayergift-cancel">取消迎新礼包状态</label>
+                </div>
+            </div>
+            <button class="submit-btn" onclick="submitNewPlayerGiftSetting()">提交设置</button>
+            <button class="submit-btn save-template-btn" onclick="saveTemplate('newplayergift')">存储模板</button>
+            <div id="resultNewPlayerGift" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <div class="template-container">
+        <h2>已保存的模板</h2>
+        <div id="template-list">
+            <!-- 模板将在这里动态加载 -->
+        </div>
+    </div>
+    
+    <script>
+        // 夜间模式功能实现
+        const isDarkMode = localStorage.getItem('darkMode') === 'true';
+        if (isDarkMode) {
+            document.body.classList.add('dark-theme');
+        }
+        
+        // 切换选项卡
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            document.getElementById(tabId).classList.add('active');
+            // 找到对应的tab-button并添加active类
+            document.querySelector(`.tab-button[onclick="switchTab('${tabId}')"]`).classList.add('active');
+        }
+        
+        // 显示结果消息 (如果需要，可以重新启用)
+        function showResult(type, message, resultDiv) {
+            resultDiv.className = 'result ' + type;
+            resultDiv.textContent = message;
+            resultDiv.style.display = 'block';
+        }
+
+        // 提交金币设置
+        function submitGoldSetting() {
+            const operation = document.querySelector('input[name="operationGold"]:checked').value;
+            const goldCount = parseInt(document.getElementById('gold-count').value);
+            const resultDiv = document.getElementById('resultGold');
+            
+            // 验证金币数量
+            if (isNaN(goldCount) || goldCount <= 0) {
+                showResult('error', '请输入有效的金币数量', resultDiv);
+                return;
+            }
+            
+            let data = { goldCount: goldCount };
+            
+            if (operation === 'single') {
+                const userId = document.getElementById('user-id-gold').value.trim();
+                if (!userId) {
+                    showResult('error', '请输入玩家ID', resultDiv);
+                    return;
+                }
+                data.userId = parseInt(userId);
+                data.operation = 'single';
+            } else {
+                const userIdsText = document.getElementById('user-ids-gold').value.trim();
+                if (!userIdsText) {
+                    showResult('error', '请输入玩家ID列表', resultDiv);
+                    return;
+                }
+                
+                const userIds = userIdsText.split(',')
+                    .map(id => parseInt(id.trim()))
+                    .filter(id => !isNaN(id) && id > 0);
+                
+                if (userIds.length === 0) {
+                    showResult('error', '请输入有效的玩家ID列表', resultDiv);
+                    return;
+                }
+                
+                data.userIds = userIds;
+                data.operation = 'multi';
+            }
+            
+            // 显示加载状态
+            resultDiv.style.display = 'none';
+            
+            // 发送请求
+            fetch('/api/set-gold', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除成功回显，因为用户认为请求一定会成功
+                // 如果需要，可以在这里添加其他成功后的逻辑，例如清空表单
+            })
+            .catch(error => {
+                console.error('Fetch Error:', error);
+                // 简化错误处理，不显示给用户，因为用户认为请求一定会成功
+                // showResult('error', '设置失败：' + error.message, resultDiv);
+            });
+        }
+
+        // 提交积分设置
+        function submitPointsSetting() {
+            const userIdsText = document.getElementById('user-id-points').value.trim();
+            const count = parseInt(document.getElementById('points-count').value);
+            const gameId = parseInt(document.getElementById('game-id-points').value);
+            const opid = parseInt(document.querySelector('input[name="opidPoints"]:checked').value);
+            const resultDiv = document.getElementById('resultPoints');
+
+            if (!userIdsText) {
+                showResult('error', '请输入玩家ID列表', resultDiv);
+                return;
+            }
+            const userIds = userIdsText.split(',').map(id => id.trim()).filter(id => id);
+            if (userIds.length === 0) {
+                showResult('error', '请输入有效的玩家ID列表', resultDiv);
+                return;
+            }
+
+            if (isNaN(count)) {
+                showResult('error', '请输入有效的积分数量', resultDiv);
+                return;
+            }
+            if (isNaN(gameId)) {
+                showResult('error', '请输入有效的游戏ID', resultDiv);
+                return;
+            }
+
+            resultDiv.style.display = 'none';
+
+            fetch('http://192.168.105.62:5003/setscore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    userid: userIdsText,
+                    count: count,
+                    gameid: gameId,
+                    opid: opid
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除成功回显，因为用户认为请求一定会成功
+                // 如果需要，可以在这里添加其他成功后的逻辑，例如清空表单
+            })
+            .catch(error => {
+                console.error('Fetch Error:', error);
+                // 简化错误处理，不显示给用户，因为用户认为请求一定会成功
+                // showResult('error', '设置失败：' + error.message, resultDiv);
+            });
+        }
+
+        // 提交银两设置
+        function submitSilverSetting() {
+            const userIdsText = document.getElementById('user-id-silver').value.trim();
+            const count = parseInt(document.getElementById('silver-count').value);
+            const gameId = parseInt(document.getElementById('game-id-silver').value);
+            const opid = parseInt(document.querySelector('input[name="opidSilver"]:checked').value);
+            const resultDiv = document.getElementById('resultSilver');
+
+            if (!userIdsText) {
+                showResult('error', '请输入玩家ID列表', resultDiv);
+                return;
+            }
+            const userIds = userIdsText.split(',').map(id => id.trim()).filter(id => id);
+            if (userIds.length === 0) {
+                showResult('error', '请输入有效的玩家ID列表', resultDiv);
+                return;
+            }
+
+            if (isNaN(count)) {
+                showResult('error', '请输入有效的银两数量', resultDiv);
+                return;
+            }
+            if (isNaN(gameId)) {
+                showResult('error', '请输入有效的游戏ID', resultDiv);
+                return;
+            }
+
+            resultDiv.style.display = 'none';
+
+            fetch('http://192.168.105.62:5003/SetSilver', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    userid: userIdsText,
+                    count: count,
+                    gameid: gameId,
+                    opid: opid
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除成功回显，因为用户认为请求一定会成功
+                // 如果需要，可以在这里添加其他成功后的逻辑，例如清空表单
+            })
+            .catch(error => {
+                console.error('Fetch Error:', error);
+                // 简化错误处理，不显示给用户，因为用户认为请求一定会成功
+                // showResult('error', '设置失败：' + error.message, resultDiv);
+            });
+        }
+
+        // 荣耀特权累计经验阈值表（达到该等级所需累计经验下限）
+        // 与 chunkSvr TQVipConfig.lua 单级阈值求和一致；与 leveldefine levelContent 一致
+        const TQVIP_THRESHOLDS = [0, 100, 600, 1600, 4600, 9600, 19600, 39600, 79600, 159600, 309600, 609600, 1209600, 2209600, 4209600, 7209600];
+
+        function calcTQVIPGrade(experience) {
+            let grade = 0;
+            for (let i = 0; i < TQVIP_THRESHOLDS.length; i++) {
+                if (experience >= TQVIP_THRESHOLDS[i]) {
+                    grade = i;
+                } else {
+                    break;
+                }
+            }
+            return grade;
+        }
+
+        function updateTQVIPGrade() {
+            const experience = parseInt(document.getElementById('tqvip-experience').value);
+            const gradeDisplay = document.getElementById('tqvip-grade-display');
+            const inGradeDisplay = document.getElementById('tqvip-in-grade-display');
+            if (isNaN(experience) || experience < 0) {
+                gradeDisplay.value = '-';
+                inGradeDisplay.value = '-';
+                return;
+            }
+            const grade = calcTQVIPGrade(experience);
+            gradeDisplay.value = grade;
+            // 级内经验 = 累计经验 - 该等级累计下限（与 chunkSvr Lua experience 字段语义一致）
+            inGradeDisplay.value = experience - TQVIP_THRESHOLDS[grade];
+        }
+
+        // 提交荣耀特权设置
+        function submitTQVipSetting() {
+            const userIdsText = document.getElementById('user-ids-tqvip').value.trim();
+            const experience = parseInt(document.getElementById('tqvip-experience').value);
+            const lastLoginInput = document.getElementById('tqvip-last-login').value;
+            const isdemoteani = parseInt(document.querySelector('input[name="tqvip-isdemoteani"]:checked').value);
+            const resultDiv = document.getElementById('resultTQVip');
+
+            if (!userIdsText) {
+                showResult('error', '请输入玩家ID列表', resultDiv);
+                return;
+            }
+            const userIds = userIdsText.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id) && id > 0);
+            if (userIds.length === 0) {
+                showResult('error', '请输入有效的玩家ID列表', resultDiv);
+                return;
+            }
+
+            if (isNaN(experience) || experience < 0) {
+                showResult('error', '请输入有效的经验值', resultDiv);
+                return;
+            }
+            if (!lastLoginInput) {
+                showResult('error', '请选择上次登录时间', resultDiv);
+                return;
+            }
+
+            resultDiv.style.display = 'none';
+
+            const grade = calcTQVIPGrade(experience);
+
+            // 收集 rewardstatus 复选框，按当前等级构建完整数组
+            const rewardstatusCheckboxChanged = document.querySelectorAll('#tqvip-rewardstatus input[type="checkbox"]:checked');
+            const checkedSet = new Set(Array.from(rewardstatusCheckboxChanged).map(cb => parseInt(cb.value)));
+            const rewardstatus = [];
+            for (let i = 0; i <= grade; i++) {
+                rewardstatus.push(checkedSet.has(i) ? 1 : 0);
+            }
+
+            fetch('/api/set-tqvip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userIds: userIds,
+                    experience: experience,
+                    lastLoginDate: lastLoginInput,
+                    isdemoteani: isdemoteani,
+                    rewardstatus: rewardstatus
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除成功回显
+            })
+            .catch(error => {
+                console.error('Fetch Error:', error);
+            });
+        }
+
+        // 提交周卡设置
+        function submitWeekCardSetting() {
+            const userIdsText = document.getElementById('user-ids-weekcard').value.trim();
+            const days = parseInt(document.getElementById('weekcard-days').value);
+            const resultDiv = document.getElementById('resultWeekCard');
+
+            if (!userIdsText) {
+                showResult('error', '请输入玩家ID列表', resultDiv);
+                return;
+            }
+            const userIds = userIdsText.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id) && id > 0);
+            if (userIds.length === 0) {
+                showResult('error', '请输入有效的玩家ID列表', resultDiv);
+                return;
+            }
+
+            if (isNaN(days) || days < 0) {
+                showResult('error', '请输入有效的周卡天数(0=已过期)', resultDiv);
+                return;
+            }
+
+            resultDiv.style.display = 'none';
+
+            fetch('/api/set-weekcard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userIds: userIds,
+                    days: days
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除成功回显
+            })
+            .catch(error => {
+                console.error('Fetch Error:', error);
+            });
+        }
+
+        // 提交月卡设置
+        function submitMonthCardSetting() {
+            const userIdsText = document.getElementById('user-ids-monthcard').value.trim();
+            const days = parseInt(document.getElementById('monthcard-days').value);
+            const resultDiv = document.getElementById('resultMonthCard');
+
+            if (!userIdsText) {
+                showResult('error', '请输入玩家ID列表', resultDiv);
+                return;
+            }
+            const userIds = userIdsText.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id) && id > 0);
+            if (userIds.length === 0) {
+                showResult('error', '请输入有效的玩家ID列表', resultDiv);
+                return;
+            }
+
+            if (isNaN(days) || days < 0) {
+                showResult('error', '请输入有效的月卡天数(0=已过期)', resultDiv);
+                return;
+            }
+
+            resultDiv.style.display = 'none';
+
+            fetch('/api/set-monthcard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userIds: userIds,
+                    days: days
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除成功回显
+            })
+            .catch(error => {
+                console.error('Fetch Error:', error);
+            });
+        }
+
+        // 提交装扮查询
+        function submitCostumeQuery() {
+            const userIdText = document.getElementById('user-id-costume').value.trim();
+            const resultDiv = document.getElementById('resultCostume');
+            const detailDiv = document.getElementById('costume-detail');
+
+            if (!userIdText) {
+                showResult('error', '请输入玩家ID', resultDiv);
+                return;
+            }
+            const userId = parseInt(userIdText);
+            if (isNaN(userId) || userId <= 0) {
+                showResult('error', '玩家ID格式错误', resultDiv);
+                return;
+            }
+
+            resultDiv.style.display = 'none';
+            detailDiv.innerHTML = '<p>查询中...</p>';
+
+            fetch('/api/query-costume', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: userId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    detailDiv.innerHTML = '<pre style="white-space: pre-wrap; word-break: break-all;">' + JSON.stringify(data.data, null, 2) + '</pre>';
+                } else {
+                    detailDiv.innerHTML = '';
+                    showResult('error', data.message || '查询失败', resultDiv);
+                }
+            })
+            .catch(error => {
+                detailDiv.innerHTML = '';
+                showResult('error', '网络错误：' + error.message, resultDiv);
+            });
+        }
+
+        // 提交迎新礼包设置
+        function submitNewPlayerGiftSetting() {
+            const userIdsText = document.getElementById('user-ids-newplayergift').value.trim();
+            const daysInput = document.getElementById('newplayergift-days');
+            const cancelCheckbox = document.getElementById('newplayergift-cancel');
+            const resultDiv = document.getElementById('resultNewPlayerGift');
+            const modeRadio = document.querySelector('input[name="newplayergift-mode"]:checked');
+            const mode = modeRadio ? modeRadio.value : 'received';
+
+            if (!userIdsText) {
+                showResult('error', '请输入玩家ID列表', resultDiv);
+                return;
+            }
+            const userIds = userIdsText.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id) && id > 0);
+            if (userIds.length === 0) {
+                showResult('error', '请输入有效的玩家ID列表', resultDiv);
+                return;
+            }
+
+            const cancel = cancelCheckbox.checked;
+            let payload = { userIds: userIds, cancel: cancel };
+
+            if (!cancel) {
+                const days = parseInt(daysInput.value);
+                if (mode === 'receivable') {
+                    if (isNaN(days) || days < 1 || days > 7) {
+                        showResult('error', '可领天数必须是 1-7 的整数', resultDiv);
+                        return;
+                    }
+                    payload.receivableDay = days;
+                } else {
+                    if (isNaN(days) || days < 0 || days > 7) {
+                        showResult('error', '已领取天数必须是 0-7 的整数', resultDiv);
+                        return;
+                    }
+                    payload.receivedays = days;
+                }
+            }
+
+            resultDiv.style.display = 'none';
+
+            fetch('/api/set-newplayer-gift', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    let msg = data.message + '\n';
+                    for (const [uid, res] of Object.entries(data.results)) {
+                        msg += `${uid}: ${res}\n`;
+                    }
+                    showResult('success', msg, resultDiv);
+                } else {
+                    showResult('error', data.message || '设置失败', resultDiv);
+                }
+            })
+            .catch(error => {
+                showResult('error', '网络错误：' + error.message, resultDiv);
+            });
+        }
+
+        // 迎新礼包模式切换：已领天数(0-7) vs 可领天数(1-7)
+        function updateNewPlayerGiftModeLabel() {
+            const modeRadio = document.querySelector('input[name="newplayergift-mode"]:checked');
+            const mode = modeRadio ? modeRadio.value : 'received';
+            const label = document.getElementById('newplayergift-days-label');
+            const input = document.getElementById('newplayergift-days');
+            if (mode === 'receivable') {
+                label.textContent = '可领天数（1-7）：';
+                input.min = 1;
+                input.max = 7;
+                input.placeholder = '设置后玩家可立即领取第 N 天奖励';
+            } else {
+                label.textContent = '已领取天数（0-7）：';
+                input.min = 0;
+                input.max = 7;
+                input.placeholder = '请输入领取天数';
+            }
+        }
+        // 保存模板函数
+        async function saveTemplate(tabType) {
+            let templateData = {};
+            let templateName = prompt("请输入模板名称:");
+            if (!templateName) {
+                return; // 用户取消输入
+            }
+
+            if (tabType === 'gold') {
+                const operation = document.querySelector('input[name="operationGold"]:checked').value;
+                const goldCount = parseInt(document.getElementById('gold-count').value);
+                templateData = {
+                    operation: operation,
+                    goldCount: goldCount
+                };
+                if (operation === 'single') {
+                    templateData.userId = document.getElementById('user-id-gold').value.trim();
+                } else {
+                    templateData.userIds = document.getElementById('user-ids-gold').value.trim();
+                }
+            } else if (tabType === 'points') {
+                templateData = {
+                    userIds: document.getElementById('user-id-points').value.trim(),
+                    count: parseInt(document.getElementById('points-count').value),
+                    gameId: parseInt(document.getElementById('game-id-points').value),
+                    opid: parseInt(document.querySelector('input[name="opidPoints"]:checked').value)
+                };
+            } else if (tabType === 'silver') {
+                templateData = {
+                    userIds: document.getElementById('user-id-silver').value.trim(),
+                    count: parseInt(document.getElementById('silver-count').value),
+                    gameId: parseInt(document.getElementById('game-id-silver').value),
+                    opid: parseInt(document.querySelector('input[name="opidSilver"]:checked').value)
+                };
+            } else if (tabType === 'tqvip') {
+                const rsChecked = document.querySelectorAll('#tqvip-rewardstatus input[type="checkbox"]:checked');
+                templateData = {
+                    userIds: document.getElementById('user-ids-tqvip').value.trim(),
+                    experience: parseInt(document.getElementById('tqvip-experience').value),
+                    lastLoginDate: document.getElementById('tqvip-last-login').value,
+                    isdemoteani: parseInt(document.querySelector('input[name="tqvip-isdemoteani"]:checked').value),
+                    rewardstatus: Array.from(rsChecked).map(cb => parseInt(cb.value))
+                };
+            } else if (tabType === 'weekcard') {
+                templateData = {
+                    userIds: document.getElementById('user-ids-weekcard').value.trim(),
+                    days: parseInt(document.getElementById('weekcard-days').value)
+                };
+            } else if (tabType === 'monthcard') {
+                templateData = {
+                    userIds: document.getElementById('user-ids-monthcard').value.trim(),
+                    days: parseInt(document.getElementById('monthcard-days').value)
+                };
+            } else if (tabType === 'costume') {
+                templateData = {
+                    userId: document.getElementById('user-id-costume').value.trim()
+                };
+            } else if (tabType === 'newplayergift') {
+                const modeRadio = document.querySelector('input[name="newplayergift-mode"]:checked');
+                templateData = {
+                    userIds: document.getElementById('user-ids-newplayergift').value.trim(),
+                    days: parseInt(document.getElementById('newplayergift-days').value) || 0,
+                    mode: modeRadio ? modeRadio.value : 'received',
+                    cancel: document.getElementById('newplayergift-cancel').checked
+                };
+            }
+
+            try {
+                const response = await fetch('/api/templates/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: templateName,
+                        type: tabType,
+                        data: templateData
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('模板保存成功！');
+                    loadTemplates(); // 刷新模板列表
+                } else {
+                    alert('模板保存失败: ' + result.message);
+                }
+            } catch (error) {
+                console.error('保存模板时发生错误:', error);
+                alert('保存模板时发生网络错误。');
+            }
+        }
+
+        // 应用模板函数
+        function applyTemplate(template) {
+            // 切换到对应的选项卡
+            switchTab(template.type);
+
+            // 填充表单数据
+            if (template.type === 'gold') {
+                document.getElementById('gold-count').value = template.data.goldCount;
+                // 选中对应的操作类型
+                document.querySelector(`input[name="operationGold"][value="${template.data.operation}"]`).checked = true;
+                // 触发change事件以更新显示
+                document.querySelector(`input[name="operationGold"][value="${template.data.operation}"]`).dispatchEvent(new Event('change'));
+
+                if (template.data.operation === 'single') {
+                    document.getElementById('user-id-gold').value = template.data.userId;
+                } else {
+                    document.getElementById('user-ids-gold').value = template.data.userIds;
+                }
+            } else if (template.type === 'points') {
+                document.getElementById('user-id-points').value = template.data.userIds;
+                document.getElementById('points-count').value = template.data.count;
+                document.getElementById('game-id-points').value = template.data.gameId;
+                document.querySelector(`input[name="opidPoints"][value="${template.data.opid}"]`).checked = true;
+            } else if (template.type === 'silver') {
+                document.getElementById('user-id-silver').value = template.data.userIds;
+                document.getElementById('silver-count').value = template.data.count;
+                document.getElementById('game-id-silver').value = template.data.gameId;
+                document.querySelector(`input[name="opidSilver"][value="${template.data.opid}"]`).checked = true;
+            } else if (template.type === 'tqvip') {
+                document.getElementById('user-ids-tqvip').value = template.data.userIds;
+                document.getElementById('tqvip-experience').value = template.data.experience;
+                document.getElementById('tqvip-last-login').value = template.data.lastLoginDate || '';
+                document.querySelector(`input[name="tqvip-isdemoteani"][value="${template.data.isdemoteani}"]`).checked = true;
+                updateTQVIPGrade();
+                // rewardstatus 复选框
+                const rsBoxes = document.querySelectorAll('#tqvip-rewardstatus input[type="checkbox"]');
+                rsBoxes.forEach(cb => cb.checked = false);
+                if (template.data.rewardstatus && Array.isArray(template.data.rewardstatus)) {
+                    template.data.rewardstatus.forEach(g => {
+                        const cb = document.getElementById('tqvip-rs-' + g);
+                        if (cb) cb.checked = true;
+                    });
+                }
+            } else if (template.type === 'weekcard') {
+                document.getElementById('user-ids-weekcard').value = template.data.userIds;
+                document.getElementById('weekcard-days').value = template.data.days;
+            } else if (template.type === 'monthcard') {
+                document.getElementById('user-ids-monthcard').value = template.data.userIds;
+                document.getElementById('monthcard-days').value = template.data.days;
+            } else if (template.type === 'costume') {
+                document.getElementById('user-id-costume').value = template.data.userId || '';
+            } else if (template.type === 'newplayergift') {
+                document.getElementById('user-ids-newplayergift').value = template.data.userIds || '';
+                document.getElementById('newplayergift-days').value = template.data.days || 0;
+                document.getElementById('newplayergift-cancel').checked = template.data.cancel || false;
+                const mode = template.data.mode || 'received';
+                const modeEl = document.getElementById(mode === 'receivable' ? 'newplayergift-mode-receivable' : 'newplayergift-mode-received');
+                if (modeEl) {
+                    modeEl.checked = true;
+                    updateNewPlayerGiftModeLabel();
+                }
+            }
+            // alert(`模板 "${template.name}" 已应用！`); // 静默启用，移除提示
+        }
+
+        // 加载模板列表
+        async function loadTemplates() {
+            const templateListDiv = document.getElementById('template-list');
+            templateListDiv.innerHTML = ''; // 清空现有列表
+
+            try {
+                const response = await fetch('/api/templates/get');
+                const result = await response.json();
+
+                if (result.success) {
+                    result.templates.forEach(template => {
+                        const templateItem = document.createElement('div');
+                        templateItem.className = 'template-item';
+                        templateItem.innerHTML = `
+                            <span class="template-name" data-template='${JSON.stringify(template)}'>${template.name} (${template.type})</span>
+                            <button class="delete-template-btn" data-id="${template.id}">删除</button>
+                        `;
+                        templateListDiv.appendChild(templateItem);
+                    });
+                } else {
+                    console.error('获取模板失败:', result.message);
+                }
+            } catch (error) {
+                console.error('加载模板时发生错误:', error);
+            }
+        }
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', () => {
+            switchTab('gold'); // 默认显示金币选项卡
+            loadTemplates(); // 加载模板列表
+            updateTQVIPGrade(); // 初始化荣耀特权等级显示
+
+            // 迎新礼包模式切换：同步天数输入框范围与标签
+            const modeRadios = document.querySelectorAll('input[name="newplayergift-mode"]');
+            modeRadios.forEach(r => r.addEventListener('change', updateNewPlayerGiftModeLabel));
+            updateNewPlayerGiftModeLabel();
+
+            // 默认上次登录时间为当前时间
+            const lastLoginInput = document.getElementById('tqvip-last-login');
+            if (lastLoginInput) {
+                const now = new Date();
+                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                lastLoginInput.value = now.toISOString().slice(0, 19);
+            }
+
+            // 绑定模板删除和应用事件
+            document.getElementById('template-list').addEventListener('click', async (event) => {
+                if (event.target.classList.contains('delete-template-btn')) {
+                    const templateId = event.target.dataset.id;
+                    if (confirm('确定要删除这个模板吗？')) {
+                        try {
+                            const response = await fetch('/api/templates/delete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id: templateId })
+                            });
+                            const result = await response.json();
+                            if (result.success) {
+                                alert('模板删除成功！');
+                                loadTemplates(); // 刷新模板列表
+                            } else {
+                                alert('模板删除失败: ' + result.message);
+                            }
+                        } catch (error) {
+                            console.error('删除模板时发生错误:', error);
+                            alert('删除模板时发生网络错误。');
+                        }
+                    }
+                } else if (event.target.classList.contains('template-name')) {
+                    const template = JSON.parse(event.target.dataset.template);
+                    applyTemplate(template);
+                }
+            });
+
+            // 初始化金币操作类型显示
+            document.querySelectorAll('input[name="operationGold"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'single') {
+                        document.getElementById('single-form-gold').style.display = 'block';
+                        document.getElementById('multi-form-gold').style.display = 'none';
+                    } else {
+                        document.getElementById('single-form-gold').style.display = 'none';
+                        document.getElementById('multi-form-gold').style.display = 'block';
+                    }
+                });
+            });
+            // 确保页面加载时根据默认选中的radio显示正确的表单
+            if (document.getElementById('singleGold').checked) {
+                document.getElementById('single-form-gold').style.display = 'block';
+                document.getElementById('multi-form-gold').style.display = 'none';
+            } else {
+                document.getElementById('single-form-gold').style.display = 'none';
+                document.getElementById('multi-form-gold').style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

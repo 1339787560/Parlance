@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/icon/tabIcon.ico" type="image/x-icon">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <title>AI 管理 - LLM Benchmark</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .page-background {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -2; background-size: cover; background-position: center;
+            background-repeat: no-repeat; opacity: 0.15;
+        }
+
+        .page-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1;
+            background: linear-gradient(135deg, rgba(15,15,26,0.95) 0%, rgba(20,20,35,0.92) 100%);
+        }
+
+        .container {
+            width: 100%; max-width: 1200px; margin: 0 auto; padding: 30px 20px;
+        }
+
+        .breadcrumb {
+            margin-bottom: 20px; font-size: 14px; color: #888;
+        }
+        .breadcrumb a { color: #6cb7ff; text-decoration: none; }
+        .breadcrumb a:hover { text-decoration: underline; }
+
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 30px; flex-wrap: wrap; gap: 15px;
+        }
+
+        .header h1 {
+            font-size: 28px; font-weight: 700;
+            background: linear-gradient(135deg, #6cb7ff, #a78bfa);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+        /* 通用按钮 */
+        .btn {
+            padding: 10px 20px; border-radius: 8px; border: none;
+            cursor: pointer; font-size: 14px; font-weight: 600;
+            transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #6cb7ff, #4a9eff);
+            color: #fff; box-shadow: 0 4px 15px rgba(108,183,255,0.3);
+        }
+        .btn-primary:hover { box-shadow: 0 6px 20px rgba(108,183,255,0.4); }
+
+        .btn-purple {
+            background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+            color: #fff; box-shadow: 0 4px 15px rgba(167,139,250,0.3);
+        }
+        .btn-purple:hover { box-shadow: 0 6px 20px rgba(167,139,250,0.4); }
+
+        .btn-success {
+            background: linear-gradient(135deg, #34d399, #10b981);
+            color: #fff; box-shadow: 0 4px 15px rgba(52,211,153,0.3);
+        }
+
+        /* 模型切换区域 */
+        .model-switcher {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 24px; margin-bottom: 30px;
+        }
+
+        .model-switcher h2 {
+            font-size: 18px; margin-bottom: 16px; color: #c4b5fd;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .model-switcher .current-model {
+            font-size: 14px; color: #9ca3af; margin-bottom: 14px;
+        }
+        .model-switcher .current-model span {
+            color: #6cb7ff; font-weight: 700; font-size: 16px;
+        }
+
+        .model-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 10px;
+        }
+
+        .provider-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px; margin-bottom: 10px;
+        }
+
+        .provider-card {
+            padding: 16px; border-radius: 12px;
+            background: rgba(255,255,255,0.04); border: 2px solid rgba(255,255,255,0.06);
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        .provider-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(167,139,250,0.3); }
+        .provider-card.active {
+            background: rgba(167,139,250,0.15); border-color: #a78bfa;
+            box-shadow: 0 0 20px rgba(167,139,250,0.2);
+        }
+        .provider-card .provider-name {
+            font-weight: 700; font-size: 16px; color: #e0e0e0; margin-bottom: 6px;
+        }
+        .provider-card .provider-models {
+            font-size: 12px; color: #9ca3af;
+        }
+        .provider-card.active .provider-name { color: #a78bfa; }
+
+        .model-card {
+            padding: 12px 16px; border-radius: 10px;
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+            cursor: pointer; transition: all 0.2s ease;
+            text-align: center; font-size: 14px; font-weight: 500;
+        }
+        .model-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(108,183,255,0.3); }
+        .model-card.active {
+            background: rgba(108,183,255,0.15); border-color: #6cb7ff;
+            color: #6cb7ff; box-shadow: 0 0 15px rgba(108,183,255,0.2);
+        }
+
+        /* 统计概览卡片 */
+        .stats-row {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px; margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
+            padding: 20px; text-align: center;
+        }
+
+        .stat-card .label { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+        .stat-card .value { font-size: 28px; font-weight: 700; }
+        .stat-card .value.blue { color: #6cb7ff; }
+        .stat-card .value.green { color: #34d399; }
+        .stat-card .value.yellow { color: #fbbf24; }
+        .stat-card .value.purple { color: #a78bfa; }
+        .stat-card .sub { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+        /* Benchmark 表格 */
+        .benchmark-section {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 24px; margin-bottom: 30px;
+        }
+
+        .benchmark-section h2 {
+            font-size: 18px; margin-bottom: 16px; color: #6cb7ff;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .benchmark-table {
+            width: 100%; border-collapse: separate; border-spacing: 0;
+            font-size: 14px;
+        }
+
+        .benchmark-table thead th {
+            padding: 12px 16px; text-align: left; font-weight: 600;
+            color: #9ca3af; border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+        .benchmark-table thead th:not(:first-child) { text-align: right; }
+
+        .benchmark-table tbody tr {
+            transition: background 0.15s ease;
+        }
+        .benchmark-table tbody tr:hover {
+            background: rgba(255,255,255,0.04);
+        }
+
+        .benchmark-table tbody td {
+            padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.04);
+            white-space: nowrap;
+        }
+        .benchmark-table tbody td:not(:first-child) { text-align: right; }
+
+        .model-name {
+            font-weight: 600; color: #e0e0e0;
+        }
+
+        .status-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 20px;
+            font-size: 12px; font-weight: 600;
+        }
+        .status-success { background: rgba(52,211,153,0.15); color: #34d399; }
+        .status-partial { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .status-failed { background: rgba(248,113,113,0.15); color: #f87171; }
+
+        .metric-good { color: #34d399; font-weight: 600; }
+        .metric-warn { color: #fbbf24; font-weight: 600; }
+        .metric-bad { color: #f87171; font-weight: 600; }
+
+        .ttft-bar {
+            display: inline-block; height: 8px; border-radius: 4px;
+            margin-left: 8px; vertical-align: middle; min-width: 4px;
+        }
+
+        /* 历史记录 */
+        .history-section {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 24px; margin-bottom: 30px;
+        }
+
+        /* AI 分析 */
+        .analysis-section {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 24px; margin-bottom: 30px;
+        }
+        .analysis-section h2 {
+            font-size: 18px; margin-bottom: 16px; color: #a78bfa;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .analysis-placeholder {
+            text-align: center; padding: 40px 20px; color: #6b7280;
+            font-size: 14px;
+        }
+        .analysis-placeholder .placeholder-icon { font-size: 36px; margin-bottom: 10px; }
+        .analysis-error {
+            text-align: center; padding: 30px 20px;
+        }
+        .analysis-error .error-icon { font-size: 36px; margin-bottom: 10px; color: #f87171; }
+        .analysis-error .error-msg { color: #9ca3af; font-size: 14px; margin-bottom: 6px; }
+        .analysis-error .error-detail { color: #6b7280; font-size: 12px; word-break: break-all; }
+        .analysis-content {
+            border-radius: 12px; padding: 20px; font-size: 14px;
+            line-height: 1.8; color: #d1d5db;
+        }
+        .analysis-content.has-content {
+            background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.12);
+        }
+        .analysis-content h1 { font-size: 20px; color: #e0e0e0; margin: 16px 0 8px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; }
+        .analysis-content h2 { font-size: 17px; color: #c4b5fd; margin: 14px 0 6px; }
+        .analysis-content h3 { font-size: 15px; color: #a78bfa; margin: 12px 0 4px; }
+        .analysis-content p { margin: 6px 0; }
+        .analysis-content ul, .analysis-content ol { padding-left: 20px; margin: 6px 0; }
+        .analysis-content li { margin: 3px 0; }
+        .analysis-content strong { color: #fbbf24; }
+        .analysis-content em { color: #6cb7ff; }
+        .analysis-content code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+        .analysis-content pre { background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
+        .analysis-content pre code { background: none; padding: 0; }
+        .analysis-content blockquote { border-left: 3px solid #a78bfa; padding-left: 12px; margin: 8px 0; color: #9ca3af; }
+        .analysis-content hr { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 12px 0; }
+        .analysis-content table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+        .analysis-content th, .analysis-content td { border: 1px solid rgba(255,255,255,0.1); padding: 6px 10px; text-align: left; }
+        .analysis-content th { background: rgba(255,255,255,0.05); color: #c4b5fd; }
+
+        .history-section h2 {
+            font-size: 18px; margin-bottom: 16px; color: #fbbf24;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .history-list {
+            display: flex; flex-direction: column; gap: 8px;
+        }
+
+        .history-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 16px; border-radius: 10px;
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        .history-item:hover { background: rgba(255,255,255,0.06); }
+        .history-item.active { border-color: #6cb7ff; background: rgba(108,183,255,0.08); }
+
+        .history-time { font-weight: 600; color: #e0e0e0; }
+        .history-summary { font-size: 13px; color: #9ca3af; }
+
+        /* 加载动画 */
+        .spinner {
+            display: inline-block; width: 18px; height: 18px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-top-color: #6cb7ff; border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .loading-state {
+            text-align: center; padding: 60px 20px; color: #6b7280;
+        }
+        .loading-state .spinner { width: 40px; height: 40px; margin-bottom: 16px; }
+
+        /* 通知 Toast */
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 600;
+            z-index: 9999; opacity: 0; transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        .toast.show { opacity: 1; }
+        .toast.success { background: rgba(52,211,153,0.9); color: #fff; }
+        .toast.error { background: rgba(248,113,113,0.9); color: #fff; }
+        .toast.info { background: rgba(108,183,255,0.9); color: #fff; }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .container { padding: 20px 12px; }
+            .header h1 { font-size: 22px; }
+            .benchmark-table { font-size: 12px; }
+            .benchmark-table thead th, .benchmark-table tbody td { padding: 10px 8px; }
+            .model-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <div id="bg-container" class="page-background"></div>
+    <div class="page-overlay"></div>
+
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/">主页</a> &gt; <span class="current-page-title">AI 管理</span>
+        </div>
+
+        <div class="header">
+            <h1>AI Benchmark 管理</h1>
+            <div class="header-actions">
+                <button id="trigger-btn" class="btn btn-primary" onclick="triggerBenchmark()">
+                    &#9889; 立即测试
+                </button>
+                <button class="btn btn-success" onclick="refreshData()">
+                    &#8635; 刷新数据
+                </button>
+            </div>
+        </div>
+
+        <!-- API 来源切换 -->
+        <div class="model-switcher">
+            <h2>&#9881; API 来源切换</h2>
+            <div class="current-model">当前来源：<span id="current-provider-text">加载中...</span></div>
+            <div class="provider-grid" id="provider-grid">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+
+        <!-- 模型切换 -->
+        <div class="model-switcher">
+            <h2>&#9881; 模型切换</h2>
+            <div class="current-model">当前模型：<span id="current-model-text">加载中...</span></div>
+            <div class="model-grid" id="model-grid">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+
+        <!-- 统计概览 -->
+        <div class="stats-row" id="stats-row">
+            <div class="stat-card">
+                <div class="label">测试模型数</div>
+                <div class="value blue" id="stat-total">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">最快首字延迟</div>
+                <div class="value green" id="stat-best-ttft">-</div>
+                <div class="sub" id="stat-best-ttft-model"></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">最高生成速度</div>
+                <div class="value yellow" id="stat-best-tps">-</div>
+                <div class="sub" id="stat-best-tps-model"></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">最近测试时间</div>
+                <div class="value purple" id="stat-time">-</div>
+            </div>
+        </div>
+
+        <!-- Benchmark 详情表 -->
+        <div class="benchmark-section">
+            <h2>&#128202; Benchmark 详情 <span id="benchmark-time-label" style="font-size:13px;color:#6b7280;font-weight:400;margin-left:8px;"></span></h2>
+            <div id="benchmark-content">
+                <div class="loading-state"><div class="spinner"></div><br>加载数据中...</div>
+            </div>
+        </div>
+
+        <!-- AI 分析 -->
+        <div class="analysis-section" id="analysis-section">
+            <h2>&#129302; AI 分析 (glm-5.1)</h2>
+            <div id="analysis-content" class="analysis-content">
+                <div class="analysis-placeholder">
+                    <div class="placeholder-icon">&#128196;</div>
+                    <div>暂无分析报告，请先执行 Benchmark 测试</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史记录 -->
+        <div class="history-section">
+            <h2>&#128197; 历史记录</h2>
+            <div class="history-list" id="history-list">
+                <div class="loading-state"><div class="spinner"></div><br>加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 通知 -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // ============ Toast 通知 ============
+        function showToast(msg, type = 'info') {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.className = 'toast ' + type + ' show';
+            setTimeout(() => { el.className = 'toast ' + type; }, 2500);
+        }
+
+        // ============ API 来源切换 ============
+        let currentProvider = '';
+        let providers = {};
+
+        async function loadProviderInfo() {
+            try {
+                const res = await fetch('/api/claude/provider');
+                const data = await res.json();
+                if (data.success) {
+                    currentProvider = data.current;
+                    providers = data.providers;
+                    document.getElementById('current-provider-text').textContent = providers[currentProvider]?.name || currentProvider;
+                    renderProviderGrid();
+                }
+            } catch (e) {
+                document.getElementById('current-provider-text').textContent = '加载失败';
+            }
+        }
+
+        function renderProviderGrid() {
+            const grid = document.getElementById('provider-grid');
+            grid.innerHTML = '';
+            Object.entries(providers).forEach(([key, p]) => {
+                const card = document.createElement('div');
+                card.className = 'provider-card' + (key === currentProvider ? ' active' : '');
+                card.innerHTML = `
+                    <div class="provider-name">${p.name}</div>
+                    <div class="provider-models">模型: ${p.models.join(', ')}</div>
+                `;
+                card.onclick = () => switchProvider(key);
+                grid.appendChild(card);
+            });
+        }
+
+        async function switchProvider(providerKey) {
+            if (providerKey === currentProvider) return;
+            try {
+                const res = await fetch('/api/claude/provider', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: providerKey })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    currentProvider = providerKey;
+                    document.getElementById('current-provider-text').textContent = providers[providerKey].name;
+                    renderProviderGrid();
+
+                    // 更新模型列表
+                    currentModel = data.current_model;
+                    availableModels = data.models;
+                    document.getElementById('current-model-text').textContent = currentModel;
+                    renderModelGrid();
+
+                    showToast('已切换到 ' + providers[providerKey].name, 'success');
+                } else {
+                    showToast(data.message || '切换失败', 'error');
+                }
+            } catch (e) {
+                showToast('切换失败', 'error');
+            }
+        }
+
+        // ============ 模型切换 ============
+        let currentModel = '';
+        let availableModels = [];
+
+        async function loadModelInfo() {
+            try {
+                const res = await fetch('/api/claude/model');
+                const data = await res.json();
+                if (data.success) {
+                    currentModel = data.current_model;
+                    availableModels = data.models;
+                    document.getElementById('current-model-text').textContent = currentModel || '未设置';
+                    renderModelGrid();
+                }
+            } catch (e) {
+                document.getElementById('current-model-text').textContent = '加载失败';
+            }
+        }
+
+        function renderModelGrid() {
+            const grid = document.getElementById('model-grid');
+            grid.innerHTML = '';
+            availableModels.forEach(m => {
+                const card = document.createElement('div');
+                card.className = 'model-card' + (m === currentModel ? ' active' : '');
+                card.textContent = m;
+                card.onclick = () => switchModel(m);
+                grid.appendChild(card);
+            });
+        }
+
+        async function switchModel(model) {
+            if (model === currentModel) return;
+            try {
+                const res = await fetch('/api/claude/model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    currentModel = model;
+                    document.getElementById('current-model-text').textContent = model;
+                    renderModelGrid();
+                    showToast('已切换为 ' + model, 'success');
+                } else {
+                    showToast(data.message || '切换失败', 'error');
+                }
+            } catch (e) {
+                showToast('切换失败', 'error');
+            }
+        }
+
+        // ============ Benchmark 数据 ============
+        let latestData = null;
+
+        async function loadLatestBenchmark() {
+            try {
+                const res = await fetch('/api/benchmark/latest');
+                const data = await res.json();
+                if (data.success) {
+                    latestData = data.data;
+                    renderBenchmark(latestData);
+                    renderStats(latestData);
+                } else {
+                    latestData = null;
+                    document.getElementById('benchmark-content').innerHTML =
+                        '<div class="loading-state">暂无 Benchmark 数据，请点击「立即测试」</div>';
+                    renderAnalysis(null);
+                }
+            } catch (e) {
+                latestData = null;
+                document.getElementById('benchmark-content').innerHTML =
+                    '<div class="loading-state">加载失败</div>';
+                renderAnalysis(null);
+            }
+        }
+
+        function renderBenchmark(data) {
+            if (!data || !data.models || data.models.length === 0) {
+                document.getElementById('benchmark-content').innerHTML =
+                    '<div class="loading-state">暂无数据</div>';
+                return;
+            }
+
+            const models = data.models;
+            const maxTtft = Math.max(...models.filter(m => !m.short.error).map(m => m.short.ttft), 1);
+
+            let html = `<table class="benchmark-table">
+                <thead>
+                    <tr>
+                        <th>模型</th>
+                        <th>状态</th>
+                        <th>首字延迟 (TTFT)</th>
+                        <th>生成速度 (TPS)</th>
+                        <th>长文本首字延迟</th>
+                        <th>延迟衰减倍率</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            models.forEach(m => {
+                const s = m.short, l = m.long;
+                if (s.error) {
+                    html += `<tr>
+                        <td class="model-name">${m.model}</td>
+                        <td><span class="status-badge status-failed">Failed</span></td>
+                        <td style="color:#6b7280;font-size:12px;">${s.error}</td>
+                        <td>-</td><td>-</td><td>-</td>
+                    </tr>`;
+                    return;
+                }
+
+                const ttftClass = s.ttft <= 2 ? 'metric-good' : s.ttft <= 5 ? 'metric-warn' : 'metric-bad';
+                const tpsClass = s.tps >= 50 ? 'metric-good' : s.tps >= 20 ? 'metric-warn' : 'metric-bad';
+                const barWidth = Math.round((s.ttft / maxTtft) * 80);
+                const barColor = s.ttft <= 2 ? '#34d399' : s.ttft <= 5 ? '#fbbf24' : '#f87171';
+
+                let statusBadge, longCell, ratioCell;
+                if (l.error) {
+                    statusBadge = '<span class="status-badge status-partial">Partial</span>';
+                    longCell = '<span style="color:#f87171;">Failed</span>';
+                    ratioCell = '-';
+                } else {
+                    statusBadge = '<span class="status-badge status-success">Success</span>';
+                    const lttftClass = l.ttft <= 3 ? 'metric-good' : l.ttft <= 8 ? 'metric-warn' : 'metric-bad';
+                    longCell = `<span class="${lttftClass}">${l.ttft.toFixed(2)} s</span>`;
+                    const ratio = s.ttft > 0 ? l.ttft / s.ttft : 0;
+                    const ratioClass = ratio <= 1.5 ? 'metric-good' : ratio <= 3 ? 'metric-warn' : 'metric-bad';
+                    ratioCell = `<span class="${ratioClass}">${ratio.toFixed(1)}x</span>`;
+                }
+
+                html += `<tr>
+                    <td class="model-name">${m.model}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <span class="${ttftClass}">${s.ttft.toFixed(2)} s</span>
+                        <span class="ttft-bar" style="width:${barWidth}px;background:${barColor};"></span>
+                    </td>
+                    <td><span class="${tpsClass}">${s.tps.toFixed(1)} t/s</span></td>
+                    <td>${longCell}</td>
+                    <td>${ratioCell}</td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('benchmark-content').innerHTML = html;
+            document.getElementById('benchmark-time-label').textContent = data.timestamp || '';
+
+            // 渲染 AI 分析
+            renderAnalysis(data);
+        }
+
+        function renderStats(data) {
+            if (!data || !data.models) return;
+            const models = data.models.filter(m => !m.short.error);
+            document.getElementById('stat-total').textContent = data.models.length;
+
+            if (models.length > 0) {
+                const bestTtft = models.reduce((a, b) => a.short.ttft < b.short.ttft ? a : b);
+                document.getElementById('stat-best-ttft').textContent = bestTtft.short.ttft.toFixed(2) + ' s';
+                document.getElementById('stat-best-ttft-model').textContent = bestTtft.model;
+
+                const bestTps = models.reduce((a, b) => a.short.tps > b.short.tps ? a : b);
+                document.getElementById('stat-best-tps').textContent = bestTps.short.tps.toFixed(1) + ' t/s';
+                document.getElementById('stat-best-tps-model').textContent = bestTps.model;
+            }
+
+            document.getElementById('stat-time').textContent = data.timestamp ? data.timestamp.split(' ')[1] || data.timestamp : '-';
+        }
+
+        // ============ AI 分析渲染 ============
+        function renderAnalysis(data) {
+            const section = document.getElementById('analysis-section');
+            const content = document.getElementById('analysis-content');
+            if (data && data.analysis) {
+                if (data.analysis.startsWith('分析请求失败')) {
+                    content.classList.remove('has-content');
+                    const colonIdx = data.analysis.indexOf(':');
+                    const detail = colonIdx > -1 ? data.analysis.substring(colonIdx + 1).trim() : '';
+                    content.innerHTML =
+                        '<div class="analysis-error">' +
+                        '<div class="error-icon">&#9888;</div>' +
+                        '<div class="error-msg">分析请求失败</div>' +
+                        (detail ? '<div class="error-detail">' + escapeHtml(detail.substring(0, 200)) + (detail.length > 200 ? '...' : '') + '</div>' : '') +
+                        '</div>';
+                } else {
+                    content.classList.add('has-content');
+                    content.innerHTML = marked.parse(data.analysis);
+                }
+            } else {
+                content.classList.remove('has-content');
+                content.innerHTML = '<div class="analysis-placeholder"><div class="placeholder-icon">&#128196;</div><div>暂无分析报告，请先执行 Benchmark 测试</div></div>';
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // ============ 历史记录 ============
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/benchmark/all');
+                const data = await res.json();
+                if (data.success) {
+                    renderHistory(data.data);
+                }
+            } catch (e) {
+                document.getElementById('history-list').innerHTML = '<div class="loading-state">加载失败</div>';
+            }
+        }
+
+        function renderHistory(items) {
+            const el = document.getElementById('history-list');
+            if (!items || items.length === 0) {
+                el.innerHTML = '<div class="loading-state">暂无历史记录</div>';
+                return;
+            }
+
+            el.innerHTML = '';
+            // 最新的在前
+            [...items].reverse().forEach(item => {
+                const successCount = (item.models || []).filter(m => !m.short.error).length;
+                const totalCount = (item.models || []).length;
+                const isActive = latestData && item.timestamp === latestData.timestamp;
+
+                const div = document.createElement('div');
+                div.className = 'history-item' + (isActive ? ' active' : '');
+                div.innerHTML = `
+                    <span class="history-time">${item.timestamp || item.filename}</span>
+                    <span class="history-summary">${successCount}/${totalCount} 成功</span>
+                `;
+                div.onclick = () => {
+                    latestData = item;
+                    renderBenchmark(item);
+                    renderStats(item);
+                    renderHistory(items);
+                };
+                el.appendChild(div);
+            });
+        }
+
+        // ============ 触发测试 ============
+        async function triggerBenchmark() {
+            const btn = document.getElementById('trigger-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> 测试中...';
+
+            try {
+                const res = await fetch('/api/benchmark/trigger', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('测试已触发，请稍候...', 'info');
+                    // 轮询状态
+                    pollBenchmarkStatus();
+                } else {
+                    showToast(data.message, 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = '&#9889; 立即测试';
+                }
+            } catch (e) {
+                showToast('触发失败', 'error');
+                btn.disabled = false;
+                btn.innerHTML = '&#9889; 立即测试';
+            }
+        }
+
+        async function pollBenchmarkStatus() {
+            const btn = document.getElementById('trigger-btn');
+            try {
+                const res = await fetch('/api/benchmark/status');
+                const data = await res.json();
+                if (data.success && data.running) {
+                    const elapsed = data.elapsed_seconds;
+                    if (elapsed != null) {
+                        const min = Math.floor(elapsed / 60);
+                        const sec = Math.floor(elapsed % 60);
+                        const timeStr = min > 0 ? `${min}分${sec}秒` : `${sec}秒`;
+                        btn.innerHTML = `<span class="spinner"></span> 测试中... ${timeStr}`;
+                    }
+                    setTimeout(pollBenchmarkStatus, 2000);
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = '&#9889; 立即测试';
+                    showToast('测试完成！', 'success');
+                    await loadLatestBenchmark();
+                    await loadHistory();
+                }
+            } catch (e) {
+                setTimeout(pollBenchmarkStatus, 5000);
+            }
+        }
+
+        // ============ 刷新 ============
+        async function refreshData() {
+            await Promise.all([loadProviderInfo(), loadModelInfo(), loadLatestBenchmark(), loadHistory()]);
+            showToast('数据已刷新', 'info');
+        }
+
+        // ============ 初始化 ============
+        async function init() {
+            // 加载背景图
+            try {
+                const res = await fetch('/api/fetch-background');
+                const data = await res.json();
+                if (data.success && data.bg_url) {
+                    document.getElementById('bg-container').style.backgroundImage = `url('${data.bg_url}')`;
+                }
+            } catch(e) {}
+
+            await Promise.all([loadProviderInfo(), loadModelInfo(), loadLatestBenchmark(), loadHistory()]);
+
+            // 检查是否已有测试在运行
+            try {
+                const res = await fetch('/api/benchmark/status');
+                const data = await res.json();
+                if (data.success && data.running) {
+                    const btn = document.getElementById('trigger-btn');
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner"></span> 测试中...';
+                    pollBenchmarkStatus();
+                }
+            } catch(e) {}
+        }
+
+        init();
+    </script>
+</body>
+</html>

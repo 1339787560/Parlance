@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/icon/tabIcon.ico" type="image/x-icon">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <title>RAG 知识库问答</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .page-background {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -2; background-size: cover; background-position: center;
+            background-repeat: no-repeat; opacity: 0.15;
+        }
+
+        .page-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1;
+            background: linear-gradient(135deg, rgba(15,15,26,0.95) 0%, rgba(20,20,35,0.92) 100%);
+        }
+
+        .container {
+            width: 100%; max-width: 1000px; margin: 0 auto; padding: 30px 20px;
+        }
+
+        .breadcrumb {
+            margin-bottom: 20px; font-size: 14px; color: #888;
+        }
+        .breadcrumb a { color: #6cb7ff; text-decoration: none; }
+        .breadcrumb a:hover { text-decoration: underline; }
+
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 30px; flex-wrap: wrap; gap: 15px;
+        }
+
+        .header h1 {
+            font-size: 28px; font-weight: 700;
+            background: linear-gradient(135deg, #6cb7ff, #a78bfa);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .btn {
+            padding: 10px 20px; border-radius: 8px; border: none;
+            cursor: pointer; font-size: 14px; font-weight: 600;
+            transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #6cb7ff, #4a9eff);
+            color: #fff; box-shadow: 0 4px 15px rgba(108,183,255,0.3);
+        }
+
+        .btn-purple {
+            background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+            color: #fff; box-shadow: 0 4px 15px rgba(167,139,250,0.3);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #34d399, #10b981);
+            color: #fff; box-shadow: 0 4px 15px rgba(52,211,153,0.3);
+        }
+
+        /* 开关样式 */
+        .toggle-switch {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 14px; color: #888;
+        }
+
+        .toggle-switch input[type="checkbox"] {
+            width: 40px; height: 20px;
+            appearance: none; background: rgba(255,255,255,0.1);
+            border-radius: 10px; cursor: pointer;
+            position: relative; transition: background 0.2s;
+        }
+
+        .toggle-switch input[type="checkbox"]::before {
+            content: ''; position: absolute; width: 16px; height: 16px;
+            background: #fff; border-radius: 8px; top: 2px; left: 2px;
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch input[type="checkbox"]:checked {
+            background: #34d399;
+        }
+
+        .toggle-switch input[type="checkbox"]:checked::before {
+            transform: translateX(20px);
+        }
+
+        /* 状态卡片 */
+        .status-card {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 20px; margin-bottom: 25px;
+        }
+
+        .status-card h2 {
+            font-size: 16px; color: #c4b5fd; margin-bottom: 15px;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .status-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .status-item {
+            background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px;
+        }
+
+        .status-item label {
+            font-size: 12px; color: #888; display: block; margin-bottom: 5px;
+        }
+
+        .status-item span {
+            font-size: 16px; font-weight: 700; color: #6cb7ff;
+        }
+
+        /* 问答区域 */
+        .qa-section {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 25px; margin-bottom: 25px;
+        }
+
+        .qa-section h2 {
+            font-size: 18px; color: #c4b5fd; margin-bottom: 20px;
+        }
+
+        .input-group {
+            display: flex; gap: 10px; margin-bottom: 20px;
+        }
+
+        .input-group input {
+            flex: 1; padding: 15px 20px; border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05);
+            color: #e0e0e0; font-size: 15px; outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-group input:focus {
+            border-color: #6cb7ff;
+        }
+
+        /* 召回片段展示 */
+        .chunks-section {
+            margin-bottom: 20px;
+        }
+
+        .chunks-section h3 {
+            font-size: 14px; color: #888; margin-bottom: 10px;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .chunks-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 10px;
+        }
+
+        .chunk-card {
+            background: rgba(255,255,255,0.03); border-radius: 10px;
+            padding: 12px; border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .chunk-card.reranked {
+            border-color: rgba(52,211,153,0.3);
+            background: rgba(52,211,153,0.05);
+        }
+
+        .chunk-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .chunk-source {
+            font-size: 12px; color: #6cb7ff;
+        }
+
+        .chunk-score {
+            font-size: 11px; color: #888;
+            padding: 3px 8px; border-radius: 4px;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .chunk-score.rerank {
+            color: #34d399;
+            background: rgba(52,211,153,0.1);
+        }
+
+        .chunk-content {
+            font-size: 13px; color: #c0c0c0;
+            max-height: 80px; overflow: hidden;
+            text-overflow: ellipsis; display: -webkit-box;
+            -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+        }
+
+        /* 答案展示 */
+        .answer-section {
+            background: rgba(255,255,255,0.03); border-radius: 12px;
+            padding: 20px; border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .answer-section h3 {
+            font-size: 14px; color: #888; margin-bottom: 15px;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .answer-content {
+            font-size: 15px; line-height: 1.8; color: #e0e0e0;
+        }
+
+        /* Markdown 渲染样式增强 */
+        .answer-content p { margin-bottom: 12px; }
+
+        .answer-content h1 {
+            font-size: 24px; font-weight: 700;
+            color: #6cb7ff; margin: 20px 0 15px 0;
+            border-bottom: 2px solid rgba(108,183,255,0.3);
+            padding-bottom: 8px;
+        }
+
+        .answer-content h2 {
+            font-size: 20px; font-weight: 600;
+            color: #a78bfa; margin: 18px 0 12px 0;
+            padding-left: 12px;
+            border-left: 3px solid #a78bfa;
+        }
+
+        .answer-content h3 {
+            font-size: 18px; font-weight: 600;
+            color: #34d399; margin: 15px 0 10px 0;
+        }
+
+        .answer-content h4 {
+            font-size: 16px; font-weight: 600;
+            color: #f0f0f0; margin: 12px 0 8px 0;
+        }
+
+        .answer-content ul, .answer-content ol {
+            margin: 10px 0; padding-left: 24px;
+        }
+
+        .answer-content li {
+            margin: 6px 0; line-height: 1.6;
+        }
+
+        .answer-content li::marker {
+            color: #6cb7ff;
+        }
+
+        .answer-content strong {
+            color: #fbbf24; font-weight: 600;
+        }
+
+        .answer-content em {
+            color: #6cb7ff;
+        }
+
+        .answer-content blockquote {
+            border-left: 4px solid #6cb7ff;
+            padding: 10px 15px; margin: 12px 0;
+            background: rgba(108,183,255,0.1);
+            border-radius: 4px;
+        }
+
+        .answer-content code {
+            background: rgba(255,255,255,0.15); padding: 2px 6px;
+            border-radius: 4px; font-size: 14px;
+            color: #fbbf24;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .answer-content pre {
+            background: rgba(0,0,0,0.4); padding: 15px;
+            border-radius: 8px; overflow-x: auto;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin: 15px 0;
+        }
+
+        .answer-content pre code {
+            background: transparent; padding: 0;
+            color: #e0e0e0;
+        }
+
+        .answer-content table {
+            width: 100%; border-collapse: collapse;
+            margin: 12px 0;
+        }
+
+        .answer-content th, .answer-content td {
+            border: 1px solid rgba(255,255,255,0.15);
+            padding: 8px 12px; text-align: left;
+        }
+
+        .answer-content th {
+            background: rgba(108,183,255,0.2);
+            color: #6cb7ff; font-weight: 600;
+        }
+
+        .answer-content a {
+            color: #6cb7ff; text-decoration: none;
+            border-bottom: 1px solid rgba(108,183,255,0.3);
+        }
+
+        .answer-content a:hover {
+            border-bottom-color: #6cb7ff;
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: flex; align-items: center; gap: 10px;
+            color: #6cb7ff; padding: 15px;
+        }
+
+        .loading-spinner {
+            width: 20px; height: 20px; border: 2px solid rgba(108,183,255,0.3);
+            border-top-color: #6cb7ff; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 文档列表 */
+        .docs-section {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+            padding: 20px;
+        }
+
+        .docs-section h2 {
+            font-size: 16px; color: #c4b5fd; margin-bottom: 15px;
+        }
+
+        .docs-list {
+            max-height: 200px; overflow-y: auto;
+        }
+
+        .doc-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px; border-radius: 8px;
+            background: rgba(255,255,255,0.03); margin-bottom: 8px;
+        }
+
+        .doc-name {
+            font-size: 14px; color: #e0e0e0;
+        }
+
+        .doc-meta {
+            font-size: 12px; color: #888;
+        }
+
+        /* 评估报告样式 */
+        .eval-section {
+            background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+            padding: 20px; margin-top: 15px;
+        }
+
+        .eval-section h3 {
+            font-size: 14px; color: #888; margin-bottom: 15px;
+        }
+
+        .eval-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .eval-card {
+            background: rgba(255,255,255,0.03); border-radius: 8px;
+            padding: 12px;
+        }
+
+        .eval-card h4 {
+            font-size: 13px; color: #c4b5fd; margin-bottom: 8px;
+        }
+
+        .eval-item {
+            display: flex; justify-content: space-between;
+            padding: 5px 0; font-size: 12px;
+        }
+
+        .eval-item label { color: #888; }
+        .eval-item span { color: #6cb7ff; font-weight: 500; }
+
+        .eval-grade {
+            font-size: 18px; font-weight: 700;
+            padding: 10px; text-align: center; border-radius: 8px;
+        }
+
+        .eval-grade.excellent { background: rgba(52,211,153,0.2); color: #34d399; }
+        .eval-grade.good { background: rgba(108,183,255,0.2); color: #6cb7ff; }
+        .eval-grade.average { background: rgba(251,191,36,0.2); color: #fbbf24; }
+        .eval-grade.poor { background: rgba(239,68,68,0.2); color: #ef4444; }
+
+        .eval-bar {
+            height: 6px; background: rgba(255,255,255,0.1);
+            border-radius: 3px; margin-top: 5px; overflow: hidden;
+        }
+
+        .eval-bar-fill {
+            height: 100%; border-radius: 3px; transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-background"></div>
+    <div class="page-overlay"></div>
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/">首页</a> &gt; <span>知识库问答</span>
+        </div>
+
+        <div class="header">
+            <h1>📚 RAG 知识库问答</h1>
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <!-- 模型选择器已隐藏，默认使用 text2vec-base-chinese -->
+                <label class="toggle-switch">
+                    <input type="checkbox" id="show-details-toggle" onchange="toggleDetailsVisibility()">
+                    <span>显示召回详情</span>
+                </label>
+                <button class="btn btn-success" id="reindex-btn" onclick="rebuildIndex()">
+                    🔄 重建索引
+                </button>
+            </div>
+        </div>
+
+        <!-- 状态卡片 -->
+        <div class="status-card">
+            <h2>📊 知识库状态</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <label>文档数量</label>
+                    <span id="doc-count">-</span>
+                </div>
+                <div class="status-item">
+                    <label>分片数量</label>
+                    <span id="chunk-count">-</span>
+                </div>
+                <div class="status-item">
+                    <label>最后索引</label>
+                    <span id="last-index" style="font-size: 14px;">-</span>
+                </div>
+                <div class="status-item">
+                    <label>状态</label>
+                    <span id="status-text">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 问答区域 -->
+        <div class="qa-section">
+            <h2>💬 知识问答</h2>
+            <div class="input-group">
+                <input type="text" id="question-input" placeholder="输入问题..." onkeypress="handleKeyPress(event)">
+                <button class="btn btn-primary" id="submit-btn" onclick="submitQuestion()">
+                    发送
+                </button>
+            </div>
+
+            <!-- 召回片段 -->
+            <div class="chunks-section" id="retrieved-section" style="display: none;">
+                <h3>🔍 召回片段 (10)</h3>
+                <div class="chunks-grid" id="retrieved-chunks"></div>
+            </div>
+
+            <!-- 重排片段 -->
+            <div class="chunks-section" id="reranked-section" style="display: none;">
+                <h3>✨ 重排结果 (5)</h3>
+                <div class="chunks-grid" id="reranked-chunks"></div>
+            </div>
+
+            <!-- 加载动画 -->
+            <div class="loading" id="loading-indicator" style="display: none;">
+                <div class="loading-spinner"></div>
+                <span id="loading-text">正在思考...</span>
+            </div>
+
+            <!-- 答案 -->
+            <div class="answer-section" id="answer-section" style="display: none;">
+                <h3>📝 答案</h3>
+                <div class="answer-content" id="answer-content"></div>
+            </div>
+
+            <!-- 评估报告 -->
+            <div class="eval-section" id="eval-section" style="display: none;">
+                <h3>📊 评估报告</h3>
+                <div class="eval-grid" id="eval-content"></div>
+            </div>
+        </div>
+
+        <!-- 文档列表 -->
+        <div class="docs-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2>📁 知识库文档</h2>
+                <button class="btn btn-purple" id="sync-btn" onclick="syncKnowledgeBase()">
+                    📥 同步知识库
+                </button>
+            </div>
+            <div class="docs-list" id="docs-list">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 是否显示召回详情（默认关闭）
+        let showDetails = false;
+
+        // 切换显示召回详情
+        function toggleDetailsVisibility() {
+            showDetails = document.getElementById('show-details-toggle').checked;
+            // 如果关闭开关，立即隐藏已有的内容
+            if (!showDetails) {
+                document.getElementById('retrieved-section').style.display = 'none';
+                document.getElementById('reranked-section').style.display = 'none';
+            }
+        }
+
+        // 加载状态
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/rag/status');
+                const data = await response.json();
+
+                // 显示扫描数/成功数
+                const scannedCount = data.scanned_count || data.doc_count || 0;
+                const docCount = data.doc_count || 0;
+                if (scannedCount > docCount) {
+                    document.getElementById('doc-count').textContent = `${docCount}/${scannedCount}`;
+                    document.getElementById('doc-count').title = `成功处理 ${docCount} 个，扫描 ${scannedCount} 个`;
+                } else {
+                    document.getElementById('doc-count').textContent = docCount;
+                }
+                document.getElementById('chunk-count').textContent = data.chunk_count || 0;
+
+                if (data.last_index_time) {
+                    const date = new Date(data.last_index_time * 1000);
+                    document.getElementById('last-index').textContent = date.toLocaleString('zh-CN');
+                } else {
+                    document.getElementById('last-index').textContent = '未索引';
+                }
+
+                const statusText = data.needs_reindex ? '需要更新' : '就绪';
+                const statusColor = data.needs_reindex ? '#f59e0b' : '#34d399';
+                document.getElementById('status-text').textContent = statusText;
+                document.getElementById('status-text').style.color = statusColor;
+
+            } catch (error) {
+                console.error('加载状态失败:', error);
+            }
+        }
+
+        // 加载文档列表
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/rag/documents');
+                const data = await response.json();
+
+                const docsList = document.getElementById('docs-list');
+                docsList.innerHTML = '';
+
+                if (data.documents && data.documents.length > 0) {
+                    data.documents.forEach(doc => {
+                        const item = document.createElement('div');
+                        item.className = 'doc-item';
+                        item.innerHTML = `
+                            <span class="doc-name">${doc.filename}</span>
+                            <span class="doc-meta">${doc.format} · ${(doc.size / 1024).toFixed(1)}KB</span>
+                        `;
+                        docsList.appendChild(item);
+                    });
+                } else {
+                    docsList.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">暂无文档</div>';
+                }
+
+            } catch (error) {
+                console.error('加载文档列表失败:', error);
+            }
+        }
+
+        // 重建索引
+        async function rebuildIndex() {
+            const btn = document.getElementById('reindex-btn');
+            btn.disabled = true;
+            btn.textContent = '索引中...';
+
+            try {
+                const response = await fetch('/api/rag/index', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert(data.message);
+                } else {
+                    alert('索引失败: ' + data.message);
+                }
+
+                loadStatus();
+                loadDocuments();
+
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 重建索引';
+            }
+        }
+
+        // 同步知识库（异步）
+        let syncPollTimer = null;
+
+        async function syncKnowledgeBase() {
+            const btn = document.getElementById('sync-btn');
+            btn.disabled = true;
+            btn.textContent = '启动中...';
+
+            try {
+                const response = await fetch('/api/rag/sync', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    // 开始轮询状态
+                    pollSyncStatus();
+                } else {
+                    alert('启动同步失败: ' + data.message);
+                    btn.disabled = false;
+                    btn.textContent = '📥 同步知识库';
+                }
+
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = '📥 同步知识库';
+            }
+        }
+
+        async function pollSyncStatus() {
+            const btn = document.getElementById('sync-btn');
+
+            try {
+                const response = await fetch('/api/rag/sync/status');
+                const status = await response.json();
+
+                // 更新按钮文本显示当前状态
+                if (status.running) {
+                    const stageText = status.stage === 'exporting' ? '导出中...' : '索引中...';
+                    btn.textContent = stageText;
+                    // 继续轮询
+                    syncPollTimer = setTimeout(pollSyncStatus, 2000);
+                } else {
+                    // 同步完成
+                    if (status.stage === 'done' && status.result) {
+                        alert(`同步完成！\n文档数: ${status.result.doc_count || '-'}\n分片数: ${status.result.chunk_count || '-'}`);
+                    } else if (status.stage === 'error') {
+                        alert('同步失败: ' + (status.result?.message || status.message));
+                    }
+
+                    btn.disabled = false;
+                    btn.textContent = '📥 同步知识库';
+
+                    // 刷新状态
+                    loadStatus();
+                    loadDocuments();
+                }
+
+            } catch (error) {
+                console.error('获取同步状态失败:', error);
+                // 继续轮询
+                syncPollTimer = setTimeout(pollSyncStatus, 3000);
+            }
+        }
+
+        // 提交问题
+        async function submitQuestion() {
+            const input = document.getElementById('question-input');
+            const question = input.value.trim();
+
+            if (!question) {
+                alert('请输入问题');
+                return;
+            }
+
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+
+            // 显示加载动画
+            document.getElementById('loading-indicator').style.display = 'flex';
+            document.getElementById('loading-text').textContent = '正在检索...';
+
+            // 隐藏之前的结果
+            document.getElementById('retrieved-section').style.display = 'none';
+            document.getElementById('reranked-section').style.display = 'none';
+            document.getElementById('answer-section').style.display = 'none';
+            document.getElementById('eval-section').style.display = 'none';
+
+            // 清空内容
+            document.getElementById('retrieved-chunks').innerHTML = '';
+            document.getElementById('reranked-chunks').innerHTML = '';
+            document.getElementById('answer-content').innerHTML = '';
+            document.getElementById('eval-content').innerHTML = '';
+
+            try {
+                // 使用 SSE 流式请求
+                const eventSource = new EventSource(`/api/rag/query?q=${encodeURIComponent(question)}`);
+
+                let answerBuffer = '';
+                let evalData = {};  // 存储评估数据
+
+                eventSource.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+
+                    switch (data.type) {
+                        case 'retrieved':
+                            // 显示召回片段
+                            displayRetrieved(data.data);
+                            document.getElementById('loading-text').textContent = '正在重排...';
+                            break;
+
+                        case 'retrieval_eval':
+                            // 存储召回评估数据
+                            evalData.retrieval = data.data;
+                            break;
+
+                        case 'reranked':
+                            // 显示重排结果
+                            displayReranked(data.data);
+                            document.getElementById('loading-indicator').style.display = 'none';
+                            document.getElementById('answer-section').style.display = 'block';
+                            break;
+
+                        case 'rerank_eval':
+                            // 存储重排评估数据
+                            evalData.rerank = data.data;
+                            break;
+
+                        case 'answer_chunk':
+                            // 流式输出答案
+                            answerBuffer += data.data;
+                            document.getElementById('answer-content').innerHTML = marked.parse(answerBuffer);
+                            break;
+
+                        case 'answer_done':
+                            break;
+
+                        case 'eval_summary':
+                            // 显示完整评估报告
+                            evalData = data.data;
+                            displayEvaluation(evalData);
+                            eventSource.close();
+                            submitBtn.disabled = false;
+                            break;
+
+                        case 'error':
+                            document.getElementById('loading-indicator').style.display = 'none';
+                            document.getElementById('answer-section').style.display = 'block';
+                            document.getElementById('answer-content').textContent = data.data;
+                            eventSource.close();
+                            submitBtn.disabled = false;
+                            break;
+                    }
+                };
+
+                eventSource.onerror = function() {
+                    eventSource.close();
+                    document.getElementById('loading-indicator').style.display = 'none';
+                    submitBtn.disabled = false;
+                };
+
+            } catch (error) {
+                console.error('请求失败:', error);
+                document.getElementById('loading-indicator').style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        }
+
+        // 显示召回片段
+        function displayRetrieved(chunks) {
+            if (!chunks || chunks.length === 0) return;
+
+            const section = document.getElementById('retrieved-section');
+            const container = document.getElementById('retrieved-chunks');
+
+            // 只有开启开关才显示
+            section.style.display = showDetails ? 'block' : 'none';
+            container.innerHTML = '';
+
+            chunks.forEach(chunk => {
+                const card = document.createElement('div');
+                card.className = 'chunk-card';
+
+                // 兼容新旧数据格式
+                const scoreText = chunk.distance
+                    ? `距离: ${chunk.distance.toFixed(3)}`
+                    : (chunk.final_score
+                        ? `分数: ${chunk.final_score.toFixed(3)}`
+                        : `分数: ${(chunk.score || 0).toFixed(3)}`);
+
+                const retrievalType = chunk.retrieval_type ? ` [${chunk.retrieval_type}]` : '';
+
+                card.innerHTML = `
+                    <div class="chunk-header">
+                        <span class="chunk-source">${chunk.source}${retrievalType}</span>
+                        <span class="chunk-score">${scoreText}</span>
+                    </div>
+                    <div class="chunk-content">${chunk.content}</div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // 显示重排结果
+        function displayReranked(chunks) {
+            if (!chunks || chunks.length === 0) return;
+
+            const section = document.getElementById('reranked-section');
+            const container = document.getElementById('reranked-chunks');
+
+            // 只有开启开关才显示
+            section.style.display = showDetails ? 'block' : 'none';
+            container.innerHTML = '';
+
+            chunks.forEach(chunk => {
+                const card = document.createElement('div');
+                card.className = 'chunk-card reranked';
+                card.innerHTML = `
+                    <div class="chunk-header">
+                        <span class="chunk-source">${chunk.source}</span>
+                        <span class="chunk-score rerank">评分: ${chunk.rerank_score || '-'}</span>
+                    </div>
+                    <div class="chunk-content">${chunk.content}</div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // 键盘事件
+        // 显示评估报告
+        function displayEvaluation(evalData) {
+            const section = document.getElementById('eval-section');
+            const container = document.getElementById('eval-content');
+
+            section.style.display = 'block';
+            container.innerHTML = '';
+
+            // 整体评分
+            if (evalData.overall_quality) {
+                const quality = evalData.overall_quality;
+                const gradeClass = quality.grade === '优秀' ? 'excellent' :
+                                   quality.grade === '良好' ? 'good' :
+                                   quality.grade === '一般' ? 'average' : 'poor';
+
+                const gradeCard = document.createElement('div');
+                gradeCard.className = 'eval-card';
+                gradeCard.innerHTML = `
+                    <h4>🎯 整体评分</h4>
+                    <div class="eval-grade ${gradeClass}">${quality.score} 分 (${quality.grade})</div>
+                    <div class="eval-item"><label>召回得分</label><span>${quality.retrieval_score}</span></div>
+                    <div class="eval-item"><label>重排得分</label><span>${quality.rerank_score}</span></div>
+                `;
+                container.appendChild(gradeCard);
+            }
+
+            // 召回评估
+            if (evalData.retrieval) {
+                const ret = evalData.retrieval;
+                const retCard = document.createElement('div');
+                retCard.className = 'eval-card';
+
+                const typeLabels = {
+                    'vector': '向量',
+                    'bm25': '关键词',
+                    'hybrid': '混合'
+                };
+                const typeStr = Object.entries(ret.retrieval_types || {})
+                    .map(([k, v]) => `${typeLabels[k] || k}: ${v}`)
+                    .join(' / ') || '无';
+
+                retCard.innerHTML = `
+                    <h4>🔍 召回评估</h4>
+                    <div class="eval-item"><label>召回数量</label><span>${ret.count} 个</span></div>
+                    <div class="eval-item"><label>平均分数</label><span>${ret.avg_score}</span></div>
+                    <div class="eval-item"><label>检索类型</label><span>${typeStr}</span></div>
+                    <div class="eval-item"><label>高分片段</label><span>${ret.score_distribution?.high || 0} 个</span></div>
+                    <div class="eval-item"><label>混合命中</label><span>${ret.hybrid_rate * 100}%</span></div>
+                    <div class="eval-bar">
+                        <div class="eval-bar-fill" style="width: ${ret.avg_score * 100}%; background: #6cb7ff;"></div>
+                    </div>
+                `;
+                container.appendChild(retCard);
+            }
+
+            // 重排评估
+            if (evalData.rerank) {
+                const rerank = evalData.rerank;
+                const rerankCard = document.createElement('div');
+                rerankCard.className = 'eval-card';
+
+                rerankCard.innerHTML = `
+                    <h4>✨ 重排评估</h4>
+                    <div class="eval-item"><label>重排数量</label><span>${rerank.count} 个</span></div>
+                    <div class="eval-item"><label>平均评分</label><span>${rerank.avg_rerank_score || '-'}</span></div>
+                    <div class="eval-item"><label>最高评分</label><span>${rerank.max_rerank_score || '-'}</span></div>
+                    <div class="eval-item"><label>首位变化</label><span>${rerank.top_changed ? '有变化' : '无变化'}</span></div>
+                    <div class="eval-item"><label>位置变动</label><span>${rerank.avg_position_change || 0}</span></div>
+                    <div class="eval-bar">
+                        <div class="eval-bar-fill" style="width: ${(rerank.avg_rerank_score || 0)}%; background: #34d399;"></div>
+                    </div>
+                `;
+                container.appendChild(rerankCard);
+            }
+
+            // 答案评估
+            if (evalData.answer) {
+                const ans = evalData.answer;
+                const ansCard = document.createElement('div');
+                ansCard.className = 'eval-card';
+
+                ansCard.innerHTML = `
+                    <h4>📝 答案评估</h4>
+                    <div class="eval-item"><label>答案长度</label><span>${ans.length} 字</span></div>
+                    <div class="eval-item"><label>有实质内容</label><span>${ans.has_content ? '✓' : '✗'}</span></div>
+                    <div class="eval-item"><label>生成状态</label><span>${ans.has_error ? '异常' : '正常'}</span></div>
+                `;
+                container.appendChild(ansCard);
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                submitQuestion();
+            }
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStatus();
+            loadDocuments();
+        });
+    </script>
+</body>
+</html>

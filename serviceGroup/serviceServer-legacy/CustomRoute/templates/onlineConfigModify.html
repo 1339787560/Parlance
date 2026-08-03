@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/icon/tabIcon.ico" type="image/x-icon">
+    <title>在线配置修改</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .breadcrumb {
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        .breadcrumb a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        
+        .breadcrumb .current-page-title {
+            font-weight: bold;
+            color: #343a40;
+        }
+        
+        /* 夜间模式下的面包屑样式 */
+        body.dark-theme .breadcrumb {
+            color: #b0b0b0;
+        }
+        
+        body.dark-theme .breadcrumb a {
+            color: #6cb7ff;
+        }
+        
+        body.dark-theme .breadcrumb a:hover {
+            color: #3a98ff;
+        }
+        
+        body.dark-theme .breadcrumb .current-page-title {
+            color: #f0f0f0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .service-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .service-item {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #f8f9fa;
+        }
+
+        .service-item:hover {
+            background-color: #e9ecef;
+        }
+
+        .config-file-list {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+
+        .config-file-item {
+            padding: 5px;
+            cursor: pointer;
+            color: #007bff;
+        }
+
+        .config-file-item:hover {
+            text-decoration: underline;
+        }
+
+        .editor-container {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .editor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 400px;
+            font-family: monospace;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin-right: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button.save {
+            background-color: #28a745;
+        }
+
+        button.save:hover {
+            background-color: #218838;
+        }
+
+        button.cancel {
+            background-color: #6c757d;
+        }
+
+        button.cancel:hover {
+            background-color: #5a6268;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/">主页</a> &gt; <span class="current-page-title">在线配置修改</span>
+        </div>
+        <h1>在线配置修改</h1>
+
+        <div class="card">
+            <h2>已部署服务</h2>
+            <div class="service-list" id="service-list">
+                <!-- 服务列表将通过JavaScript动态生成 -->
+            </div>
+        </div>
+
+        <div class="editor-container" id="editor-container">
+            <div class="card">
+                <div class="editor-header">
+                    <h2 id="editing-file-title">编辑文件</h2>
+                    <div style="display: flex; align-items: center;">
+                        <label for="encoding-selector" style="margin-right: 5px;">编码:</label>
+                        <select id="encoding-selector" style="margin-right: 10px;">
+                            <option value="utf-8">UTF-8</option>
+                            <option value="gbk">ANSI (GBK)</option>
+                            <option value="utf-16-le">UTF-16 小端</option>
+                            <option value="utf-16-be">UTF-16 大端</option>
+                        </select>
+                        <button class="cancel" onclick="hideEditor()">取消</button>
+                    </div>
+                </div>
+                <textarea id="file-content" placeholder="文件内容将在此显示..."></textarea>
+                <div id="branch-files-container" style="margin-top: 10px;"></div>
+                <div style="margin-top: 10px;">
+                    <button class="save" onclick="saveFile()">保存</button>
+                    <button class="cancel" onclick="hideEditor()">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedService = null;
+        let editingFilePath = null;
+
+        // 加载正在运行的服务列表
+        async function loadServices() {
+            try {
+                // 使用专门的API端点获取正在运行的服务
+                const response = await fetch('/api/config/services/running');
+                const servicesData = await response.json();
+
+                if (servicesData.error) {
+                    console.error('API错误:', servicesData.error);
+                    alert('获取服务列表失败: ' + servicesData.error);
+                    return;
+                }
+
+                const serviceListElement = document.getElementById('service-list');
+                serviceListElement.innerHTML = '';
+
+                for (const [serviceId, serviceInfo] of Object.entries(servicesData)) {
+                    const serviceItem = document.createElement('div');
+                    serviceItem.className = 'service-item';
+                    serviceItem.textContent = serviceInfo.name;  // 这里已经是 "服务组 exe名称" 的格式
+                    serviceItem.onclick = () => toggleConfigFiles(serviceId, serviceInfo, serviceItem);
+                    serviceListElement.appendChild(serviceItem);
+                }
+            } catch (error) {
+                console.error('加载服务列表失败:', error);
+                alert('加载服务列表失败: ' + error.message);
+            }
+        }
+        // 切换显示服务的配置文件列表
+        async function toggleConfigFiles(serviceId, serviceInfo, serviceItemElement) {
+            // 检查是否已经展开，如果是则收起
+            const existingFileList = serviceItemElement.nextElementSibling;
+            if (existingFileList && existingFileList.classList.contains('config-file-list')) {
+                // 收起文件列表
+                existingFileList.remove();
+                return;
+            }
+
+            // 清理之前展开的文件列表
+            const allFileLists = document.querySelectorAll('.config-file-list');
+            allFileLists.forEach(list => list.remove());
+
+            // 重新展开当前服务的文件列表
+            try {
+                // 发送服务ID获取配置文件列表
+                const response = await fetch(`/api/config/files?serviceId=${serviceId}`);
+                const result = await response.json();
+
+                // 检查API响应是否成功
+                if (!result.success) {
+                    console.error('获取配置文件失败:', result.message);
+                    alert('获取配置文件失败: ' + result.message);
+                    return;
+                }
+
+                // 添加配置文件列表到当前服务项下方
+                const configFileList = document.createElement('div');
+                configFileList.className = 'config-file-list';
+
+                const configFiles = result.files || [];
+                if (configFiles.length > 0) {
+                    configFiles.forEach(file => {
+                        const fileItem = document.createElement('div');
+                        fileItem.className = 'config-file-item';
+                        fileItem.textContent = file.filename;
+                        fileItem.onclick = (event) => {
+                            event.stopPropagation(); // 阻止冒泡到父级服务项
+                            openFileEditor(file.full_path, file.filename);  // 使用完整路径
+                        };
+                        configFileList.appendChild(fileItem);
+                    });
+                } else {
+                    const noFiles = document.createElement('div');
+                    noFiles.style.color = '#666';
+                    noFiles.style.padding = '5px 0 5px 20px';
+                    noFiles.textContent = '未找到配置文件(.ini或.json)';
+                    configFileList.appendChild(noFiles);
+                }
+
+                // 插入到服务项之后
+                serviceItemElement.parentNode.insertBefore(configFileList, serviceItemElement.nextSibling);
+
+            } catch (error) {
+                console.error('加载配置文件列表失败:', error);
+                alert('加载配置文件列表失败: ' + error.message);
+            }
+        }
+        // 显示服务的配置文件列表
+        async function showConfigFiles(serviceId, serviceInfo) {
+            selectedService = serviceInfo;
+
+            try {
+                const response = await fetch(`/api/config/files?serviceId=${serviceId}`);
+                const configFiles = await response.json();
+
+                // 清空之前的服务项，重新渲染选中的服务
+                const serviceListElement = document.getElementById('service-list');
+                serviceListElement.innerHTML = '';
+
+                // 添加选中的服务项（使用修改后的服务名称）
+                const serviceName = serviceInfo.displayName || `${serviceInfo.group_name || serviceInfo.name} ${serviceInfo.exe_name || serviceInfo.exe}`;
+                const serviceItem = document.createElement('div');
+                serviceItem.className = 'service-item';
+                serviceItem.textContent = serviceName;
+                serviceItem.style.fontWeight = 'bold';
+                serviceItem.onclick = () => showConfigFiles(serviceId, serviceInfo);
+                serviceListElement.appendChild(serviceItem);
+
+                // 添加配置文件列表
+                if (configFiles && configFiles.length > 0) {
+                    const configFileList = document.createElement('div');
+                    configFileList.className = 'config-file-list';
+
+                    configFiles.forEach(file => {
+                        const fileItem = document.createElement('div');
+                        fileItem.className = 'config-file-item';
+                        fileItem.textContent = file.filename;
+                        fileItem.onclick = (event) => {
+                            event.stopPropagation(); // 阻止冒泡到父级服务项
+                            openFileEditor(`${serviceInfo.path}/${file.path}`, file.filename);
+                        };
+                        configFileList.appendChild(fileItem);
+                    });
+
+                    serviceListElement.appendChild(configFileList);
+                } else {
+                    const noFiles = document.createElement('div');
+                    noFiles.style.paddingLeft = '20px';
+                    noFiles.style.color = '#666';
+                    noFiles.textContent = '未找到配置文件(.ini或.json)';
+                    serviceListElement.appendChild(noFiles);
+                }
+            } catch (error) {
+                console.error('加载配置文件列表失败:', error);
+                alert('加载配置文件列表失败');
+            }
+        }
+        // 打开文件编辑器
+        async function openFileEditor(filePath, fileName, newEncoding) { // Changed parameter name for clarity
+            if (!filePath) {
+                alert('文件路径不能为空');
+                return;
+            }
+
+            try {
+                // Use the newEncoding if provided, otherwise use the current dropdown value
+                const encodingToUse = newEncoding || document.getElementById('encoding-selector').value;
+
+                // 获取文件内容，传递编码参数
+                const response = await fetch(`/api/config/file/content?filePath=${encodeURIComponent(filePath)}&encoding=${encodeURIComponent(encodingToUse)}`);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
+                const content = await response.text();
+                const contentType = response.headers.get('Content-Type');
+                const actualEncoding = contentType ? contentType.split('charset=')[1] : encodingToUse;
+
+                console.log(`DEBUG: openFileEditor - Path: ${filePath}, Requested Encoding: ${newEncoding}, Encoding to Use: ${encodingToUse}, Content-Type Header: ${contentType}, Actual Encoding from Header: ${actualEncoding}, Content (first 50 chars): ${content.substring(0, 50)}`);
+                // 显示文件编辑器
+                showFileEditor(filePath, fileName, content, actualEncoding); // Pass actualEncoding
+            } catch (error) {
+                console.error('打开文件编辑器失败:', error);
+                alert('打开文件编辑器失败: ' + error.message);
+            }
+        }
+        // 显示文件编辑器
+        function showFileEditor(filePath, fileName, content, encoding) { // Added encoding parameter
+            selectedService = filePath;
+            editingFilePath = filePath;
+
+            document.getElementById('editing-file-title').textContent = '编辑文件: ' + fileName;
+            document.getElementById('file-content').value = content;
+            document.getElementById('editor-container').style.display = 'block';
+            document.getElementById('encoding-selector').value = encoding; // Set the dropdown value
+
+            // 加载备份文件列表
+            loadBranchFiles(filePath, fileName);
+        }
+
+
+        // 保存文件
+        async function saveFile() {
+            if (!editingFilePath) {
+                alert('没有选中的文件');
+                return;
+            }
+
+            const content = document.getElementById('file-content').value;
+            const encoding = document.getElementById('encoding-selector').value; // 获取当前选定的编码
+
+            try {
+                const response = await fetch('/api/config/file/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filePath: editingFilePath,
+                        content: content,
+                        encoding: encoding // 传递编码参数
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    alert('文件保存成功');
+                } else {
+                    alert('文件保存失败: ' + result.message);
+                }
+            } catch (error) {
+                console.error('保存文件失败:', error);
+                alert('保存文件失败: ' + error.message);
+            }
+        }
+
+        // 加载备份文件列表
+        async function loadBranchFiles(filePath, fileName) {
+            try {
+                const response = await fetch(`/api/config/file/branches?filePath=${encodeURIComponent(filePath)}`);
+                const result = await response.json();
+
+                if (!result.success) {
+                    console.error('获取备份文件失败:', result.message);
+                    return;
+                }
+
+                const branchContainer = document.getElementById('branch-files-container');
+                branchContainer.innerHTML = '';
+
+                // 创建备份文件控制UI
+                const branchControlDiv = document.createElement('div');
+                branchControlDiv.style.marginTop = '10px';
+                branchControlDiv.style.borderTop = '1px solid #ccc';
+                branchControlDiv.style.paddingTop = '10px';
+                
+                // 转义路径中的反斜杠以避免JavaScript语法错误
+                const escapedFilePath = filePath.replace(/\\/g, '\\\\');
+                const escapedFileName = result.current_file.replace(/\\/g, '\\\\');
+                
+                branchControlDiv.innerHTML = `
+                    <h4>备份配置文件</h4>
+                    <div>
+                        <label>当前文件: </label>
+                        <span>${result.current_file}</span>
+                    </div>
+                    <div style="margin-top: 5px;">
+                        <input type="text" id="new-branch-name" placeholder="输入新备份名称" style="margin-right: 5px; width: 150px;" />
+                        <button onclick="createNewBranch('${escapedFilePath}', '${escapedFileName}')">创建新备份</button>
+                    </div>
+                    <div id="branch-list" style="margin-top: 10px;">
+                        <strong>可用备份:</strong>
+                        <ul id="branch-list-ul" style="list-style-type: none; padding-left: 0;"></ul>
+                    </div>
+                `;
+                
+                branchContainer.appendChild(branchControlDiv);
+                
+                // 显示备份列表
+                const branchListUl = document.getElementById('branch-list-ul');
+                result.branch_files.forEach(branchFile => {
+                    const li = document.createElement('li');
+                    li.style.borderBottom = '1px solid #eee';
+                    li.style.padding = '5px 0';
+                    
+                    // 提取备份名称
+                    const baseName = result.current_file.replace(/\.[^/.]+$/, "");
+                    const branchName = branchFile.substring(baseName.length + 1, branchFile.lastIndexOf('.'));
+                    
+                    // 转义路径中的反斜杠以避免JavaScript语法错误
+                    const escapedBranchFilePath = filePath.replace(/\\/g, '\\\\');
+                    const escapedBranchName = branchName.replace(/\\/g, '\\\\');
+                    const escapedBranchFileName = branchFile.replace(/\\/g, '\\\\');
+                    
+                    li.innerHTML = `
+                        <span>${branchFile}</span>
+                        <button onclick="switchToBranch('${escapedBranchFilePath}', '${escapedBranchName}')" style="margin-left: 10px;">切换</button>
+                        <button onclick="deleteBranch('${escapedBranchFilePath}', '${escapedBranchName}', '${escapedBranchFileName}')" style="margin-left: 5px; background-color: #dc3545;">删除</button>
+                    `;
+                    branchListUl.appendChild(li);
+                });
+
+                if (result.branch_files.length === 0) {
+                    const li = document.createElement('li');
+                    li.textContent = '无可用备份';
+                    li.style.color = '#666';
+                    branchListUl.appendChild(li);
+                }
+
+            } catch (error) {
+                console.error('加载备份文件失败:', error);
+            }
+        }
+
+        // 创建新备份
+        async function createNewBranch(filePath, fileName) {
+            const branchNameInput = document.getElementById('new-branch-name');
+            const branchName = branchNameInput.value.trim();
+            
+            if (!branchName) {
+                alert('请输入备份名称');
+                return;
+            }
+            
+            // 获取当前编辑器中的内容
+            const currentContent = document.getElementById('file-content').value;
+            
+            try {
+                const response = await fetch('/api/config/file/create_branch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filePath: filePath,
+                        branchName: branchName,
+                        content: currentContent  // 添加当前编辑器内容
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(`备份 "${result.branch_file}" 创建成功`);
+                    branchNameInput.value = ''; // 清空输入框
+                    // 重新加载备份文件列表
+                    loadBranchFiles(filePath, fileName);
+                } else {
+                    alert('创建备份失败: ' + result.message);
+                }
+            } catch (error) {
+                console.error('创建备份失败:', error);
+                alert('创建备份失败: ' + error.message);
+            }
+        }
+
+        // 切换到指定备份
+        async function switchToBranch(filePath, branchName) {
+            if (!branchName) {
+                alert('请选择要切换的备份');
+                return;
+            }
+            
+            if (!confirm(`确定要切换到备份 "${branchName}" 吗？`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/config/file/switch_branch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filePath: filePath,
+                        branchName: branchName
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(result.message); // 显示成功消息，包括重启提示
+                    // 重新加载文件内容以反映更改
+                    const currentEncoding = document.getElementById('encoding-selector').value; // Get current encoding
+                    openFileEditor(filePath, result.current_file, currentEncoding); // Pass current encoding
+                } else {
+                    alert('切换备份失败: ' + result.message);
+                }
+            } catch (error) {
+                console.error('切换备份失败:', error);
+                alert('切换备份失败: ' + error.message);
+            }
+        }
+
+        // 删除备份
+        async function deleteBranch(filePath, branchName, branchFileName) {
+            if (!confirm(`确定要删除备份 "${branchFileName}" 吗？此操作不可撤销。`)) {
+                return;
+            }
+
+            try {
+                // 使用URL编码来传递路径参数，避免特殊字符问题
+                const encodedFilePath = encodeURIComponent(filePath);
+                const encodedBranchName = encodeURIComponent(branchName);
+
+                const response = await fetch(`/api/config/file/remove_branch?filePath=${encodedFilePath}&branchName=${encodedBranchName}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(result.message);
+                    // 重新加载备份文件列表
+                    const fileName = filePath.replace(/.*[/\\]/, ''); // 从路径中提取文件名，兼容正斜杠和反斜杠
+                    loadBranchFiles(filePath, fileName);
+                } else {
+                    alert('删除备份失败: ' + result.message);
+                }
+            } catch (error) {
+                console.error('删除备份失败:', error);
+                alert('删除备份失败: ' + error.message);
+            }
+        }
+
+        // 关闭编辑器
+        function closeEditor() {
+            document.getElementById('editor-container').style.display = 'none';
+            selectedService = null;
+            editingFilePath = null;
+        }
+        // 隐藏编辑器
+        function hideEditor() {
+            document.getElementById('editor-container').style.display = 'none';
+            editingFilePath = null;
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', loadServices);
+
+        // 编码选择器事件监听
+        document.getElementById('encoding-selector').addEventListener('change', function() {
+            if (editingFilePath) {
+                const currentFileName = document.getElementById('editing-file-title').textContent.replace('编辑文件: ', '');
+                openFileEditor(editingFilePath, currentFileName, this.value);
+            }
+        });
+    </script>
+</body>
+
+</html>

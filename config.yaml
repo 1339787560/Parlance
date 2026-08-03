@@ -40,14 +40,14 @@ services:
     tags: [service, api]
     enabled: true
     env:
-      SERVICESVR_CONFIG: D:\Codlib\VscodeCodlib\Python\serviceServer\config.json
+      SERVICESVR_CONFIG: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer-legacy\config.json
       SERVICESVR_LEGACY_URL: http://127.0.0.1:5099
       RUST_LOG: info
 
   - name: serviceServer-legacy
     command: python
     args: ["main.py"]
-    cwd: D:\Codlib\VscodeCodlib\Python\serviceServer
+    cwd: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer-legacy
     port: 5099
     auto_restart: true
     tags: [service, api, legacy]
