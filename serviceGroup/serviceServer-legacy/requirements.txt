@@ -1,21 +1,32 @@
 # serviceServer-legacy 运行时依赖 (精简后)
 # 死功能 (RAG/AI/agent) 依赖已删: openai/chromadb/sentence-transformers/rank_bm25/jieba/
-#   lxml/beautifulsoup4/flask-socketio/redis/python-dateutil/chardet/urllib3/
-#   charset-normalizer/mcp — 全部 0 代码引用 (T4 死功能清理残留)
+#   lxml/flask-socketio/chardet/urllib3/charset-normalizer/mcp
+#   — 全部 0 代码引用 (T4 死功能清理残留)
 
 # --- 主框架 ---
 flask
 flask-cors
 requests
+beautifulsoup4          # ServiceRoute.py 顶层 import + HTML 解析 (2 处)
 
-# --- Windows 服务控制 (Service.py) ---
+# --- Windows 服务控制 + 进程枚举 (Service.py) ---
 pywin32
+psutil
 
 # --- xzmpDB (货币调控/充值路由, 启动链顶层 import) ---
+#   LuaDataManager → DBConnector → {mysql, redis, cryptography (CredsManager)}
+#   TQVIP → dateutil (relativedelta, 月/年精度)
 mysql-connector-python
+redis
 cryptography
+python-dateutil
+
+# --- playwright: ServiceRoute.py 顶层硬 import (缺了启动即崩), 1 处抓取功能 ---
+playwright
+
+# --- 可选: oss2 (仅 add_oss_creds.py/probe_oss_layout.py 运维脚本用, 非启动必需) ---
+#   货币调控数据上云时才需要, 保留以防用
 oss2
 
-# --- 可选: playwright (ServiceRoute.py 单个抓取功能), protobuf (main.py 兼容注释) ---
-# playwright
+# --- 可选: protobuf (main.py 兼容注释, tqvip_pb2 生成代码用) ---
 # protobuf>=4.25.0
