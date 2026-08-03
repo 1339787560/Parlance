@@ -56,7 +56,16 @@ def main() -> int:
     if py == "uv":
         argv += ["run", "python"]
     argv += [str(RUN_PY), *sys.argv[1:]]
-    # exec replaces this process so signals (Ctrl+C) reach run.py directly.
+
+    # Windows: os.execvp 对含空格的 sys.executable (如 "C:\Program Files\Python313\...")
+    # 会拆分成 "C:\Program" + "Files\..." 致 "can't open file" 错误.
+    # 改用 subprocess 正确传递 argv, 退出码透传.
+    if os.name == "nt":
+        import subprocess
+        result = subprocess.run(argv)
+        return result.returncode
+
+    # POSIX: exec replaces this process so signals (Ctrl+C) reach run.py directly.
     os.execvp(py, argv)
     return 0  # unreachable; os.execvp raises on failure
 
