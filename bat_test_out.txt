@@ -1,0 +1,35 @@
+
+============================================
+  infoServer auto-start status...
+============================================
+[OK] Task exists
+    文件夹: \
+    主机名:                             DESKTOP-SQO58KA
+    任务名:                             \InfoServer
+    下次运行时间:                       N/A
+    模式:                               就绪
+    登录状态:                           只使用交互方式
+    上次运行时间:                       2026/8/3 22:08:18
+    上次结果:                           0
+    创建者:                             N/A
+    要运行的任务:                       cmd /c D:\Codlib\VscodeCodlib\Python\infoServer\start.bat
+    起始于:                             D:\Codlib\VscodeCodlib\Python\infoServer
+    注释:                               infoServer - LAN InfoShare service
+    计划任务状态:                       已启用
+    空闲时间:                           已禁用
+    电源管理:                           
+    作为用户运行:                       admin
+    删除没有计划的任务:                 已禁用
+    如果运行了 X 小时 X 分钟，停止任务: 已禁用
+    计划:                               计划数据在此格式中不可用。
+    计划类型:                           登陆时
+    开始时间:                           N/A
+    开始日期:                           N/A
+    结束日期:                           N/A
+    天:                                 N/A
+    月:                                 N/A
+    重复: 每:                           N/A
+    重复: 截止: 时间:                   N/A
+    重复: 截止: 持续时间:               N/A
+    重复: 如果还在运行，停止:           N/A
+请按任意键继续. . . 

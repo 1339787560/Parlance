@@ -5,10 +5,10 @@ edition = "2021"
 description = "Rust 重写 serviceServer: 服务管理 + 配置编辑 (迁入 infoServer 服务组)"
 
 [dependencies]
-axum = "0.7"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "net", "sync", "time"] }
+axum = { version = "0.7", features = ["multipart"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "net", "process", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 tower = "0.5"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"

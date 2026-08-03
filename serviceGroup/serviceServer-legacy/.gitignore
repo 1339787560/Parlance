@@ -1,7 +1,11 @@
 __pycache__
 .svn
 exeDir
+# 前端运行时数据 (背景图/友链/图标; friendlink.json 含内网 URL/IP, 不入库)
 src/cache
+src/background
+src/extern
+src/icon
 # 重型二进制与数据 (Phase 2 搬入后补, 不入 infoServer 仓)
 *.exe
 *.pdb

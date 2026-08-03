@@ -7,3 +7,12 @@
 
 # 本机 config 覆盖 (可选, 视团队约定)
 # config.local.json
+
+# spideorder 爬虫依赖: CommonTools 含 db_creds.enc / oss_hosts.yaml 凭据, 不入库;
+# tmp 是爬虫输出目录 (tmp/html, tmp/oss_html)。
+/CommonTools
+/tmp
+# src_raw: 用户恢复的前端数据暂存 (背景图/友链/图标), 已转投 legacy src/, 勿入库
+/src_raw
+# servicesvr.log (release 部署时前台跑日志)
+servicesvr.log

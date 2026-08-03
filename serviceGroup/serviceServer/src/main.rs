@@ -28,7 +28,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{branches, config_file, config_files, fetch, services, templates as tpl};
+use crate::routes::{branches, config_file, config_files, fetch, services, spideorder, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -134,6 +134,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/templates/get", get(tpl::get))
         .route("/api/templates/save", axum::routing::post(tpl::save))
         .route("/api/templates/delete", axum::routing::post(tpl::delete))
+        // spideorder 簇: config 读写 + 后台执行 spideOnlineLog.py (脚本与 exe 同目录)。
+        .route("/api/spideorder/get", get(spideorder::get_config))
+        .route("/api/spideorder/save", axum::routing::post(spideorder::save_config))
+        .route("/api/spideorder/execute", axum::routing::post(spideorder::execute))
+        // services 控制簇剩余: deploy(sc create) + start-all + update(multipart 热更新)。
+        .route("/api/services/deploy", axum::routing::post(services::deploy_service))
+        .route("/api/services/start-all", axum::routing::post(services::start_all_services))
+        .route(
+            "/api/services/update",
+            axum::routing::post(services::update_service)
+                .layer(axum::extract::DefaultBodyLimit::max(200 * 1024 * 1024)),
+        )
         // strangler: 未匹配请求反代到旧 Flask 后端 (SERVICESVR_LEGACY_URL)。
         .fallback(crate::proxy::proxy_legacy)
         .with_state(state);
