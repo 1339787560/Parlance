@@ -1,7 +1,7 @@
 __pycache__
 .svn
 exeDir
-src
+src/cache
 # 重型二进制与数据 (Phase 2 搬入后补, 不入 infoServer 仓)
 *.exe
 *.pdb
