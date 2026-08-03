@@ -10,6 +10,26 @@ cargo test           # 全测试 (rstest 参数化 + #[test])
 cargo run            # 跑 :5000 (需 config.json, 默认 cwd, 或 SERVICESVR_CONFIG 环境变量)
 ```
 
+## 部署 (编译产物落位)
+
+```bash
+./build.bat          # cargo build --release + copy exe 到本目录根 (service-server.exe)
+```
+
+- config.yaml `serviceServer-rust.command` 指向根目录 `service-server.exe`（不再用 `target/vN/release/` 版本目录，消除手动 cp + 深路径难找）。
+- 改完 build 后只需 `./build.bat` → 根 exe 即最新；重启服务组生效（ctl_client reload / cwd_infoserver_restart 5000）。
+- 根 exe 由 `.gitignore` 的 `*.exe` 覆盖，不入库；`target/` 全目录同样 ignore。
+
+## 更新编排 (svn 分发)
+
+```bash
+python D:/Codlib/VscodeCodlib/Python/infoServer/ctl_client.py --socket svc update
+```
+
+- infoServer 控制面 `update` 方法：停 serviceServer-rust + serviceServer-legacy → `svn update`（工作副本根 = infoServer，svn info 动态定位）→ 启两服务。
+- svn 仓库: `https://192.168.102.112/svn/common/trunk/自有平台业务/斗雀工作室/scriptTools/infoServer`（serviceGroup 是其子目录）。
+- 改完代码 → `./build.bat` → svn commit → 远端跑 `ctl_client.py --socket svc update` 即一键更新两子服务。
+
 ## 测试约定 (pytest 风格, 质量硬门槛)
 
 - **参数化优先**: 用 `rstest` 的 `#[rstest]` + `#[case::name]` 表达边界矩阵 (类 pytest `parametrize`)。一组 case = 一份 QA 文档。

@@ -16,6 +16,7 @@ host 不监听任何 TCP 端口; 所有子服务(含 parlanceChat) 由 config.ya
 import logging
 import os
 import signal
+import subprocess
 import threading
 import time
 from multiprocessing.connection import Connection, Listener
@@ -169,6 +170,8 @@ class ServiceControlServer:
             return {"services": self.svc_mgr.status_all()}
         if method == "restart":
             return self._restart_by_port(params.get("port"))
+        if method == "update":
+            return self._update_services(params.get("names") or params.get("tags"))
         raise _MethodNotFound(method)
 
     def _restart_by_port(self, port) -> dict[str, Any]:
@@ -195,6 +198,89 @@ class ServiceControlServer:
             if svc.port == port:
                 return svc
         return None
+
+    # ── update 编排: 停指定子服务 → svn update → 启 ─────────────────────
+    # 用户方案: infoServer 提供断点, 请求后先停两个 serviceServer 子服务
+    # (解锁 exe), 然后更新 svn, 更新完毕后启动两个子服务。
+    # svn 工作副本根 = infoServer 目录本身 (.svn 在根), 用 svn info 动态定位,
+    # 天然覆盖 serviceGroup 下两子服务, 不依赖每服务声明 svn 路径。
+
+    _UPDATE_DEFAULT_NAMES = ["serviceServer-rust", "serviceServer-legacy"]
+
+    def _update_services(self, names=None):
+        if names is None:
+            names = self._UPDATE_DEFAULT_NAMES
+        targets = []
+        for n in names:
+            svc = self.svc_mgr.get(n)
+            if svc is None:
+                return {"error": f"no managed service named '{n}'"}
+            if not svc.enabled:
+                return {"error": f"service '{n}' is disabled (enabled=false)"}
+            if not svc.managed:
+                return {"error": f"service '{n}' is daemon (managed=false), cannot orchestrate"}
+            targets.append(svc)
+
+        # 1) 停服务解锁 exe
+        stopped = []
+        for svc in targets:
+            svc.stop(timeout=15)
+            stopped.append({"name": svc.name, "status": svc.status, "pid": svc.pid})
+
+        # 2) svn update (cwd = svn 工作副本根)
+        svn_root = self._svn_working_copy_root()
+        svn_out, svn_err, svn_rc = self._run_svn_update(svn_root)
+        svn_result = {
+            "ok": svn_rc == 0,
+            "working_copy_root": svn_root,
+            "returncode": svn_rc,
+            "stdout": svn_out,
+            "stderr": svn_err,
+        }
+
+        # 3) 启服务
+        started = []
+        for svc in targets:
+            svc.start()
+            started.append({"name": svc.name, "status": svc.status, "pid": svc.pid})
+
+        return {
+            "ok": svn_result["ok"],
+            "stopped": stopped,
+            "svn": svn_result,
+            "started": started,
+        }
+
+    def _svn_working_copy_root(self) -> Optional[str]:
+        """svn info 取 Working Copy Root Path (infoServer 根 = 工作副本根)."""
+        try:
+            r = subprocess.run(
+                ["svn", "info", "--non-interactive"],
+                capture_output=True, text=True, timeout=30,
+                cwd=os.getcwd(),
+            )
+            for line in (r.stdout or "").splitlines():
+                if line.startswith("Working Copy Root Path:"):
+                    return line.split(":", 1)[1].strip()
+        except Exception as e:
+            logger.warning("svn info failed: %s", e)
+        return None
+
+    def _run_svn_update(self, cwd: Optional[str]):
+        """svn update --non-interactive, 返回 (stdout, stderr, returncode)."""
+        try:
+            r = subprocess.run(
+                ["svn", "update", "--non-interactive"],
+                capture_output=True, text=True, timeout=120, cwd=cwd or os.getcwd(),
+                encoding="gbk", errors="replace",
+            )
+            return (r.stdout or "").strip(), (r.stderr or "").strip(), r.returncode
+        except subprocess.TimeoutExpired:
+            return "", "svn update timed out after 120s", -1
+        except FileNotFoundError:
+            return "", "svn CLI not found", -1
+        except Exception as e:
+            return "", str(e), -1
 
     @staticmethod
     def _error(req_id, code: int, message: str) -> dict:
