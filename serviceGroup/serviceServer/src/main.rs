@@ -25,7 +25,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{branches, config_file, config_files, services};
+use crate::routes::{branches, config_file, config_files, fetch, services};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -64,6 +64,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(|| async { "ok" }))
         .route("/api/config/files", get(config_files::list_files))
         .route("/api/config", get(config_files::get_config))
+        .route("/api/fetch-title", get(fetch::fetch_title))
         .route("/api/config/file/content", get(config_file::get_content))
         .route("/api/config/file/save", axum::routing::post(config_file::save_file))
         .route("/api/config/file/branches", get(branches::list_branches))
