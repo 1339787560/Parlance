@@ -6,11 +6,13 @@
 //! ports 字段 (Win32 only): 单次请求内一次性 snapshot 全进程 + IP Helper
 //! 聚合 LISTEN 端口, 避免每服务 N 次 syscall (legacy psutil iter 慢源)。
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::ports_probe::PortsProbe;
 use crate::state::AppState;
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::Json;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 
 /// GET /api/services/status — 全服务状态。
@@ -101,4 +103,127 @@ pub async fn running_services(State(state): State<AppState>) -> Result<Json<serd
         );
     }
     Ok(Json(serde_json::to_value(map).unwrap()))
+}
+
+// ---- 控制: start / stop / restart / delete ----
+//
+// shape 对齐 legacy CustomRoute/ServiceRoute.py:
+//   start {name,type,exe} -> {success,message} 异步 (立即返 "请求已提交")
+//   stop  {name,type,exe} -> {success,message} 同步
+//   restart {name,type,exe} -> {success,message} 异步
+//   delete {name,type} -> {success,message} 同步
+// service_name = "{name}_{type}" (Windows SCM 注册名)。
+
+#[derive(Deserialize)]
+pub struct ServiceReq {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub svc_type: String,
+    pub exe: Option<String>,
+}
+
+impl ServiceReq {
+    fn service_id(&self) -> String {
+        format!("{}_{}", self.name, self.svc_type)
+    }
+}
+
+/// POST /api/services/start — 异步: tokio task spawn_blocking 跑 SCM start,
+/// 立即返 "请求已提交", 完成后 invalidate status_cache。
+pub async fn start_service(
+    State(state): State<AppState>,
+    Json(req): Json<ServiceReq>,
+) -> Result<Json<serde_json::Value>> {
+    if req.exe.is_none() {
+        return Ok(Json(json_err(400, "参数不完整")));
+    }
+    let id = req.service_id();
+    let cache = state.status_cache.clone();
+    let id_task = id.clone();
+    tokio::task::spawn_blocking(move || {
+        let _ = crate::svc_control::imp::start(&id_task);
+        cache.invalidate(&id_task);
+    });
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "服务启动请求已提交",
+    })))
+}
+
+/// POST /api/services/stop — 同步: ControlService STOP + 轮询 STOPPED (10s)。
+pub async fn stop_service(
+    State(state): State<AppState>,
+    Json(req): Json<ServiceReq>,
+) -> Result<Json<serde_json::Value>> {
+    if req.exe.is_none() {
+        return Ok(Json(json_err(400, "请提供可执行文件名")));
+    }
+    let id = req.service_id();
+    let res = tokio::task::spawn_blocking(move || crate::svc_control::imp::stop(&id))
+        .await
+        .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    state.status_cache.invalidate(&req.service_id());
+    match res {
+        Ok(msg) => Ok(Json(serde_json::json!({ "success": true, "message": msg }))),
+        Err(msg) => Ok(Json(serde_json::json!({ "success": false, "message": msg }))),
+    }
+}
+
+/// POST /api/services/restart — 异步: stop -> sleep 2s -> start, 立即返。
+pub async fn restart_service(
+    State(state): State<AppState>,
+    Json(req): Json<ServiceReq>,
+) -> Result<Json<serde_json::Value>> {
+    if req.exe.is_none() {
+        return Ok(Json(json_err(400, "参数不完整（需要 name, type, exe）")));
+    }
+    let id = req.service_id();
+    let cache = state.status_cache.clone();
+    let id_task = id.clone();
+    tokio::task::spawn_blocking(move || {
+        let _ = crate::svc_control::imp::stop(&id_task);
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let _ = crate::svc_control::imp::start(&id_task);
+        cache.invalidate(&id_task);
+    });
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "服务重启请求已提交（停止 → 等待 → 启动）",
+    })))
+}
+
+/// POST /api/services/delete — 同步: DeleteService (SCM 注销)。
+pub async fn delete_service(
+    State(state): State<AppState>,
+    Json(req): Json<ServiceReq>,
+) -> Result<Json<serde_json::Value>> {
+    let id = req.service_id();
+    let res = tokio::task::spawn_blocking(move || crate::svc_control::imp::delete(&id))
+        .await
+        .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    state.status_cache.invalidate(&req.service_id());
+    match res {
+        Ok(msg) => Ok(Json(serde_json::json!({ "success": true, "message": msg }))),
+        Err(msg) => Ok(Json(serde_json::json!({ "success": false, "message": msg }))),
+    }
+}
+
+fn json_err(code: u16, msg: &str) -> serde_json::Value {
+    serde_json::json!({ "success": false, "message": msg, "_status": code })
+}
+
+fn display(service_id: &str) -> String {
+    if let Some(idx) = service_id.find('_') {
+        let (name, t) = service_id.split_at(idx);
+        format!("同城游_{}{}", name, t)
+    } else {
+        service_id.to_string()
+    }
+}
+
+// 静默 StatusCode 占位 (json_err 返 _status 字段供 caller 选用, handler 当前都用 200
+// 对齐 legacy 默认 200 文案模式; 此处保 StatusCode import 不被裁)
+#[allow(dead_code)]
+fn _silence_statuscode() -> StatusCode {
+    StatusCode::OK
 }

@@ -15,6 +15,7 @@ mod proxy;
 mod routes;
 mod state;
 mod status;
+mod svc_control;
 #[cfg(windows)]
 mod win32;
 
@@ -85,6 +86,22 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/services/status", get(services::list_status))
         .route("/api/config/services/running", get(services::running_services))
+        .route(
+            "/api/services/start",
+            axum::routing::post(services::start_service),
+        )
+        .route(
+            "/api/services/stop",
+            axum::routing::post(services::stop_service),
+        )
+        .route(
+            "/api/services/restart",
+            axum::routing::post(services::restart_service),
+        )
+        .route(
+            "/api/services/delete",
+            axum::routing::post(services::delete_service),
+        )
         // strangler: 未匹配请求反代到旧 Flask 后端 (SERVICESVR_LEGACY_URL)。
         .fallback(crate::proxy::proxy_legacy)
         .with_state(state);

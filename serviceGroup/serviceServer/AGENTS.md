@@ -40,7 +40,7 @@ cargo run            # 跑 :5000 (需 config.json, 默认 cwd, 或 SERVICESVR_CO
 - ✅ Strangler 反代 (proxy.rs fallback → legacy Flask) + Phase 1/2 上线 (Rust:5000 + legacy:5099 live)
 - ✅ /api/config GET + /api/fetch-title Rust 化 (reqwest 迁移模式)
 - ✅ fileontimer 移除 + 死路径 blocklist (RAG/A2A/AI/fileontimer 前台 404)
-- ⬜ T3 剩余簇 (templates/serverstatus/services 控制/spideorder) — 暂留 legacy 反代
+- 🟡 services 控制簇: start/stop/restart/delete Rust 化 (SCM ControlService + StartService + DeleteService), deploy/start-all/update 留 legacy
 - ✅ status shape 全对齐: display_name + exe_path + ports 真值 (PID toolhelp32 + IP Helper, 28 服务 ports 全 match legacy)
 - ⬜ 货币调控留 legacy (DB 依赖)
 - ⬜ T4 PyO3 (待触发) + legacy 死功能清理
