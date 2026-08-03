@@ -34,16 +34,17 @@ cargo run            # 跑 :5000 (需 config.json, 默认 cwd, 或 SERVICESVR_CO
 ## 当前进度 (T1 path 半已成)
 
 - ✅ Cargo.toml + axum 骨架 (:5000)
-- ✅ PathMap + path_check (cargo test 15 通过)
-- ✅ /api/config/files 轻量端点
+- ✅ PathMap + path_check + encoding + backup + atomic_write
 - ✅ T1 全 (path 半 + Win32 status 半: windows crate SCM + status_cache TTL)
-- ✅ T2 配置编辑簇 (原子写 + 滚动备份 max3 + 编码探测 + content/save 路由)
-- ✅ T3 config 分支路由 (branches/create/switch/remove + checks)
-- ✅ Strangler 反代 (proxy.rs fallback → legacy Flask) + Phase 1 上线验证 (Rust:5000 + legacy:5099)
-- ✅ Phase 2 物理整合 (Flask 搬 infoServer/serviceGroup/serviceServer-legacy/)
-- ⬜ T3 其余簇 (货币调控/文件浏览/SVN/模板/抓取, ~30 路由, legacy 渐进迁)
-- ⬜ T4 PyO3 兜底 (待具体不支持 API 触发) + 删除清理
-- cargo test 53 通过, release exe 3.7MB
+- ✅ T2 配置编辑簇 (原子写 + 滚动备份 max3 + 编码探测 + content/save/branches 全套)
+- ✅ Strangler 反代 (proxy.rs fallback → legacy Flask) + Phase 1/2 上线 (Rust:5000 + legacy:5099 live)
+- ✅ /api/config GET + /api/fetch-title Rust 化 (reqwest 迁移模式)
+- ✅ fileontimer 移除 + 死路径 blocklist (RAG/A2A/AI/fileontimer 前台 404)
+- ⬜ T3 剩余簇 (templates/serverstatus/services 控制/spideorder) — 暂留 legacy 反代
+- ⬜ status shape 补全 (display_name/exe_path/ports) 后重接 /api/services/status
+- ⬜ 货币调控留 legacy (DB 依赖)
+- ⬜ T4 PyO3 (待触发) + legacy 死功能清理
+- cargo test 72 通过, release exe v7 3.7MB
 
 ## 旧版参考源
 
