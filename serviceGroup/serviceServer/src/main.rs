@@ -12,6 +12,9 @@ mod path_check;
 mod path_map;
 mod routes;
 mod state;
+mod status;
+#[cfg(windows)]
+mod win32;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -21,8 +24,10 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{config_file, config_files};
+use crate::routes::{config_file, config_files, services};
 use crate::state::AppState;
+use crate::status::{default_provider, StatusCache};
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -42,6 +47,8 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         config_path: config_path.into(),
         path_map,
+        status_cache: Arc::new(StatusCache::new(Duration::from_secs(10))),
+        status_provider: Arc::from(default_provider()),
     };
 
     let app = Router::new()
@@ -49,6 +56,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/config/files", get(config_files::list_files))
         .route("/api/config/file/content", get(config_file::get_content))
         .route("/api/config/file/save", axum::routing::post(config_file::save_file))
+        .route("/api/services/status", get(services::list_status))
+        .route("/api/config/services/running", get(services::running_services))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 5000));

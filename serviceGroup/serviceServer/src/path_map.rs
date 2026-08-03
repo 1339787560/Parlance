@@ -96,6 +96,28 @@ impl PathMap {
     pub fn abspath(&self) -> String {
         self.cached.read().unwrap().abspath.clone()
     }
+
+    /// 全部服务 (供 /api/services/status 枚举)。
+    pub fn all(&self) -> Vec<ServicePath> {
+        self.cached
+            .read()
+            .unwrap()
+            .entries
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    /// 该服务是否被 configHide 隐藏 (供配置编辑页过滤)。
+    pub fn is_hidden(&self, name: &str, svc_type: &str) -> bool {
+        let c = self.cached.read().unwrap();
+        if let Some(doc) = &c.doc {
+            if let Some(types) = doc.config_hide.get(name) {
+                return types.iter().any(|t| t == svc_type);
+            }
+        }
+        false
+    }
 }
 
 impl Default for PathMap {
