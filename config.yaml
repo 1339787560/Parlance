@@ -32,14 +32,28 @@ services:
     tags: [chat, parlance]
     enabled: true
 
-  - name: serviceServer
-    command: python
-    args: ["main.py"]
-    cwd: D:\Codlib\VscodeCodlib\Python\serviceServer
+  - name: serviceServer-rust
+    command: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\target\release\service-server.exe
+    cwd: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer
     port: 5000
     auto_restart: true
     tags: [service, api]
     enabled: true
+    env:
+      SERVICESVR_CONFIG: D:\Codlib\VscodeCodlib\Python\serviceServer\config.json
+      SERVICESVR_LEGACY_URL: http://127.0.0.1:5099
+      RUST_LOG: info
+
+  - name: serviceServer-legacy
+    command: python
+    args: ["main.py"]
+    cwd: D:\Codlib\VscodeCodlib\Python\serviceServer
+    port: 5099
+    auto_restart: true
+    tags: [service, api, legacy]
+    enabled: true
+    env:
+      SERVICESVR_PORT: "5099"
 
   - name: statistic-server
     command_mac: ./.venv/bin/python
