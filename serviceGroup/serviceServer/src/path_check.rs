@@ -38,46 +38,31 @@ fn normalize(p: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn rejects_sibling_prefix_collision() {
-        // 旧 bug 场景: startswith 让 evil 通过。
-        let valid = Path::new("D:/svc/ev");
-        let candidate = Path::new("D:/svc/evil/secret.ini");
-        assert!(!is_within(candidate, valid));
+    /// is_within 路径越权校验矩阵 — 修旧 ServiceRoute.py 的 startswith prefix bug。
+    /// 每条 case 是一个边界, 矩阵整体构成防护的 QA 文档 (类 pytest parametrize)。
+    #[rstest]
+    #[case::descendant("D:/svc/room/sub/cfg.ini", "D:/svc/room", true)]
+    #[case::root_self("D:/svc/room", "D:/svc/room", true)]
+    #[case::sibling_prefix_collision("D:/svc/evil/secret.ini", "D:/svc/ev", false)]
+    #[case::other_root("D:/other/cfg.ini", "D:/svc/room", false)]
+    #[case::dotdot_escape("D:/svc/room/sub/../../evil/x.ini", "D:/svc/room", false)]
+    fn test_is_within_boundary_matrix(
+        #[case] candidate: &str,
+        #[case] valid: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(is_within(Path::new(candidate), Path::new(valid)), expected);
     }
 
-    #[test]
-    fn allows_descendant() {
-        let valid = Path::new("D:/svc/room");
-        let candidate = Path::new("D:/svc/room/sub/cfg.ini");
-        assert!(is_within(candidate, valid));
-    }
-
-    #[test]
-    fn allows_root_self() {
-        let valid = Path::new("D:/svc/room");
-        assert!(is_within(valid, valid));
-    }
-
-    #[test]
-    fn rejects_other_root() {
-        let valid = Path::new("D:/svc/room");
-        let candidate = Path::new("D:/other/cfg.ini");
-        assert!(!is_within(candidate, valid));
-    }
-
-    #[test]
-    fn normalizes_dotdot_escape() {
-        let valid = Path::new("D:/svc/room");
-        let candidate = Path::new("D:/svc/room/sub/../../evil/x.ini");
-        assert!(!is_within(candidate, valid));
-    }
-
-    #[test]
-    fn within_any_matches_one_root() {
+    #[rstest]
+    #[case::matches_one_root("D:/svc/b/c.ini", true)]
+    #[case::matches_no_root("D:/svc/c/c.ini", false)]
+    fn test_is_within_any_checks_all_roots(#[case] candidate: &str, #[case] expected: bool) {
+        // Arrange: 两个服务根 a 与 b
         let roots = vec![PathBuf::from("D:/svc/a"), PathBuf::from("D:/svc/b")];
-        assert!(is_within_any(&PathBuf::from("D:/svc/b/c.ini"), &roots));
-        assert!(!is_within_any(&PathBuf::from("D:/svc/c/c.ini"), &roots));
+        // Act + Assert
+        assert_eq!(is_within_any(&PathBuf::from(candidate), &roots), expected);
     }
 }

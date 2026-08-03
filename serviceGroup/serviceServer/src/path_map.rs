@@ -123,18 +123,20 @@ fn exe_dir(abspath: &str, name: &str, svc_type: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use serde_json::json;
     use std::fs;
-    use tempfile::tempdir;
+    use tempfile::{tempdir, TempDir};
 
+    /// 写入临时 config.json (pytest tmp_path helper 等价)。
     fn write_config(dir: &Path, value: &serde_json::Value) -> PathBuf {
         let p = dir.join("config.json");
         fs::write(&p, value.to_string()).unwrap();
         p
     }
 
-    #[test]
-    fn parses_service_paths() {
+    /// 两服务 fixture: zgda + xzmo (TempDir 存活由调用方持有)。
+    fn config_two_services() -> (TempDir, PathBuf) {
         let dir = tempdir().unwrap();
         let cfg = json!({
             "abspath": "D:/game/",
@@ -144,69 +146,86 @@ mod tests {
             }
         });
         let p = write_config(dir.path(), &cfg);
-        let pm = PathMap::new();
-        assert!(pm.refresh(&p).unwrap());
+        (dir, p)
+    }
 
-        let zgda = pm.get("zgda_server_assist").expect("zgda path");
+    #[test]
+    fn test_path_map_parses_service_id_and_dir() {
+        // Arrange: 两服务 config
+        let (_dir, p) = config_two_services();
+        let pm = PathMap::new();
+
+        // Act
+        pm.refresh(&p).unwrap();
+
+        // Assert: service_id = {name}_{type}, path = abspath/name/type
+        let zgda = pm.get("zgda_server_assist").expect("zgda 服务应存在");
         assert_eq!(zgda.path, PathBuf::from("D:/game/zgda/server_assist"));
         assert_eq!(zgda.exe, "ZgdaAssitSvr.exe");
-
-        let xzmo = pm.get("xzmo_roomsvrxzmo").expect("xzmo path");
+        let xzmo = pm.get("xzmo_roomsvrxzmo").expect("xzmo 服务应存在");
         assert_eq!(xzmo.path, PathBuf::from("D:/game/xzmo/roomsvrxzmo"));
     }
 
     #[test]
-    fn mtime_unchanged_skips_reparse() {
+    fn test_path_map_mtime_unchanged_skips_reparse() {
+        // Arrange
         let dir = tempdir().unwrap();
-        let cfg = json!({ "abspath": "D:/game/", "service": {} });
-        let p = write_config(dir.path(), &cfg);
-        let pm = PathMap::new();
-        assert!(pm.refresh(&p).unwrap());
-        assert!(!pm.refresh(&p).unwrap(), "mtime 未变应跳过");
-    }
-
-    #[test]
-    fn refresh_after_edit() {
-        let dir = tempdir().unwrap();
-        let cfg = json!({ "abspath": "D:/game/", "service": {} });
-        let p = write_config(dir.path(), &cfg);
+        let p = write_config(dir.path(), &json!({ "abspath": "D:/game/", "service": {} }));
         let pm = PathMap::new();
         pm.refresh(&p).unwrap();
 
-        let cfg2 = json!({
-            "abspath": "D:/game/",
-            "service": { "xzmo": [{ "type": "roomsvrxzmo", "exe": "RoomSvrXzmo.exe" }] }
-        });
+        // Act: 不改 config 再 refresh
+        let refreshed = pm.refresh(&p).unwrap();
+
+        // Assert: mtime 未变 -> 跳过
+        assert!(!refreshed, "mtime 未变必须跳过重解析");
+    }
+
+    #[test]
+    fn test_path_map_refresh_after_edit_picks_new_service() {
+        // Arrange: 空 config 预热
+        let dir = tempdir().unwrap();
+        let p = write_config(dir.path(), &json!({ "abspath": "D:/game/", "service": {} }));
+        let pm = PathMap::new();
+        pm.refresh(&p).unwrap();
+
+        // Act: 改写加 xzmo, 睡 20ms 推进 mtime 精度
         std::thread::sleep(std::time::Duration::from_millis(20));
-        fs::write(&p, cfg2.to_string()).unwrap();
-        assert!(pm.refresh(&p).unwrap());
-        assert!(pm.get("xzmo_roomsvrxzmo").is_some());
+        fs::write(
+            &p,
+            json!({
+                "abspath": "D:/game/",
+                "service": { "xzmo": [{ "type": "roomsvrxzmo", "exe": "RoomSvrXzmo.exe" }] }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let refreshed = pm.refresh(&p).unwrap();
+
+        // Assert: mtime 变 -> 重解析, 新服务可见
+        assert!(refreshed, "mtime 变化必须重解析");
+        assert!(pm.get("xzmo_roomsvrxzmo").is_some(), "新服务应可见");
+    }
+
+    /// abspath 尾分隔符规范化矩阵 (与旧 JsonConfigParser.read_config 对齐)。
+    #[rstest]
+    #[case::trailing_slash("D:/game/", "D:/game/")]
+    #[case::no_trailing_sep("D:/game", "D:/game/")]
+    #[case::trailing_backslash("D:\\game\\", "D:\\game\\")]
+    #[case::empty("", "")]
+    fn test_path_map_abspath_normalized(#[case] input: &str, #[case] expected: &str) {
+        let dir = tempdir().unwrap();
+        let p = write_config(dir.path(), &json!({ "abspath": input, "service": {} }));
+        let pm = PathMap::new();
+        pm.refresh(&p).unwrap();
+        assert_eq!(pm.abspath(), expected);
     }
 
     #[test]
-    fn abspath_normalized_with_trailing_sep() {
-        let dir = tempdir().unwrap();
-        let cfg = json!({ "abspath": "D:/game", "service": {} });
-        let p = write_config(dir.path(), &cfg);
+    fn test_path_map_valid_roots_covers_all_services() {
+        let (_dir, p) = config_two_services();
         let pm = PathMap::new();
         pm.refresh(&p).unwrap();
-        assert_eq!(pm.abspath(), "D:/game/");
-    }
-
-    #[test]
-    fn valid_roots_covers_all_services() {
-        let dir = tempdir().unwrap();
-        let cfg = json!({
-            "abspath": "D:/game/",
-            "service": {
-                "a": [{ "type": "t1", "exe": "a.exe" }],
-                "b": [{ "type": "t2", "exe": "b.exe" }]
-            }
-        });
-        let p = write_config(dir.path(), &cfg);
-        let pm = PathMap::new();
-        pm.refresh(&p).unwrap();
-        let roots = pm.valid_roots();
-        assert_eq!(roots.len(), 2);
+        assert_eq!(pm.valid_roots().len(), 2, "每个服务一个根");
     }
 }
