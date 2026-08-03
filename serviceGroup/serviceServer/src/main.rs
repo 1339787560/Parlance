@@ -65,6 +65,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/config/files", get(config_files::list_files))
         .route("/api/config", get(config_files::get_config))
         .route("/api/fetch-title", get(fetch::fetch_title))
+        // /api/svn/* 暂留 legacy 反代: svnPath 是 URL 非本地路径, 旧码语义混乱
+        // (读 svnPath 未传 cwd), 待 auto-update SDD 重新设计 svn 编排。
         .route("/api/config/file/content", get(config_file::get_content))
         .route("/api/config/file/save", axum::routing::post(config_file::save_file))
         .route("/api/config/file/branches", get(branches::list_branches))
