@@ -10,6 +10,7 @@ mod encoding;
 mod error;
 mod path_check;
 mod path_map;
+mod ports_probe;
 mod proxy;
 mod routes;
 mod state;
