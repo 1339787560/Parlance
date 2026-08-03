@@ -1,20 +1,21 @@
-chardet
-requests
-urllib3
-charset-normalizer
-openai
-beautifulsoup4
+# serviceServer-legacy 运行时依赖 (精简后)
+# 死功能 (RAG/AI/agent) 依赖已删: openai/chromadb/sentence-transformers/rank_bm25/jieba/
+#   lxml/beautifulsoup4/flask-socketio/redis/python-dateutil/chardet/urllib3/
+#   charset-normalizer/mcp — 全部 0 代码引用 (T4 死功能清理残留)
+
+# --- 主框架 ---
 flask
 flask-cors
-flask-socketio
-lxml
-playwright
+requests
+
+# --- Windows 服务控制 (Service.py) ---
+pywin32
+
+# --- xzmpDB (货币调控/充值路由, 启动链顶层 import) ---
 mysql-connector-python
-redis
-python-dateutil
-protobuf>=4.25.0
-chromadb>=0.4.0
-sentence-transformers>=2.2.0
-rank_bm25>=0.2.2
-jieba>=0.42.1
-mcp>=1.27.1
+cryptography
+oss2
+
+# --- 可选: playwright (ServiceRoute.py 单个抓取功能), protobuf (main.py 兼容注释) ---
+# playwright
+# protobuf>=4.25.0
