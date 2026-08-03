@@ -29,9 +29,10 @@
             <label>窗口数:</label>
             <input id="launcher-window-count" type="number" value="4" min="1" max="10" style="width:60px;">
             <button onclick="launcherStart()">启动</button>
-            <button onclick="launcherReloadAll()" title="重载所有 iframe (拉最新 preview bundle, 等 cocos 重编译后用)">🔄 重载全部</button>
+            <button onclick="launcherReloadAll()" title="同时刷新所有 iframe (并行 reload, 拉 cocos 重编译后的最新 preview bundle; 与启动的错峰不同 — 刷新时 bundle 已缓存, 走并行最快)">🔄 同时刷新</button>
             <button onclick="launcherCloseAll()" title="关闭所有窗口">✕ 全关</button>
             <label title="每个窗口的 ?K 账号后缀 (debugconfig 切账号)"><input type="checkbox" id="launcher-suffix" checked> ?K 切账号</label>
+            <label title="⚠️ 实验性, Chrome 145 实测受限: iframe 导航仅 localhost + 127.0.0.1 能完整加载 bundle (127.0.0.2+ 静默挂起), 故最多拆 2 renderer 进程. 默认 OFF 走单源串行链 (iframe #0 最快可见)"><input type="checkbox" id="launcher-multi-origin"> 🔀 多源 (实验)</label>
             <span style="flex:1;"></span>
             <a href="/" target="_blank" style="font-size:11px; color:var(--dim);">← 返回主调试台</a>
             <span id="launcher-status" class="events-status"></span>
@@ -59,6 +60,6 @@
             <div id="launcher-iframe-grid"></div>
         </div>
     </div>
-    <script src="debug-launcher.js?v=6"></script>
+    <script src="debug-launcher.js?v=13"></script>
 </body>
 </html>

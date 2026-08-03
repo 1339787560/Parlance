@@ -38,9 +38,46 @@ const OPID = {
 };
 
 // ===== State =====
-let launcherIframes = [];   // [{ idx, url, userId, wrapEl, iframeEl, labelEl }]
+let launcherIframes = [];   // [{ idx, url, userId, wrapEl, iframeEl, labelEl, loadTimer }]
 let launcherCurrency = 'points';  // 默认积分 tab
 let launcherMessageBound = false;
+
+// ===== Stagger 启动配置 =====
+// 两种启动模式 (checkbox "🔀 多源拆进程" 切换):
+//
+// **单源 (默认 OFF → 走串行 onload 链)**:
+//   同源 iframe 共享父进程 V8 (Site Isolation 不切同源), 且 cocos preview server 不发
+//   Cache-Control → 4 个 iframe 同时启动会各自下载完整 bundle (MB 级) → 网络拥塞 + CPU 卡死.
+//   链式: iframe[0] onload (bundle 完整加载完) → iframe[1].src → onload → ...
+//   浏览器 HTTP 缓存同 top-level+frame origin 共享分区, 第 2 个起命中缓存瞬载.
+//   效果: bundle 只下载 1 次, 后续 N-1 个走缓存; 首窗口最快可见.
+//
+// **多源 (toggle ON → 走并行)**:
+//   同源是 V8 单进程瓶颈根因 — 4 个 cocos 引擎 init + login 在同一 main thread 串行执行,
+//   实测每窗口 login 12-30s, 第 4 个累积最慢 (+13.8s).
+//   修法: iframe i 用不同 hostname (localhost / 127.0.0.1 / 127.0.0.2 / 127.0.0.3 ...),
+//   Chrome Site Isolation 按源拆 renderer 进程 → 真 4 进程并行 init + login.
+//   代价: 不同源 → 不同 HTTP cache 分区 → bundle 每 origin 各下载一份. 但 localhost 带宽
+//   几百 MB/s, MB 级 bundle × 4 < 1s, 远小于 CPU 并行的收益.
+//
+// Loopback 整个 127.0.0.0/8 路由本机, 但 **Chrome 145 实测** iframe 导航仅 localhost + 127.0.0.1
+// 能完整加载 bundle (curl/bash 全 200, 但浏览器对 127.0.0.2+ 静默挂起 — 推测 Private Network
+// Access 或 Cocos preview Host 校验). 故池只放 2 个可用 origin → 4 窗口分 2 renderer 进程 (vs 单源 1 进程),
+// 仍有并行收益. 若 Chrome 后续放开 127.x 或用 hosts 加 cocos3.local 等映射 127.0.0.1, 扩池即可.
+const LAUNCHER_MULTI_ORIGIN_POOL = ['localhost', '127.0.0.1'];
+const LAUNCHER_ONLOAD_TIMEOUT_MS = 20000;  // 单窗口 onload 等待上限 (单源链模式用)
+
+/** 多源 URL 重写: 替换 urlBase 的 hostname 为 pool[i % pool.length], 保留 port + path. */
+function launcherMultiOriginUrl(urlBase, i) {
+    try {
+        const u = new URL(urlBase);
+        u.hostname = LAUNCHER_MULTI_ORIGIN_POOL[i % LAUNCHER_MULTI_ORIGIN_POOL.length];
+        return u.toString();
+    } catch {
+        // urlBase 不合法 (无协议等), 退化原样
+        return urlBase;
+    }
+}
 
 // ===== Status helpers =====
 function launcherSetStatus(text, isError) {
@@ -62,6 +99,7 @@ function launcherStart() {
     const urlBase = (document.getElementById('launcher-preview-url').value || 'http://localhost:7456').trim();
     const n = Math.max(1, Math.min(10, parseInt(document.getElementById('launcher-window-count').value) || 1));
     const useSuffix = document.getElementById('launcher-suffix').checked;
+    const useMultiOrigin = document.getElementById('launcher-multi-origin')?.checked === true;
 
     launcherCloseAll();
     const grid = document.getElementById('launcher-iframe-grid');
@@ -71,13 +109,17 @@ function launcherStart() {
     const cols = Math.ceil(Math.sqrt(n));
     grid.style.gridTemplateColumns = `repeat(${cols}, minmax(280px, 1fr))`;
 
-    launcherSetStatus(`启动 ${n} 个窗口 (${cols}列 × ${Math.ceil(n / cols)}行)...`);
+    launcherSetStatus(`启动 ${n} 个窗口 (${cols}列 × ${Math.ceil(n / cols)}行, ${useMultiOrigin ? '多源并行' : '单源串行链'})...`);
 
+    // 创建所有 DOM 占位 (含 close btn + label), src 暂不设
     for (let i = 0; i < n; i++) {
         // 注意: 不能加 &_t cache-bust — cocos preview 把整个 query string 当账号索引解析,
         // ?0&_t=xxx 会解析成 NaN → debugconfig[NaN] undefined → setNickName 读 .length 崩.
-        // 改用工具栏 "🔄 重载全部" 按钮显式刷 (iframe.contentWindow.location.reload() 跨域合法).
-        const finalUrl = useSuffix ? `${urlBase}?${i}` : urlBase;
+        // 改用工具栏 "🔄 同时刷新" 按钮显式刷 (src 重写 about:blank → 原 URL).
+        // 多源模式: 替换 hostname 为 127.0.0.X 轮询 → Chrome Site Isolation 拆 renderer 进程, 真 4 进程并行.
+        let baseUrl = urlBase;
+        if (useMultiOrigin) baseUrl = launcherMultiOriginUrl(urlBase, i);
+        const finalUrl = useSuffix ? `${baseUrl}?${i}` : baseUrl;
 
         const wrap = document.createElement('div');
         wrap.className = 'launcher-iframe-wrap';
@@ -85,12 +127,13 @@ function launcherStart() {
 
         const label = document.createElement('div');
         label.className = 'launcher-iframe-label';
-        label.textContent = `#${i} uid: ...`;
+        // 多源并行模式: 全部立即起, 都显示"加载中"; 单源链模式: 后续显示"排队中"
+        label.textContent = (i === 0 || useMultiOrigin) ? `#${i} 加载中...` : `#${i} 排队中`;
         wrap.appendChild(label);
 
         const iframe = document.createElement('iframe');
-        iframe.src = finalUrl;
         iframe.allow = 'autoplay; fullscreen';
+        // src 暂不设, 等链触发 (见下方 startChain)
         wrap.appendChild(iframe);
 
         const closeBtn = document.createElement('button');
@@ -101,10 +144,57 @@ function launcherStart() {
         wrap.appendChild(closeBtn);
 
         grid.appendChild(wrap);
-        launcherIframes.push({ idx: i, url: finalUrl, userId: null, wrapEl: wrap, iframeEl: iframe, labelEl: label });
+        launcherIframes.push({
+            idx: i, url: finalUrl, userId: null,
+            wrapEl: wrap, iframeEl: iframe, labelEl: label,
+            loadTimer: null, started: false,
+        });
     }
 
-    launcherSetStatus(`已启动 ${n} 窗口 (${cols}×${Math.ceil(n / cols)}), 等待 userId 上报 (HallReady 后 DebugPlugin postMessage)`);
+    if (useMultiOrigin) {
+        // 并行模式: 每窗口独立 origin → 独立 renderer 进程, 无 V8 竞争, 全部立即注入 src 并行启动.
+        // 代价: 不同源 HTTP cache 分区, bundle 每窗口各下 1 份 (localhost 带宽足够, MB 级 < 1s).
+        const poolUsed = LAUNCHER_MULTI_ORIGIN_POOL.slice(0, n).join(' / ');
+        for (const e of launcherIframes) {
+            e.started = true;
+            e.iframeEl.onload = () => { e.labelEl.textContent = `#${e.idx} uid: ...`; };
+            e.iframeEl.src = e.url;
+        }
+        launcherSetStatus(`已并行启动 ${n} 窗口 (多源: ${poolUsed}), 等待 userId 上报 (HallReady 后 DebugPlugin postMessage)`);
+    } else {
+        // 串行链模式: iframe[0] onload (bundle 完整加载) → iframe[1].src → onload → ...
+        // 浏览器 HTTP 缓存 (top-level=localhost:5003, frame=localhost:7456) 同源共享, 第 2 个起命中缓存瞬载.
+        // 启动链: 递归注入 src, 每窗口 onload (或超时) 后启动下一个
+        const startChain = (k) => {
+            if (k >= launcherIframes.length) {
+                launcherSetStatus(`所有 ${launcherIframes.length} 窗口已加载, 等待 userId 上报 (HallReady 后 DebugPlugin postMessage)`);
+                return;
+            }
+            const e = launcherIframes[k];
+            if (e.started) return;  // 防重复触发 (close 早返时)
+            e.started = true;
+            e.labelEl.textContent = `#${e.idx} 加载中...`;
+            launcherSetStatus(`#${e.idx}/${launcherIframes.length} 加载中 (bundle ${k === 0 ? '冷下载' : '走缓存'})...`);
+
+            // onload: cross-origin iframe 的 load 事件仍可触发 (浏览器少数允许的跨域信号)
+            e.iframeEl.onload = () => {
+                if (e.loadTimer) { clearTimeout(e.loadTimer); e.loadTimer = null; }
+                e.labelEl.textContent = `#${e.idx} uid: ...`;
+                // bundle 已完整下载并进缓存, 启动下一个 (缓存命中瞬载)
+                startChain(k + 1);
+            };
+            // Fallback: onload 超时未触发 → 不阻塞链, 强制下一个
+            e.loadTimer = setTimeout(() => {
+                console.warn(`[launcher] #${e.idx} onload 超时 ${LAUNCHER_ONLOAD_TIMEOUT_MS}ms, 强制链下一步`);
+                e.iframeEl.onload = null;
+                e.labelEl.textContent = `#${e.idx} uid: ...`;
+                startChain(k + 1);
+            }, LAUNCHER_ONLOAD_TIMEOUT_MS);
+
+            e.iframeEl.src = e.url;  // 触发加载
+        };
+        startChain(0);
+    }
     launcherBindMessage();
     renderAccounts();
 }
@@ -112,12 +202,21 @@ function launcherStart() {
 function launcherCloseOne(idx) {
     const pos = launcherIframes.findIndex(x => x.idx === idx);
     if (pos < 0) return;
+    // 清掉未触发的 stagger timer, 避免 close 后孤儿 src 注入到已移除 iframe
+    if (launcherIframes[pos].loadTimer) {
+        clearTimeout(launcherIframes[pos].loadTimer);
+        launcherIframes[pos].loadTimer = null;
+    }
     launcherIframes[pos].wrapEl.remove();
     launcherIframes.splice(pos, 1);
     renderAccounts();
 }
 
 function launcherCloseAll() {
+    // 清所有 stagger timer
+    for (const x of launcherIframes) {
+        if (x.loadTimer) { clearTimeout(x.loadTimer); x.loadTimer = null; }
+    }
     const grid = document.getElementById('launcher-iframe-grid');
     if (grid) grid.innerHTML = '';
     launcherIframes = [];
@@ -125,27 +224,35 @@ function launcherCloseAll() {
     launcherSetStatus('');
 }
 
-/** 显式重载所有 iframe (拉最新 preview bundle, 等 cocos 重编译后用).
- *  cross-origin location.reload() 是浏览器允许的少数跨域操作之一. */
+/** 同时刷新所有 iframe (与 stagger 启动不同: 刷新走并行).
+ *  前提: bundle 已在浏览器 HTTP 缓存 (前次启动预热过), 不再下载, 仅重跑 engine init/login.
+ *
+ *  ⚠️ 跨域限制 (2026-08-02 实测踩坑): parent=(:5003), iframe=(:7456) 不同源,
+ *  Chrome 拒绝 `iframe.contentWindow.location.reload()` (SecurityError:
+ *  "Failed to read a named property 'reload' from 'Location'"). 原作者误判 spec 允许,
+ *  实测被拦 → count=0 全失败.
+ *  改走 **src 重写**: 先 about:blank 清空, 微任务后还原 src → 触发完整导航 (走缓存).
+ *  浏览器 HTTP 缓存按 URL 分区 (非 iframe 实例), 还原 src 命中前次预热的 bundle 缓存, 不重下载. */
 function launcherReloadAll() {
     if (launcherIframes.length === 0) {
-        launcherSetStatus(true ? '' : '', '无窗口可重载');
+        launcherSetStatus('无窗口可刷新');
         return;
     }
     let count = 0;
     for (const x of launcherIframes) {
-        try {
-            x.iframeEl.contentWindow.location.reload();
-            count++;
-            // 重置 userId, 等待重新上报
-            x.userId = null;
-            x.labelEl.textContent = `#${x.idx} uid: ...`;
-        } catch (e) {
-            console.warn(`[launcher] reload #${x.idx} failed:`, e);
-        }
+        const u = x.iframeEl.src;
+        // 1) 先清空 → 解除旧 cocos 实例, 释放引擎资源
+        x.iframeEl.src = 'about:blank';
+        // 2) 微任务后还原 src → 触发导航 (about:blank→原 URL 必导航, 不被去重)
+        //    50ms 延迟确保 about:blank 已提交, 否则部分浏览器合并两次 src 写入只生效一次
+        setTimeout(((fr, url) => () => { fr.src = url; })(x.iframeEl, u), 50);
+        count++;
+        // 重置 userId, 等待重新上报
+        x.userId = null;
+        x.labelEl.textContent = `#${x.idx} uid: ...`;
     }
     renderAccounts();
-    launcherSetStatus(`已重载 ${count} 窗口, 等待 userId 重新上报...`);
+    launcherSetStatus(`🔄 同时刷新 ${count} 窗口 (并行 src 重写, 等待 userId 重新上报...)`);
 }
 
 // ===== postMessage: 接收 iframe 上报 userId =====

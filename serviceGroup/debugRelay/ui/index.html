@@ -242,9 +242,10 @@
                         <label class="launcher-field-label">窗口数</label>
                         <input id="launcher-window-count" type="number" value="4" min="1" max="10" class="launcher-input" style="width:60px;">
                         <label class="launcher-field-label" title="每个窗口的 ?K 账号后缀 (debugconfig 切账号)"><input type="checkbox" id="launcher-suffix" checked> ?K 切账号</label>
+                        <label class="launcher-field-label" title="⚠️ 实验性, Chrome 145 实测受限: iframe 导航仅 localhost + 127.0.0.1 能完整加载 bundle (127.0.0.2+ 静默挂起), 故最多拆 2 renderer 进程 (4 窗 → 2 进程, 每进程 2 引擎). 默认 OFF 走单源串行链 (iframe #0 最快可见). ON 走并行 (2 进程并行 init+login, 总时间或缩短). 留 toggle 实验用"><input type="checkbox" id="launcher-multi-origin"> 🔀 多源 (实验)</label>
                         <div class="launcher-bottom-btns">
                             <button onclick="launcherStart()">启动</button>
-                            <button onclick="launcherReloadAll()" title="重载所有 iframe (拉最新 preview bundle)">🔄 重载</button>
+                            <button onclick="launcherReloadAll()" title="同时刷新所有 iframe (并行 reload, 拉 cocos 重编译后的最新 preview bundle; 与启动的错峰不同 — 刷新时 bundle 已缓存, 走并行最快)">🔄 同时刷新</button>
                             <button onclick="launcherCloseAll()" title="关闭所有窗口">✕ 全关</button>
                         </div>
                         <div id="launcher-status" class="events-status"></div>
@@ -404,7 +405,7 @@
     <script src="debug-scene.js?v=5"></script>
     <script src="debug-btree.js?v=21"></script>
     <script src="debug-curl.js?v=2"></script>
-    <script src="debug-launcher.js?v=7"></script>
+    <script src="debug-launcher.js?v=13"></script>
     <script src="debug-theme.js?v=1"></script>
 </body>
 </html>
