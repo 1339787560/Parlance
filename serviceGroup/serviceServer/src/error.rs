@@ -20,6 +20,10 @@ pub enum AppError {
     NotFound,
     #[error("只允许访问 .ini 与 .json 与 .lua 文件")]
     InvalidExtension,
+    #[error("编码错误: {0}")]
+    Encode(String),
+    #[error("不支持的编码: {0}")]
+    UnknownEncoding(String),
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
     #[error("配置解析错误: {0}")]
@@ -35,6 +39,8 @@ impl IntoResponse for AppError {
             AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::InvalidExtension => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::Encode(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::UnknownEncoding(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
