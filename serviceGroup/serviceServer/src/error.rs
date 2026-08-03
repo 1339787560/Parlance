@@ -24,6 +24,10 @@ pub enum AppError {
     Encode(String),
     #[error("不支持的编码: {0}")]
     UnknownEncoding(String),
+    #[error("分支文件已存在")]
+    BranchExists,
+    #[error("分支名称只能含字母数字下划线连字符")]
+    InvalidBranchName,
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
     #[error("配置解析错误: {0}")]
@@ -41,6 +45,8 @@ impl IntoResponse for AppError {
             AppError::InvalidExtension => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::Encode(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::UnknownEncoding(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::BranchExists => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::InvalidBranchName => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };

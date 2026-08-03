@@ -24,7 +24,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{config_file, config_files, services};
+use crate::routes::{branches, config_file, config_files, services};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -58,6 +58,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/config/file/save", axum::routing::post(config_file::save_file))
         .route("/api/services/status", get(services::list_status))
         .route("/api/config/services/running", get(services::running_services))
+        .route("/api/config/file/branches", get(branches::list_branches))
+        .route(
+            "/api/config/file/create_branch",
+            axum::routing::post(branches::create_branch),
+        )
+        .route(
+            "/api/config/file/switch_branch",
+            axum::routing::post(branches::switch_branch),
+        )
+        .route(
+            "/api/config/file/remove_branch",
+            axum::routing::delete(branches::remove_branch),
+        )
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 5000));
