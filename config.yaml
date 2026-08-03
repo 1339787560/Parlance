@@ -33,21 +33,22 @@ services:
     enabled: true
 
   - name: serviceServer-rust
-    command: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\service-server.exe
-    cwd: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer
+    command: ./serviceGroup/serviceServer/service-server.exe
+    cwd: ./serviceGroup/serviceServer
     port: 5000
     auto_restart: true
     tags: [service, api]
     enabled: true
     env:
-      SERVICESVR_CONFIG: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer-legacy\config.json
+      # SERVICESVR_CONFIG 基准 = Rust 子进程 cwd (serviceGroup/serviceServer), 故用 ../ 到 legacy
+      SERVICESVR_CONFIG: ../serviceServer-legacy/config.json
       SERVICESVR_LEGACY_URL: http://127.0.0.1:5099
       RUST_LOG: info
 
   - name: serviceServer-legacy
     command: python
     args: ["main.py"]
-    cwd: D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer-legacy
+    cwd: ./serviceGroup/serviceServer-legacy
     port: 5099
     auto_restart: true
     tags: [service, api, legacy]
@@ -76,11 +77,12 @@ services:
     enabled: true
 
   - name: np-reader
-    command: D:\Codlib\VscodeCodlib\Python\Novel-Pineline\.venv\Scripts\np.exe
+    # Novel-Pineline 与 infoServer 同级 (../Novel-Pineline), 相对化后任意主机同根即可部署
+    command: ../Novel-Pineline/.venv/Scripts/np.exe
     command_mac: /Users/liz/codlib/python/Novel-Pineline/.venv/bin/np
-    args: ["reader", "serve", "--host", "0.0.0.0", "--port", "8000", "--library", "D:\\Codlib\\VscodeCodlib\\Python\\Novel-Pineline\\library"]
+    args: ["reader", "serve", "--host", "0.0.0.0", "--port", "8000", "--library", "../Novel-Pineline/library"]
     args_mac: ["reader", "serve", "--host", "0.0.0.0", "--port", "8000", "--library", "/Users/liz/codlib/python/Novel-Pineline/library"]
-    cwd: D:\Codlib\VscodeCodlib\Python\Novel-Pineline
+    cwd: ../Novel-Pineline
     cwd_mac: /Users/liz/codlib/python/Novel-Pineline
     port: 8000
     auto_restart: true
