@@ -10,6 +10,7 @@ mod encoding;
 mod error;
 mod path_check;
 mod path_map;
+mod proxy;
 mod routes;
 mod state;
 mod status;
@@ -44,11 +45,19 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("启动预热 config.json 失败 (稍后请求重试): {e}");
     }
 
+    let legacy_backend = std::env::var("SERVICESVR_LEGACY_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:5099".to_string());
+    let http_client = reqwest::Client::builder()
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
     let state = AppState {
         config_path: config_path.into(),
         path_map,
         status_cache: Arc::new(StatusCache::new(Duration::from_secs(10))),
         status_provider: Arc::from(default_provider()),
+        legacy_backend,
+        http_client,
     };
 
     let app = Router::new()
@@ -71,6 +80,8 @@ async fn main() -> anyhow::Result<()> {
             "/api/config/file/remove_branch",
             axum::routing::delete(branches::remove_branch),
         )
+        // strangler: 未匹配请求反代到旧 Flask 后端 (SERVICESVR_LEGACY_URL)。
+        .fallback(crate::proxy::proxy_legacy)
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 5000));

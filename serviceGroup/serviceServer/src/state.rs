@@ -11,4 +11,7 @@ pub struct AppState {
     pub path_map: Arc<PathMap>,
     pub status_cache: Arc<StatusCache>,
     pub status_provider: Arc<dyn ServiceStatusProvider>,
+    /// strangler 后端 (旧 Flask), 如 http://127.0.0.1:5099。
+    pub legacy_backend: String,
+    pub http_client: reqwest::Client,
 }
