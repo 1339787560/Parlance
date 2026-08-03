@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 rem ============================================
 rem   infoServer auto-start installer
 rem   usage:
@@ -7,6 +8,7 @@ rem     install_service.bat uninstall  (remove auto-start)
 rem     install_service.bat status     (check status)
 rem     install_service.bat            (no arg = help)
 rem   install/uninstall auto-elevate via UAC
+rem   optional: --python "path\to\python.exe"
 rem ============================================
 
 cd /d "%~dp0"
@@ -15,8 +17,6 @@ set "ACTION=%~1"
 if "%ACTION%"=="" goto :help
 
 rem ---- find python: --python arg > .venv > py launcher > common paths > python ----
-rem py launcher (C:\Windows\py.exe) immune to PATH pollution (e.g. "Program Files" space)
-rem usage: install_service.bat install --python "C:\Program Files\Python313\python.exe"
 set "PY="
 set "PYARGS="
 set "NEXT="
@@ -28,10 +28,13 @@ for %%a in (%*) do (
         set "NEXT=1"
     )
 )
-
 if not defined PY if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
 if not defined PY (
-    py -3 --version >nul 2>&1 && set "PY=py" && set "PYARGS=-3"
+    py -3 --version >nul 2>&1
+    if !errorlevel! equ 0 (
+        set "PY=py"
+        set "PYARGS=-3"
+    )
 )
 if not defined PY if exist "C:\Program Files\Python313\python.exe" set "PY=C:\Program Files\Python313\python.exe"
 if not defined PY if exist "C:\Program Files\Python312\python.exe" set "PY=C:\Program Files\Python312\python.exe"
@@ -45,7 +48,7 @@ goto :help
 
 :need_admin
 net session >nul 2>&1
-if %errorlevel% neq 0 (
+if !errorlevel! neq 0 (
     echo Requesting admin privileges...
     powershell -Command "Start-Process '%~f0' -ArgumentList '%*' -Verb RunAs"
     exit /b
@@ -59,8 +62,8 @@ echo.
 echo ============================================
 echo   Installing infoServer auto-start...
 echo ============================================
-"%PY%" %PYARGS% startup.py install
-if errorlevel 1 (
+"!PY!" !PYARGS! startup.py install
+if !errorlevel! geq 1 (
     echo.
     echo   [FAIL] install failed.
     pause
@@ -76,8 +79,8 @@ echo.
 echo ============================================
 echo   Removing infoServer auto-start...
 echo ============================================
-"%PY%" %PYARGS% startup.py uninstall
-if errorlevel 1 (
+"!PY!" !PYARGS! startup.py uninstall
+if !errorlevel! geq 1 (
     echo.
     echo   [FAIL] uninstall failed.
     pause
@@ -93,7 +96,7 @@ echo.
 echo ============================================
 echo   infoServer auto-start status...
 echo ============================================
-"%PY%" %PYARGS% startup.py status
+"!PY!" !PYARGS! startup.py status
 pause
 exit /b 0
 
