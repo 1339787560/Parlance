@@ -82,9 +82,8 @@ async fn main() -> anyhow::Result<()> {
             "/api/config/file/remove_branch",
             axum::routing::delete(branches::remove_branch),
         )
-        // 注意: /api/services/status 与 /api/config/services/running 暂不拦截,
-        // 反代到 legacy Flask (Rust status shape 尚缺 display_name/exe_path/ports,
-        // 拦截会破坏 deposit 等页; 待 Rust 补全 port/pid 查询后再接)。
+        .route("/api/services/status", get(services::list_status))
+        .route("/api/config/services/running", get(services::running_services))
         // strangler: 未匹配请求反代到旧 Flask 后端 (SERVICESVR_LEGACY_URL)。
         .fallback(crate::proxy::proxy_legacy)
         .with_state(state);

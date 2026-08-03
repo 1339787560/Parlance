@@ -14,10 +14,16 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
     state.path_map.refresh(&state.config_path)?;
     let services = state.path_map.all();
     let mut map = BTreeMap::new();
+    let provider = state.status_provider.as_ref();
     for svc in services {
         let st = state
             .status_cache
-            .get_or_query(&svc.service_id, state.status_provider.as_ref());
+            .get_or_query(&svc.service_id, provider);
+        // shape 对齐 legacy Service.py get_all_service_status:
+        //   status / type / exe / name / display_name / path / exe_path / ports
+        // ports 走 PID+IP Helper (待 T3 端口簇迁移), 暂返 "未监听" 占位避免前台 N/A。
+        let display_name = format!("同城游_{}_{}", svc.name, svc.svc_type);
+        let exe_path = svc.path.join(&svc.exe);
         map.insert(
             svc.service_id.clone(),
             serde_json::json!({
@@ -25,7 +31,10 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
                 "type": svc.svc_type,
                 "exe": svc.exe,
                 "name": svc.name,
+                "display_name": display_name,
                 "path": svc.path.display().to_string(),
+                "exe_path": exe_path.display().to_string(),
+                "ports": "未监听",
             }),
         );
     }
