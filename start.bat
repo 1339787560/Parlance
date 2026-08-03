@@ -1,8 +1,8 @@
 @echo off
-cd /d "D:\Codlib\VscodeCodlib\Python\infoServer"
+cd /d "%~dp0"
 set "VENV_PYTHON=.venv\Scripts\python.exe"
 if exist "%VENV_PYTHON%" (
     "%VENV_PYTHON%" start.py %*
 ) else (
-    "D:\Compiler\python\python.exe" start.py %*
+    python start.py %*
 )
