@@ -2,6 +2,7 @@
 
 use crate::path_map::PathMap;
 use crate::status::{ServiceStatusProvider, StatusCache};
+use crate::templates::TemplateStore;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -14,4 +15,6 @@ pub struct AppState {
     /// strangler 后端 (旧 Flask), 如 http://127.0.0.1:5099。
     pub legacy_backend: String,
     pub http_client: reqwest::Client,
+    /// 模板存储 (SQLite); None = 未启用 (DB 路径未配置)。
+    pub templates: Option<Arc<TemplateStore>>,
 }

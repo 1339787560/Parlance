@@ -16,6 +16,7 @@ mod routes;
 mod state;
 mod status;
 mod svc_control;
+mod templates;
 #[cfg(windows)]
 mod win32;
 
@@ -27,7 +28,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{branches, config_file, config_files, fetch, services};
+use crate::routes::{branches, config_file, config_files, fetch, services, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -53,6 +54,33 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
 
+    // 模板 DB: env SERVICESVR_TEMPLATES_DB 优先, 否则 config 同级 CustomRoute/templates.db
+    // (复用 legacy 库, 已有模板不丢)。
+    let templates_db = std::env::var("SERVICESVR_TEMPLATES_DB").ok();
+    let templates = match templates_db {
+        Some(p) => match crate::templates::TemplateStore::open(std::path::Path::new(&p)) {
+            Ok(s) => Some(Arc::new(s)),
+            Err(e) => {
+                tracing::warn!("模板 DB 打开失败 ({p}): {e}; /api/templates/* 将 500");
+                None
+            }
+        },
+        None => {
+            let cfg = std::path::Path::new(&config_path);
+            let p = cfg
+                .parent()
+                .map(|d| d.join("CustomRoute").join("templates.db"))
+                .unwrap_or_else(|| std::path::PathBuf::from("CustomRoute/templates.db"));
+            match crate::templates::TemplateStore::open(&p) {
+                Ok(s) => Some(Arc::new(s)),
+                Err(e) => {
+                    tracing::warn!("模板 DB 打开失败 ({}): {e}; /api/templates/* 将 500", p.display());
+                    None
+                }
+            }
+        }
+    };
+
     let state = AppState {
         config_path: config_path.into(),
         path_map,
@@ -60,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
         status_provider: Arc::from(default_provider()),
         legacy_backend,
         http_client,
+        templates,
     };
 
     let app = Router::new()
@@ -102,6 +131,9 @@ async fn main() -> anyhow::Result<()> {
             "/api/services/delete",
             axum::routing::post(services::delete_service),
         )
+        .route("/api/templates/get", get(tpl::get))
+        .route("/api/templates/save", axum::routing::post(tpl::save))
+        .route("/api/templates/delete", axum::routing::post(tpl::delete))
         // strangler: 未匹配请求反代到旧 Flask 后端 (SERVICESVR_LEGACY_URL)。
         .fallback(crate::proxy::proxy_legacy)
         .with_state(state);

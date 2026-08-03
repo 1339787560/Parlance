@@ -41,10 +41,11 @@ cargo run            # 跑 :5000 (需 config.json, 默认 cwd, 或 SERVICESVR_CO
 - ✅ /api/config GET + /api/fetch-title Rust 化 (reqwest 迁移模式)
 - ✅ fileontimer 移除 + 死路径 blocklist (RAG/A2A/AI/fileontimer 前台 404)
 - 🟡 services 控制簇: start/stop/restart/delete Rust 化 (SCM ControlService + StartService + DeleteService), deploy/start-all/update 留 legacy
+- ✅ templates 簇 Rust 化 (rusqlite bundled, 复用 legacy templates.db, 3 路由 save/get/delete)
 - ✅ status shape 全对齐: display_name + exe_path + ports 真值 (PID toolhelp32 + IP Helper, 28 服务 ports 全 match legacy)
 - ⬜ 货币调控留 legacy (DB 依赖)
 - ⬜ T4 PyO3 (待触发) + legacy 死功能清理
-- cargo test 77 通过, release exe v7 3.7MB
+- cargo test 81 通过, release exe v7 3.9MB
 
 ## 旧版参考源
 
