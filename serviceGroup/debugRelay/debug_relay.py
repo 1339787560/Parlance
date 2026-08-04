@@ -41,6 +41,7 @@ except Exception:
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -759,6 +760,11 @@ app.add_middleware(
 
 UI_DIR = Path(__file__).parent / "ui"
 
+# 稳定 build 静态服务 (build/web-desktop release minified, launcher build 模式用)
+# main() 读 config build_dir 或默认 <source_dir>/../build/web-desktop, 存在则 mount /build-preview
+# 用 dict 持状态 (mutable, 无需 global 声明, 避开 Python 3.12 annotated/global 冲突)
+_BUILD_STATE = {"web_dir": None, "mounted": False}
+
 @app.get("/")
 async def index():
     idx = UI_DIR / "index.html"
@@ -774,6 +780,21 @@ async def launcher_page():
     if p.exists():
         return FileResponse(str(p), media_type="text/html")
     return JSONResponse({"error": "launcher.html not found"}, status_code=404)
+
+
+@app.get("/api/build-status")
+async def build_status():
+    """报告稳定 build 静态服务状态 (launcher build 模式用)。
+    Returns mounted (build_dir 存在且已 mount) / path / url / exists。"""
+    web_dir = _BUILD_STATE["web_dir"]
+    exists = bool(web_dir) and Path(web_dir).exists()
+    return {
+        "mounted": _BUILD_STATE["mounted"],
+        "exists": exists,
+        "path": web_dir,
+        "url": "/build-preview/" if _BUILD_STATE["mounted"] else None,
+        "hint": "build/web-desktop 未找到。Cocos Creator → 构建 → web-desktop (取消勾选调试构建) → 构建" if not _BUILD_STATE["mounted"] else None,
+    }
 
 
 @app.get("/debug-ui.css")
@@ -2599,6 +2620,24 @@ if __name__ == "__main__":
     # 源码目录: --src > config source_dir > 默认（行为树/Sources 不依赖设备，以本机代码为准）
     _src_arg = args.src or (cfg.get("source_dir") if isinstance(cfg, dict) else None) or DEFAULT_SRC
     src_dir = Path(_src_arg).resolve()
+
+    # 稳定 build 静态服务: config build_dir > 默认 <source_dir>/../build/web-desktop (即 trunk/build/web-desktop)
+    # 存在则 mount /build-preview (launcher build 模式 iframe 指向)
+    _build_arg = cfg.get("build_dir") if isinstance(cfg, dict) else None
+    if _build_arg:
+        _build_web_dir = Path(_build_arg).resolve()
+    else:
+        _build_web_dir = (src_dir.parent / "build" / "web-desktop").resolve()
+    _BUILD_STATE["web_dir"] = str(_build_web_dir)
+    if _build_web_dir.exists() and (_build_web_dir / "index.html").exists():
+        try:
+            app.mount("/build-preview", StaticFiles(directory=str(_build_web_dir), html=True), name="build-preview")
+            _BUILD_STATE["mounted"] = True
+        except Exception as _e:
+            print(f"WARNING: mount /build-preview 失败 ({_e}), build 模式不可用")
+            _BUILD_STATE["mounted"] = False
+    else:
+        print(f"INFO: 稳定 build 未就绪 ({_build_web_dir} 无 index.html), launcher 仅 preview 模式可用")
     wl_cfg = cfg.get("whitelist") or {} if isinstance(cfg, dict) else {}
     cfg_enabled = bool(wl_cfg.get("enabled", False))
     cfg_ip_list = wl_cfg.get("ips") or []
@@ -2647,6 +2686,10 @@ if __name__ == "__main__":
     print(f"  Port: {args.port}")
     print(f"  Host: {args.host}")
     print(f"  Source: {src_dir}")
+    if _BUILD_STATE["mounted"]:
+        print(f"  Build:  {_BUILD_STATE['web_dir']} (/build-preview/ — launcher build 模式就绪)")
+    else:
+        print(f"  Build:  未就绪 (launcher 仅 preview :7456 模式)")
     print(f"  Events: {events_dir}")
     print(f"  Snapshots: {snapshots_dir}")
     print(f"  UI: http://{args.host}:{args.port}")
