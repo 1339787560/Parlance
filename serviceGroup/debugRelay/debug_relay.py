@@ -102,6 +102,7 @@ class MsgType:
 
     # Relay -> Game (autotest 闭环)
     AUTOTEST_STATE = "autotest_state"      # Relay -> Game: autotest 开关 + scenario url（game 连入初同步 + toggle 广播）
+    AUTOTEST_ARM_RESULT = "autotest_arm_result"  # Game -> Relay: arm 成败上报（T4，relay 聚合四家 arm 全景）
 
 
 # ---- State ----
@@ -213,10 +214,13 @@ whitelist_enabled: bool = False
 
 # ---- Autotest 闭环状态（全局，所有 game 客户端共享）----
 # debugRelay 作为激活 hub：toggle 经 REST → 广播 AUTOTEST_STATE 给所有 game 客户端
-# → DebugPlugin fetch scenario_url → 设 globalThis.__testSeq → OperateBtnsManager._testSeqCheck 自驱
+# → DebugPlugin fetch scenario_url → canvas.addComponent<AutotestPlayer> + arm(policy)
+# → AutotestPlayer.update(dt) 自驱；arm 成败回 AUTOTEST_ARM_RESULT 给 relay 聚合
 AUTOTEST_DIR = Path(__file__).parent / "autotest_scenarios"
 AUTOTEST_DIR.mkdir(exist_ok=True)
 autotest_state: dict = {"enabled": False, "scenario": ""}  # scenario = 文件名(无 .json)
+# arm 回执聚合: client_id -> {ok, chair, rules_count, scenario, error, ts}
+arm_state: Dict[str, dict] = {}
 whitelist_ips: set = set()
 
 # 行为树可视化配置（行为树 tab，无需游戏端连接）
@@ -1823,6 +1827,19 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
         _resolve_response_future(ctx, msg_type, msg)
         await _send_to_subscribers(cid, _stamp(msg, cid))
 
+    elif msg_type == MsgType.AUTOTEST_ARM_RESULT:
+        # game → relay arm 成败上报（T4，聚合到 arm_state 供 REST 查询）
+        arm_state[cid] = {
+            "client_id": cid,
+            "ok": bool(msg.get("ok", False)),
+            "chair": msg.get("chair", -1),
+            "rules_count": msg.get("rules_count", 0),
+            "scenario": msg.get("scenario", ""),
+            "error": msg.get("error"),
+            "ts": datetime.now().isoformat(),
+        }
+        await _send_to_subscribers(cid, _stamp(msg, cid))
+
     # eval 结果：resolve REST 等待中的 future（无 type 字段，靠 eval_result 判断），再转发
     if "eval_result" in msg:
         _resolve_response_future(ctx, MsgType.EVAL, msg)
@@ -2400,6 +2417,7 @@ async def api_autotest_set(req: Request):
             return JSONResponse({"error": f"scenario not found: {scenario}", "scenarios": scenarios}, status_code=404)
     autotest_state["enabled"] = enabled
     autotest_state["scenario"] = scenario if enabled else ""
+    arm_state.clear()  # 新一轮 arm，清旧回执（T1）
     await _broadcast_autotest_to_games()
     return {
         "ok": True,
@@ -2419,6 +2437,22 @@ async def scenario_file(name: str):
     if not f.is_file():
         return JSONResponse({"error": f"scenario not found: {name}"}, status_code=404)
     return FileResponse(str(f), media_type="application/json")
+
+
+@app.get("/api/autotest/arm")
+async def api_autotest_arm():
+    """四家 arm 回执聚合全景（T1，game 上报 AUTOTEST_ARM_RESULT 落 arm_state）。
+
+    返回当前激活 scenario + 各客户端 arm 结果（ok/chair/rules_count/error/ts）。
+    未上报的客户端不在 map 中（前端可对照 /api/clients 查连入数 vs arm 数）。
+    """
+    return {
+        "scenario": autotest_state.get("scenario", ""),
+        "enabled": bool(autotest_state.get("enabled")),
+        "arm_count": len(arm_state),
+        "client_count": len(clients),
+        "arms": sorted(arm_state.values(), key=lambda x: x.get("chair", -1)),
+    }
 
 
 # ---- WebSocket Routes ----
