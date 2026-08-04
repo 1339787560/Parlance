@@ -219,6 +219,9 @@ whitelist_enabled: bool = False
 AUTOTEST_DIR = Path(__file__).parent / "autotest_scenarios"
 AUTOTEST_DIR.mkdir(exist_ok=True)
 autotest_state: dict = {"enabled": False, "scenario": ""}  # scenario = 文件名(无 .json)
+# 做牌库托管 (C3 牌局标识符): scenario.makecard_id 引用此库的 test.ini 片段
+MAKECARD_DIR = Path(__file__).parent / "makecard_scenarios"
+MAKECARD_DIR.mkdir(exist_ok=True)
 # arm 回执聚合: client_id -> {ok, chair, rules_count, scenario, error, ts}
 arm_state: Dict[str, dict] = {}
 whitelist_ips: set = set()
@@ -2453,6 +2456,41 @@ async def api_autotest_arm():
         "client_count": len(clients),
         "arms": sorted(arm_state.values(), key=lambda x: x.get("chair", -1)),
     }
+
+
+# ---- 做牌库托管（C3 牌局标识符，T2）----
+
+@app.get("/api/makecard")
+async def api_makecard_list():
+    """列出做牌库所有牌局标识符。"""
+    return {"makecards": sorted(f.stem for f in MAKECARD_DIR.glob("*.json"))}
+
+
+@app.get("/api/makecard/{name}.json")
+async def api_makecard_get(name: str):
+    """取做牌 test.ini 片段内容（scenario.makecard_id 引用）。"""
+    safe = "".join(c for c in name if c.isalnum() or c in "_-")  # 防路径穿越
+    if safe != name:
+        return JSONResponse({"error": f"invalid makecard name: {name}"}, status_code=400)
+    f = MAKECARD_DIR / f"{safe}.json"
+    if not f.is_file():
+        return JSONResponse({"error": f"makecard not found: {name}"}, status_code=404)
+    return FileResponse(str(f), media_type="application/json")
+
+
+@app.post("/api/makecard/{name}.json")
+async def api_makecard_set(name: str, req: Request):
+    """agent 写入做牌牌局内容（JSON 包 test.ini 片段 + 元信息）。
+
+    body 例: {"name": "gang_ang", "desc": "...", "test_ini": "...", "hands": {...}}
+    """
+    safe = "".join(c for c in name if c.isalnum() or c in "_-")
+    if safe != name:
+        return JSONResponse({"error": f"invalid makecard name: {name}"}, status_code=400)
+    body = await req.json()
+    f = MAKECARD_DIR / f"{safe}.json"
+    f.write_text(__import__("json").dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "name": safe, "path": str(f.relative_to(Path(__file__).parent))}
 
 
 # ---- WebSocket Routes ----
