@@ -1,7 +1,8 @@
 {
   "name": "gang_ang_shbar",
-  "desc": "chair0 庄家暗杠一万 + 补牌七条胡（验 gang_gen_multiple 非零）",
+  "desc": "chair0 庄家暗杠一万 + 补牌七条胡（换三张 room 关闭 / 定缺按客户端推荐 / 验 gang_gen_multiple 非零）",
   "rules": [
+    { "when": { "dingque": true }, "do": "dingque", "once": false },
     { "when": { "myChair": 0, "gangBtn": true }, "do": "gang", "once": true },
     { "when": { "myChair": 0, "huBtn": true }, "do": "hu", "once": true }
   ],
