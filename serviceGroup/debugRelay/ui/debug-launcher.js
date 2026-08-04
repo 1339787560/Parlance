@@ -169,7 +169,7 @@ function launcherStart() {
     // 2D 布局: 列数 = ceil(sqrt(N)) → 4=2x2 / 6=3x2 / 9=3x3 / 10=4x3
     // (非"从左到右一行"; 按上下左右 2D 网格排)
     const cols = Math.ceil(Math.sqrt(n));
-    grid.style.gridTemplateColumns = `repeat(${cols}, 360px)`;
+    grid.style.gridTemplateColumns = `repeat(${cols}, 812px)`;
 
     launcherSetStatus(`启动 ${n} 个窗口 (${cols}列 × ${Math.ceil(n / cols)}行, ${useMultiOrigin ? '多源并行' : '单源串行链'})...`);
 
@@ -319,30 +319,13 @@ function launcherReloadAll() {
     launcherSetStatus(`🔄 同时刷新 ${count} 窗口 (并行 src 重写, 等待 userId 重新上报...)`);
 }
 
-// ===== postMessage: 接收 iframe 上报 userId + resolution =====
+// ===== postMessage: 接收 iframe 上报 userId =====
 function launcherBindMessage() {
     if (launcherMessageBound) return;
     launcherMessageBound = true;
     window.addEventListener('message', (ev) => {
         const data = ev.data;
-        if (!data || data.src !== 'debugPlugin') return;
-
-        // resolution 上报 → 锁 iframe 尺寸为 cocos 设计分辨率
-        if (data.type === 'launcher_resolution' && data.w && data.h) {
-            if (launcherPrewarmIframe) {
-                try { if (ev.source === launcherPrewarmIframe.contentWindow) return; } catch { /* cross-origin */ }
-            }
-            let target = null;
-            for (const x of launcherIframes) {
-                try {
-                    if (x.iframeEl.contentWindow === ev.source) { target = x; break; }
-                } catch { /* cross-origin 比较异常忽略 */ }
-            }
-            if (target) launcherApplyResolution(target, data.w, data.h);
-            return;
-        }
-
-        if (data.type !== 'launcher_uid' || !data.userId) return;
+        if (!data || data.type !== 'launcher_uid' || !data.userId) return;
         // 忽略预热 iframe 的上报 (它用默认账号登录, 不计入收集)
         if (launcherPrewarmIframe) {
             try { if (ev.source === launcherPrewarmIframe.contentWindow) return; } catch { /* cross-origin */ }
@@ -363,31 +346,6 @@ function launcherBindMessage() {
         target.labelEl.textContent = `#${target.idx} uid: ${data.userId}`;
         renderAccounts();
     });
-}
-
-/** 锁 iframe 尺寸为 cocos 设计分辨率 (替代默认 360×640)。
- *  同项目所有 iframe 同分辨率, 首个上报设 grid 列宽/行高; per-iframe 设 wrap+iframe 显式 px。
- *  分辨率过大时 grid overflow auto 滚动, iframe 内部 1:1 design resolution 展示。 */
-function launcherApplyResolution(entry, w, h) {
-    if (entry.resolution && entry.resolution.w === w && entry.resolution.h === h) return;
-    entry.resolution = { w, h };
-    entry.iframeEl.style.width = w + 'px';
-    entry.iframeEl.style.height = h + 'px';
-    entry.wrapEl.style.width = w + 'px';
-    entry.wrapEl.style.height = h + 'px';
-    // grid 全局列宽/行高按 resolution (first wins, 同项目同分辨率)
-    const grid = document.getElementById('launcher-iframe-grid');
-    if (grid && !grid.dataset.resolutionSet) {
-        const cols = Math.max(1, Math.ceil(Math.sqrt(launcherIframes.length || 1)));
-        grid.style.gridTemplateColumns = `repeat(${cols}, ${w}px)`;
-        grid.style.gridAutoRows = h + 'px';
-        grid.dataset.resolutionSet = '1';
-        launcherSetStatus(`iframe 锁 ${w}×${h} (cocos design resolution)`);
-    }
-    // label 追加分辨率 (仅一次)
-    if (!entry.labelEl.textContent.includes('×')) {
-        entry.labelEl.textContent = entry.labelEl.textContent + ` · ${w}×${h}`;
-    }
 }
 
 // ===== Render accounts in sidebar =====

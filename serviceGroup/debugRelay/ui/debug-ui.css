@@ -832,8 +832,8 @@ button:disabled {
 /* iframe 自动布局网格 - JS 按 N 动态算列数 (ceil(sqrt(N))), 默认 2 列兜底 */
 #launcher-iframe-grid {
   display: grid;
-  grid-template-columns: repeat(2, 360px);   /* 固定 360px 列宽，不随窗口缩放变 (原 1fr 弹性) */
-  grid-auto-rows: 640px;                      /* 固定 640px 行高 (9:16 手机比例, 原 1fr 弹性) */
+  grid-template-columns: repeat(2, 812px);   /* 固定 812px 横向展示，不随窗口缩放变 */
+  grid-auto-rows: 375px;                      /* 固定 375px 行高 (812×375 横向手机比例) */
   gap: 8px;                                   /* 容器间统一间距 */
   align-content: start;                       /* 固定 cell 改 start (原 stretch 无意义) */
   align-items: start;
