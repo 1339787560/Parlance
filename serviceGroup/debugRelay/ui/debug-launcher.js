@@ -42,6 +42,7 @@ let launcherIframes = [];   // [{ idx, url, userId, wrapEl, iframeEl, labelEl, l
 let launcherCurrency = 'points';  // 默认积分 tab
 let launcherMessageBound = false;
 let launcherLabelTicker = null;   // 每窗加载计时器 (UX 进度反馈)
+let launcherPrewarmIframe = null; // 预热隐藏 iframe (V8 code cache 暖机, 见 launcherPrewarm)
 
 // ===== Stagger 启动配置 =====
 // 两种启动模式 (checkbox "🔀 多源拆进程" 切换):
@@ -120,6 +121,40 @@ function launcherStartLabelTicker() {
     }, 500);
 }
 
+// ===== 预热隐藏 iframe (V8 code cache 暖机) =====
+// launcher 页加载即挂个隐藏 iframe 跑 preview: 让 V8 先 parse 18MB dev 引擎 bundle, 编译字节码写磁盘
+// code cache. 用户点启动时 launcherDisposePrewarm 销毁预热 iframe (code cache 磁盘级, context 销毁不丢) →
+// 真 iframe 同源同进程加载同一引擎脚本, 命中 V8 code cache 跳过 ~5s 冷 parse.
+// 串行链 #0 17s→~12s, 链总 ~27s→~22s. 多源拆进程 code cache 不跨进程, 收益递减但不亏.
+// 副作用: prewarm iframe 用默认账号登录, 其 launcher_uid 上报被 launcherBindMessage 显式忽略 (不计入收集).
+function launcherPrewarm() {
+    if (launcherPrewarmIframe) return;  // 已在预热
+    const urlEl = document.getElementById('launcher-preview-url');
+    if (!urlEl) return;
+    const url = (urlEl.value || 'http://localhost:7456').trim();
+    if (!url) return;
+    try {
+        const f = document.createElement('iframe');
+        f.allow = 'autoplay; fullscreen';
+        f.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;border:0;';
+        f.title = 'prewarm (engine code cache warmup)';
+        f.src = url;  // 无 suffix, 仅 parse 引擎填 code cache
+        document.body.appendChild(f);
+        launcherPrewarmIframe = f;
+        console.log('[launcher] prewarm hidden iframe started (V8 code cache warmup)');
+    } catch (e) {
+        console.warn('[launcher] prewarm start failed:', e);
+    }
+}
+
+function launcherDisposePrewarm() {
+    if (!launcherPrewarmIframe) return;
+    try { launcherPrewarmIframe.src = 'about:blank'; } catch { /* cross-origin 可能抛 */ }
+    try { launcherPrewarmIframe.remove(); } catch {}
+    launcherPrewarmIframe = null;
+    console.log('[launcher] prewarm iframe disposed (V8 code cache persisted on disk)');
+}
+
 // ===== Start N windows =====
 function launcherStart() {
     const urlBase = (document.getElementById('launcher-preview-url').value || 'http://localhost:7456').trim();
@@ -128,6 +163,7 @@ function launcherStart() {
     const useMultiOrigin = document.getElementById('launcher-multi-origin')?.checked === true;
 
     launcherCloseAll();
+    launcherDisposePrewarm();  // 销毁预热 iframe (code cache 已落盘, 让位真窗口 + 避免默认账号与 #0 登录冲突)
     const grid = document.getElementById('launcher-iframe-grid');
 
     // 2D 布局: 列数 = ceil(sqrt(N)) → 4=2x2 / 6=3x2 / 9=3x3 / 10=4x3
@@ -290,6 +326,10 @@ function launcherBindMessage() {
     window.addEventListener('message', (ev) => {
         const data = ev.data;
         if (!data || data.type !== 'launcher_uid' || !data.userId) return;
+        // 忽略预热 iframe 的上报 (它用默认账号登录, 不计入收集)
+        if (launcherPrewarmIframe) {
+            try { if (ev.source === launcherPrewarmIframe.contentWindow) return; } catch { /* cross-origin */ }
+        }
         // 优先按 ev.source 匹配对应 iframe
         let target = null;
         for (const x of launcherIframes) {
@@ -400,4 +440,11 @@ async function launcherGrant() {
     } finally {
         btn.disabled = false; btn.textContent = oldText;
     }
+}
+
+// 页面加载即预热 (用户点启动前先 parse 18MB 引擎填 V8 code cache, 真 #0 窗命中跳冷 parse)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', launcherPrewarm);
+} else {
+    launcherPrewarm();
 }
