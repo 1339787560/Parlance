@@ -848,6 +848,14 @@ async def ui_launcher_js():
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/debug-autotest.js")
+async def ui_autotest_js():
+    f = UI_DIR / "debug-autotest.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/debug-scene.js")
 async def ui_scene_js():
     f = UI_DIR / "debug-scene.js"

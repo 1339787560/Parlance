@@ -43,6 +43,7 @@
         <button id="tab-snapshots" class="tab" onclick="switchTab('snapshots')">Snapshots</button>
         <button id="tab-scene" class="tab" onclick="switchTab('scene')">Scene</button>
         <button id="tab-launcher" class="tab" onclick="switchTab('launcher')">Launcher</button>
+        <button id="tab-autotest" class="tab" onclick="switchTab('autotest')">AutoTest</button>
     </div>
 
     <div id="panel-console" class="panel active">
@@ -256,6 +257,30 @@
         </div>
     </div>
 
+    <!-- AutoTest Panel - 对局自动化测试开关 + scenario 选 + arm 全景 -->
+    <div id="panel-autotest" class="panel">
+        <div id="autotest-toolbar">
+            <button id="autotest-toggle-btn" class="toolbar-btn" onclick="autotestToggle()" title="开启/关闭自动化测试（广播 AUTOTEST_STATE 给所有游戏客户端）">⏻ 开启</button>
+            <select id="autotest-scenario" class="theme-select" title="选择 scenario（debugRelay autotest_scenarios/ 托管）"></select>
+            <button onclick="autotestRefresh()" title="刷新状态 + scenario 列表">🔄</button>
+            <span id="autotest-status" class="events-status"></span>
+        </div>
+        <div id="autotest-body">
+            <div class="autotest-section">
+                <div class="autotest-section-title">当前状态</div>
+                <div id="autotest-state"></div>
+            </div>
+            <div class="autotest-section">
+                <div class="autotest-section-title">四家 arm 全景 <span id="autotest-arm-count" class="events-count"></span></div>
+                <div id="autotest-arm"></div>
+            </div>
+            <div class="autotest-legend">
+                开启 → relay 广播 AUTOTEST_STATE → 各客户端 DebugPlugin fetch scenario + 动态挂载 AutotestPlayer → 自驱跑局。
+                arm 全景 = 各客户端上报的装载结果（ok / chair / rules / error）。
+            </div>
+        </div>
+    </div>
+
     <!-- BTree Panel - 行为树可视化（四层 + 节点跳 TS）-->
     <div id="panel-btree" class="panel">
         <div id="btree-toolbar">
@@ -406,6 +431,7 @@
     <script src="debug-btree.js?v=21"></script>
     <script src="debug-curl.js?v=2"></script>
     <script src="debug-launcher.js?v=13"></script>
+    <script src="debug-autotest.js?v=1"></script>
     <script src="debug-theme.js?v=1"></script>
 </body>
 </html>
