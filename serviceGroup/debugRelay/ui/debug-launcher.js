@@ -169,7 +169,7 @@ function launcherStart() {
     // 2D 布局: 列数 = ceil(sqrt(N)) → 4=2x2 / 6=3x2 / 9=3x3 / 10=4x3
     // (非"从左到右一行"; 按上下左右 2D 网格排)
     const cols = Math.ceil(Math.sqrt(n));
-    grid.style.gridTemplateColumns = `repeat(${cols}, 812px)`;
+    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(280px, 1fr))`;
 
     launcherSetStatus(`启动 ${n} 个窗口 (${cols}列 × ${Math.ceil(n / cols)}行, ${useMultiOrigin ? '多源并行' : '单源串行链'})...`);
 

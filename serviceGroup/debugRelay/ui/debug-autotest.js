@@ -146,6 +146,7 @@ autotestPollTimer = setInterval(autotestRefresh, 2000);
     const style = document.createElement('style');
     style.id = 'autotest-style';
     style.textContent = `
+        #panel-autotest { flex-direction: column; }   /* 覆盖 .panel 默认 row, toolbar 上 body 下 */
         #autotest-toolbar { display:flex; gap:8px; align-items:center; padding:6px 8px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
         #autotest-body { padding:8px; overflow:auto; }
         .autotest-section { margin-bottom:12px; }
