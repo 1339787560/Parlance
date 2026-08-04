@@ -1,0 +1,12 @@
+{
+  "name": "gang_ang_shbar",
+  "desc": "chair0 庄家暗杠一万 + 补牌七条胡（验 gang_gen_multiple 非零）",
+  "rules": [
+    { "when": { "myChair": 0, "gangBtn": true }, "do": "gang", "once": true },
+    { "when": { "myChair": 0, "huBtn": true }, "do": "hu", "once": true }
+  ],
+  "expect": {
+    "gang_gen_multiple_nonzero": true,
+    "round_end": "hu"
+  }
+}

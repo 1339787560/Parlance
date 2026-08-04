@@ -100,6 +100,9 @@ class MsgType:
     CLIENT_LIST = "client_list"            # Relay -> Browser: 当前所有客户端 + 本浏览器订阅
     BREAKPOINTS_STATE = "breakpoints_state"  # Relay -> Browser: 订阅 replay 已注册断点
 
+    # Relay -> Game (autotest 闭环)
+    AUTOTEST_STATE = "autotest_state"      # Relay -> Game: autotest 开关 + scenario url（game 连入初同步 + toggle 广播）
+
 
 # ---- State ----
 
@@ -207,6 +210,13 @@ snapshots_dir: Path = None
 
 # IP 白名单(可选,未启用时允许所有 IP)
 whitelist_enabled: bool = False
+
+# ---- Autotest 闭环状态（全局，所有 game 客户端共享）----
+# debugRelay 作为激活 hub：toggle 经 REST → 广播 AUTOTEST_STATE 给所有 game 客户端
+# → DebugPlugin fetch scenario_url → 设 globalThis.__testSeq → OperateBtnsManager._testSeqCheck 自驱
+AUTOTEST_DIR = Path(__file__).parent / "autotest_scenarios"
+AUTOTEST_DIR.mkdir(exist_ok=True)
+autotest_state: dict = {"enabled": False, "scenario": ""}  # scenario = 文件名(无 .json)
 whitelist_ips: set = set()
 
 # 行为树可视化配置（行为树 tab，无需游戏端连接）
@@ -269,6 +279,30 @@ async def _send_to_subscribers(client_id: str, msg: dict):
                 dead.append(b)
     for b in dead:
         browsers.discard(b)
+
+
+def _build_autotest_msg() -> dict:
+    """构造 AUTOTEST_STATE 消息（初同步 + 广播复用）。scenario_url 为相对路径，客户端用 DEFAULT_HOST:PORT 绝对化。"""
+    sc = autotest_state.get("scenario", "")
+    return {
+        "type": MsgType.AUTOTEST_STATE,
+        "enabled": bool(autotest_state.get("enabled")),
+        "scenario": sc,
+        "scenario_url": f"/scenarios/{sc}.json" if sc else "",
+    }
+
+
+async def _broadcast_autotest_to_games():
+    """向所有连接的游戏端推送当前 autotest 状态（arm/disarm test-seq）。
+
+    用于 POST /api/autotest toggle 后广播。game 连入时的初同步见 handle_game_websocket。
+    _send_ws 失败的连接由其 receive 循环 finally 清理，这里不清 dead 避免遍历中改 dict。
+    """
+    if not clients:
+        return
+    msg = _build_autotest_msg()
+    for ctx in list(clients.values()):
+        await _send_ws(ctx.ws, msg)
 
 
 def _resolve_client(client_arg: Optional[str]):
@@ -1623,6 +1657,9 @@ async def handle_game_websocket(websocket: WebSocket):
     # 通知所有浏览器：客户端列表变化
     await _broadcast_client_list()
 
+    # 初始同步 autotest 状态给新连接的游戏端（若已 toggle on，客户端立即 arm）
+    await _send_ws(ctx.ws, _build_autotest_msg())
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -2328,6 +2365,60 @@ async def api_snapshot_get(snapshot_id: str, format: str = "full"):
         return {"ok": True, "snapshot_id": snapshot_id,
                 "meta": data.get("meta"), "perf_summary": data.get("perf_summary")}
     return {"ok": True, "snapshot_id": snapshot_id, "data": data}
+
+
+# ---- Autotest REST（激活 hub：状态查询 + toggle + scenario 托管）----
+
+@app.get("/api/autotest")
+async def api_autotest_get():
+    """获取 autotest 状态 + 可用 scenario 列表。"""
+    scenarios = sorted(f.stem for f in AUTOTEST_DIR.glob("*.json"))
+    return {
+        "enabled": autotest_state["enabled"],
+        "scenario": autotest_state["scenario"],
+        "scenarios": scenarios,
+        "broadcast_msg": _build_autotest_msg(),
+    }
+
+
+@app.post("/api/autotest")
+async def api_autotest_set(req: Request):
+    """设置 autotest 状态 {enabled, scenario}，广播 AUTOTEST_STATE 给所有游戏端。
+
+    enabled=true 时 scenario 必须指向已存在的 scenario 文件；enabled=false 清 scenario。
+    """
+    body = await req.json()
+    enabled = bool(body.get("enabled", False))
+    scenario = str(body.get("scenario", "") or "").strip()
+    scenarios = sorted(f.stem for f in AUTOTEST_DIR.glob("*.json"))
+    if enabled:
+        if not scenario:
+            return JSONResponse({"error": "enabled=true 需指定 scenario", "scenarios": scenarios}, status_code=400)
+        # 防路径穿越 + 校验存在
+        safe = "".join(c for c in scenario if c.isalnum() or c in "_-")
+        if safe != scenario or not (AUTOTEST_DIR / f"{scenario}.json").is_file():
+            return JSONResponse({"error": f"scenario not found: {scenario}", "scenarios": scenarios}, status_code=404)
+    autotest_state["enabled"] = enabled
+    autotest_state["scenario"] = scenario if enabled else ""
+    await _broadcast_autotest_to_games()
+    return {
+        "ok": True,
+        "state": {"enabled": autotest_state["enabled"], "scenario": autotest_state["scenario"]},
+        "broadcast_to": len(clients),
+        "broadcast_msg": _build_autotest_msg(),
+    }
+
+
+@app.get("/scenarios/{name}.json")
+async def scenario_file(name: str):
+    """提供 scenario JSON 给游戏端 fetch（远程加载，免 client rebuild）。CORS 已全局放开。"""
+    safe = "".join(c for c in name if c.isalnum() or c in "_-")  # 防路径穿越
+    if safe != name:
+        return JSONResponse({"error": f"invalid scenario name: {name}"}, status_code=400)
+    f = AUTOTEST_DIR / f"{safe}.json"
+    if not f.is_file():
+        return JSONResponse({"error": f"scenario not found: {name}"}, status_code=404)
+    return FileResponse(str(f), media_type="application/json")
 
 
 # ---- WebSocket Routes ----
