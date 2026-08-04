@@ -38,9 +38,10 @@ const OPID = {
 };
 
 // ===== State =====
-let launcherIframes = [];   // [{ idx, url, userId, wrapEl, iframeEl, labelEl, loadTimer }]
+let launcherIframes = [];   // [{ idx, url, userId, wrapEl, iframeEl, labelEl, loadTimer, started, startedAt }]
 let launcherCurrency = 'points';  // 默认积分 tab
 let launcherMessageBound = false;
+let launcherLabelTicker = null;   // 每窗加载计时器 (UX 进度反馈)
 
 // ===== Stagger 启动配置 =====
 // 两种启动模式 (checkbox "🔀 多源拆进程" 切换):
@@ -60,10 +61,15 @@ let launcherMessageBound = false;
 //   代价: 不同源 → 不同 HTTP cache 分区 → bundle 每 origin 各下载一份. 但 localhost 带宽
 //   几百 MB/s, MB 级 bundle × 4 < 1s, 远小于 CPU 并行的收益.
 //
-// Loopback 整个 127.0.0.0/8 路由本机, 但 **Chrome 145 实测** iframe 导航仅 localhost + 127.0.0.1
-// 能完整加载 bundle (curl/bash 全 200, 但浏览器对 127.0.0.2+ 静默挂起 — 推测 Private Network
-// Access 或 Cocos preview Host 校验). 故池只放 2 个可用 origin → 4 窗口分 2 renderer 进程 (vs 单源 1 进程),
-// 仍有并行收益. 若 Chrome 后续放开 127.x 或用 hosts 加 cocos3.local 等映射 127.0.0.1, 扩池即可.
+// Loopback 整个 127.0.0.0/8 路由本机, 但 **Chrome 145 实测** iframe 导航用 IP 字面量仅 localhost + 127.0.0.1
+// 能完整加载 bundle (curl/bash 全 200, 但浏览器对 127.0.0.2+ 静默挂起 — 推测 Private Network Access 或
+// Cocos preview Host 校验).
+//
+// *.localhost 扩池实验 (2026-08-04 实测, 已证伪收益): Chrome 内建 DNS 把 *.localhost 解析到 127.0.0.1 (免改
+// hosts), a.localhost / b.localhost 等不同主机名 = 不同 origin → 真 N 进程并行, 技术可行. **但实测 4 origin 并行
+// cold 总 59.8s / warm 46.4s, 远劣于单源串行链 27.6s**: 4 份 18MB engine bundle 同时 V8 parse → CPU/内存争抢,
+// 单窗耗时从 17s 膨胀到 ~46s. 结论: 瓶颈是「每窗固定 ~18s 的 parse+init+login」而非进程数, 多源拆进程反引入
+// 4× 冷下载+parse 争抢. 故池保持 2 origin (多源 toggle 仅作 2 进程实验位, 实测亦无收益 ≈ 串行), 串行链为默认最优.
 const LAUNCHER_MULTI_ORIGIN_POOL = ['localhost', '127.0.0.1'];
 const LAUNCHER_ONLOAD_TIMEOUT_MS = 20000;  // 单窗口 onload 等待上限 (单源链模式用)
 
@@ -92,6 +98,26 @@ function launcherSetGrantResult(isError, text) {
     if (!el) return;
     el.textContent = text || '';
     el.className = 'launcher-grant-result' + (isError ? ' error' : '');
+}
+
+// 每窗加载计时器: 给 started 但未收到 userId 的窗口显示实时秒数, 让用户看到"在动"而非黑窗卡死.
+// userId 到达后由 launcherBindMessage 改写 label, 本 ticker 自动跳过 (userId !== null); 全部就绪后自停.
+function launcherStartLabelTicker() {
+    if (launcherLabelTicker) clearInterval(launcherLabelTicker);
+    launcherLabelTicker = setInterval(() => {
+        let anyLoading = false;
+        for (const x of launcherIframes) {
+            if (x.userId === null && x.started && x.startedAt) {
+                anyLoading = true;
+                const secs = Math.floor((performance.now() - x.startedAt) / 1000);
+                x.labelEl.textContent = `#${x.idx} ⏱${secs}s 加载中…`;
+            }
+        }
+        if (!anyLoading) {
+            clearInterval(launcherLabelTicker);
+            launcherLabelTicker = null;
+        }
+    }, 500);
 }
 
 // ===== Start N windows =====
@@ -156,7 +182,7 @@ function launcherStart() {
         // 代价: 不同源 HTTP cache 分区, bundle 每窗口各下 1 份 (localhost 带宽足够, MB 级 < 1s).
         const poolUsed = LAUNCHER_MULTI_ORIGIN_POOL.slice(0, n).join(' / ');
         for (const e of launcherIframes) {
-            e.started = true;
+            e.started = true; e.startedAt = performance.now();
             e.iframeEl.onload = () => { e.labelEl.textContent = `#${e.idx} uid: ...`; };
             e.iframeEl.src = e.url;
         }
@@ -172,7 +198,7 @@ function launcherStart() {
             }
             const e = launcherIframes[k];
             if (e.started) return;  // 防重复触发 (close 早返时)
-            e.started = true;
+            e.started = true; e.startedAt = performance.now();
             e.labelEl.textContent = `#${e.idx} 加载中...`;
             launcherSetStatus(`#${e.idx}/${launcherIframes.length} 加载中 (bundle ${k === 0 ? '冷下载' : '走缓存'})...`);
 
@@ -195,6 +221,7 @@ function launcherStart() {
         };
         startChain(0);
     }
+    launcherStartLabelTicker();
     launcherBindMessage();
     renderAccounts();
 }
@@ -217,6 +244,7 @@ function launcherCloseAll() {
     for (const x of launcherIframes) {
         if (x.loadTimer) { clearTimeout(x.loadTimer); x.loadTimer = null; }
     }
+    if (launcherLabelTicker) { clearInterval(launcherLabelTicker); launcherLabelTicker = null; }
     const grid = document.getElementById('launcher-iframe-grid');
     if (grid) grid.innerHTML = '';
     launcherIframes = [];
