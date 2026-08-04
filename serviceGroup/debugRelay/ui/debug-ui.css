@@ -832,16 +832,16 @@ button:disabled {
 /* iframe 自动布局网格 - JS 按 N 动态算列数 (ceil(sqrt(N))), 默认 2 列兜底 */
 #launcher-iframe-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);   /* 默认 2 列, launcherStart 按 N 覆盖 */
-  grid-auto-rows: 1fr;                      /* 每行等高 → 避免行间参差 */
-  gap: 8px;                                 /* 容器间统一间距 */
-  align-content: stretch;
-  align-items: stretch;
-  overflow: auto;
+  grid-template-columns: repeat(2, 360px);   /* 固定 360px 列宽，不随窗口缩放变 (原 1fr 弹性) */
+  grid-auto-rows: 640px;                      /* 固定 640px 行高 (9:16 手机比例, 原 1fr 弹性) */
+  gap: 8px;                                   /* 容器间统一间距 */
+  align-content: start;                       /* 固定 cell 改 start (原 stretch 无意义) */
+  align-items: start;
+  overflow: auto;                             /* 窗口小于内容时滚动，iframe 不缩 */
   padding: 8px;
   background: #0d1117;
   flex: 1;
-  min-height: 0;                            /* 允许 flex 子项收缩 */
+  min-height: 0;                              /* 允许 flex 子项收缩 */
 }
 .launcher-iframe-wrap {
   position: relative;
