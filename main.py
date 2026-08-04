@@ -170,6 +170,8 @@ class ServiceControlServer:
             return {"services": self.svc_mgr.status_all()}
         if method == "restart":
             return self._restart_by_port(params.get("port"))
+        if method == "swap_exe":
+            return self._swap_exe_by_port(params.get("port"))
         if method == "update":
             return self._update_services(params.get("names") or params.get("tags"))
         raise _MethodNotFound(method)
@@ -192,6 +194,21 @@ class ServiceControlServer:
             "status": svc.status,
             "pid": svc.pid,
         }
+
+    def _swap_exe_by_port(self, port) -> dict[str, Any]:
+        if port is None:
+            return {"error": "port required"}
+        svc: Optional[ManagedService] = self._find_by_port(int(port))
+        if svc is None:
+            return {"error": f"no managed service on port {port}"}
+        if not svc.enabled:
+            return {"error": f"service '{svc.name}' on port {port} is disabled (enabled=false)"}
+        if not svc.managed:
+            return {"error": f"service '{svc.name}' on port {port} is daemon (managed=false)"}
+        result = svc.swap_exe()
+        result.setdefault("name", svc.name)
+        result.setdefault("port", svc.port)
+        return result
 
     def _find_by_port(self, port: int) -> Optional[ManagedService]:
         for svc in self.svc_mgr.services:

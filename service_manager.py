@@ -308,6 +308,73 @@ class ManagedService:
         self.stop(timeout=timeout)
         self.start()
 
+    # ── swap_exe: 热替换子服务 exe (规避 Windows 文件占用) ────────────────
+    # 对齐 service-server update 简单模式: stop → sleep 2s → cp target/release
+    # 同名 exe → start。无 verify/回滚 (失败手动处理)。仅 .exe 业务子服务。
+
+    def swap_exe(self, timeout: float = 15) -> Dict[str, Any]:
+        """简单热替换: stop → sleep 2s → cp target/release/{exe} → start。
+
+        源 = exe 同项目 target/release/{basename} (cargo build --release 输出,
+        agent 构建后直接落位)。目标 = config command 指向的运行位 exe。
+        对齐 service-server update: 杀子服务 + 等 OS 释放句柄 + cp + 启,
+        无 verify/回滚 (简单优先, 失败手动处理)。
+        """
+        import shutil
+
+        exe_path = self._resolve_exe_path()
+        if exe_path is None or not exe_path.lower().endswith(".exe"):
+            return {"error": f"服务 '{self.name}' command '{self.command}' 非 .exe 业务路径, 不支持 swap_exe"}
+
+        # 源 = exe 同项目 target/release/{basename}
+        basename = os.path.basename(exe_path)
+        project_dir = os.path.dirname(exe_path)
+        new_exe = os.path.join(project_dir, "target", "release", basename)
+        if not os.path.isfile(new_exe):
+            return {"error": f"新 exe 不存在: {new_exe} (需先 cargo build --release)"}
+
+        logger.info("[svc] swap_exe '%s': %s <- %s", self.name, exe_path, new_exe)
+
+        # 1) stop 释放 exe 占用
+        self.stop(timeout=timeout)
+        # 2) 等 OS 释放文件句柄 (对齐 service-server sleep 2s)
+        time.sleep(2)
+        # 3) cp 新 exe 到运行位 (不 mv .bak, 无回滚)
+        try:
+            shutil.copyfile(new_exe, exe_path)
+        except OSError as e:
+            logger.error("[svc] swap_exe '%s' cp 失败: %s", self.name, e)
+            return {"error": f"exe 替换失败: {e}", "name": self.name}
+        # 4) start 拉新 exe
+        self.start()
+
+        return {
+            "ok": True,
+            "name": self.name,
+            "port": self.port,
+            "status": self.status,
+            "pid": self.pid,
+            "exe": exe_path,
+            "new_exe": new_exe,
+        }
+
+    def _resolve_exe_path(self) -> Optional[str]:
+        """解析 self.command 到 exe 绝对路径 (相对 host 进程 cwd)。
+
+        返 None = 不支持 swap (裸 PATH 名如 python/node, 或路径不存在)。
+        基准: command 必须是显式文件路径 (绝对或相对含分隔符), 区分编译型
+        业务 exe (./.../service-server.exe) 与解释器裸名 (python) — 后者
+        shutil.which 虽命中 python.exe, 但那是系统解释器, 非托管业务二进制。
+        """
+        cmd = self.command
+        if not (os.path.isabs(cmd) or os.path.sep in cmd or "/" in cmd or "\\" in cmd):
+            return None
+        if os.path.isabs(cmd):
+            return cmd
+        if os.path.isfile(cmd):
+            return os.path.abspath(cmd)
+        return None
+
     # ── Info ────────────────────────────────────────────────────────────
 
     def to_dict(self) -> Dict[str, Any]:

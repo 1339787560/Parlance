@@ -47,18 +47,22 @@ pub async fn list_files(
     let mut files = Vec::new();
     let mut read = tokio::fs::read_dir(&svc.path).await?;
     while let Some(entry) = read.next_entry().await? {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let filename = match path.file_name().and_then(|n| n.to_str()) {
+        // 完全文件访问: 列出服务根目录下所有文件 (不再按扩展名过滤)。
+        // 原仅收 ini/json/lua, 现放开供 CPP 堡垒机排查读日志/dmp/exe 等。
+        // 子目录 (含 .config_history 备份目录) 由 is_file 检查跳过。
+        let filename = match entry.file_name().to_str() {
             Some(n) => n.to_string(),
             None => continue,
         };
-        let lower = filename.to_lowercase();
-        if !(lower.ends_with(".ini") || lower.ends_with(".json") || lower.ends_with(".lua")) {
+        if !entry
+            .file_type()
+            .await
+            .map(|t| t.is_file())
+            .unwrap_or(false)
+        {
             continue;
         }
+        let path = entry.path();
         files.push(FileEntry {
             full_path: path.display().to_string(),
             path: filename.clone(),

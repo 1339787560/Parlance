@@ -18,8 +18,10 @@ pub enum AppError {
     Forbidden,
     #[error("文件不存在")]
     NotFound,
-    #[error("只允许访问 .ini 与 .json 与 .lua 文件")]
+    #[error("只允许保存 .ini / .json / .lua 等配置文件 (读取与下载不限扩展名)")]
     InvalidExtension,
+    #[error("文件过大无法下载: {0} 字节 (上限 200MB, 大文件改流式再议)")]
+    TooLarge(u64),
     #[error("编码错误: {0}")]
     Encode(String),
     #[error("不支持的编码: {0}")]
@@ -43,6 +45,7 @@ impl IntoResponse for AppError {
             AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::InvalidExtension => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::TooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
             AppError::Encode(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::UnknownEncoding(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::BranchExists => (StatusCode::BAD_REQUEST, self.to_string()),

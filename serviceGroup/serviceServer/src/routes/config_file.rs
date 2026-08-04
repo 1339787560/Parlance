@@ -1,7 +1,9 @@
-//! GET /api/config/file/content + POST /api/config/file/save
+//! GET /api/config/file/content + GET /api/config/file/download + POST /api/config/file/save
 //!
-//! 配置编辑簇核心: 读走自动探测 (BOM + strict 候选, 杜绝替换字符污染);
-//! 写走 滚动备份 + 原子写 (tmp + os.rename, 失败原文件零变更, 修旧清空 bug)。
+//! 配置编辑簇核心:
+//! - 读 / 下载: 任意文件 (服务路径沙箱内, 不限扩展名)。读走自动探测编码 (BOM + strict
+//!   候选, 杜绝替换字符污染); 下载走原始字节流 (二进制 exe/dll/dmp 兜底)。
+//! - 写: 仅配置文件 (ini/json/lua), 滚动备份 + 原子写 (失败原文件零变更)。
 
 use crate::atomic_write::atomic_write_bytes;
 use crate::backup::rotate_backup;
@@ -36,7 +38,8 @@ pub async fn get_content(
     let path = PathBuf::from(&params.file_path);
 
     assert_within_roots(&state, &path)?;
-    assert_allowed_ext(&path)?;
+    // 读不限扩展名 (完全文件访问): 文本走编码探测, 二进制走 latin-1 兜底 (不崩, 乱码可接受)。
+    // 大二进制文件 (exe/dll/dmp) 走 /api/config/file/download 拿原始字节流。
     if !path.exists() {
         return Err(AppError::NotFound);
     }
@@ -50,6 +53,67 @@ pub async fn get_content(
         )],
         decoded.content,
     ))
+}
+
+/// GET /api/config/file/download?filePath=X
+///
+/// 任意文件下载 (二进制兜底): exe/dll/dmp/zip 走原始字节流, Content-Disposition
+/// attachment 触发浏览器下载。服务路径沙箱内, 不限扩展名 (与读一致)。
+/// 读上限 200MB 防 OOM (与 update multipart 上限对齐, 超大文件改流式再议)。
+pub async fn download_file(
+    State(state): State<AppState>,
+    Query(params): Query<ContentParams>,
+) -> Result<impl IntoResponse> {
+    state.path_map.refresh(&state.config_path)?;
+    let path = PathBuf::from(&params.file_path);
+
+    assert_within_roots(&state, &path)?;
+    if !path.is_file() {
+        return Err(AppError::NotFound);
+    }
+
+    // 上限保护: 超 200MB 拒绝 (防 OOM; 堡垒机超大文件改流式再议)。
+    const MAX_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024;
+    let meta = std::fs::metadata(&path)?;
+    if meta.len() > MAX_DOWNLOAD_BYTES {
+        return Err(AppError::TooLarge(meta.len()));
+    }
+
+    let bytes = std::fs::read(&path)?;
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file")
+        .to_string();
+
+    // RFC 5987: filename*=UTF-8''<pct> 浏览器优先认; filename= ASCII fallback 兜底。
+    // header value 含中文会 panic (HeaderValue::from_str 拒绝非 ASCII), 故 pct-encode。
+    let disposition = format!(
+        "attachment; filename=\"file\"; filename*=UTF-8''{}",
+        pct_encode_filename(&filename)
+    );
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        bytes,
+    ))
+}
+
+/// RFC 3986 percent-encode 文件名 (header value 仅允许 ASCII, 中文文件名编码后传输)。
+fn pct_encode_filename(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() * 3);
+    for &b in name.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 #[derive(Deserialize)]
@@ -69,6 +133,7 @@ pub struct SaveResp {
 
 /// POST /api/config/file/save { filePath, content, encoding }
 ///
+/// 写仅限配置文件扩展名 (ini/json/lua, 见 ALLOWED_EXTS); 读与下载不限。
 /// 流程: 路径与扩展名校验 -> 按指定编码 strict 编码 (失败报错, 原文件未动)
 ///       -> 滚动备份原文件 (copy) -> 原子写 (tmp + rename)。
 /// 编码或写失败时原文件字节零变更 (备份是额外 copy, 不影响原文件)。

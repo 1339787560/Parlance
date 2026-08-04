@@ -16,8 +16,9 @@ Usage:
     python ctl_client.py <method> --params '{"k": "v"}'
     python ctl_client.py --socket svc services
     python ctl_client.py --socket svc restart --params '{"port": 5000}'
+    python ctl_client.py --socket svc swap_exe --params '{"port": 5000}'
 
---socket: ctl=launcher (run.py, 默认) / svc=服务组 (main.py, services|restart)
+--socket: ctl=launcher (run.py, 默认) / svc=服务组 (main.py, services|restart|swap_exe|update)
 
 Exit codes:
     0  success (response carries no JSON-RPC error)
