@@ -133,7 +133,7 @@
     <span class="pill" id="step-info">步 -/-</span>
     <button id="btn-next">▶</button>
     <span class="sep"></span>
-    <label><input type="checkbox" id="btn-visible" checked> 显对手</label>
+    <button id="btn-reset">⏮ 重置</button>
     <button id="btn-demo" class="primary">加载 demo</button>
   </div>
 
@@ -403,9 +403,10 @@
   function renderSnap(idx) {
     const snaps = curSnaps();
     if (idx < 0 || idx >= snaps.length) return;
+    if (!listBuilt) buildStepListOnce();
     curStep = idx;
     const s = snaps[idx];
-    const vis = document.getElementById('btn-visible').checked;
+    const vis = true;
     const isExchange = s.phase && s.phase.startsWith('换三张');
     const isResult = s.phase === '结算';
 
@@ -522,17 +523,13 @@
   // localStorage 记忆
   function saveState() {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({
-        curRound, curStep, perspective,
-        showAll: document.getElementById('btn-visible').checked
-      }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ curRound, curStep, perspective }));
     } catch {}
   }
   function restoreState() {
     let s = {};
     try { s = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
     if (s.perspective !== undefined) { perspective = s.perspective; applyLayout(); }
-    if (s.showAll !== undefined) document.getElementById('btn-visible').checked = s.showAll;
     if (s.curRound !== undefined && s.curRound < rec.rounds.length) curRound = s.curRound;
     listBuilt = false;
     prevQue = ['','','',''];
@@ -553,8 +550,8 @@
 
   document.getElementById('btn-prev').onclick = () => { if (curStep > 0) renderSnap(curStep - 1); };
   document.getElementById('btn-next').onclick = () => { if (curStep < curSnaps().length - 1) renderSnap(curStep + 1); };
+  document.getElementById('btn-reset').onclick = () => renderSnap(0);
   document.getElementById('btn-demo').onclick = () => { loadDemo(); };
-  document.getElementById('btn-visible').onchange = () => { renderSnap(curStep); };
   document.getElementById('btn-rounds').onclick = () => {
     renderRoundsList();
     document.getElementById('rounds-modal').classList.remove('hidden');
