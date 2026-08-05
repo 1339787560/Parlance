@@ -100,6 +100,12 @@
     .tile.sm.back { width: 24px; height: 34px; }
     .tile.sm.back::after { font-size: 14px; }
 
+    /* 左右玩家 (含手牌+弃牌) 牌张旋转 90° 朝中心: 左顺时针牌头朝右, 右逆时针牌头朝左 */
+    .chair.pos-left .tile, .disc.pos-left .tile { transform: rotate(90deg); }
+    .chair.pos-right .tile, .disc.pos-right .tile { transform: rotate(-90deg); }
+    /* 左右弃牌区改为纵向少列 (适配旋转后视觉) */
+    .disc.pos-left, .disc.pos-right { grid-template-columns: repeat(3, auto); grid-auto-flow: row dense; align-content: center; }
+
     .log-panel { flex-shrink: 0; background: #0a1a12; border-top: 1px solid rgba(255,255,255,.08); }
     .log-panel summary { padding: 5px 16px; cursor: pointer; font-size: 12px; color: #9ab; list-style: none; display: flex; align-items: center; gap: 8px; }
     .log-panel summary::-webkit-details-marker { display: none; }
