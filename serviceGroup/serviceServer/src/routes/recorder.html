@@ -291,58 +291,82 @@
     round.snaps.push(S());
 
     let i = 0;
+    const isSettle = tp => tp === 'ScoreDiff' || tp === 'DepositDiff' || tp === 'RawScoreDiff' || tp === 'RawDepositDiff';
     while (i < n) {
       const ev = evs[i], t = ev.type;
+      if (t.startsWith('Raw')) { i++; continue; }  // Raw 双轨事件不单独成步
 
+      // 开局 block: Cards 起, 期间 Deal 应用, 到下一操作事件止 → 合 "发牌" 1 phase
+      if (t === 'Cards') {
+        while (i < n) {
+          const et = evs[i].type;
+          if (et === 'Deal') {
+            const pp = evs[i].rest.split(/\s+/); const cc = parseInt(pp[0], 10);
+            if (cc >= 0 && cc < 4) hands[cc] = chunks(pp[1] || '');
+          } else if (et === 'Exchange' || et === 'Que' || et === 'Throw' || et === 'Catch' || isSettle(et)) break;
+          i++;
+        }
+        round.snaps.push(S({ phase: '发牌' }));
+        continue;
+      }
+
+      // 换三张 block (含 RawExchange): 四家亮牌 → 入牌 两步
       if (t === 'Exchange') {
         const block = [];
-        while (i < n && evs[i].type === 'Exchange') { block.push(evs[i]); i++; }
+        while (i < n && (evs[i].type === 'Exchange' || evs[i].type === 'RawExchange')) {
+          if (evs[i].type === 'Exchange') block.push(evs[i]);
+          i++;
+        }
         const recv = {};
-        for (const e of block) { const p = e.rest.split(/\s+/); recv[p[0]] = { from: p[1], cards: chunks(p[2] || '') }; }
+        for (const e of block) { const pp = e.rest.split(/\s+/); recv[pp[0]] = { from: pp[1], cards: chunks(pp[2] || '') }; }
         let dir = '';
         const rs = Object.keys(recv);
         if (rs.length) {
           const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4;
           dir = diff === 1 ? '↻ 顺时针' : diff === 3 ? '↺ 逆时针' : '换';
         }
-        round.snaps.push(S({ phase: '换三张·交换前', recv, dir }));
+        // 第1步: 四家同时把换三张牌从手中移除、放桌面
+        round.snaps.push(S({ phase: '换三张·亮牌', recv, dir }));
         for (const r in recv) for (const c of recv[r].cards) {
           const idx = hands[recv[r].from].indexOf(c);
           if (idx >= 0) hands[recv[r].from].splice(idx, 1);
         }
+        // 第2步: 一次性交换完毕后加入手牌
         for (const r in recv) hands[r].push(...recv[r].cards);
         for (const r in recv) exchanges.push({ receiver: r, from: recv[r].from, cards: recv[r].cards.slice() });
-        round.snaps.push(S({ phase: '换三张·交换后', recv, dir }));
+        round.snaps.push(S({ phase: '换三张·入牌', recv, dir }));
         continue;
       }
+
+      // 定缺 block (含 RawQue): 4 家合 1 phase
       if (t === 'Que') {
-        const block = [];
-        while (i < n && evs[i].type === 'Que') { block.push(evs[i]); i++; }
-        for (const e of block) { const p = e.rest.split(/\s+/); que[+p[0]] = p[1] || ''; }
+        while (i < n && (evs[i].type === 'Que' || evs[i].type === 'RawQue')) {
+          if (evs[i].type === 'Que') { const pp = evs[i].rest.split(/\s+/); que[+pp[0]] = pp[1] || ''; }
+          i++;
+        }
         round.snaps.push(S({ phase: '定缺' }));
         continue;
       }
+
+      // 结算 block (含 Raw Score/Deposit): 并列聚合 1 phase, 提取 DepositDiff diff
       if (t === 'ScoreDiff' || t === 'DepositDiff') {
-        const block = [];
-        while (i < n && (evs[i].type === 'ScoreDiff' || evs[i].type === 'DepositDiff')) { block.push(evs[i]); i++; }
-        for (const e of block) {
-          if (e.type === 'DepositDiff') {
-            const p = e.rest.split(/\s+/); const c = +p[0], val = +p[1];
-            if (depositInit[c] === null) depositInit[c] = val;
-            deposit[c] = val;
+        while (i < n && isSettle(evs[i].type)) {
+          if (evs[i].type === 'DepositDiff') {
+            const pp = evs[i].rest.split(/\s+/); const cc = +pp[0], val = +pp[1];
+            if (depositInit[cc] === null) depositInit[cc] = val;
+            deposit[cc] = val;
           }
+          i++;
         }
         round.snaps.push(S({ phase: '结算' }));
         continue;
       }
 
+      // 单步: Throw / Catch (Deal 已在开局 block 消费)
       const p = ev.rest.split(/\s+/);
       const c = p[0] !== '' ? parseInt(p[0], 10) : NaN;
-      switch (t) {
-        case 'Deal': if (c>=0&&c<4) hands[c] = chunks(p[1] || ''); break;
-        case 'Throw': if (c>=0&&c<4) { const idx = hands[c].indexOf(p[1]); if (idx>=0) hands[c].splice(idx,1); discards[c].push(p[1]); } break;
-        case 'Catch': if (c>=0&&c<4) hands[c].push(p[1]); break;
-      }
+      if (t === 'Throw') { if (c>=0&&c<4) { const idx = hands[c].indexOf(p[1]); if (idx>=0) hands[c].splice(idx,1); discards[c].push(p[1]); } }
+      else if (t === 'Catch') { if (c>=0&&c<4) hands[c].push(p[1]); }
       round.snaps.push(S({ ev }));
       i++;
     }
@@ -442,9 +466,11 @@
       if (isExchange && s.recv) {
         dz.classList.add('exchange-zone');
         let cards = null;
-        if (s.phase.endsWith('交换前')) {
+        if (s.phase.endsWith('亮牌')) {
+          // 亮牌步: 各 chair 作为 giver 给出的 3 张 (桌面摊开, 手牌已移除)
           for (const r in s.recv) if (s.recv[r].from == String(c)) { cards = s.recv[r].cards; break; }
         } else {
+          // 入牌步: 各 chair 作为 receiver 收到的 3 张
           if (s.recv[c]) cards = s.recv[c].cards;
         }
         dz.innerHTML = cards ? cards.map(t => tileHtml(t, true)).join('') : '<span style="color:#6a8a7a;font-size:10px">-</span>';
@@ -476,18 +502,17 @@
     if (listBuilt) return;
     const list = document.getElementById('step-list');
     const snaps = curSnaps();
-    const disp = curRoundObj().displayEvents;
-    const idxOf = new Map();
-    for (let i = 0; i < snaps.length; i++) if (snaps[i].ev) idxOf.set(snaps[i].ev, i);
     let html = '';
-    for (const ev of disp) {
-      const si = idxOf.get(ev);
-      if (si === undefined) continue;
-      const esc = ev.rest.replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[m]);
-      html += `<div class="step${ev.type==='Que'||ev.type==='Exchange'||ev.type==='ScoreDiff'||ev.type==='DepositDiff'?' phase':''}" data-snap="${si}"><span class="t">${ev.time}</span> <span class="ty">${ev.type.padEnd(10)}</span> <span class="body">${esc}</span></div>`;
-    }
+    // 就地聚合: 直接遍历 snaps (已按时间序, 含 phase 与单步 ev), 不再展 displayEvents 子事件
     for (let i = 0; i < snaps.length; i++) {
-      if (snaps[i].phase) html += `<div class="step phase" data-snap="${i}">★ ${snaps[i].phase}</div>`;
+      const s = snaps[i];
+      if (s.phase) {
+        html += `<div class="step phase" data-snap="${i}">★ ${s.phase}</div>`;
+      } else if (s.ev) {
+        const ev = s.ev;
+        const esc = ev.rest.replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[m]);
+        html += `<div class="step" data-snap="${i}"><span class="t">${ev.time}</span> <span class="ty">${ev.type.padEnd(8)}</span> <span class="body">${esc}</span></div>`;
+      }
     }
     list.innerHTML = html;
     list.querySelectorAll('.step').forEach(el => el.addEventListener('click', () => renderSnap(parseInt(el.dataset.snap, 10))));

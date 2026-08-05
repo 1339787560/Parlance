@@ -6,6 +6,10 @@
     <link rel="icon" href="/static/icon/tabIcon.ico" type="image/x-icon">
     <title>Windows服务管理工具 By Liz</title>
     <style>
+        html {
+            scrollbar-gutter: stable; /* 预留滚动条槽: 无条也留位, 展开出现条时不挤内容左移 */
+        }
+
         body {
             font-family: Arial, sans-serif;
             margin: 0;
@@ -344,11 +348,12 @@
         .panel-content {
             max-height: 0;
             overflow: hidden;
-            transition: max-height 0.3s ease-out;
+            transition: none; /* 收起即时, 不播动画 (避免 max-height 反向动画的停顿+snap) */
         }
-        
+
         .panel-content.expanded {
             max-height: 10000px; /* 增加最大高度以适应更多内容 */
+            transition: max-height 0.3s ease-out; /* 仅展开播动画 */
         }
         
         .panel-content .service-item {
@@ -840,6 +845,20 @@
             background-color: rgba(33, 136, 56, 0.8);
         }
 
+        .makecard-btn {
+            background-color: rgba(255, 140, 50, 0.7);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            backdrop-filter: blur(2px);
+        }
+        .makecard-btn:hover { background-color: rgba(230, 120, 30, 0.9); }
+        body.dark-theme .makecard-btn { background-color: rgba(255, 140, 50, 0.6); }
+        body.dark-theme .makecard-btn:hover { background-color: rgba(230, 120, 30, 0.8); }
+
         .download-log-btn {
             background-color: rgba(23, 162, 184, 0.7);
             color: white;
@@ -941,6 +960,192 @@
         body.dark-theme .ai-manager-btn {
             display: inline-block !important;
         }
+
+        /* ===== 配置编辑悬浮窗 (服务状态页内嵌) ===== */
+        button.config-edit-btn {
+            background-color: rgba(0, 123, 255, 0.7);
+            color: white;
+        }
+        button.config-edit-btn:hover {
+            background-color: rgba(0, 86, 179, 0.9);
+        }
+
+        /* box-sizing reset (scoped): 宽度含 padding, 杜绝横向滚动 */
+        .config-editor-overlay *,
+        .config-editor-overlay *::before,
+        .config-editor-overlay *::after {
+            box-sizing: border-box;
+        }
+
+        .config-editor-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.55);
+            z-index: 1500;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .config-editor-modal {
+            width: 80vw;
+            height: 80vh;
+            max-width: 80vw;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            padding: 16px;
+            color: #333;
+        }
+        body.dark-theme .config-editor-modal {
+            background: #2b2b2b;
+            color: #f0f0f0;
+        }
+
+        .ce-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-shrink: 0;
+            gap: 8px;
+        }
+        .ce-header h2 { margin: 0; font-size: 18px; }
+        .ce-header-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .ce-header-actions select {
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        .ce-header-actions button {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #fff;
+            background-color: #007bff;
+        }
+        .ce-header-actions button:hover { background-color: #0056b3; }
+        .ce-header-actions button.save { background-color: #28a745; }
+        .ce-header-actions button.save:hover { background-color: #218838; }
+        .ce-header-actions button.cancel { background-color: #6c757d; }
+        .ce-header-actions button.cancel:hover { background-color: #5a6268; }
+        .ce-header-actions button.ce-close-btn {
+            background-color: #dc3545;
+            font-weight: bold;
+        }
+        .ce-header-actions button.ce-close-btn:hover { background-color: #c82333; }
+
+        .ce-body {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            gap: 12px;
+        }
+
+        .ce-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 8px;
+        }
+        body.dark-theme .ce-sidebar { border-color: #444; }
+        .ce-sidebar h4 { margin: 0 0 8px 0; font-size: 14px; }
+        .ce-file-item {
+            padding: 6px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            color: #007bff;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .ce-file-item:hover { background-color: #e9ecef; text-decoration: underline; }
+        body.dark-theme .ce-file-item:hover { background-color: #3a3a3a; }
+        body.dark-theme .ce-file-item { color: #6cb7ff; }
+        .ce-file-empty { color: #888; padding: 6px 8px; font-size: 13px; }
+
+        .ce-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .ce-main textarea {
+            flex: 1;
+            width: 100%;
+            max-width: 100%;
+            min-height: 0;
+            font-family: monospace;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: none;
+            overflow-x: auto;
+            word-break: break-all;
+        }
+        body.dark-theme .ce-main textarea {
+            background: #1e1e1e;
+            color: #f0f0f0;
+            border-color: #555;
+        }
+
+        .config-editor-overlay details {
+            border-top: 1px solid #ccc;
+            padding-top: 6px;
+            flex-shrink: 0;
+        }
+        .config-editor-overlay summary {
+            cursor: pointer;
+            font-weight: bold;
+            padding: 4px 0;
+            user-select: none;
+        }
+        .ce-branch-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            border-bottom: 1px solid #eee;
+            min-width: 0;
+        }
+        body.dark-theme .ce-branch-row { border-bottom-color: #444; }
+        .ce-branch-row > span:first-child {
+            min-width: 0;
+            overflow-wrap: anywhere;
+            word-break: break-all;
+            font-size: 13px;
+        }
+        .ce-branch-row button {
+            padding: 3px 10px;
+            margin-left: 4px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #fff;
+            background-color: #007bff;
+            font-size: 12px;
+        }
+        .ce-branch-row button:hover { background-color: #0056b3; }
+        .ce-branch-row button.del { background-color: #dc3545; }
+        .ce-branch-row button.del:hover { background-color: #c82333; }
+        .ce-branch-empty { color: #888; padding: 4px 8px; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -973,6 +1178,8 @@
                 <button class="config-btn" onclick="window.location.href='/onlineConfigModify'">⚙️ 在线配置修改</button>
                 <button class="server-status-btn" onclick="window.location.href='/serverstatus'">🖥️ 服务器状态</button>
                 <button class="currency-btn" onclick="window.location.href='/deposit'">💰 设置货币</button>
+                <button class="makecard-btn" onclick="window.location.href='/makecard'">🃏 做牌器</button>
+                <button class="makecard-btn" onclick="window.location.href='/recorder'">🀄 复盘器</button>
                 <!-- fileontimer (下载日志) 已移除 -->
                 <!-- AI管理按钮已移除 (死功能: ai-manager/benchmark/claude/rag 均废弃) -->
                 <button id="theme-toggle" class="theme-toggle">
@@ -1010,7 +1217,43 @@
         </div>
     </div>
     <div id="inactivity-hint" class="inactivity-hint">左键点击恢复状态</div>
-    
+
+    <!-- 配置编辑悬浮窗: 左配置列表 + 右编辑器 -->
+    <div class="config-editor-overlay" id="config-editor-overlay" onclick="ceOnBackdropClick(event)">
+        <div class="config-editor-modal" onclick="event.stopPropagation()">
+            <div class="ce-header">
+                <h2 id="ce-title">配置编辑</h2>
+                <div class="ce-header-actions">
+                    <label>编码:
+                        <select id="ce-encoding">
+                            <option value="utf-8">UTF-8</option>
+                            <option value="gbk">ANSI (GBK)</option>
+                            <option value="utf-16-le">UTF-16 小端</option>
+                            <option value="utf-16-be">UTF-16 大端</option>
+                        </select>
+                    </label>
+                    <button class="save" onclick="ceSaveFile()">保存</button>
+                    <button onclick="cePromptCreateBranch()" title="创建命名备份">创建备份</button>
+                    <button class="cancel" onclick="ceHideEditor()">取消</button>
+                    <button class="ce-close-btn" onclick="ceHideEditor()" title="关闭">✕</button>
+                </div>
+            </div>
+            <div class="ce-body">
+                <div class="ce-sidebar">
+                    <h4 id="ce-service-name">配置文件</h4>
+                    <div id="ce-file-list"></div>
+                </div>
+                <div class="ce-main">
+                    <textarea id="ce-file-content" placeholder="选择左侧文件以加载内容..."></textarea>
+                    <details>
+                        <summary>备份文件 (<span id="ce-branch-count">0</span>)</summary>
+                        <div id="ce-branch-files-container"></div>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // 全局变量，用于存储当前正在更新的服务信息
         let currentUpdateService = null;
@@ -1188,15 +1431,44 @@
             svnUpdateButton.style.cursor = 'not-allowed';
 
             try {
+                // 1. 触发 host 异步编排 (停 servicesvr → svn up → 启)
                 const response = await fetch('/api/svn/update', {
                     method: 'POST'
                 });
                 const data = await response.json();
+                if (!data.success) {
+                    alert('触发SVN更新失败: ' + data.message);
+                    return;
+                }
+                svnStatusText.textContent = 'SVN 更新中 (host 编排: 停服务→svn up→启)...';
 
-                if (data.success) {
-                    alert('SVN更新成功！');
+                // 2. 轮询 update_log (每 2s, 最多 45 次 = 90s), 等 running=false
+                let log = null;
+                for (let i = 0; i < 45; i++) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    try {
+                        const lr = await fetch('/api/svn/update_log');
+                        log = await lr.json();
+                    } catch (e) {
+                        // legacy/rust 可能正被停启, 连接失败则重试
+                        continue;
+                    }
+                    if (log && log.running === false && log.last) break;
+                    svnStatusText.textContent = `SVN 更新中... (${(i + 1) * 2}s)`;
+                }
+
+                // 3. 显示结果 (svn stdout/stderr + 服务状态)
+                if (log && log.last) {
+                    const svn = log.last.svn || {};
+                    const started = (log.last.started || []).map(s => `${s.name}=${s.status}`).join(', ');
+                    const summary = `SVN 更新${svn.ok ? '成功' : '失败'} (returncode=${svn.returncode})\n` +
+                        `工作副本根: ${svn.working_copy_root || '-'}\n` +
+                        `svn stdout:\n${svn.stdout || '(空)'}\n` +
+                        (svn.stderr ? `svn stderr:\n${svn.stderr}\n` : '') +
+                        `服务: ${started}`;
+                    alert(summary);
                 } else {
-                    alert('SVN更新失败: ' + data.message);
+                    alert('SVN 更新超时, 查 /api/svn/update_log 或 svn_update.log');
                 }
             } catch (error) {
                 console.error('执行SVN更新失败:', error);
@@ -1344,10 +1616,7 @@
         
 
         let expandedGames = new Set();
-        function updateServiceStatus() {
-                    fetch('/api/services/status')
-                        .then(response => response.json())
-                        .then(data => {
+        function buildServiceGrid(data) {
                             const serviceGrid = document.getElementById('service-grid');
                             serviceGrid.innerHTML = '';
                             
@@ -1360,6 +1629,7 @@
                             
                             // 按游戏名称分组服务
                             for (const [serviceId, serviceInfo] of Object.entries(data)) {
+                                serviceInfo._serviceId = serviceId; // 保留 serviceId 供配置编辑用
                                 if (!gameGroups[serviceInfo.name]) {
                                     gameGroups[serviceInfo.name] = [];
                                 }
@@ -1397,6 +1667,8 @@
                                 services.forEach(serviceInfo => {
                                     const serviceItem = document.createElement('div');
                                     serviceItem.className = 'service-item';
+                                    serviceItem.dataset.sid = serviceInfo._serviceId;
+                                    serviceItem.dataset.deployed = (serviceInfo.status !== '未部署') ? '1' : '0';
                                     
                                     let statusClass = 'status-stopped';
                                     if (serviceInfo.status === '运行中') statusClass = 'status-running';
@@ -1414,12 +1686,13 @@
                                     let actionButtons = '';
                                     if (isDeployed) {
                                         actionButtons = `
+                                            <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}')">配置编辑</button>
                                             <button class="update" onclick="triggerUpdateFile('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">更新</button>
-                                            <button onclick="startService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')" 
+                                            <button data-role="start" onclick="startService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')"
                                                     ${isRunning ? 'disabled' : ''}>启动</button>
-                                            <button class="stop" onclick="stopService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')" 
+                                            <button class="stop" data-role="stop" onclick="stopService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')"
                                                     ${!isRunning ? 'disabled' : ''}>停止</button>
-                                            <button class="restart" onclick="restartService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')" 
+                                            <button class="restart" data-role="restart" onclick="restartService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')"
                                                     ${serviceInfo.status === '启动中' ? 'disabled' : ''}>重启</button>
                                             <button class="delete" onclick="deleteService('${serviceInfo.name}', '${serviceInfo.type}')">删除部署</button>
                                         `;
@@ -1467,7 +1740,87 @@
                                 // 将游戏面板添加到网格中
                                 serviceGrid.appendChild(gamePanel);
                             }
-                        });
+        }
+
+        let lastServiceFingerprint = '';
+
+        function statusClassFor(status) {
+            if (status === '运行中') return 'status-running';
+            if (status === '启动中') return 'status-starting';
+            if (status === '启动失败') return 'status-failed';
+            if (status === '未部署') return 'status-undeployed';
+            return 'status-stopped';
+        }
+
+        // 构造操作按钮 (patch 用: deployed 态翻转时重建)
+        function buildActionButtons(serviceId, info, isDeployed, isRunning) {
+            if (!isDeployed) {
+                return `<button class="deploy" onclick="deployService('${info.name}', '${info.type}', '${info.exe}')">部署服务</button>`;
+            }
+            const starting = info.status === '启动中';
+            return `
+                <button class="config-edit-btn" onclick="openConfigEditor('${serviceId}', '${info.name}')">配置编辑</button>
+                <button class="update" onclick="triggerUpdateFile('${info.name}', '${info.type}', '${info.exe}')">更新</button>
+                <button data-role="start" onclick="startService('${info.name}', '${info.type}', '${info.exe}')" ${isRunning ? 'disabled' : ''}>启动</button>
+                <button class="stop" data-role="stop" onclick="stopService('${info.name}', '${info.type}', '${info.exe}')" ${!isRunning ? 'disabled' : ''}>停止</button>
+                <button class="restart" data-role="restart" onclick="restartService('${info.name}', '${info.type}', '${info.exe}')" ${starting ? 'disabled' : ''}>重启</button>
+                <button class="delete" onclick="deleteService('${info.name}', '${info.type}')">删除部署</button>
+            `;
+        }
+
+        // 就地 patch 状态 (每 3s 调, 不 wipe DOM, 保留 transition 连续性 = 60fps 丝滑)
+        function patchServiceStatus(data) {
+            const serviceGrid = document.getElementById('service-grid');
+            serviceGrid.querySelectorAll('.service-item[data-sid]').forEach(item => {
+                const info = data[item.dataset.sid];
+                if (!info) return;
+                const isRunning = info.status === '运行中' || info.status === '启动中';
+                const isDeployed = info.status !== '未部署';
+                const badge = item.querySelector('.status');
+                if (badge) {
+                    badge.className = 'status ' + statusClassFor(info.status);
+                    badge.textContent = info.status;
+                }
+                const wasDeployed = item.dataset.deployed === '1';
+                if (wasDeployed !== isDeployed) {
+                    item.dataset.deployed = isDeployed ? '1' : '0';
+                    const actions = item.querySelector('.service-actions');
+                    if (actions) actions.innerHTML = buildActionButtons(item.dataset.sid, info, isDeployed, isRunning);
+                } else if (wasDeployed) {
+                    const s = item.querySelector('[data-role="start"]');
+                    const p = item.querySelector('[data-role="stop"]');
+                    const r = item.querySelector('[data-role="restart"]');
+                    if (s) s.disabled = isRunning;
+                    if (p) p.disabled = !isRunning;
+                    if (r) r.disabled = info.status === '启动中';
+                }
+            });
+            // 更新各游戏面板运行中计数
+            serviceGrid.querySelectorAll('.game-panel').forEach(panel => {
+                const items = panel.querySelectorAll('.service-item');
+                let running = 0;
+                items.forEach(it => {
+                    const b = it.querySelector('.status');
+                    if (b && b.textContent === '运行中') running++;
+                });
+                const stats = panel.querySelector('.game-stats');
+                if (stats) stats.innerHTML = `<span>总服务数: ${items.length}</span><span>运行中: ${running}</span>`;
+            });
+        }
+
+        // 分发: 服务集合变化才全量重建, 否则就地 patch (避免每 3s wipe 打断 transition)
+        function updateServiceStatus() {
+            fetch('/api/services/status')
+                .then(response => response.json())
+                .then(data => {
+                    const fingerprint = Object.keys(data).sort().join('|');
+                    if (fingerprint !== lastServiceFingerprint) {
+                        lastServiceFingerprint = fingerprint;
+                        buildServiceGrid(data);
+                    } else {
+                        patchServiceStatus(data);
+                    }
+                });
         }
         // 启动服务
         function startService(name, type, exe) {
@@ -1741,6 +2094,222 @@
             await loadConfig(); // 确保配置加载完成
             if (hideForBGEnabled) {
                 resetInactivityTimer(); // 只有当功能启用时才启动计时器
+            }
+        });
+
+        // ===== 配置编辑悬浮窗 (逻辑对齐 onlineConfigModify.html) =====
+        let ceEditingFilePath = null;
+        let ceEditingServiceId = null;
+
+        function ceOnBackdropClick(event) {
+            if (event.target === event.currentTarget) ceHideEditor();
+        }
+
+        function ceHideEditor() {
+            document.getElementById('config-editor-overlay').style.display = 'none';
+            ceEditingFilePath = null;
+        }
+
+        // 打开配置编辑悬浮窗: 加载左侧文件列表
+        async function openConfigEditor(serviceId, serviceName) {
+            ceEditingServiceId = serviceId;
+            ceEditingFilePath = null;
+            document.getElementById('ce-title').textContent = '配置编辑: ' + (serviceName || serviceId);
+            document.getElementById('ce-service-name').textContent = (serviceName || '配置文件');
+            document.getElementById('ce-file-content').value = '';
+            document.getElementById('ce-branch-files-container').innerHTML = '';
+            document.getElementById('ce-branch-count').textContent = '0';
+            document.getElementById('config-editor-overlay').style.display = 'flex';
+            await ceLoadFileList(serviceId);
+        }
+
+        // 加载左侧配置文件列表
+        async function ceLoadFileList(serviceId) {
+            const listEl = document.getElementById('ce-file-list');
+            listEl.innerHTML = '<div class="ce-file-empty">加载中...</div>';
+            try {
+                const resp = await fetch(`/api/config/files?serviceId=${encodeURIComponent(serviceId)}&ext=ini,json,lua`);
+                const result = await resp.json();
+                if (!result.success) {
+                    listEl.innerHTML = `<div class="ce-file-empty">加载失败: ${result.message || ''}</div>`;
+                    return;
+                }
+                const files = result.files || [];
+                listEl.innerHTML = '';
+                if (files.length === 0) {
+                    listEl.innerHTML = '<div class="ce-file-empty">无配置文件</div>';
+                    return;
+                }
+                files.forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'ce-file-item';
+                    item.textContent = file.filename;
+                    item.onclick = () => ceOpenFile(file.full_path, file.filename);
+                    listEl.appendChild(item);
+                });
+            } catch (e) {
+                listEl.innerHTML = `<div class="ce-file-empty">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        // 打开右侧文件内容
+        async function ceOpenFile(filePath, fileName, newEncoding) {
+            if (!filePath) return;
+            const encodingToUse = newEncoding || document.getElementById('ce-encoding').value;
+            try {
+                const resp = await fetch(`/api/config/file/content?filePath=${encodeURIComponent(filePath)}&encoding=${encodeURIComponent(encodingToUse)}`);
+                if (!resp.ok) {
+                    const errTxt = await resp.text();
+                    alert(`打开失败 (HTTP ${resp.status}): ${errTxt}`);
+                    return;
+                }
+                const content = await resp.text();
+                const ct = resp.headers.get('Content-Type');
+                const actualEnc = ct ? ct.split('charset=')[1] : encodingToUse;
+                ceEditingFilePath = filePath;
+                document.getElementById('ce-file-content').value = content;
+                document.getElementById('ce-encoding').value = actualEnc;
+                ceLoadBranchFiles(filePath);
+            } catch (e) {
+                alert('打开文件失败: ' + e.message);
+            }
+        }
+
+        // 保存
+        async function ceSaveFile() {
+            if (!ceEditingFilePath) { alert('未选择文件'); return; }
+            const content = document.getElementById('ce-file-content').value;
+            const encoding = document.getElementById('ce-encoding').value;
+            try {
+                const resp = await fetch('/api/config/file/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath: ceEditingFilePath, content, encoding })
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    alert('文件保存成功');
+                } else {
+                    alert('保存失败: ' + result.message);
+                }
+            } catch (e) {
+                alert('保存失败: ' + e.message);
+            }
+        }
+
+        // 加载备份列表
+        async function ceLoadBranchFiles(filePath) {
+            try {
+                const resp = await fetch(`/api/config/file/branches?filePath=${encodeURIComponent(filePath)}`);
+                const result = await resp.json();
+                const container = document.getElementById('ce-branch-files-container');
+                container.innerHTML = '';
+                const countSpan = document.getElementById('ce-branch-count');
+                if (!result.success) {
+                    if (countSpan) countSpan.textContent = '0';
+                    return;
+                }
+                if (countSpan) countSpan.textContent = result.branch_files.length;
+                const baseName = result.current_file.replace(/\.[^/.]+$/, '');
+                result.branch_files.forEach(branchFile => {
+                    const branchName = branchFile.substring(baseName.length + 1, branchFile.lastIndexOf('.'));
+                    const escPath = filePath.replace(/\\/g, '\\\\');
+                    const escBranch = branchName.replace(/\\/g, '\\\\');
+                    const escFile = branchFile.replace(/\\/g, '\\\\');
+                    const row = document.createElement('div');
+                    row.className = 'ce-branch-row';
+                    row.innerHTML = `
+                        <span>${branchFile}</span>
+                        <span>
+                            <button onclick="ceSwitchToBranch('${escPath}', '${escBranch}')">切换</button>
+                            <button class="del" onclick="ceDeleteBranch('${escPath}', '${escBranch}', '${escFile}')">删除</button>
+                        </span>
+                    `;
+                    container.appendChild(row);
+                });
+                if (result.branch_files.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'ce-branch-empty';
+                    empty.textContent = '无可用备份';
+                    container.appendChild(empty);
+                }
+            } catch (e) {
+                console.error('加载备份失败:', e);
+            }
+        }
+
+        // 创建备份 (prompt 输入名)
+        async function cePromptCreateBranch() {
+            if (!ceEditingFilePath) { alert('请先选择文件'); return; }
+            const name = prompt('输入新备份名称 (仅字母数字、下划线、连字符):');
+            if (name === null) return;
+            const trimmed = name.trim();
+            if (!trimmed) { alert('备份名称不能为空'); return; }
+            const content = document.getElementById('ce-file-content').value;
+            try {
+                const resp = await fetch('/api/config/file/create_branch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath: ceEditingFilePath, branchName: trimmed, content })
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    alert(`备份 "${result.branch_file}" 创建成功`);
+                    ceLoadBranchFiles(ceEditingFilePath);
+                } else {
+                    alert('创建备份失败: ' + result.message);
+                }
+            } catch (e) {
+                alert('创建备份失败: ' + e.message);
+            }
+        }
+
+        // 切换备份
+        async function ceSwitchToBranch(filePath, branchName) {
+            if (!branchName || !confirm(`确定切换到备份 "${branchName}" 吗？`)) return;
+            try {
+                const resp = await fetch('/api/config/file/switch_branch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath, branchName })
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    alert(result.message);
+                    const curEnc = document.getElementById('ce-encoding').value;
+                    ceOpenFile(filePath, result.current_file, curEnc);
+                } else {
+                    alert('切换失败: ' + result.message);
+                }
+            } catch (e) {
+                alert('切换失败: ' + e.message);
+            }
+        }
+
+        // 删除备份
+        async function ceDeleteBranch(filePath, branchName, branchFileName) {
+            if (!confirm(`确定删除备份 "${branchFileName}" 吗？不可撤销。`)) return;
+            const encPath = encodeURIComponent(filePath);
+            const encBranch = encodeURIComponent(branchName);
+            try {
+                const resp = await fetch(`/api/config/file/remove_branch?filePath=${encPath}&branchName=${encBranch}`, { method: 'DELETE' });
+                const result = await resp.json();
+                if (result.success) {
+                    alert(result.message);
+                    ceLoadBranchFiles(filePath);
+                } else {
+                    alert('删除失败: ' + result.message);
+                }
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+
+        // 编码切换: 重新加载当前文件
+        document.getElementById('ce-encoding').addEventListener('change', function () {
+            if (ceEditingFilePath) {
+                const curName = ceEditingFilePath.replace(/.*[/\\]/, '');
+                ceOpenFile(ceEditingFilePath, curName, this.value);
             }
         });
     </script>
