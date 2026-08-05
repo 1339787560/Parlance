@@ -240,7 +240,11 @@
       const hm = line.match(/^(\w+)\s+(.*)$/);
       if (!hm) continue;
       const k = hm[1], v = hm[2];
-      if (k === 'ChairNO' || k === 'Name' || k === 'Win_Loss_StandOff') (header[k] = header[k] || []).push(v);
+      if (k === 'ChairNO' || k === 'Name' || k === 'Win_Loss_StandOff') {
+        // record 多局汇总时这些键会重复出现, 按 chair 字段索引存 (去重留最后), 避免 renderMeta forEach 越界
+        const ci = parseInt(v.split(/\s+/)[0], 10);
+        if (!Number.isNaN(ci)) { (header[k] = header[k] || [])[ci] = v; }
+      }
       else header[k] = v;
     }
     rec.header = header; rec.events = events;
