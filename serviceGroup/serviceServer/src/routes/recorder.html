@@ -9,6 +9,7 @@
     html, body { height: 100%; margin: 0; overflow: hidden; }
     body { font-family: "Microsoft YaHei", sans-serif; background: #0e2418; color: #eee; user-select: none; }
 
+    /* 悬浮工具栏 (含视角) */
     .svc-bar {
       position: fixed; top: 6px; left: 50%; transform: translateX(-50%); z-index: 200;
       display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;
@@ -16,46 +17,38 @@
       padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.08);
       box-shadow: 0 6px 20px rgba(0,0,0,.4); max-width: calc(100vw - 16px); font-size: 12px;
     }
-    .svc-bar label { display: flex; align-items: center; gap: 3px; color: #9ab; }
-    .svc-bar input { width: 60px; padding: 3px 6px; background: #1a3a2a; color: #eee; border: 1px solid #2a5a3a; border-radius: 4px; font-size: 11px; }
     .svc-bar button { padding: 4px 10px; background: #2a5a3a; color: #eee; border: 1px solid #3a7a5a; border-radius: 999px; cursor: pointer; font-size: 12px; white-space: nowrap; }
     .svc-bar button:hover { background: #3a7a5a; }
     .svc-bar button.primary { background: #c8332e; border-color: #e8433e; }
     .svc-bar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.15); }
     .svc-bar .pill { color: #fc6; background: rgba(252,192,80,.12); padding: 3px 10px; border-radius: 999px; font-size: 11px; cursor: pointer; }
+    .persp-btns { display: flex; gap: 3px; }
+    .persp-btns button { width: 22px; height: 22px; padding: 0; font-size: 11px; border-radius: 4px; }
+    .persp-btns button.active { background: #c8332e; border-color: #e8433e; }
 
     .app { display: flex; flex-direction: column; height: 100vh; padding-top: 52px; }
     .meta { padding: 2px 16px; font-size: 11px; color: #8aa; border-bottom: 1px solid rgba(255,255,255,.05); flex-shrink: 0; }
     .meta b { color: #ffe; }
 
+    /* 桌面: 左右列占满 3 行 (含四角), 中列 top/center/bottom */
     .table {
       flex: 1 1 auto; min-height: 0; position: relative;
       display: grid;
-      grid-template-areas: "tl top tr" "left center right" "bl bottom br";
-      grid-template-columns: minmax(120px, auto) 1fr minmax(120px, auto);
+      grid-template-areas: "left top right" "left center right" "left bottom right";
+      grid-template-columns: minmax(170px, 1fr) 2.2fr minmax(170px, 1fr);
       grid-template-rows: auto 1fr auto;
       gap: 4px; padding: 6px;
     }
-    .chair { background: rgba(255,255,255,.04); border-radius: 8px; padding: 5px 8px; min-width: 0; position: relative; }
+    .chair { background: rgba(255,255,255,.04); border-radius: 8px; padding: 8px 10px; min-width: 0; position: relative; display: flex; flex-direction: column; }
     .chair.pos-top { grid-area: top; } .chair.pos-bottom { grid-area: bottom; }
     .chair.pos-left { grid-area: left; } .chair.pos-right { grid-area: right; }
+    .chair.pos-left, .chair.pos-right { justify-content: space-between; }
     .chair.active { outline: 2px solid #fc6; }
 
-    .corner { font-size: 10px; color: #8aa; padding: 4px 8px; display: flex; flex-direction: column; gap: 2px; justify-content: center; }
-    .corner.tl { grid-area: tl; align-items: flex-start; }
-    .corner.tr { grid-area: tr; align-items: flex-end; text-align: right; }
-    .corner.bl { grid-area: bl; align-items: flex-start; }
-    .corner.br { grid-area: br; align-items: flex-end; }
-    .corner .v { color: #ffe; font-size: 13px; }
-    .corner .kbd { background: #1a3a2a; padding: 1px 5px; border-radius: 3px; border: 1px solid #2a5a3a; color: #fc6; }
-    .persp-btns { display: flex; gap: 3px; margin-top: 2px; }
-    .persp-btns button { width: 22px; height: 22px; padding: 0; font-size: 11px; background: #2a5a3a; color: #eee; border: 1px solid #3a7a5a; border-radius: 4px; cursor: pointer; }
-    .persp-btns button.active { background: #c8332e; border-color: #e8433e; }
-
-    .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: 12px; }
+    .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; flex-wrap: wrap; }
     .name { font-weight: bold; color: #ffe; }
     .uid { color: #6a8a7a; font-size: 10px; }
-    .que-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px; background: #3a2a1a; color: #fc6; transition: transform .2s; }
+    .que-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px; background: #3a2a1a; color: #fc6; }
     .que-chip.W { background: #1a3a5a; color: #9cf; }
     .que-chip.T { background: #1a5a3a; color: #9f9; }
     .que-chip.D { background: #5a1a1a; color: #f99; }
@@ -67,35 +60,45 @@
     .deposit.neg { color: #6cf; text-shadow: 0 0 8px rgba(108,192,255,.5); }
     .deposit.zero { color: #6a8a7a; font-size: 14px; }
 
-    .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; min-height: 28px; flex-wrap: wrap; }
-    .label { font-size: 10px; color: #6a8a7a; width: 24px; flex-shrink: 0; }
-    .hand-area, .meld-area, .hu-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; }
-    .hu-area { margin-left: 6px; }
+    /* 玩家牌区: 碰杠(左对齐) | 手牌(右对齐, 抓牌间距) | 胡牌(前方) */
+    .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; flex-wrap: wrap; }
+    .label { font-size: 10px; color: #6a8a7a; width: 22px; flex-shrink: 0; }
+    .meld-area { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-start; }
+    .meld-group { display: flex; gap: 0; padding: 1px 3px; background: rgba(255,255,255,.05); border-radius: 3px; }
+    .hand-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; justify-content: flex-end; flex: 1; }
+    .hand-area .catch-gap { margin-left: 10px; }
+    .hu-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; width: 100%; margin-top: 4px; }
+    /* 左右玩家纵向 */
+    .chair.pos-left .hand-area, .chair.pos-right .hand-area { flex-direction: column; justify-content: flex-start; align-items: center; }
+    .chair.pos-left .meld-area, .chair.pos-right .meld-area { flex-direction: column; }
 
+    /* 中心: 墙余 + 4 弃牌区沿方位 */
     .center {
       grid-area: center; min-width: 0; min-height: 0;
       display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto 1fr auto;
-      gap: 3px; align-items: center; justify-items: center; padding: 4px;
+      gap: 3px; align-items: center; justify-items: stretch; padding: 4px;
     }
-    .disc { background: rgba(255,255,255,.03); border-radius: 6px; padding: 3px 5px; min-height: 26px; max-width: 100%; display: flex; flex-wrap: wrap; gap: 1px; justify-content: center; align-content: center; transition: background .2s; }
+    .disc { background: rgba(255,255,255,.04); border-radius: 6px; padding: 4px 6px; min-height: 30px; display: grid; grid-template-columns: repeat(6, auto); grid-auto-rows: minmax(24px, auto); grid-auto-flow: row dense; gap: 1px; justify-content: center; align-content: center; transition: background .2s; }
     .disc.exchange-zone { background: rgba(252,192,80,.1); box-shadow: 0 0 0 1px rgba(252,192,80,.3); }
     .disc.pos-top { grid-column: 2; grid-row: 1; }
     .disc.pos-left { grid-column: 1; grid-row: 2; }
     .disc.pos-right { grid-column: 3; grid-row: 2; }
     .disc.pos-bottom { grid-column: 2; grid-row: 3; }
-    .wall-box { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; max-width: 240px; }
+    .wall-box { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; max-width: 240px; justify-self: center; }
     .wall { padding: 6px 14px; background: linear-gradient(180deg,#3a5a3a,#2a4a2a); border-radius: 8px; color: #ffe; font-size: 12px; border: 1px solid #4a6a4a; min-width: 84px; text-align: center; }
     .wall .num { color: #fc6; font-size: 16px; font-weight: bold; }
     .exchange { font-size: 10px; color: #fc6; max-width: 220px; text-align: center; line-height: 1.5; }
     .phase-tag { background: #c8332e; color: #fff; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: bold; }
     .direction { font-size: 22px; color: #fc6; line-height: 1; }
 
-    .tile { display: inline-block; background-image: url(/recorder/mj_color0.png); background-repeat: no-repeat; vertical-align: middle; margin-right: 1px; border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.25); animation: tileIn .25s ease-out; }
-    @keyframes tileIn { from { opacity: 0; transform: translateY(-8px) scale(.9); } to { opacity: 1; } }
-    .tile.back { width: 28px; height: 39px; margin-right: 1px; border-radius: 3px; background: linear-gradient(135deg, #5a1a2a 0%, #8a2a3a 50%, #5a1a2a 100%); border: 1px solid #a9445a; box-shadow: 0 1px 2px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.2); position: relative; animation: tileIn .25s ease-out; }
-    .tile.back::after { content: "🀄"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; opacity: .5; }
-    .tile.sm.back { width: 17px; height: 24px; }
-    .tile.sm.back::after { font-size: 11px; }
+    /* 牌面 sprite (无入场动画, 单步不抖; catch/throw 高亮) */
+    .tile { display: inline-block; background-image: url(/recorder/mj_color0.png); background-repeat: no-repeat; vertical-align: middle; margin-right: 1px; border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+    .tile.catch-hl { box-shadow: 0 0 0 3px #fc6, 0 0 14px rgba(252,192,80,.9); border-radius: 4px; }
+    .tile.throw-hl { box-shadow: 0 0 0 3px #f66, 0 0 12px rgba(255,80,80,.8); border-radius: 4px; }
+    .tile.back { width: 40px; height: 56px; margin-right: 2px; border-radius: 4px; background: linear-gradient(135deg, #5a1a2a 0%, #8a2a3a 50%, #5a1a2a 100%); border: 1px solid #a9445a; box-shadow: 0 1px 2px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.2); position: relative; }
+    .tile.back::after { content: "🀄"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; opacity: .5; }
+    .tile.sm.back { width: 24px; height: 34px; }
+    .tile.sm.back::after { font-size: 14px; }
 
     .log-panel { flex-shrink: 0; background: #0a1a12; border-top: 1px solid rgba(255,255,255,.08); }
     .log-panel summary { padding: 5px 16px; cursor: pointer; font-size: 12px; color: #9ab; list-style: none; display: flex; align-items: center; gap: 8px; }
@@ -110,7 +113,6 @@
     .step.phase { color: #fc6; font-weight: bold; }
     .step .t { color: #6a8a7a; } .step .ty { color: #fc6; } .step .body { color: #ddd; }
 
-    /* 对局切换 modal */
     .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(4px); }
     .modal.hidden { display: none; }
     .modal-content { background: #1a3a2a; padding: 16px 20px; border-radius: 12px; max-width: 560px; width: 90%; max-height: 70vh; overflow: auto; border: 1px solid #3a5a4a; box-shadow: 0 12px 40px rgba(0,0,0,.6); }
@@ -129,11 +131,15 @@
     <span class="sep"></span>
     <button id="btn-list">列 record</button>
     <span class="sep"></span>
+    <button id="btn-reset">⏮</button>
     <button id="btn-prev">◀</button>
     <span class="pill" id="step-info">步 -/-</span>
     <button id="btn-next">▶</button>
     <span class="sep"></span>
-    <button id="btn-reset">⏮ 重置</button>
+    <span class="persp-btns" id="persp-btns" title="视角 (底位玩家)">
+      <button data-p="0">0</button><button data-p="1">1</button><button data-p="2">2</button><button data-p="3">3</button>
+    </span>
+    <span class="sep"></span>
     <button id="btn-demo" class="primary">加载 demo</button>
   </div>
 
@@ -141,30 +147,10 @@
     <div class="meta" id="meta">未加载</div>
 
     <div class="table">
-      <div class="corner tl">
-        <div>房 <span class="v" id="c-room">-</span></div>
-        <div>桌 <span class="v" id="c-table">-</span></div>
-      </div>
-      <div class="corner tr">
-        <div>对局时间</div>
-        <div class="v" id="c-ts">-</div>
-      </div>
-      <div class="corner bl">
-        <div><span class="kbd">←</span> <span class="kbd">→</span> 切步</div>
-        <div><span class="kbd">1</span>-<span class="kbd">4</span> 视角</div>
-      </div>
-      <div class="corner br">
-        <div>视角 (底位)</div>
-        <div class="persp-btns" id="persp-btns">
-          <button data-p="0">0</button><button data-p="1">1</button>
-          <button data-p="2">2</button><button data-p="3">3</button>
-        </div>
-      </div>
-
-      <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div></div>
-      <div class="chair" data-chair="1"><div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div></div>
-      <div class="chair" data-chair="2"><div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div></div>
-      <div class="chair" data-chair="3"><div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div></div>
+      <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div><div class="hu-area"></div></div>
+      <div class="chair" data-chair="1"><div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div><div class="hu-area"></div></div>
+      <div class="chair" data-chair="2"><div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div><div class="hu-area"></div></div>
+      <div class="chair" data-chair="3"><div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div><div class="hu-area"></div></div>
 
       <div class="center">
         <div class="disc" data-disc="0"></div>
@@ -199,7 +185,6 @@
   let curRound = 0, curStep = -1, listBuilt = false, perspective = 0, prevQue = ['','','',''];
   const STORE_KEY = 'recorder_state_v1';
 
-  // sprite 精确 cell bbox (川麻 万 R0/条 R1/筒 R2, 红中 R3C4 风字行)
   const ROWS_Y = [8, 153, 301, 448, 590, 745];
   const ROWS_H = [133, 136, 131, 132, 137, 120];
   const COLS_X = [6, 118, 237, 346, 465, 576, 687, 805, 916];
@@ -209,14 +194,14 @@
   const QUE_NAME = { W: '万', T: '条', D: '筒' };
   const SUIT_ORDER = { F: 0, W: 1, T: 2, D: 3 };
 
-  function tileHtml(card, sm) {
-    const scale = sm ? 0.16 : 0.28;
+  function tileHtml(card, sm, extraCls = '') {
+    const scale = sm ? 0.24 : 0.4;
     let row, col;
     if (card[1] === 'F') { row = ZHONG.row; col = ZHONG.col; }
     else { row = SUIT_ROW[card[1]]; col = (+card[0]) - 1; }
     const x = COLS_X[col], y = ROWS_Y[row], w = COLS_W[col], h = ROWS_H[row];
     const bg = 1024 * scale;
-    return `<span class="tile${sm?' sm':''}" style="width:${(w*scale).toFixed(0)}px;height:${(h*scale).toFixed(0)}px;background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${(x*scale).toFixed(0)}px -${(y*scale).toFixed(0)}px"></span>`;
+    return `<span class="tile${sm?' sm':''}${extraCls?' '+extraCls:''}" style="width:${(w*scale).toFixed(0)}px;height:${(h*scale).toFixed(0)}px;background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${(x*scale).toFixed(0)}px -${(y*scale).toFixed(0)}px"></span>`;
   }
   function backHtml(sm) { return `<span class="tile${sm?' sm':''} back"></span>`; }
   function chunks(s) { const a = []; for (let i = 0; i + 1 < s.length; i += 2) a.push(s.slice(i, i + 2)); return a; }
@@ -253,23 +238,14 @@
     curRound = 0;
   }
 
-  // 拆局: Cards 事件 = 新局开始 (每局重置 00:00:00)
   function splitRounds(events) {
     const rounds = []; let cur = null;
     for (const ev of events) {
-      if (ev.type === 'Cards') {
-        cur = { events: [], startSec: parseTimeToSec(ev.time), snaps: [], displayEvents: [] };
-        rounds.push(cur);
-      }
+      if (ev.type === 'Cards') { cur = { events: [], startSec: parseTimeToSec(ev.time), snaps: [] }; rounds.push(cur); }
       if (cur) cur.events.push(ev);
     }
-    if (!rounds.length && events.length) {
-      rounds.push({ events, startSec: 0, snaps: [], displayEvents: [] });
-    }
-    for (const r of rounds) {
-      r.displayEvents = r.events.filter(e => !e.type.startsWith('Raw'));
-      buildSnapshots(r);
-    }
+    if (!rounds.length && events.length) rounds.push({ events, startSec: 0, snaps: [] });
+    for (const r of rounds) buildSnapshots(r);
     return rounds;
   }
 
@@ -289,92 +265,60 @@
     const S = (extra = {}) => snapOf(hands, que, discards, melds, hu, exchanges, wallNow(), deposit, depositInit, extra);
     round.snaps.length = 0;
     round.snaps.push(S());
-
-    let i = 0;
     const isSettle = tp => tp === 'ScoreDiff' || tp === 'DepositDiff' || tp === 'RawScoreDiff' || tp === 'RawDepositDiff';
+    let i = 0;
     while (i < n) {
       const ev = evs[i], t = ev.type;
-      if (t.startsWith('Raw')) { i++; continue; }  // Raw 双轨事件不单独成步
-
-      // 开局 block: Cards 起, 期间 Deal 应用, 到下一操作事件止 → 合 "发牌" 1 phase
+      if (t.startsWith('Raw')) { i++; continue; }
       if (t === 'Cards') {
         while (i < n) {
           const et = evs[i].type;
-          if (et === 'Deal') {
-            const pp = evs[i].rest.split(/\s+/); const cc = parseInt(pp[0], 10);
-            if (cc >= 0 && cc < 4) hands[cc] = chunks(pp[1] || '');
-          } else if (et === 'Exchange' || et === 'Que' || et === 'Throw' || et === 'Catch' || isSettle(et)) break;
+          if (et === 'Deal') { const pp = evs[i].rest.split(/\s+/); const cc = parseInt(pp[0],10); if (cc>=0&&cc<4) hands[cc] = chunks(pp[1]||''); }
+          else if (et==='Exchange'||et==='Que'||et==='Throw'||et==='Catch'||isSettle(et)) break;
           i++;
         }
-        round.snaps.push(S({ phase: '发牌' }));
-        continue;
+        round.snaps.push(S({ phase: '发牌' })); continue;
       }
-
-      // 换三张 block (含 RawExchange): 四家亮牌 → 入牌 两步
       if (t === 'Exchange') {
-        const block = [];
-        while (i < n && (evs[i].type === 'Exchange' || evs[i].type === 'RawExchange')) {
-          if (evs[i].type === 'Exchange') block.push(evs[i]);
+        const recv = {};
+        while (i < n && (evs[i].type==='Exchange'||evs[i].type==='RawExchange')) {
+          if (evs[i].type==='Exchange') { const pp = evs[i].rest.split(/\s+/); recv[pp[0]] = { from: pp[1], cards: chunks(pp[2]||'') }; }
           i++;
         }
-        const recv = {};
-        for (const e of block) { const pp = e.rest.split(/\s+/); recv[pp[0]] = { from: pp[1], cards: chunks(pp[2] || '') }; }
-        let dir = '';
-        const rs = Object.keys(recv);
-        if (rs.length) {
-          const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4;
-          dir = diff === 1 ? '↻ 顺时针' : diff === 3 ? '↺ 逆时针' : '换';
-        }
-        // 第1步: 四家同时把换三张牌从手中移除、放桌面
+        let dir = ''; const rs = Object.keys(recv);
+        if (rs.length) { const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4; dir = diff===1?'↻ 顺时针':diff===3?'↺ 逆时针':'换'; }
         round.snaps.push(S({ phase: '换三张·亮牌', recv, dir }));
-        for (const r in recv) for (const c of recv[r].cards) {
-          const idx = hands[recv[r].from].indexOf(c);
-          if (idx >= 0) hands[recv[r].from].splice(idx, 1);
-        }
-        // 第2步: 一次性交换完毕后加入手牌
+        for (const r in recv) for (const c of recv[r].cards) { const idx = hands[recv[r].from].indexOf(c); if (idx>=0) hands[recv[r].from].splice(idx,1); }
         for (const r in recv) hands[r].push(...recv[r].cards);
         for (const r in recv) exchanges.push({ receiver: r, from: recv[r].from, cards: recv[r].cards.slice() });
         round.snaps.push(S({ phase: '换三张·入牌', recv, dir }));
         continue;
       }
-
-      // 定缺 block (含 RawQue): 4 家合 1 phase
       if (t === 'Que') {
-        while (i < n && (evs[i].type === 'Que' || evs[i].type === 'RawQue')) {
-          if (evs[i].type === 'Que') { const pp = evs[i].rest.split(/\s+/); que[+pp[0]] = pp[1] || ''; }
+        while (i < n && (evs[i].type==='Que'||evs[i].type==='RawQue')) {
+          if (evs[i].type==='Que') { const pp = evs[i].rest.split(/\s+/); que[+pp[0]] = pp[1]||''; }
           i++;
         }
-        round.snaps.push(S({ phase: '定缺' }));
-        continue;
+        round.snaps.push(S({ phase: '定缺' })); continue;
       }
-
-      // 结算 block (含 Raw Score/Deposit): 并列聚合 1 phase, 提取 DepositDiff diff
       if (t === 'ScoreDiff' || t === 'DepositDiff') {
         while (i < n && isSettle(evs[i].type)) {
-          if (evs[i].type === 'DepositDiff') {
-            const pp = evs[i].rest.split(/\s+/); const cc = +pp[0], val = +pp[1];
-            if (depositInit[cc] === null) depositInit[cc] = val;
-            deposit[cc] = val;
-          }
+          if (evs[i].type==='DepositDiff') { const pp = evs[i].rest.split(/\s+/); const cc=+pp[0], val=+pp[1]; if (depositInit[cc]===null) depositInit[cc]=val; deposit[cc]=val; }
           i++;
         }
-        round.snaps.push(S({ phase: '结算' }));
-        continue;
+        round.snaps.push(S({ phase: '结算' })); continue;
       }
-
-      // 单步: Throw / Catch (Deal 已在开局 block 消费)
       const p = ev.rest.split(/\s+/);
       const c = p[0] !== '' ? parseInt(p[0], 10) : NaN;
       if (t === 'Throw') { if (c>=0&&c<4) { const idx = hands[c].indexOf(p[1]); if (idx>=0) hands[c].splice(idx,1); discards[c].push(p[1]); } }
       else if (t === 'Catch') { if (c>=0&&c<4) hands[c].push(p[1]); }
-      round.snaps.push(S({ ev }));
+      round.snaps.push(S({ ev, lastCatch: t==='Catch' ? { chair: c, card: p[1] } : null, lastThrow: t==='Throw' ? { chair: c, card: p[1] } : null }));
       i++;
     }
   }
 
   function curRoundObj() { return rec.rounds[curRound]; }
   function curSnaps() { return curRoundObj().snaps; }
-
   function posOf(chair) { return (chair - perspective + 4) % 4; }
   const POS_CLASS = ['pos-bottom', 'pos-left', 'pos-top', 'pos-right'];
 
@@ -387,22 +331,12 @@
       disc.classList.remove(...POS_CLASS);
       disc.classList.add(POS_CLASS[posOf(c)]);
     }
-    document.querySelectorAll('#persp-btns button').forEach(b => {
-      b.classList.toggle('active', +b.dataset.p === perspective);
-    });
+    document.querySelectorAll('#persp-btns button').forEach(b => b.classList.toggle('active', +b.dataset.p === perspective));
   }
 
   function renderMeta() {
     const h = rec.header;
-    const rid = h.RoomID || '-', tno = h.TableNO || '-';
-    document.getElementById('c-room').textContent = rid;
-    document.getElementById('c-table').textContent = tno;
-    (h.ChairNO || []).forEach((s, c) => {
-      if (c >= 4) return;
-      const uid = s.split(/\s+/)[1];
-      const el = document.querySelector(`.chair[data-chair="${c}"] .uid`);
-      if (el) el.textContent = uid ? `uid ${uid}` : '';
-    });
+    (h.ChairNO || []).forEach((s, c) => { if (c>=4) return; const uid = s.split(/\s+/)[1]; const el = document.querySelector(`.chair[data-chair="${c}"] .uid`); if (el) el.textContent = uid ? `uid ${uid}` : ''; });
     document.getElementById('btn-rounds').textContent = rec.rounds.length ? `对局 ${curRound+1}/${rec.rounds.length}` : '对局 -/-';
   }
 
@@ -413,8 +347,7 @@
     let offset = r ? r.startSec : 0;
     if (snap && snap.ev) offset += parseTimeToSec(snap.ev.time);
     const t = fmtTime(ts, offset);
-    document.getElementById('c-ts').textContent = t;
-    document.getElementById('meta').innerHTML = `房 <b>${rec.header.RoomID||'-'}</b> | 桌 <b>${rec.header.TableNO||'-'}</b> | <b>${t}</b> | 局 <b>${curRound+1}/${rec.rounds.length}</b>`;
+    document.getElementById('meta').innerHTML = `房 <b>${rec.header.RoomID||'-'}</b> | 桌 <b>${rec.header.TableNO||'-'}</b> | 标志 <b>${rec.header.Flags||'-'}</b> | <b>${t}</b> | 局 <b>${curRound+1}/${rec.rounds.length}</b>`;
   }
 
   function setActiveStep(idx) {
@@ -434,11 +367,24 @@
     const isExchange = s.phase && s.phase.startsWith('换三张');
     const isResult = s.phase === '结算';
 
+    // 抓牌/打牌高亮: 仅当本步 ev 是 Catch/Throw (非 phase)
+    const catchInfo = s.ev && s.lastCatch ? s.lastCatch : null;
+    const throwInfo = s.ev && s.lastThrow ? s.lastThrow : null;
+
     for (let c = 0; c < 4; c++) {
       const chair = document.querySelector(`.chair[data-chair="${c}"]`);
       const showHand = c === perspective || vis;
       const sorted = s.hands[c].slice().sort(sortHand);
-      chair.querySelector('.hand-area').innerHTML = showHand ? sorted.map(t => tileHtml(t, false)).join('') : sorted.map(() => backHtml(false)).join('');
+      // catch 高亮: 抓的牌 (sort 后定位)
+      let catchIdx = -1;
+      if (catchInfo && catchInfo.chair === c) {
+        // 找 sorted 中 catch card 的位置 (最后插入, sort 后可能非末)
+        // 简化: 标最后一个匹配 (牌面同值多张, 取末)
+        for (let k = sorted.length - 1; k >= 0; k--) { if (sorted[k] === catchInfo.card) { catchIdx = k; break; } }
+      }
+      const handHtml = showHand ? sorted.map((t, k) => tileHtml(t, false, k === catchIdx ? 'catch-hl' : '')).join('') : sorted.map(() => backHtml(false)).join('');
+      const handArea = chair.querySelector('.hand-area');
+      handArea.innerHTML = handHtml || '';
 
       const chip = chair.querySelector('.que-chip');
       const q = s.que[c];
@@ -447,36 +393,33 @@
       if (prevQue[c] !== q && q) { chip.classList.add('pulse'); setTimeout(() => chip.classList.remove('pulse'), 1200); }
       prevQue[c] = q;
 
-      // 携带 diff 仅结算步显示
       const depEl = chair.querySelector('.deposit');
       if (isResult) {
         const init = s.depositInit[c], cur = s.deposit[c];
-        if (init !== null && cur !== null) {
-          const delta = cur - init;
-          depEl.textContent = (delta > 0 ? '+' : '') + delta;
-          depEl.className = 'deposit show ' + (delta > 0 ? 'pos' : delta < 0 ? 'neg' : 'zero');
-        } else { depEl.textContent = '0'; depEl.className = 'deposit show zero'; }
-      } else {
-        depEl.className = 'deposit';
-      }
+        if (init !== null && cur !== null) { const delta = cur - init; depEl.textContent = (delta>0?'+':'')+delta; depEl.className = 'deposit show ' + (delta>0?'pos':delta<0?'neg':'zero'); }
+        else { depEl.textContent='0'; depEl.className='deposit show zero'; }
+      } else depEl.className = 'deposit';
+
+      // 胡牌区 (前方 = player-info 下, 手牌上)
+      const huEl = chair.querySelector('.hu-area');
+      huEl.innerHTML = (s.hu[c] || []).map(t => tileHtml(t, false)).join('');
     }
 
+    // 弃牌区: 末张 throw 高亮
     for (let c = 0; c < 4; c++) {
       const dz = document.querySelector(`.disc[data-disc="${c}"]`);
       if (isExchange && s.recv) {
         dz.classList.add('exchange-zone');
         let cards = null;
-        if (s.phase.endsWith('亮牌')) {
-          // 亮牌步: 各 chair 作为 giver 给出的 3 张 (桌面摊开, 手牌已移除)
-          for (const r in s.recv) if (s.recv[r].from == String(c)) { cards = s.recv[r].cards; break; }
-        } else {
-          // 入牌步: 各 chair 作为 receiver 收到的 3 张
-          if (s.recv[c]) cards = s.recv[c].cards;
-        }
-        dz.innerHTML = cards ? cards.map(t => tileHtml(t, true)).join('') : '<span style="color:#6a8a7a;font-size:10px">-</span>';
+        if (s.phase.endsWith('亮牌')) { for (const r in s.recv) if (s.recv[r].from == String(c)) { cards = s.recv[r].cards; break; } }
+        else { if (s.recv[c]) cards = s.recv[c].cards; }
+        dz.innerHTML = cards ? cards.map(t => tileHtml(t, true)).join('') : '';
       } else {
         dz.classList.remove('exchange-zone');
-        dz.innerHTML = s.discards[c].map(t => tileHtml(t, true)).join('');
+        const ds = s.discards[c];
+        const throwHl = throwInfo && throwInfo.chair === c ? throwInfo.card : null;
+        // 高亮最后一颗 (throwInfo 是本步刚打的)
+        dz.innerHTML = ds.map(t => tileHtml(t, true, t === throwHl ? 'throw-hl' : '')).join('');
       }
     }
 
@@ -485,13 +428,11 @@
     const dirEl = document.getElementById('direction');
     if (isExchange) {
       dirEl.style.display = ''; dirEl.textContent = (s.dir || '').split(' ')[0] || '换';
-      exEl.innerHTML = (s.dir || '') + '<br>' + Object.entries(s.recv).map(([r,g]) =>
-        `${r}←${g.from}: ${g.cards.map(c => c[1]==='F'?'中':c).join('')}`).join(' / ');
+      exEl.innerHTML = (s.dir||'') + '<br>' + Object.entries(s.recv).map(([r,g]) => `${r}←${g.from}: ${g.cards.map(c=>c[1]==='F'?'中':c).join('')}`).join(' / ');
     } else { dirEl.style.display = 'none'; exEl.innerHTML = ''; }
 
     const phaseTag = document.getElementById('phase-tag');
-    if (s.phase) { phaseTag.style.display = ''; phaseTag.textContent = s.phase; }
-    else phaseTag.style.display = 'none';
+    if (s.phase) { phaseTag.style.display = ''; phaseTag.textContent = s.phase; } else phaseTag.style.display = 'none';
 
     setActiveStep(idx);
     renderCurrentTime();
@@ -503,14 +444,11 @@
     const list = document.getElementById('step-list');
     const snaps = curSnaps();
     let html = '';
-    // 就地聚合: 直接遍历 snaps (已按时间序, 含 phase 与单步 ev), 不再展 displayEvents 子事件
     for (let i = 0; i < snaps.length; i++) {
       const s = snaps[i];
-      if (s.phase) {
-        html += `<div class="step phase" data-snap="${i}">★ ${s.phase}</div>`;
-      } else if (s.ev) {
-        const ev = s.ev;
-        const esc = ev.rest.replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[m]);
+      if (s.phase) html += `<div class="step phase" data-snap="${i}">★ ${s.phase}</div>`;
+      else if (s.ev) {
+        const ev = s.ev, esc = ev.rest.replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[m]);
         html += `<div class="step" data-snap="${i}"><span class="t">${ev.time}</span> <span class="ty">${ev.type.padEnd(8)}</span> <span class="body">${esc}</span></div>`;
       }
     }
@@ -521,11 +459,8 @@
 
   function setRound(i) {
     if (i < 0 || i >= rec.rounds.length) return;
-    curRound = i;
-    listBuilt = false;
-    prevQue = ['','','',''];
-    renderMeta();
-    renderRoundsList();
+    curRound = i; listBuilt = false; prevQue = ['','','',''];
+    renderMeta(); renderRoundsList();
     renderSnap(curSnaps().length - 1);
   }
 
@@ -533,59 +468,35 @@
     const list = document.getElementById('rounds-list');
     const ts = +rec.header.Timestamp || 0;
     const rid = rec.header.RoomID || '-', tno = rec.header.TableNO || '-';
-    list.innerHTML = rec.rounds.map((r, i) => {
-      const t = fmtTime(ts, r.startSec);
-      return `<div class="round-item${i===curRound?' active':''}" data-round="${i}"><span class="ri-no">局 ${i+1}</span><span>${t}</span><span>房 ${rid}</span><span>桌 ${tno}</span></div>`;
-    }).join('');
-    list.querySelectorAll('.round-item').forEach(el => {
-      el.onclick = () => {
-        document.getElementById('rounds-modal').classList.add('hidden');
-        setRound(+el.dataset.round);
-      };
-    });
+    list.innerHTML = rec.rounds.map((r, i) => `<div class="round-item${i===curRound?' active':''}" data-round="${i}"><span class="ri-no">局 ${i+1}</span><span>${fmtTime(ts, r.startSec)}</span><span>房 ${rid}</span><span>桌 ${tno}</span></div>`).join('');
+    list.querySelectorAll('.round-item').forEach(el => el.onclick = () => { document.getElementById('rounds-modal').classList.add('hidden'); setRound(+el.dataset.round); });
   }
 
-  // localStorage 记忆
-  function saveState() {
-    try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ curRound, curStep, perspective }));
-    } catch {}
-  }
+  function saveState() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ curRound, curStep, perspective })); } catch {} }
   function restoreState() {
-    let s = {};
-    try { s = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
+    let s = {}; try { s = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
     if (s.perspective !== undefined) { perspective = s.perspective; applyLayout(); }
     if (s.curRound !== undefined && s.curRound < rec.rounds.length) curRound = s.curRound;
-    listBuilt = false;
-    prevQue = ['','','',''];
-    renderMeta();
-    renderRoundsList();
+    listBuilt = false; prevQue = ['','','',''];
+    renderMeta(); renderRoundsList();
     const snaps = curSnaps();
     const target = (s.curStep !== undefined && s.curStep >= 0 && s.curStep < snaps.length) ? s.curStep : snaps.length - 1;
     renderSnap(target);
   }
 
   async function loadDemo() {
-    try {
-      const txt = await fetch('/recorder/demo').then(r => r.text());
-      parseRecord(txt);
-      restoreState();
-    } catch (e) { document.getElementById('meta').textContent = '加载失败: ' + e; }
+    try { const txt = await fetch('/recorder/demo').then(r => r.text()); parseRecord(txt); restoreState(); }
+    catch (e) { document.getElementById('meta').textContent = '加载失败: ' + e; }
   }
 
   document.getElementById('btn-prev').onclick = () => { if (curStep > 0) renderSnap(curStep - 1); };
   document.getElementById('btn-next').onclick = () => { if (curStep < curSnaps().length - 1) renderSnap(curStep + 1); };
   document.getElementById('btn-reset').onclick = () => renderSnap(0);
-  document.getElementById('btn-demo').onclick = () => { loadDemo(); };
-  document.getElementById('btn-rounds').onclick = () => {
-    renderRoundsList();
-    document.getElementById('rounds-modal').classList.remove('hidden');
-  };
+  document.getElementById('btn-demo').onclick = () => loadDemo();
+  document.getElementById('btn-rounds').onclick = () => { renderRoundsList(); document.getElementById('rounds-modal').classList.remove('hidden'); };
   document.getElementById('modal-close').onclick = () => document.getElementById('rounds-modal').classList.add('hidden');
   document.getElementById('rounds-modal').onclick = (e) => { if (e.target.id === 'rounds-modal') e.currentTarget.classList.add('hidden'); };
-  document.querySelectorAll('#persp-btns button').forEach(b => {
-    b.onclick = () => { perspective = +b.dataset.p; applyLayout(); renderSnap(curStep); };
-  });
+  document.querySelectorAll('#persp-btns button').forEach(b => b.onclick = () => { perspective = +b.dataset.p; applyLayout(); renderSnap(curStep); });
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); if (curStep > 0) renderSnap(curStep - 1); }
