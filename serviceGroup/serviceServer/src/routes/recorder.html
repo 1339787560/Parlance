@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>四川麻将复盘器</title>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; margin: 0; background: #1a3a2a; color: #eee; }
+    .app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
+    .toolbar { padding: 8px 12px; background: #0d2818; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .toolbar label { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+    .toolbar input, .toolbar button { padding: 4px 8px; background: #2a4a3a; color: #eee; border: 1px solid #3a5a4a; border-radius: 3px; }
+    .toolbar button { cursor: pointer; }
+    .toolbar button:hover { background: #3a5a4a; }
+    .table { position: relative; display: grid; grid-template-areas: ". top ." "left center right" ". bottom ."; grid-template-columns: 1fr 2fr 1fr; grid-template-rows: auto 1fr auto; gap: 8px; padding: 16px; }
+    .chair { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; min-height: 100px; }
+    .chair.top    { grid-area: top; }
+    .chair.bottom { grid-area: bottom; }
+    .chair.left   { grid-area: left; }
+    .chair.right  { grid-area: right; }
+    .center { grid-area: center; position: relative; display: flex; align-items: center; justify-content: center; }
+    .exchange-zone { width: 80%; padding: 12px; text-align: center; border: 1px dashed #4a6a5a; border-radius: 8px; color: #8a9a8a; font-size: 13px; }
+    .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .name { font-weight: bold; }
+    .que-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #3a2a1a; color: #fc6; }
+    .que-chip.W { background: #1a3a5a; color: #9cf; }
+    .que-chip.T { background: #1a5a3a; color: #9f9; }
+    .que-chip.D { background: #5a1a1a; color: #f99; }
+    .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+    .meld-area { opacity: 0.85; }
+    .hand-area { font-size: 15px; }
+    .hu-area { margin-left: auto; }
+    .slot { display: inline-block; min-width: 18px; padding: 1px 3px; text-align: center; background: #eee; color: #111; border-radius: 2px; margin-right: 1px; font-size: 13px; }
+    .slot.F { color: #c33; }
+    .label { font-size: 10px; color: #8a9a8a; width: 28px; }
+    .steps { background: #0d2818; padding: 8px 12px; overflow: auto; max-height: 26vh; font-family: Consolas, monospace; font-size: 12px; }
+    .step { padding: 1px 6px; cursor: pointer; border-radius: 2px; }
+    .step:hover { background: rgba(255,255,255,0.1); }
+    .step.active { background: #3a5a4a; }
+    .empty { color: #6a7a6a; font-style: italic; padding: 8px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="toolbar">
+    <label>RoomID <input id="f-room" size="6"></label>
+    <label>TableNO <input id="f-table" size="6"></label>
+    <label>UserID <input id="f-user" size="8"></label>
+    <label>从 <input id="f-t1" type="datetime-local"></label>
+    <label>到 <input id="f-t2" type="datetime-local"></label>
+    <button id="btn-list">列 record</button>
+    <button id="btn-prev">◀ 上一步</button>
+    <button id="btn-next">下一步 ▶</button>
+    <label><input type="checkbox" id="btn-visible"> 显示对手手牌</label>
+  </div>
+
+  <div class="table">
+    <div class="chair top" data-chair="2">
+      <div class="player-info"><span class="name">玩家2</span><span class="que-chip" data-que>缺 -</span></div>
+      <div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div>
+      <div class="row"><span class="label">手牌</span><div class="hand-area"></div><div class="hu-area"></div></div>
+    </div>
+    <div class="chair left" data-chair="1">
+      <div class="player-info"><span class="name">玩家1</span><span class="que-chip" data-que>缺 -</span></div>
+      <div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div>
+      <div class="row"><span class="label">手牌</span><div class="hand-area"></div><div class="hu-area"></div></div>
+    </div>
+    <div class="chair right" data-chair="3">
+      <div class="player-info"><span class="name">玩家3</span><span class="que-chip" data-que>缺 -</span></div>
+      <div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div>
+      <div class="row"><span class="label">手牌</span><div class="hand-area"></div><div class="hu-area"></div></div>
+    </div>
+    <div class="chair bottom" data-chair="0">
+      <div class="player-info"><span class="name">玩家0</span><span class="que-chip" data-que>缺 -</span></div>
+      <div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div>
+      <div class="row"><span class="label">手牌</span><div class="hand-area"></div><div class="hu-area"></div></div>
+    </div>
+    <div class="center">
+      <div class="exchange-zone">换三张区（桌面正中 4 方向 + from→to 箭头）</div>
+    </div>
+  </div>
+
+  <div class="steps" id="step-list">
+    <div class="empty">骨架占位 — 后续接 GET /api/record/list 与 /api/record/{id}</div>
+  </div>
+
+</div>
+<script>
+  // 川麻特化布局骨架:
+  //   - 玩家区三段: meld-area (左吃碰杠) | hand-area (中手牌) | hu-area (右胡牌, 多次胡纵向堆叠)
+  //   - 定缺标注: .que-chip (W/T/D 色码), Exchange 后常驻
+  //   - 换三张区: .center .exchange-zone (桌面正中 4 方向, from→to 箭头)
+  // 后续: fetch /api/record/list (筛选) -> 选 record -> fetch /api/record/{id} -> 渲染 step 序列
+  console.log('recorder skeleton loaded');
+</script>
+</body>
+</html>

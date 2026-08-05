@@ -3,6 +3,7 @@ pub mod checks;
 pub mod config_file;
 pub mod config_files;
 pub mod fetch;
+pub mod recorder;
 pub mod services;
 pub mod spideorder;
 pub mod templates;
