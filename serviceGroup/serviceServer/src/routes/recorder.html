@@ -11,16 +11,19 @@
     .toolbar input, .toolbar button { padding: 4px 8px; background: #2a4a3a; color: #eee; border: 1px solid #3a5a4a; border-radius: 3px; }
     .toolbar button { cursor: pointer; }
     .toolbar button:hover { background: #3a5a4a; }
+    .meta { padding: 4px 12px; background: #0d2818; font-size: 12px; color: #9ab; border-bottom: 1px solid #2a4a3a; }
     .table { position: relative; display: grid; grid-template-areas: ". top ." "left center right" ". bottom ."; grid-template-columns: 1fr 2fr 1fr; grid-template-rows: auto 1fr auto; gap: 8px; padding: 16px; }
-    .chair { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; min-height: 100px; }
+    .chair { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; min-height: 90px; }
     .chair.top    { grid-area: top; }
     .chair.bottom { grid-area: bottom; }
     .chair.left   { grid-area: left; }
     .chair.right  { grid-area: right; }
+    .chair.active { outline: 2px solid #fc6; }
     .center { grid-area: center; position: relative; display: flex; align-items: center; justify-content: center; }
-    .exchange-zone { width: 80%; padding: 12px; text-align: center; border: 1px dashed #4a6a5a; border-radius: 8px; color: #8a9a8a; font-size: 13px; }
+    .exchange-zone { width: 84%; padding: 10px; text-align: center; border: 1px dashed #4a6a5a; border-radius: 8px; color: #8a9a8a; font-size: 12px; }
     .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
     .name { font-weight: bold; }
+    .uid { color: #6a8a7a; font-size: 11px; }
     .que-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #3a2a1a; color: #fc6; }
     .que-chip.W { background: #1a3a5a; color: #9cf; }
     .que-chip.T { background: #1a5a3a; color: #9f9; }
@@ -30,12 +33,15 @@
     .hand-area { font-size: 15px; }
     .hu-area { margin-left: auto; }
     .slot { display: inline-block; min-width: 18px; padding: 1px 3px; text-align: center; background: #eee; color: #111; border-radius: 2px; margin-right: 1px; font-size: 13px; }
-    .slot.F { color: #c33; }
-    .label { font-size: 10px; color: #8a9a8a; width: 28px; }
+    .slot.F { color: #c33; font-weight: bold; }
+    .label { font-size: 10px; color: #8a9a8a; width: 28px; flex-shrink: 0; }
     .steps { background: #0d2818; padding: 8px 12px; overflow: auto; max-height: 26vh; font-family: Consolas, monospace; font-size: 12px; }
-    .step { padding: 1px 6px; cursor: pointer; border-radius: 2px; }
+    .step { padding: 1px 6px; cursor: pointer; border-radius: 2px; white-space: pre; }
     .step:hover { background: rgba(255,255,255,0.1); }
     .step.active { background: #3a5a4a; }
+    .step .t { color: #6a8a7a; }
+    .step .ty { color: #fc6; }
+    .step .body { color: #ddd; }
     .empty { color: #6a7a6a; font-style: italic; padding: 8px; }
   </style>
 </head>
@@ -52,46 +58,175 @@
     <button id="btn-prev">◀ 上一步</button>
     <button id="btn-next">下一步 ▶</button>
     <label><input type="checkbox" id="btn-visible"> 显示对手手牌</label>
+    <button id="btn-demo">加载 demo record</button>
   </div>
 
+  <div class="meta" id="meta">未加载</div>
+
   <div class="table">
-    <div class="chair top" data-chair="2">
-      <div class="player-info"><span class="name">玩家2</span><span class="que-chip" data-que>缺 -</span></div>
+    <div class="chair top"    data-chair="2">
+      <div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div>
       <div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div>
       <div class="row"><span class="label">手牌</span><div class="hand-area"></div><div class="hu-area"></div></div>
     </div>
-    <div class="chair left" data-chair="1">
-      <div class="player-info"><span class="name">玩家1</span><span class="que-chip" data-que>缺 -</span></div>
+    <div class="chair left"   data-chair="1">
+      <div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div>
       <div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div>
       <div class="row"><span class="label">手牌</span><div class="hand-area"></div><div class="hu-area"></div></div>
     </div>
-    <div class="chair right" data-chair="3">
-      <div class="player-info"><span class="name">玩家3</span><span class="que-chip" data-que>缺 -</span></div>
+    <div class="chair right"  data-chair="3">
+      <div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div>
       <div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div>
       <div class="row"><span class="label">手牌</span><div class="hand-area"></div><div class="hu-area"></div></div>
     </div>
     <div class="chair bottom" data-chair="0">
-      <div class="player-info"><span class="name">玩家0</span><span class="que-chip" data-que>缺 -</span></div>
+      <div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div>
       <div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div>
       <div class="row"><span class="label">手牌</span><div class="hand-area"></div><div class="hu-area"></div></div>
     </div>
     <div class="center">
-      <div class="exchange-zone">换三张区（桌面正中 4 方向 + from→to 箭头）</div>
+      <div class="exchange-zone" id="exchange-zone">换三张区（桌面正中 4 方向 + from→to 箭头）</div>
     </div>
   </div>
 
   <div class="steps" id="step-list">
-    <div class="empty">骨架占位 — 后续接 GET /api/record/list 与 /api/record/{id}</div>
+    <div class="empty">点工具栏 "加载 demo record" 预读本地 xzms 样例（11883_20260209.log）</div>
   </div>
 
 </div>
 <script>
-  // 川麻特化布局骨架:
-  //   - 玩家区三段: meld-area (左吃碰杠) | hand-area (中手牌) | hu-area (右胡牌, 多次胡纵向堆叠)
-  //   - 定缺标注: .que-chip (W/T/D 色码), Exchange 后常驻
-  //   - 换三张区: .center .exchange-zone (桌面正中 4 方向, from→to 箭头)
-  // 后续: fetch /api/record/list (筛选) -> 选 record -> fetch /api/record/{id} -> 渲染 step 序列
-  console.log('recorder skeleton loaded');
+  // ===== 川麻特化布局 =====
+  //   玩家区三段: meld-area(左碰杠) | hand-area(中手牌) | hu-area(右胡牌, 多次胡纵向堆叠)
+  //   定缺: .que-chip(W/T/D 色码), Que 事件后常驻
+  //   换三张: .center .exchange-zone(桌面正中, from→to 箭头)
+
+  const rec = { header: {}, events: [], displayEvents: [] };
+  const snaps = []; // 每步快照 {hands, que, melds, hu}
+  let curStep = -1;
+
+  function chunks(s) { const a = []; for (let i = 0; i + 1 < s.length; i += 2) a.push(s.slice(i, i + 2)); return a; }
+  function cloneHands(h) { return h.map(a => a.slice()); }
+
+  function parseRecord(txt) {
+    const lines = txt.split(/\r?\n/);
+    const header = {};
+    const events = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const m = line.match(/^(\d{2}:\d{2}:\d{2})\s+(\S+)\s*(.*)$/);
+      if (m) { events.push({ time: m[1], type: m[2], rest: m[3].trim() }); continue; }
+      const hm = line.match(/^(\w+)\s+(.*)$/);
+      if (!hm) continue;
+      const k = hm[1], v = hm[2];
+      if (k === 'ChairNO' || k === 'Name' || k === 'Win_Loss_StandOff') {
+        (header[k] = header[k] || []).push(v);
+      } else { header[k] = v; }
+    }
+    rec.header = header;
+    rec.events = events;
+    rec.displayEvents = events.filter(e => !e.type.startsWith('Raw'));
+    buildSnapshots();
+  }
+
+  function buildSnapshots() {
+    // 初始手牌从 Deal, 后续 Throw(-)/Catch(+)/Que(chip)/Exchange(标注)
+    const hands = [[], [], [], []];
+    const que = ['', '', '', ''];
+    const melds = [[], [], [], []];
+    const hu = [[], [], [], []];
+    const exchanges = [];
+    let snap = { hands: cloneHands(hands), que: que.slice(), melds, hu, exchanges: exchanges.slice(), ev: null };
+    snaps.push(snap);
+    for (const ev of rec.events) {
+      const parts = ev.rest.split(/\s+/);
+      const chair = parts[0] !== '' ? parseInt(parts[0], 10) : NaN;
+      switch (ev.type) {
+        case 'Deal': if (chair >= 0 && chair < 4) hands[chair] = chunks(parts[1] || ''); break;
+        case 'Throw': if (chair >= 0 && chair < 4) { const i = hands[chair].indexOf(parts[1]); if (i >= 0) hands[chair].splice(i, 1); } break;
+        case 'Catch': if (chair >= 0 && chair < 4) hands[chair].push(parts[1]); break;
+        case 'Que': if (chair >= 0 && chair < 4) que[chair] = parts[1] || ''; break;
+        case 'Exchange': exchanges.push({ from: parts[0], to: parts[1], cards: chunks(parts[2] || '') }); break;
+        // Chi/Peng/Gang/Hu 待 T2 (本 demo 无)
+      }
+      snaps.push({ hands: cloneHands(hands), que: que.slice(), melds, hu, exchanges: exchanges.slice(), ev });
+    }
+  }
+
+  function renderMeta() {
+    const h = rec.header;
+    const uids = (h.ChairNO || []).map(s => s.split(/\s+/)[1]);
+    document.getElementById('meta').textContent =
+      `RoomID ${h.RoomID || '-'} | TableNO ${h.TableNO || '-'} | Flags ${h.Flags || '-'} | ` +
+      `玩家 uid: [${uids.join(', ')}] | Timestamp ${h.Timestamp || '-'}`;
+    uids.forEach((uid, c) => {
+      const el = document.querySelector(`.chair[data-chair="${c}"] .uid`);
+      if (el) el.textContent = uid ? `uid ${uid}` : '';
+    });
+  }
+
+  function renderSnap(idx) {
+    if (idx < 0 || idx >= snaps.length) return;
+    curStep = idx;
+    const s = snaps[idx];
+    for (let c = 0; c < 4; c++) {
+      const chair = document.querySelector(`.chair[data-chair="${c}"]`);
+      const hand = chair.querySelector('.hand-area');
+      hand.innerHTML = s.hands[c].map(card => `<span class="slot ${card[1] === 'F' ? 'F' : ''}">${card}</span>`).join('');
+      const chip = chair.querySelector('.que-chip');
+      const q = s.que[c];
+      chip.textContent = q ? `缺 ${q}` : '缺 -';
+      chip.className = 'que-chip' + (q ? ' ' + q : '');
+    }
+    const ez = document.getElementById('exchange-zone');
+    if (s.exchanges.length) {
+      ez.innerHTML = s.exchanges.map(e => `${e.from}→${e.to}: ${e.cards.join(' ')}`).join('<br>');
+    } else {
+      ez.textContent = '换三张区（桌面正中 4 方向 + from→to 箭头）';
+    }
+    renderStepList();
+  }
+
+  function renderStepList() {
+    const list = document.getElementById('step-list');
+    // snaps[i].ev 对应 displayEvents: snaps 比 events 多 1 (初始空 snap)
+    // displayEvents 索引 j ↔ snaps[j+?] — 用 ev 引用匹配
+    const evToSnapIdx = new Map();
+    for (let i = 0; i < snaps.length; i++) if (snaps[i].ev) evToSnapIdx.set(snaps[i].ev, i);
+    let html = '';
+    let counter = 0;
+    for (const ev of rec.displayEvents) {
+      const snapIdx = evToSnapIdx.get(ev);
+      const active = snapIdx === curStep ? ' active' : '';
+      html += `<div class="step${active}" data-snap="${snapIdx}">` +
+              `<span class="t">${ev.time}</span> <span class="ty">${ev.type.padEnd(8)}</span> ` +
+              `<span class="body">${ev.rest}</span></div>`;
+      counter++;
+    }
+    list.innerHTML = html;
+    list.querySelectorAll('.step').forEach(el => {
+      el.addEventListener('click', () => renderSnap(parseInt(el.dataset.snap, 10)));
+    });
+    // 滚动到当前步
+    const act = list.querySelector('.step.active');
+    if (act) act.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function loadDemo() {
+    try {
+      const txt = await fetch('/recorder/demo').then(r => r.text());
+      parseRecord(txt);
+      renderMeta();
+      renderSnap(snaps.length - 1); // 默认最后一步
+      document.getElementById('btn-prev').onclick = () => { if (curStep > 0) renderSnap(curStep - 1); };
+      document.getElementById('btn-next').onclick = () => { if (curStep < snaps.length - 1) renderSnap(curStep + 1); };
+    } catch (e) {
+      document.getElementById('meta').textContent = '加载失败: ' + e;
+    }
+  }
+
+  document.getElementById('btn-demo').onclick = loadDemo;
+  // 自动加载演示
+  loadDemo();
 </script>
 </body>
 </html>

@@ -94,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/recorder", get(recorder::page))
+        .route("/recorder/demo", get(recorder::demo))
         .route("/api/config/files", get(config_files::list_files))
         .route("/api/config", get(config_files::get_config))
         .route("/api/fetch-title", get(fetch::fetch_title))
