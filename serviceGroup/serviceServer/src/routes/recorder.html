@@ -35,7 +35,7 @@
       flex: 1 1 auto; min-height: 0; position: relative;
       display: grid;
       grid-template-areas: "left top right" "left center right" "left bottom right";
-      grid-template-columns: minmax(170px, 1fr) 2.2fr minmax(170px, 1fr);
+      grid-template-columns: minmax(125px, 0.7fr) 2.6fr minmax(125px, 0.7fr);
       grid-template-rows: auto 1fr auto;
       gap: 4px; padding: 6px;
     }
@@ -60,17 +60,18 @@
     .deposit.neg { color: #6cf; text-shadow: 0 0 8px rgba(108,192,255,.5); }
     .deposit.zero { color: #6a8a7a; font-size: 14px; }
 
-    /* 玩家牌区: 碰杠(左对齐) | 手牌(右对齐, 抓牌间距) | 胡牌(前方) */
-    .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; flex-wrap: wrap; }
-    .label { font-size: 10px; color: #6a8a7a; width: 22px; flex-shrink: 0; }
-    .meld-area { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-start; }
-    .meld-group { display: flex; gap: 0; padding: 1px 3px; background: rgba(255,255,255,.05); border-radius: 3px; }
-    .hand-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; justify-content: flex-end; flex: 1; }
-    .hand-area .catch-gap { margin-left: 10px; }
-    .hu-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; width: 100%; margin-top: 4px; }
-    /* 左右玩家纵向 */
-    .chair.pos-left .hand-area, .chair.pos-right .hand-area { flex-direction: column; justify-content: flex-start; align-items: center; }
+    /* 玩家牌区: 碰杠(左) | 手牌(右对齐 gap0) | 抓牌(右 半张间隔 1张) 同行; 胡牌另起 */
+    .play-row { display: flex; align-items: center; gap: 0; margin: 2px 0; flex-wrap: nowrap; min-height: 48px; }
+    .meld-area { display: flex; flex-wrap: nowrap; gap: 0; align-items: center; justify-content: flex-start; }
+    .meld-group { display: flex; gap: 0; padding: 1px 3px; background: rgba(255,255,255,.06); border-radius: 3px; margin-right: 5px; }
+    .hand-area { display: flex; flex-wrap: nowrap; gap: 0; align-items: center; justify-content: flex-end; flex: 1; min-width: 0; }
+    .catch-area { display: flex; align-items: center; justify-content: flex-end; margin-left: 14px; min-width: 30px; }
+    .hu-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; width: 100%; margin-top: 4px; min-height: 0; }
+    /* 左右玩家: tile 已 rotate, play-row 改纵向 (碰杠/手牌/抓牌 同列), 区域紧凑 */
+    .chair.pos-left .play-row, .chair.pos-right .play-row { flex-direction: column; gap: 4px; align-items: center; }
+    .chair.pos-left .hand-area, .chair.pos-right .hand-area { flex-direction: column; justify-content: flex-start; align-items: center; flex: none; }
     .chair.pos-left .meld-area, .chair.pos-right .meld-area { flex-direction: column; }
+    .chair.pos-left .catch-area, .chair.pos-right .catch-area { margin-left: 0; margin-top: 10px; min-width: 0; min-height: 30px; }
 
     /* 中心: 墙余 + 4 弃牌区沿方位 */
     .center {
@@ -78,7 +79,7 @@
       display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto 1fr auto;
       gap: 3px; align-items: center; justify-items: stretch; padding: 4px;
     }
-    .disc { background: rgba(255,255,255,.04); border-radius: 6px; padding: 4px 6px; min-height: 30px; display: grid; grid-template-columns: repeat(6, auto); grid-auto-rows: minmax(24px, auto); grid-auto-flow: row dense; gap: 1px; justify-content: center; align-content: center; transition: background .2s; }
+    .disc { background: rgba(255,255,255,.03); border-radius: 6px; padding: 4px 6px; min-height: 30px; opacity: .55; display: grid; grid-template-columns: repeat(6, auto); grid-auto-rows: minmax(24px, auto); grid-auto-flow: row dense; gap: 1px; justify-content: center; align-content: center; transition: background .2s; }
     .disc.exchange-zone { background: rgba(252,192,80,.1); box-shadow: 0 0 0 1px rgba(252,192,80,.3); }
     .disc.pos-top { grid-column: 2; grid-row: 1; }
     .disc.pos-left { grid-column: 1; grid-row: 2; }
@@ -153,10 +154,10 @@
     <div class="meta" id="meta">未加载</div>
 
     <div class="table">
-      <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div><div class="hu-area"></div></div>
-      <div class="chair" data-chair="1"><div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div><div class="hu-area"></div></div>
-      <div class="chair" data-chair="2"><div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div><div class="hu-area"></div></div>
-      <div class="chair" data-chair="3"><div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div><div class="hu-area"></div></div>
+      <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"></div><div class="catch-area"></div></div><div class="hu-area"></div></div>
+      <div class="chair" data-chair="1"><div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"></div><div class="catch-area"></div></div><div class="hu-area"></div></div>
+      <div class="chair" data-chair="2"><div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"></div><div class="catch-area"></div></div><div class="hu-area"></div></div>
+      <div class="chair" data-chair="3"><div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"></div><div class="catch-area"></div></div><div class="hu-area"></div></div>
 
       <div class="center">
         <div class="disc" data-disc="0"></div>
@@ -201,7 +202,7 @@
   const SUIT_ORDER = { F: 0, W: 1, T: 2, D: 3 };
 
   function tileHtml(card, sm, extraCls = '') {
-    const scale = sm ? 0.24 : 0.4;
+    const scale = sm ? 0.32 : 0.4;
     let row, col;
     if (card[1] === 'F') { row = ZHONG.row; col = ZHONG.col; }
     else { row = SUIT_ROW[card[1]]; col = (+card[0]) - 1; }
@@ -380,17 +381,16 @@
     for (let c = 0; c < 4; c++) {
       const chair = document.querySelector(`.chair[data-chair="${c}"]`);
       const showHand = c === perspective || vis;
-      const sorted = s.hands[c].slice().sort(sortHand);
-      // catch 高亮: 抓的牌 (sort 后定位)
-      let catchIdx = -1;
+      // 抓牌分离: 本步 catch 的牌移到抓牌区, 手牌排除该牌
+      let handCards = s.hands[c].slice().sort(sortHand);
+      let catchCard = null;
       if (catchInfo && catchInfo.chair === c) {
-        // 找 sorted 中 catch card 的位置 (最后插入, sort 后可能非末)
-        // 简化: 标最后一个匹配 (牌面同值多张, 取末)
-        for (let k = sorted.length - 1; k >= 0; k--) { if (sorted[k] === catchInfo.card) { catchIdx = k; break; } }
+        catchCard = catchInfo.card;
+        const idx = handCards.indexOf(catchCard);
+        if (idx >= 0) handCards.splice(idx, 1);
       }
-      const handHtml = showHand ? sorted.map((t, k) => tileHtml(t, false, k === catchIdx ? 'catch-hl' : '')).join('') : sorted.map(() => backHtml(false)).join('');
-      const handArea = chair.querySelector('.hand-area');
-      handArea.innerHTML = handHtml || '';
+      chair.querySelector('.hand-area').innerHTML = showHand ? handCards.map(t => tileHtml(t, false)).join('') : handCards.map(() => backHtml(false)).join('');
+      chair.querySelector('.catch-area').innerHTML = (showHand && catchCard) ? tileHtml(catchCard, false, 'catch-hl') : '';
 
       const chip = chair.querySelector('.que-chip');
       const q = s.que[c];
