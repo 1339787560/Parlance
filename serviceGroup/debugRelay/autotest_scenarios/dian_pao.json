@@ -1,0 +1,39 @@
+{
+  "name": "dian_pao",
+  "desc": "点炮场景：chair1 出牌 → chair0 胡该张（验 hu_summary_bits 点炮位 + flow_extra_desc H 字段）。配套 test.ini 需设计：chair1 出某张时 chair0 已听该张（如 chair0 听一筒，chair1 在某轮 throw 一筒）。makecard = test_dian_pao（待设计）。",
+  "makecard_id": "test_dian_pao",
+  "phases": {
+    "inBout": {
+      "chairs": {
+        "0": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "huBtn": true }, "do": "hu", "once": true, "_comment": "胡 chair1 点出的牌" },
+          { "when": { "needThrow": true }, "do": "throw", "once": false }
+        ],
+        "1": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true, "card": 21 }, "do": "throw", "once": true, "_comment": "定点炮：throw 一筒 (cardidx 21) 给 chair0 胡。需 makecard 让 chair1 此轮摸到一筒" }
+        ],
+        "2": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true }, "do": "throw", "once": false }
+        ],
+        "3": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true }, "do": "throw", "once": false }
+        ]
+      }
+    }
+  },
+  "expect": {
+    "round_end": "hu_chair0",
+    "hu_source": "dian_pao",
+    "arm_count_eq_4": true
+  }
+}

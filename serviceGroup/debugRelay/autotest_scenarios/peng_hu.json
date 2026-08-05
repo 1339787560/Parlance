@@ -1,0 +1,42 @@
+{
+  "name": "peng_hu",
+  "desc": "碰后胡场景：chair0 碰某张 → 补牌或后续胡（验 action_summary_bits peng 段 + flow_extra_desc H 字段）。配套 test.ini 需设计：chair1/2/3 之一出某张时 chair0 可碰（手牌已有该张对子）。makecard = test_peng_hu（待设计）。",
+  "makecard_id": "test_peng_hu",
+  "phases": {
+    "inBout": {
+      "chairs": {
+        "0": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false, "_comment": "本场景不杠" },
+          { "when": { "huBtn": true }, "do": "hu", "once": true },
+          { "when": { "myChair": 0 }, "do": "peng", "once": true, "_comment": "AutotestPlayer 检测 chair0 pengBtn active 即碰（需扩展 when.pengBtn 守卫，见下）" },
+          { "when": { "needThrow": true }, "do": "throw", "once": false }
+        ],
+        "1": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true, "card": 21 }, "do": "throw", "once": true, "_comment": "定点放碰：throw 一筒（cardidx 21）让 chair0 碰。需 makecard 让 chair1 摸到一筒 + chair0 手有一筒对" }
+        ],
+        "2": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true }, "do": "throw", "once": false }
+        ],
+        "3": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true }, "do": "throw", "once": false }
+        ]
+      }
+    }
+  },
+  "expect": {
+    "round_end": "hu_chair0",
+    "action_summary_peng_bit_set": true,
+    "arm_count_eq_4": true
+  },
+  "_note": "peng_hu 需 AutotestPlayer._check 加 when.pengBtn 守卫 + action==='peng' 已支持（mgr.onBtnPengClicked）。当前 _check 未检 pengBtn，peng rule 触发需补守卫或靠 needThrow=false + myChair 过滤。"
+}

@@ -225,6 +225,9 @@ MAKECARD_DIR = Path(__file__).parent / "makecard_scenarios"
 MAKECARD_DIR.mkdir(exist_ok=True)
 # arm 回执聚合: client_id -> {ok, chair, rules_count, scenario, error, ts}
 arm_state: Dict[str, dict] = {}
+# T4 expect 断言取日志的 servicesvr 配置（__main__ 从 cfg["combatdata_source"] 注入；REST 查询参数可覆盖）
+# {servicesvr_url, combatdata_path, flow_path}
+_COMBATDATA_CFG: dict = {}
 whitelist_ips: set = set()
 
 # 行为树可视化配置（行为树 tab，无需游戏端连接）
@@ -2487,6 +2490,217 @@ async def api_autotest_arm():
     }
 
 
+# ---- T4 expect 断言 + report REST（拉服务端日志 grep + merge arm 证据）----
+
+def _load_scenario_json(scenario_name: str) -> Optional[dict]:
+    """Load scenario JSON 全量（含 expect / makecard_id / phases / rules）。未找到返 None。"""
+    if not scenario_name:
+        return None
+    safe = "".join(c for c in scenario_name if c.isalnum() or c in "_-")
+    f = AUTOTEST_DIR / f"{safe}.json"
+    if not f.is_file():
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _fetch_log_via_servicesvr(servicesvr_url: str, log_path: str, timeout: float = 15.0) -> Optional[str]:
+    """通过 servicesvr :5000 GET /api/config/file/content?filePath= 拉日志全文。
+
+    返回 None=参数缺失；'__FETCH_ERROR__: ...'=请求失败；其余=日志 content。
+    """
+    import urllib.request, urllib.parse
+    if not servicesvr_url or not log_path:
+        return None
+    q = urllib.parse.urlencode({"filePath": log_path})
+    url = f"{servicesvr_url.rstrip('/')}/api/config/file/content?{q}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "debugRelay/autotest-report"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", errors="ignore")
+        try:
+            data = json.loads(raw)
+            return data.get("content") or data.get("text") or raw
+        except Exception:
+            return raw
+    except Exception as e:
+        return f"__FETCH_ERROR__: {e}"
+
+
+def _grep_last(lines: list, pattern: str) -> Optional[str]:
+    """从尾向头 grep，返最后一条匹配的 group(0)。"""
+    rx = re.compile(pattern)
+    for line in reversed(lines):
+        m = rx.search(line)
+        if m:
+            return m.group(0)
+    return None
+
+
+def _grep_all(lines: list, pattern: str) -> list:
+    """正向 grep 所有匹配行。"""
+    rx = re.compile(pattern)
+    return [line for line in lines if rx.search(line)]
+
+
+def _evaluate_expect(expect: dict, combat_log: Optional[str], flow_log: Optional[str],
+                     arms: list, round_uuid: Optional[str]) -> dict:
+    """逐条评估 scenario.expect，返 {expects:[...], pass_count, fail_count}.
+
+    当前支持的 key:
+      gang_gen_multiple_nonzero (bool) — combat log 杠倍数非零
+      round_end (str, e.g. "hu_chair0") — 终局标识（grep round_end + chair）
+      chair0_angang_card (int) — chair0 暗杠 cardidx（简化检测：grep chair0 gang sent cardidx）
+      action_summary_angang_bit_set (bool) — action_summary_bits 位 8（1<<8=256，angang 段）置位
+      arm_count_eq_4 (bool) — 四家 arm 全聚合
+    其余 key 标 "未实现" 不计 pass/fail。
+    """
+    if not expect:
+        return {"expects": [], "pass_count": 0, "fail_count": 0, "note": "scenario 无 expect 块"}
+
+    # round_uuid 过滤行（若提供）
+    filt_lines = lambda src: (
+        [l for l in (src or "").splitlines() if round_uuid in l] if round_uuid
+        else (src or "").splitlines()
+    )
+    c_lines = filt_lines(combat_log)
+    f_lines = filt_lines(flow_log)
+
+    results = []
+    for key, expected in expect.items():
+        actual: Any = None
+        passed = False
+        note = ""
+        try:
+            if key == "gang_gen_multiple_nonzero":
+                hit = _grep_last(c_lines + f_lines, r"gang_gen_multiple[\"']?\s*[:=]\s*\d+")
+                if hit:
+                    m = re.search(r"(\d+)(?!.*\d)", hit)
+                    val = int(m.group(1)) if m else None
+                    actual = val
+                    passed = (val is not None and val != 0) == bool(expected)
+                else:
+                    note = "combat/flow log 无 gang_gen_multiple 字段"
+            elif key == "round_end":
+                hit = _grep_last(c_lines, r"round_end[\"']?\s*[:=]\s*[\"']?[\w_-]+")
+                actual = hit
+                passed = (hit and expected in hit)
+            elif key == "chair0_angang_card":
+                # AutotestPlayer console 探针：[AutoTest] gang sent cardidx=21 ...
+                # 客户端 console 经 IMPORTANT_EVENT 上报，未必落 combat log；
+                # 兜底 grep 客户端 arm_state.rule_count + scenario 知 cardidx
+                hit = _grep_last(c_lines, r"chair0.*angang.*cardidx[=:]?\s*(\d+)")
+                if hit:
+                    m = re.search(r"(\d+)", hit.split("cardidx")[-1]) if "cardidx" in hit else None
+                    actual = int(m.group(1)) if m else hit
+                    passed = (actual == expected)
+                else:
+                    actual = f"expect={expected} (cardidx 未在 log grep 到，查客户端 [AutoTest] 探针)"
+                    passed = False
+                    note = "依赖客户端 console 探针 [AutoTest] gang sent cardidx=N 上报"
+            elif key == "action_summary_angang_bit_set":
+                hit = _grep_last(c_lines, r"action_summary_bits[\"']?\s*[:=]\s*\d+")
+                if hit:
+                    m = re.search(r"(\d+)", hit.split("bits")[-1])
+                    val = int(m.group(1)) if m else None
+                    actual = val
+                    # CDC_ACTION_ANGANG_BIT=4 原始位 vs action_summary_bits:256 (1<<8) 是 status.md 记录
+                    # angang 段 bit offset = 8（per status.md combat log action_summary_bits:256 解码）
+                    passed = (val is not None and bool(val & (1 << 8))) == bool(expected)
+                else:
+                    note = "combat log 无 action_summary_bits 字段"
+            elif key == "arm_count_eq_4":
+                actual = len(arms)
+                passed = (len(arms) == 4) == bool(expected)
+            else:
+                note = "未实现的 expect key，跳过（不计 pass/fail）"
+        except Exception as e:
+            note = f"评估异常: {e}"
+        results.append({
+            "key": key, "expected": expected, "actual": actual,
+            "pass": passed, "note": note,
+        })
+    # 仅对实现的 key 计 pass/fail
+    evaluated = [r for r in results if r["note"] == "" or r["pass"]]
+    pc = sum(1 for r in results if r["pass"])
+    fc = sum(1 for r in results if not r["pass"] and not r["note"].startswith("未实现"))
+    return {"expects": results, "pass_count": pc, "fail_count": fc}
+
+
+@app.get("/api/autotest/report")
+async def api_autotest_report(
+    scenario: str = None,
+    servicesvr_url: str = None,
+    combatdata_path: str = None,
+    flow_path: str = None,
+    round_uuid: str = None,
+    tail_chars: int = 3000,
+):
+    """T4 expect 断言 + report：拉服务端 combatdata.log/flow.log grep + merge 客户端 arm 证据 + expect pass/fail。
+
+    Query 参数:
+      scenario: scenario 名（缺省取 autotest_state['scenario']）
+      servicesvr_url: servicesvr URL（默认 http://127.0.0.1:5000；可被 config combatdata_source.servicesvr_url 覆盖）
+      combatdata_path: combatdata.log 绝对路径（如 D:/game/xzms/server_game/combatdata.log）
+      flow_path: flow.log 绝对路径（可选）
+      round_uuid: 特定 round 过滤（仅 grep 含此 uuid 的行）
+      tail_chars: 返 combat_log_tail 截断长度（默认 3000）
+    """
+    sc = scenario or autotest_state.get("scenario", "")
+    if not sc:
+        return JSONResponse({"error": "scenario 未指定且 autotest 未激活"}, status_code=400)
+    sc_data = _load_scenario_json(sc)
+    if not sc_data:
+        return JSONResponse({"error": f"scenario not found: {sc}"}, status_code=404)
+    expect = sc_data.get("expect") or {}
+    makecard_id = sc_data.get("makecard_id")
+
+    # config 兜底（_COMBATDATA_CFG 由 __main__ 从 cfg.combatdata_source 注入）
+    svr_url = (servicesvr_url or _COMBATDATA_CFG.get("servicesvr_url") or "http://127.0.0.1:5000").rstrip("/")
+    cd_path = combatdata_path or _COMBATDATA_CFG.get("combatdata_path")
+    fl_path = flow_path or _COMBATDATA_CFG.get("flow_path")
+
+    # 异步拉日志（不阻塞 event loop）
+    combat_log = await asyncio.to_thread(_fetch_log_via_servicesvr, svr_url, cd_path) if cd_path else None
+    flow_log = await asyncio.to_thread(_fetch_log_via_servicesvr, svr_url, fl_path) if fl_path else None
+
+    arms = sorted(arm_state.values(), key=lambda x: x.get("chair", -1))
+    evaluation = _evaluate_expect(expect, combat_log, flow_log, arms, round_uuid)
+
+    fetch_errors = {
+        "combatdata": bool(cd_path and combat_log and combat_log.startswith("__FETCH_ERROR__")),
+        "flow": bool(fl_path and flow_log and flow_log.startswith("__FETCH_ERROR__")),
+    }
+
+    # tail（截断防爆）
+    def _tail(s, n):
+        if not s or s.startswith("__FETCH_ERROR__"):
+            return s
+        return s[-n:] if len(s) > n else s
+
+    return {
+        "scenario": sc,
+        "makecard_id": makecard_id,
+        "round_uuid_filter": round_uuid,
+        "sources": {
+            "servicesvr_url": svr_url,
+            "combatdata_path": cd_path,
+            "flow_path": fl_path,
+        },
+        "arm_summary": {
+            "arm_count": len(arms),
+            "client_count": len(clients),
+            "arms": arms,
+        },
+        "evaluation": evaluation,
+        "combat_log_tail": _tail(combat_log, tail_chars) if combat_log else None,
+        "flow_log_tail": _tail(flow_log, tail_chars) if flow_log else None,
+        "fetch_errors": fetch_errors,
+    }
+
+
 # ---- 做牌库托管（C3 牌局标识符，T2）----
 
 @app.get("/api/makecard")
@@ -2680,6 +2894,13 @@ if __name__ == "__main__":
         bt_write_ips = {str(x).strip() for x in _wips if str(x).strip()}
     if bt_layers:
         print(f"行为树 tab: {len(bt_layers)} 层已配置, template_root={bt_template_root}, write_ips={sorted(bt_write_ips)}")
+
+    # T4 expect 断言日志源（agent 调 /api/autotest/report 拉服务端日志用）
+    cd_cfg_raw = cfg.get("combatdata_source") if isinstance(cfg, dict) else None
+    if isinstance(cd_cfg_raw, dict) and cd_cfg_raw:
+        _COMBATDATA_CFG.update(cd_cfg_raw)
+        print(f"autotest report 日志源: svr={_COMBATDATA_CFG.get('servicesvr_url')} "
+              f"combatdata={_COMBATDATA_CFG.get('combatdata_path')} flow={_COMBATDATA_CFG.get('flow_path')}")
 
     print(f"=" * 50)
     print(f"Debug Relay Server (multi-client)")

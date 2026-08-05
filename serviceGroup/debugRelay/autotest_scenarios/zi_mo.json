@@ -1,21 +1,19 @@
 {
-  "name": "gang_ang_shbar",
-  "desc": "chair0 庄家暗杠一筒 + 补牌九筒胡 / 闲家 dingque+guo+throw 让牌推进 / 验 gang_gen_multiple 非零 + action_summary angang 段。配套 test.ini = test.bak_sdd_gang.ini（chair0 一筒×4 暗杠 + 九筒×4 + 七条对 + 三筒对 + 红中对）。",
-  "makecard_id": "test_bak_sdd_gang",
+  "name": "zi_mo",
+  "desc": "自摸场景：chair0 自摸胡（验 hu_summary_bits 自摸位 + round_end=zi_mo）。配套 test.ini 需设计：chair0 摸到某张即胡（如听一筒，最后自摸一筒）。makecard = test_zi_mo（待设计）。",
+  "makecard_id": "test_zi_mo",
   "phases": {
     "inBout": {
       "chairs": {
         "0": [
           { "when": { "dingque": true }, "do": "dingque", "once": false },
-          { "when": { "gangBtn": true, "card": 21 }, "do": "gang", "once": true, "_comment": "暗杠一筒 (cardidx 21 = 筒shape2 *10 + value1)" },
-          { "when": { "gangBtn": true, "card": 29 }, "do": "gang", "once": true, "_comment": "暗杠九筒 (cardidx 29) — 第二暗杠，可选" },
-          { "when": { "huBtn": true }, "do": "hu", "once": true },
+          { "when": { "huBtn": true }, "do": "hu", "once": true, "_comment": "自摸胡（摸牌后 huBtn 激活即胡）" },
           { "when": { "needThrow": true }, "do": "throw", "once": false }
         ],
         "1": [
           { "when": { "dingque": true }, "do": "dingque", "once": false },
-          { "when": { "gangBtn": true }, "do": "guo", "once": false, "_comment": "让杠" },
-          { "when": { "huBtn": true }, "do": "guo", "once": false, "_comment": "让胡（不抢胡，让 chair0 自摸）" },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false, "_comment": "不让胡，逼 chair0 自摸" },
           { "when": { "needThrow": true }, "do": "throw", "once": false }
         ],
         "2": [
@@ -34,9 +32,8 @@
     }
   },
   "expect": {
-    "gang_gen_multiple_nonzero": true,
     "round_end": "hu_chair0",
-    "chair0_angang_card": 21,
-    "action_summary_angang_bit_set": true
+    "hu_source": "zi_mo",
+    "arm_count_eq_4": true
   }
 }
