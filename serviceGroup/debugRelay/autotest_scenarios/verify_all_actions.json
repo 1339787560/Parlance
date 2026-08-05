@@ -1,0 +1,50 @@
+{
+  "name": "verify_all_actions",
+  "desc": "服务端数据上报全字段验证 (angang+mngang+peng+hu 全 action_summary 段)。配套 test_sdd_verify.ini：chair0 一筒×4 暗杠 + 三筒×3 藏(明杠候, chair1 出 101) + 五筒×2(碰候, chair2 出 95) + 七筒×2 + 九筒×2 + 红中。验 action_summary_bits：angang(8) + mngang(0) + peng(20) + be_mngang(12, chair1 视角) + be_peng(24, chair2 视角) + flow_extra_desc gang_gen_multiple 非零 + extend_content combatJson 终局。",
+  "makecard_id": "test_sdd_verify",
+  "phases": {
+    "inBout": {
+      "chairs": {
+        "0": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false },
+          { "when": { "gangBtn": true, "card": 21 }, "do": "gang", "once": true, "_comment": "暗杠一筒 (cardidx 21, _doGang 直选绕 UI)" },
+          { "when": { "gangBtn": true }, "do": "gang", "once": true, "_comment": "明杠三筒 (chair1 出 101 后 gangBtn 复活, onBtnGangClicked 处理)" },
+          { "when": { "pengBtn": true }, "do": "peng", "once": true, "_comment": "碰五筒 (chair2 出 95, 手 77+86 + 桌 95)" },
+          { "when": { "huBtn": true }, "do": "hu", "once": true },
+          { "when": { "needThrow": true }, "do": "throw", "once": false }
+        ],
+        "1": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false, "_comment": "dinq 筒 (hand 仅 101 筒, min suit)" },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "pengBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true }, "do": "throw", "once": false, "_comment": "dinq 筒 → _doThrow 优先出筒 = 101 三筒, 触发 chair0 mngang" }
+        ],
+        "2": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false, "_comment": "dinq 筒 (hand 仅 95 筒)" },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "pengBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true }, "do": "throw", "once": false, "_comment": "dinq 筒 → 出 95 五筒, 触发 chair0 peng" }
+        ],
+        "3": [
+          { "when": { "dingque": true }, "do": "dingque", "once": false, "_comment": "dinq 筒 (hand 0 筒)" },
+          { "when": { "gangBtn": true }, "do": "guo", "once": false },
+          { "when": { "huBtn": true }, "do": "guo", "once": false },
+          { "when": { "pengBtn": true }, "do": "guo", "once": false },
+          { "when": { "needThrow": true }, "do": "throw", "once": false }
+        ]
+      }
+    }
+  },
+  "expect": {
+    "gang_gen_multiple_nonzero": true,
+    "action_summary_angang_bit_set": true,
+    "action_summary_mngang_bit_set": true,
+    "action_summary_peng_bit_set": true,
+    "arm_count_eq_4": true
+  },
+  "_bit_offsets": {
+    "mngang": 0, "pngang": 4, "angang": 8, "be_mngang": 12, "be_pngang": 16, "peng": 20, "be_peng": 24
+  }
+}
