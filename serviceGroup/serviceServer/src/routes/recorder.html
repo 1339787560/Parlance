@@ -202,19 +202,22 @@
   const snaps = [];
   let curStep = -1, listBuilt = false, perspective = 0, prevQue = ['','','',''];
 
-  // sprite 精确 cell bbox (PIL scan; 川麻只用 万 R0/条 R1/筒 R3, 红中文字渲染)
+  // sprite 精确 cell bbox (PIL scan; 川麻只用 万 R0/条 R1/筒 R2, 红中 = 风字行 R3C4)
+  // R3=风字行(东南西北中发白)非筒, memory mj-cardface-sprite-tracker 推断 R3=筒 错, 已校 R2=筒
   const ROWS_Y = [8, 153, 301, 448, 590, 745];
   const ROWS_H = [133, 136, 131, 132, 137, 120];
   const COLS_X = [6, 118, 237, 346, 465, 576, 687, 805, 916];
   const COLS_W = [102, 104, 96, 101, 94, 101, 103, 99, 102];
-  const SUIT_ROW = { W: 0, T: 1, D: 3 };
+  const SUIT_ROW = { W: 0, T: 1, D: 2 };
+  const ZHONG = { row: 3, col: 4 };  // 红中在风字行 col4 (RGB 177,113,112 红; col5 绿=发 col6 灰=白)
   const QUE_NAME = { W: '万', T: '条', D: '筒' };
   const SUIT_ORDER = { F: 0, W: 1, T: 2, D: 3 };
 
   function tileHtml(card, sm) {
-    if (card[1] === 'F') return `<span class="tile${sm?' sm':''} zhong">中</span>`;
     const scale = sm ? 0.16 : 0.28;
-    const row = SUIT_ROW[card[1]], col = (+card[0]) - 1;
+    let row, col;
+    if (card[1] === 'F') { row = ZHONG.row; col = ZHONG.col; }
+    else { row = SUIT_ROW[card[1]]; col = (+card[0]) - 1; }
     const x = COLS_X[col], y = ROWS_Y[row], w = COLS_W[col], h = ROWS_H[row];
     const bg = 1024 * scale;
     return `<span class="tile${sm?' sm':''}" style="width:${(w*scale).toFixed(0)}px;height:${(h*scale).toFixed(0)}px;background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${(x*scale).toFixed(0)}px -${(y*scale).toFixed(0)}px"></span>`;
