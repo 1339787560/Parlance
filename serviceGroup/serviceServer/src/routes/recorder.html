@@ -26,8 +26,8 @@
     .persp-btns button { width: 22px; height: 22px; padding: 0; font-size: 11px; border-radius: 4px; }
     .persp-btns button.active { background: #c8332e; border-color: #e8433e; }
 
-    .app { display: flex; flex-direction: column; height: 100vh; padding-top: 52px; }
-    .meta { padding: 2px 16px; font-size: 11px; color: #8aa; border-bottom: 1px solid rgba(255,255,255,.05); flex-shrink: 0; }
+    .app { display: flex; flex-direction: column; height: 100vh; padding-top: 42px; padding-bottom: 8px; }
+    .meta { position: fixed; top: 4px; left: 10px; z-index: 150; padding: 4px 10px; background: rgba(20,40,30,.78); border: 1px solid rgba(255,255,255,.06); border-radius: 6px; font-size: 11px; color: #8aa; max-width: 42vw; }
     .meta b { color: #ffe; }
 
     /* 桌面: 左右列占满 3 行 (含四角), 中列 top/center/bottom */
@@ -35,9 +35,9 @@
       flex: 1 1 auto; min-height: 0; position: relative;
       display: grid;
       grid-template-areas: "left top right" "left center right" "left bottom right";
-      grid-template-columns: minmax(125px, 0.7fr) 2.6fr minmax(125px, 0.7fr);
+      grid-template-columns: minmax(108px, 0.6fr) 2.8fr minmax(108px, 0.6fr);
       grid-template-rows: auto 1fr auto;
-      gap: 4px; padding: 6px;
+      gap: 2px; padding: 4px;
     }
     .chair { background: rgba(255,255,255,.04); border-radius: 8px; padding: 8px 10px; min-width: 0; position: relative; display: flex; flex-direction: column; }
     .chair.pos-top { grid-area: top; } .chair.pos-bottom { grid-area: bottom; }
@@ -79,7 +79,7 @@
       display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto 1fr auto;
       gap: 3px; align-items: center; justify-items: stretch; padding: 4px;
     }
-    .disc { background: rgba(255,255,255,.03); border-radius: 6px; padding: 4px 6px; min-height: 30px; opacity: .55; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; transition: background .2s; }
+    .disc { background: transparent; padding: 2px; min-height: 30px; opacity: .5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; transition: opacity .2s; }
     .disc-row { display: flex; gap: 0; justify-content: center; }
     .disc.exchange-zone { background: rgba(252,192,80,.1); box-shadow: 0 0 0 1px rgba(252,192,80,.3); }
     .disc.pos-top { grid-column: 2; grid-row: 1; }
@@ -105,11 +105,13 @@
     /* 左右玩家 (含手牌+弃牌) 牌张旋转 90° 朝中心: 左顺时针牌头朝右, 右逆时针牌头朝左 */
     .chair.pos-left .tile, .disc.pos-left .tile { transform: rotate(90deg); }
     .chair.pos-right .tile, .disc.pos-right .tile { transform: rotate(-90deg); }
-    /* 左右弃牌纵向 (tile rotate 90° 朝中心, 行方向随 flex column) */
-    .disc.pos-left, .disc.pos-right { flex-direction: column; }
+    /* 左右弃牌: 列横向延伸 (玩家→桌中), 每列竖排 (沿桌中边), tile rotate 朝中心 */
+    .disc.pos-left, .disc.pos-right { flex-direction: row; align-items: center; }
+    .disc.pos-left .disc-row, .disc.pos-right .disc-row { flex-direction: column; }
 
-    .log-panel { flex-shrink: 0; background: #0a1a12; border-top: 1px solid rgba(255,255,255,.08); }
-    .log-panel summary { padding: 5px 16px; cursor: pointer; font-size: 12px; color: #9ab; list-style: none; display: flex; align-items: center; gap: 8px; }
+    /* 对局日志: 高层级浮动窗 (折叠/展开均浮在牌桌上方) */
+    .log-panel { position: fixed; bottom: 10px; right: 10px; z-index: 250; width: 380px; max-width: 50vw; background: rgba(10,26,18,.96); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; box-shadow: 0 6px 22px rgba(0,0,0,.6); backdrop-filter: blur(8px); }
+    .log-panel summary { padding: 6px 12px; cursor: pointer; font-size: 12px; color: #9ab; list-style: none; display: flex; align-items: center; gap: 8px; }
     .log-panel summary::-webkit-details-marker { display: none; }
     .log-panel summary::before { content: "▶"; font-size: 10px; transition: transform .15s; }
     .log-panel[open] summary::before { transform: rotate(90deg); }
