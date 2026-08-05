@@ -79,7 +79,8 @@
       display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto 1fr auto;
       gap: 3px; align-items: center; justify-items: stretch; padding: 4px;
     }
-    .disc { background: rgba(255,255,255,.03); border-radius: 6px; padding: 4px 6px; min-height: 30px; opacity: .55; display: grid; grid-template-columns: repeat(6, auto); grid-auto-rows: minmax(24px, auto); grid-auto-flow: row dense; gap: 1px; justify-content: center; align-content: center; transition: background .2s; }
+    .disc { background: rgba(255,255,255,.03); border-radius: 6px; padding: 4px 6px; min-height: 30px; opacity: .55; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; transition: background .2s; }
+    .disc-row { display: flex; gap: 0; justify-content: center; }
     .disc.exchange-zone { background: rgba(252,192,80,.1); box-shadow: 0 0 0 1px rgba(252,192,80,.3); }
     .disc.pos-top { grid-column: 2; grid-row: 1; }
     .disc.pos-left { grid-column: 1; grid-row: 2; }
@@ -104,8 +105,8 @@
     /* 左右玩家 (含手牌+弃牌) 牌张旋转 90° 朝中心: 左顺时针牌头朝右, 右逆时针牌头朝左 */
     .chair.pos-left .tile, .disc.pos-left .tile { transform: rotate(90deg); }
     .chair.pos-right .tile, .disc.pos-right .tile { transform: rotate(-90deg); }
-    /* 左右弃牌区改为纵向少列 (适配旋转后视觉) */
-    .disc.pos-left, .disc.pos-right { grid-template-columns: repeat(3, auto); grid-auto-flow: row dense; align-content: center; }
+    /* 左右弃牌纵向 (tile rotate 90° 朝中心, 行方向随 flex column) */
+    .disc.pos-left, .disc.pos-right { flex-direction: column; }
 
     .log-panel { flex-shrink: 0; background: #0a1a12; border-top: 1px solid rgba(255,255,255,.08); }
     .log-panel summary { padding: 5px 16px; cursor: pointer; font-size: 12px; color: #9ab; list-style: none; display: flex; align-items: center; gap: 8px; }
@@ -211,6 +212,18 @@
     return `<span class="tile${sm?' sm':''}${extraCls?' '+extraCls:''}" style="width:${(w*scale).toFixed(0)}px;height:${(h*scale).toFixed(0)}px;background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${(x*scale).toFixed(0)}px -${(y*scale).toFixed(0)}px"></span>`;
   }
   function backHtml(sm) { return `<span class="tile${sm?' sm':''} back"></span>`; }
+  // 弃牌按 5/7/9/11/13/15 等差行错落排布
+  function renderDiscRows(cards, throwHl) {
+    const rowSizes = [5, 7, 9, 11, 13, 15];
+    let html = '', idx = 0;
+    for (const n of rowSizes) {
+      if (idx >= cards.length) break;
+      const slice = cards.slice(idx, idx + n);
+      idx += n;
+      html += `<div class="disc-row">${slice.map(t => tileHtml(t, true, t === throwHl ? 'throw-hl' : '')).join('')}</div>`;
+    }
+    return html;
+  }
   function chunks(s) { const a = []; for (let i = 0; i + 1 < s.length; i += 2) a.push(s.slice(i, i + 2)); return a; }
   function sortHand(a, b) {
     const sa = SUIT_ORDER[a[1]], sb = SUIT_ORDER[b[1]];
@@ -424,8 +437,7 @@
         dz.classList.remove('exchange-zone');
         const ds = s.discards[c];
         const throwHl = throwInfo && throwInfo.chair === c ? throwInfo.card : null;
-        // 高亮最后一颗 (throwInfo 是本步刚打的)
-        dz.innerHTML = ds.map(t => tileHtml(t, true, t === throwHl ? 'throw-hl' : '')).join('');
+        dz.innerHTML = renderDiscRows(ds, throwHl);
       }
     }
 
