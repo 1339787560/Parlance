@@ -9,7 +9,6 @@
     html, body { height: 100%; margin: 0; overflow: hidden; }
     body { font-family: "Microsoft YaHei", sans-serif; background: #0e2418; color: #eee; user-select: none; }
 
-    /* 悬浮工具栏 (仿做牌器 .svc-bar pill) */
     .svc-bar {
       position: fixed; top: 6px; left: 50%; transform: translateX(-50%); z-index: 200;
       display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;
@@ -18,81 +17,89 @@
       box-shadow: 0 6px 20px rgba(0,0,0,.4); max-width: calc(100vw - 16px); font-size: 12px;
     }
     .svc-bar label { display: flex; align-items: center; gap: 3px; color: #9ab; }
-    .svc-bar input { width: 64px; padding: 3px 6px; background: #1a3a2a; color: #eee; border: 1px solid #2a5a3a; border-radius: 4px; font-size: 11px; }
-    .svc-bar input[type=datetime-local] { width: 150px; }
+    .svc-bar input { width: 60px; padding: 3px 6px; background: #1a3a2a; color: #eee; border: 1px solid #2a5a3a; border-radius: 4px; font-size: 11px; }
+    .svc-bar input[type=datetime-local] { width: 140px; }
     .svc-bar button { padding: 4px 10px; background: #2a5a3a; color: #eee; border: 1px solid #3a7a5a; border-radius: 999px; cursor: pointer; font-size: 12px; white-space: nowrap; }
     .svc-bar button:hover { background: #3a7a5a; }
     .svc-bar button.primary { background: #c8332e; border-color: #e8433e; }
     .svc-bar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.15); }
     .svc-bar .pill { color: #fc6; background: rgba(252,192,80,.12); padding: 3px 10px; border-radius: 999px; font-size: 11px; }
 
-    /* 主区: padding-top 让位悬浮栏 */
-    .app { display: flex; flex-direction: column; height: 100vh; padding-top: 56px; }
-    .meta { padding: 3px 16px; font-size: 11px; color: #8aa; border-bottom: 1px solid rgba(255,255,255,.05); flex-shrink: 0; }
+    .app { display: flex; flex-direction: column; height: 100vh; padding-top: 52px; }
+    .meta { padding: 2px 16px; font-size: 11px; color: #8aa; border-bottom: 1px solid rgba(255,255,255,.05); flex-shrink: 0; }
 
-    /* 桌面 grid 3×3 (4 chair + center) */
+    /* 桌面 grid 3×3 + 四角 */
     .table {
       flex: 1 1 auto; min-height: 0; position: relative;
-      display: grid; grid-template-areas: ". top ." "left center right" ". bottom .";
-      grid-template-columns: 1fr 2.2fr 1fr; grid-template-rows: auto 1fr auto;
-      gap: 6px; padding: 8px;
+      display: grid;
+      grid-template-areas: "tl top tr" "left center right" "bl bottom br";
+      grid-template-columns: minmax(120px, auto) 1fr minmax(120px, auto);
+      grid-template-rows: auto 1fr auto;
+      gap: 4px; padding: 6px;
     }
-    .chair { background: rgba(255,255,255,.04); border-radius: 8px; padding: 6px 10px; min-width: 0; }
-    .chair.top { grid-area: top; } .chair.bottom { grid-area: bottom; }
-    .chair.left { grid-area: left; } .chair.right { grid-area: right; }
+    .chair { background: rgba(255,255,255,.04); border-radius: 8px; padding: 5px 8px; min-width: 0; }
+    .chair.pos-top { grid-area: top; } .chair.pos-bottom { grid-area: bottom; }
+    .chair.pos-left { grid-area: left; } .chair.pos-right { grid-area: right; }
     .chair.active { outline: 2px solid #fc6; }
 
-    .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; }
+    .corner { font-size: 10px; color: #8aa; padding: 4px 8px; display: flex; flex-direction: column; gap: 2px; justify-content: center; }
+    .corner.tl { grid-area: tl; align-items: flex-start; }
+    .corner.tr { grid-area: tr; align-items: flex-end; text-align: right; }
+    .corner.bl { grid-area: bl; align-items: flex-start; }
+    .corner.br { grid-area: br; align-items: flex-end; }
+    .corner .v { color: #ffe; font-size: 12px; }
+    .corner .kbd { background: #1a3a2a; padding: 1px 5px; border-radius: 3px; border: 1px solid #2a5a3a; color: #fc6; }
+    .persp-btns { display: flex; gap: 3px; margin-top: 2px; }
+    .persp-btns button { width: 22px; height: 22px; padding: 0; font-size: 11px; background: #2a5a3a; color: #eee; border: 1px solid #3a7a5a; border-radius: 4px; cursor: pointer; }
+    .persp-btns button.active { background: #c8332e; border-color: #e8433e; }
+
+    .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: 12px; }
     .name { font-weight: bold; color: #ffe; }
     .uid { color: #6a8a7a; font-size: 10px; }
     .que-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px; background: #3a2a1a; color: #fc6; }
     .que-chip.W { background: #1a3a5a; color: #9cf; }
     .que-chip.T { background: #1a5a3a; color: #9f9; }
     .que-chip.D { background: #5a1a1a; color: #f99; }
-    .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; min-height: 30px; flex-wrap: wrap; }
-    .label { font-size: 10px; color: #6a8a7a; width: 26px; flex-shrink: 0; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; min-height: 28px; flex-wrap: wrap; }
+    .label { font-size: 10px; color: #6a8a7a; width: 24px; flex-shrink: 0; }
     .hand-area, .meld-area, .hu-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; }
     .hu-area { margin-left: 6px; }
 
-    /* center 内部 3×3: 4 弃牌区 + 牌墙 */
+    /* center 内 3×3: 4 弃牌 + 牌墙 */
     .center {
       grid-area: center; min-width: 0; min-height: 0;
       display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto 1fr auto;
-      gap: 4px; align-items: center; justify-items: center; padding: 4px;
+      gap: 3px; align-items: center; justify-items: center; padding: 4px;
     }
-    .disc { background: rgba(255,255,255,.03); border-radius: 6px; padding: 4px 6px; min-height: 30px; max-width: 100%; display: flex; flex-wrap: wrap; gap: 1px; justify-content: center; align-content: center; }
-    .disc.label { background: transparent; color: #6a8a7a; font-size: 10px; min-height: auto; }
-    .disc-top { grid-column: 2; grid-row: 1; }
-    .disc-left { grid-column: 1; grid-row: 2; }
-    .disc-right { grid-column: 3; grid-row: 2; }
-    .disc-bottom { grid-column: 2; grid-row: 3; }
+    .disc { background: rgba(255,255,255,.03); border-radius: 6px; padding: 3px 5px; min-height: 26px; max-width: 100%; display: flex; flex-wrap: wrap; gap: 1px; justify-content: center; align-content: center; }
+    .disc.pos-top { grid-column: 2; grid-row: 1; }
+    .disc.pos-left { grid-column: 1; grid-row: 2; }
+    .disc.pos-right { grid-column: 3; grid-row: 2; }
+    .disc.pos-bottom { grid-column: 2; grid-row: 3; }
     .wall-box { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
-    .wall { padding: 10px 16px; background: linear-gradient(180deg,#3a5a3a,#2a4a2a); border-radius: 8px; color: #ffe; font-size: 14px; font-weight: bold; border: 1px solid #4a6a4a; min-width: 96px; text-align: center; }
-    .wall .num { color: #fc6; font-size: 18px; }
-    .exchange { font-size: 10px; color: #fc6; max-width: 180px; text-align: center; line-height: 1.4; }
+    .wall { padding: 8px 14px; background: linear-gradient(180deg,#3a5a3a,#2a4a2a); border-radius: 8px; color: #ffe; font-size: 12px; border: 1px solid #4a6a4a; min-width: 84px; text-align: center; }
+    .wall .num { color: #fc6; font-size: 16px; font-weight: bold; }
+    .exchange { font-size: 10px; color: #fc6; max-width: 200px; text-align: center; line-height: 1.5; }
+    .phase-tag { background: #c8332e; color: #fff; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: bold; }
 
-    /* 牌面 sprite */
+    /* 牌面 sprite (精确 cell bbox) */
     .tile {
-      display: inline-block; width: 26px; height: 37px;
-      background-image: url(/recorder/mj_color0.png); background-repeat: no-repeat;
-      background-size: 233px 233px; vertical-align: middle; margin-right: 1px;
-      border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,.4);
+      display: inline-block; background-image: url(/recorder/mj_color0.png); background-repeat: no-repeat;
+      vertical-align: middle; margin-right: 1px; border-radius: 3px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.25);
     }
-    .tile.sm { width: 16px; height: 23px; background-size: 143px 143px; box-shadow: 0 1px 1px rgba(0,0,0,.4); }
-    .tile.zhong { background: #b33 !important; color: #fff; font-weight: bold; text-align: center; line-height: 37px; font-size: 16px; }
-    .tile.sm.zhong { line-height: 23px; font-size: 11px; }
 
-    /* 折叠日志 */
     .log-panel { flex-shrink: 0; background: #0a1a12; border-top: 1px solid rgba(255,255,255,.08); }
-    .log-panel summary { padding: 6px 16px; cursor: pointer; font-size: 12px; color: #9ab; list-style: none; display: flex; align-items: center; gap: 8px; }
+    .log-panel summary { padding: 5px 16px; cursor: pointer; font-size: 12px; color: #9ab; list-style: none; display: flex; align-items: center; gap: 8px; }
     .log-panel summary::-webkit-details-marker { display: none; }
     .log-panel summary::before { content: "▶"; font-size: 10px; transition: transform .15s; }
     .log-panel[open] summary::before { transform: rotate(90deg); }
     .log-panel[open] summary { border-bottom: 1px solid rgba(255,255,255,.05); }
-    .steps { padding: 6px 16px; max-height: 26vh; overflow: auto; font-family: Consolas, monospace; font-size: 11px; }
+    .steps { padding: 5px 16px; max-height: 24vh; overflow: auto; font-family: Consolas, monospace; font-size: 11px; }
     .step { padding: 1px 6px; cursor: pointer; border-radius: 2px; white-space: pre; }
     .step:hover { background: rgba(255,255,255,.08); }
     .step.active { background: #3a5a4a; }
+    .step.phase { color: #fc6; font-weight: bold; }
     .step .t { color: #6a8a7a; } .step .ty { color: #fc6; } .step .body { color: #ddd; }
   </style>
 </head>
@@ -118,36 +125,41 @@
     <div class="meta" id="meta">未加载</div>
 
     <div class="table">
-      <div class="chair top" data-chair="2">
-        <div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div>
-        <div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div>
-        <div class="row"><span class="label">手牌</span><div class="hand-area"></div></div>
+      <div class="corner tl">
+        <div>房 <span class="v" id="c-room">-</span></div>
+        <div>桌 <span class="v" id="c-table">-</span></div>
       </div>
-      <div class="chair left" data-chair="1">
-        <div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div>
-        <div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div>
-        <div class="row"><span class="label">手牌</span><div class="hand-area"></div></div>
+      <div class="corner tr">
+        <div><span class="v" id="c-flags">-</span> 标志</div>
+        <div>时间 <span class="v" id="c-ts">-</span></div>
       </div>
-      <div class="chair right" data-chair="3">
-        <div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div>
-        <div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div>
-        <div class="row"><span class="label">手牌</span><div class="hand-area"></div></div>
+      <div class="corner bl">
+        <div><span class="kbd">←</span> <span class="kbd">→</span> 切步</div>
+        <div><span class="kbd">1</span>-<span class="kbd">4</span> 视角</div>
       </div>
-      <div class="chair bottom" data-chair="0">
-        <div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div>
-        <div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div>
-        <div class="row"><span class="label">手牌</span><div class="hand-area"></div></div>
+      <div class="corner br">
+        <div>视角 (底位)</div>
+        <div class="persp-btns" id="persp-btns">
+          <button data-p="0">0</button><button data-p="1">1</button>
+          <button data-p="2">2</button><button data-p="3">3</button>
+        </div>
       </div>
 
+      <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div></div>
+      <div class="chair" data-chair="1"><div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div></div>
+      <div class="chair" data-chair="2"><div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div></div>
+      <div class="chair" data-chair="3"><div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span></div><div class="row"><span class="label">碰杠</span><div class="meld-area"></div><div class="hu-area"></div></div><div class="row"><span class="label">手牌</span><div class="hand-area"></div></div></div>
+
       <div class="center">
-        <div class="disc disc-top" data-disc="2"></div>
-        <div class="disc disc-left" data-disc="1"></div>
+        <div class="disc" data-disc="0"></div>
+        <div class="disc" data-disc="1"></div>
+        <div class="disc" data-disc="2"></div>
+        <div class="disc" data-disc="3"></div>
         <div class="wall-box">
+          <div class="phase-tag" id="phase-tag" style="display:none">换三张</div>
           <div class="wall">墙余 <span class="num" id="wall-num">-</span></div>
           <div class="exchange" id="exchange"></div>
         </div>
-        <div class="disc disc-right" data-disc="3"></div>
-        <div class="disc disc-bottom" data-disc="0"></div>
       </div>
     </div>
 
@@ -158,29 +170,39 @@
   </div>
 
 <script>
-  // 川麻特化布局:
-  //   玩家三段 meld(碰杠)|hand(手牌)|hu(胡牌右) + que chip + 桌面中心(4 弃牌区+牌墙+换三张)
   const rec = { header: {}, events: [], displayEvents: [] };
   const snaps = [];
-  let curStep = -1, listBuilt = false;
-  const showAll = () => document.getElementById('btn-visible').checked;
+  let curStep = -1, listBuilt = false, perspective = 0;
 
-  // sprite 切片 (memory mj-cardface-sprite-tracker): 万 R0/条 R1/筒 R3, x=[5,118,235,345,462,573,687,804,916], y={W:7,T:153,D:447}
-  const SPRITE_X = [5,118,235,345,462,573,687,804,916];
-  const SPRITE_Y = { W: 7, T: 153, D: 447 };
+  // sprite 精确 cell bbox (PIL scan 6×9 网格)
+  const ROWS_Y = [8, 153, 301, 448, 590, 745];
+  const ROWS_H = [133, 136, 131, 132, 137, 120];
+  const COLS_X = [6, 118, 237, 346, 465, 576, 687, 805, 916];
+  const COLS_W = [102, 104, 96, 101, 94, 101, 103, 99, 102];
+  const SUIT_ROW = { W: 0, T: 1, D: 3 };   // 万 R0 / 条 R1 / 筒 R3
+  const ZHONG = { row: 2, col: 0 };         // 红中 R2C0 (色签名 167,72,72 最红)
+  const QUE_NAME = { W: '万', T: '条', D: '筒' };
+  const SUIT_ORDER = { F: 0, W: 1, T: 2, D: 3 };
+
   function tileHtml(card, sm) {
-    if (card[1] === 'F') return `<span class="tile${sm?' sm':''} zhong">中</span>`;
-    const scale = sm ? 0.14 : 0.228;
-    const x = SPRITE_X[(+card[0]) - 1] * scale;
-    const y = (SPRITE_Y[card[1]] || 0) * scale;
+    const scale = sm ? 0.16 : 0.28;
+    let row, col;
+    if (card[1] === 'F') { row = ZHONG.row; col = ZHONG.col; }
+    else { row = SUIT_ROW[card[1]]; col = (+card[0]) - 1; }
+    const x = COLS_X[col], y = ROWS_Y[row], w = COLS_W[col], h = ROWS_H[row];
     const bg = 1024 * scale;
-    return `<span class="tile${sm?' sm':''}" style="background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${x.toFixed(0)}px -${y.toFixed(0)}px"></span>`;
+    return `<span class="tile" style="width:${(w*scale).toFixed(0)}px;height:${(h*scale).toFixed(0)}px;background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${(x*scale).toFixed(0)}px -${(y*scale).toFixed(0)}px"></span>`;
   }
   function chunks(s) { const a = []; for (let i = 0; i + 1 < s.length; i += 2) a.push(s.slice(i, i + 2)); return a; }
+  function sortHand(a, b) {
+    const sa = SUIT_ORDER[a[1]], sb = SUIT_ORDER[b[1]];
+    if (sa !== sb) return sa - sb;
+    return (+a[0]) - (+b[0]);
+  }
 
   function parseRecord(txt) {
     const lines = txt.split(/\r?\n/);
-    const header = {}; const events = [];
+    const header = {}, events = [];
     for (const line of lines) {
       if (!line.trim()) continue;
       const m = line.match(/^(\d{2}:\d{2}:\d{2})\s+(\S+)\s*(.*)$/);
@@ -196,25 +218,67 @@
     buildSnapshots();
   }
 
+  function snap(hands, que, discards, melds, hu, exchanges, wall, extra = {}) {
+    return {
+      hands: hands.map(a => a.slice()), que: que.slice(),
+      discards: discards.map(a => a.slice()),
+      melds: melds.map(a => a.slice()), hu: hu.map(a => a.slice()),
+      exchanges: exchanges.slice(), wall, ...extra,
+    };
+  }
+
   function buildSnapshots() {
-    const hands = [[],[],[],[]], que = ['','','',''], discards = [[],[],[],[]], melds=[[],[],[],[]], hu=[[],[],[],[]];
-    const exchanges = [];
-    const TOTAL = 114; // xzms 六红中 114 张
-    const snap0 = { hands: hands.map(a=>a.slice()), que: que.slice(), discards: discards.map(a=>a.slice()), melds, hu, exchanges: [], ev: null };
-    snaps.length = 0; snaps.push(snap0);
-    for (const ev of rec.events) {
+    const hands = [[],[],[],[]], que = ['','','',''], discards=[[],[],[],[]], melds=[[],[],[],[]], hu=[[],[],[],[]], exchanges = [];
+    const TOTAL = 114;
+    snaps.length = 0;
+    const cur = () => TOTAL - sum(hands) - sum(discards) - sum(melds) - sum(hu);
+    const sum = a => a.reduce((s,x)=>s+x.length, 0);
+    snaps.push(snap(hands, que, discards, melds, hu, exchanges, cur()));
+    let i = 0;
+    while (i < rec.events.length) {
+      const ev = rec.events[i];
+      if (ev.type === 'Exchange') {
+        const block = [];
+        while (i < rec.events.length && rec.events[i].type === 'Exchange') { block.push(rec.events[i]); i++; }
+        const give = {};
+        for (const e of block) { const p = e.rest.split(/\s+/); give[p[0]] = { to: p[1], cards: chunks(p[2] || '') }; }
+        // 交换前 snap (牌仍属给出方)
+        snaps.push(snap(hands, que, discards, melds, hu, exchanges, cur(), { phase: '换三张·交换前', give }));
+        // 应用交换
+        for (const f in give) for (const c of give[f].cards) { const idx = hands[f].indexOf(c); if (idx >= 0) hands[f].splice(idx, 1); }
+        for (const f in give) hands[give[f].to].push(...give[f].cards);
+        for (const f in give) exchanges.push({ from: f, to: give[f].to, cards: give[f].cards.slice() });
+        snaps.push(snap(hands, que, discards, melds, hu, exchanges, cur(), { phase: '换三张·交换后', give }));
+        continue;
+      }
       const p = ev.rest.split(/\s+/);
       const c = p[0] !== '' ? parseInt(p[0], 10) : NaN;
       switch (ev.type) {
         case 'Deal': if (c>=0&&c<4) hands[c] = chunks(p[1] || ''); break;
-        case 'Throw': if (c>=0&&c<4) { const i = hands[c].indexOf(p[1]); if (i>=0) hands[c].splice(i,1); discards[c].push(p[1]); } break;
+        case 'Throw': if (c>=0&&c<4) { const idx = hands[c].indexOf(p[1]); if (idx>=0) hands[c].splice(idx,1); discards[c].push(p[1]); } break;
         case 'Catch': if (c>=0&&c<4) hands[c].push(p[1]); break;
         case 'Que': if (c>=0&&c<4) que[c] = p[1] || ''; break;
-        case 'Exchange': exchanges.push({ from: p[0], to: p[1], cards: chunks(p[2] || '') }); break;
       }
-      const used = hands.reduce((s,a)=>s+a.length,0) + discards.reduce((s,a)=>s+a.length,0) + melds.reduce((s,a)=>s+a.length,0) + hu.reduce((s,a)=>s+a.length,0);
-      snaps.push({ hands: hands.map(a=>a.slice()), que: que.slice(), discards: discards.map(a=>a.slice()), melds, hu, exchanges: exchanges.slice(), ev, wall: TOTAL - used });
+      snaps.push(snap(hands, que, discards, melds, hu, exchanges, cur(), { ev }));
+      i++;
     }
+  }
+
+  function posOf(chair) { return (chair - perspective + 4) % 4; } // 0:bottom 1:left 2:top 3:right
+  const POS_CLASS = ['pos-bottom', 'pos-left', 'pos-top', 'pos-right'];
+
+  function applyLayout() {
+    for (let c = 0; c < 4; c++) {
+      const chair = document.querySelector(`.chair[data-chair="${c}"]`);
+      chair.classList.remove(...POS_CLASS);
+      chair.classList.add(POS_CLASS[posOf(c)]);
+      const disc = document.querySelector(`.disc[data-disc="${c}"]`);
+      disc.classList.remove(...POS_CLASS);
+      disc.classList.add(POS_CLASS[posOf(c)]);
+    }
+    document.querySelectorAll('#persp-btns button').forEach(b => {
+      b.classList.toggle('active', +b.dataset.p === perspective);
+    });
   }
 
   function renderMeta() {
@@ -222,6 +286,10 @@
     const uids = (h.ChairNO || []).map(s => s.split(/\s+/)[1]);
     document.getElementById('meta').textContent =
       `RoomID ${h.RoomID||'-'} | TableNO ${h.TableNO||'-'} | Flags ${h.Flags||'-'} | uid [${uids.join(', ')}] | Timestamp ${h.Timestamp||'-'}`;
+    document.getElementById('c-room').textContent = h.RoomID || '-';
+    document.getElementById('c-table').textContent = h.TableNO || '-';
+    document.getElementById('c-flags').textContent = h.Flags || '-';
+    document.getElementById('c-ts').textContent = h.Timestamp || '-';
     uids.forEach((uid, c) => { const el = document.querySelector(`.chair[data-chair="${c}"] .uid`); if (el) el.textContent = uid ? `uid ${uid}` : ''; });
   }
 
@@ -236,18 +304,17 @@
     if (idx < 0 || idx >= snaps.length) return;
     curStep = idx;
     const s = snaps[idx];
-    const vis = showAll();
+    const vis = document.getElementById('btn-visible').checked;
     for (let c = 0; c < 4; c++) {
       const chair = document.querySelector(`.chair[data-chair="${c}"]`);
-      // 手牌: chair 0 (自己) 始终显; 其他看 showAll
-      const showHand = c === 0 || vis;
-      chair.querySelector('.hand-area').innerHTML = showHand ? s.hands[c].map(t => tileHtml(t, false)).join('') : '<span style="color:#6a8a7a;font-size:11px">隐</span>';
+      const showHand = c === perspective || vis;
+      const sorted = s.hands[c].slice().sort(sortHand);
+      chair.querySelector('.hand-area').innerHTML = showHand ? sorted.map(t => tileHtml(t, false)).join('') : '<span style="color:#6a8a7a;font-size:11px">隐</span>';
       const chip = chair.querySelector('.que-chip');
       const q = s.que[c];
-      chip.textContent = q ? `缺 ${q}` : '缺 -';
+      chip.textContent = q ? `缺 ${QUE_NAME[q]}` : '缺 -';
       chip.className = 'que-chip' + (q ? ' '+q : '');
     }
-    // 中心弃牌 + 牌墙 + 换三张
     for (let c = 0; c < 4; c++) {
       const dz = document.querySelector(`.disc[data-disc="${c}"]`);
       if (dz) dz.innerHTML = s.discards[c].map(t => tileHtml(t, true)).join('');
@@ -255,8 +322,11 @@
     document.getElementById('wall-num').textContent = s.wall;
     const ex = s.exchanges;
     document.getElementById('exchange').innerHTML = ex.length
-      ? ex.map(e => `${e.from}→${e.to}: ${e.cards.map(c=>c[1]==='F'?'中':c).join('')}`).join(' / ')
+      ? ex.map(e => `${e.from}→${e.to}: ${e.cards.map(c => c[1]==='F'?'中':c).join('')}`).join(' / ')
       : '';
+    const phaseTag = document.getElementById('phase-tag');
+    if (s.phase) { phaseTag.style.display = ''; phaseTag.textContent = s.phase; }
+    else phaseTag.style.display = 'none';
     setActiveStep(idx);
   }
 
@@ -266,10 +336,18 @@
     const idxOf = new Map();
     for (let i = 0; i < snaps.length; i++) if (snaps[i].ev) idxOf.set(snaps[i].ev, i);
     let html = '';
+    let n = 0;
     for (const ev of rec.displayEvents) {
       const si = idxOf.get(ev);
       const esc = ev.rest.replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[m]);
       html += `<div class="step" data-snap="${si}"><span class="t">${ev.time}</span> <span class="ty">${ev.type.padEnd(8)}</span> <span class="body">${esc}</span></div>`;
+      n++;
+    }
+    // 加 phase 步 (换三张前/后)
+    for (let i = 0; i < snaps.length; i++) {
+      if (snaps[i].phase) {
+        html += `<div class="step phase" data-snap="${i}">★ ${snaps[i].phase}</div>`;
+      }
     }
     list.innerHTML = html;
     list.querySelectorAll('.step').forEach(el => el.addEventListener('click', () => renderSnap(parseInt(el.dataset.snap, 10))));
@@ -291,12 +369,17 @@
   document.getElementById('btn-next').onclick = () => { if (curStep < snaps.length - 1) renderSnap(curStep + 1); };
   document.getElementById('btn-demo').onclick = loadDemo;
   document.getElementById('btn-visible').onchange = () => renderSnap(curStep);
+  document.querySelectorAll('#persp-btns button').forEach(b => {
+    b.onclick = () => { perspective = +b.dataset.p; applyLayout(); renderSnap(curStep); };
+  });
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); if (curStep > 0) renderSnap(curStep - 1); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); if (curStep < snaps.length - 1) renderSnap(curStep + 1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); if (curStep < snaps.length - 1) renderSnap(curStep + 1); }
+    else if (['1','2','3','4'].includes(e.key)) { perspective = +e.key - 1; applyLayout(); renderSnap(curStep); }
   });
 
+  applyLayout();
   loadDemo();
 </script>
 </body>
