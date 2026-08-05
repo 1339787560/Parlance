@@ -1,10 +1,13 @@
-//! GET /recorder — 四川麻将复盘器 web 页面 + /recorder/demo 演示 record。
+//! GET /recorder — 四川麻将复盘器 web 页面 + 静态资产。
 //!
-//! 同名 recorder.html 经 include_str! 静态内嵌, 单二进制自包含 (无需外部静态目录)。
-//! recorder_demo.txt = 川麻 xzms 样例 record (UTF-8 化, GBK 原文转码) 供前端演示 fetch。
+//! recorder.html / recorder_demo.txt / mj_color0.png 全部 include_str!/include_bytes!
+//! 内嵌, 单二进制自包含 (无需外部静态目录)。
 //! 后续迭代: record 解析下沉 Rust 解析器 + REST API (/api/record/list|{id})。
 
-use axum::response::Html;
+use axum::body::Body;
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
+use axum::http::HeaderValue;
+use axum::response::{Html, Response};
 
 /// GET /recorder — 返复盘器页面 HTML。
 pub async fn page() -> Html<&'static str> {
@@ -12,8 +15,18 @@ pub async fn page() -> Html<&'static str> {
 }
 
 /// GET /recorder/demo — 返演示用 record 文本 (UTF-8 化的 xzms 样例)。
-///
-/// 前端 fetch 后 JS 解析头部 + 事件序列渲染。后续接正式 /api/record/{id}。
 pub async fn demo() -> &'static str {
     include_str!("recorder_demo.txt")
+}
+
+/// GET /recorder/mj_color0.png — 川麻牌面 sprite 合图 (1024², 6×9)。
+///
+/// 切片规则参 memory `mj-cardface-sprite-tracker`: 万 R0 / 条 R1 / 筒 R3,
+/// 9 列 x=[5,118,235,345,462,573,687,804,916], y={W:7,T:153,D:447}。
+pub async fn sprite() -> Response {
+    let mut resp = Response::new(Body::from(include_bytes!("mj_color0.png").as_slice()));
+    let h = resp.headers_mut();
+    h.insert(CONTENT_TYPE, HeaderValue::from_static("image/png"));
+    h.insert(CACHE_CONTROL, HeaderValue::from_static("public, max-age=86400"));
+    resp
 }
