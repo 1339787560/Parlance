@@ -37,9 +37,9 @@
       grid-template-areas: "left top right" "left center right" "left bottom right";
       grid-template-columns: minmax(108px, 0.6fr) 2.8fr minmax(108px, 0.6fr);
       grid-template-rows: auto 1fr auto;
-      gap: 2px; padding: 4px;
+      gap: 1px; padding: 2px;
     }
-    .chair { background: rgba(255,255,255,.04); border-radius: 8px; padding: 8px 10px; min-width: 0; position: relative; display: flex; flex-direction: column; }
+    .chair { background: rgba(255,255,255,.04); border-radius: 8px; padding: 4px 4px; min-width: 0; position: relative; display: flex; flex-direction: column; }
     .chair.pos-top { grid-area: top; } .chair.pos-bottom { grid-area: bottom; }
     .chair.pos-left { grid-area: left; } .chair.pos-right { grid-area: right; }
     .chair.pos-left, .chair.pos-right { justify-content: space-between; }
@@ -77,7 +77,7 @@
     .center {
       grid-area: center; min-width: 0; min-height: 0;
       display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto 1fr auto;
-      gap: 3px; align-items: center; justify-items: stretch; padding: 4px;
+      gap: 1px; align-items: center; justify-items: stretch; padding: 2px;
     }
     .disc { background: transparent; padding: 2px; min-height: 30px; opacity: .5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; transition: opacity .2s; }
     .disc-row { display: flex; gap: 0; justify-content: center; }
@@ -102,12 +102,11 @@
     .tile.sm.back { width: 24px; height: 34px; }
     .tile.sm.back::after { font-size: 14px; }
 
-    /* 左右玩家 (含手牌+弃牌) 牌张旋转 90° 朝中心: 左顺时针牌头朝右, 右逆时针牌头朝左 */
-    .chair.pos-left .tile, .disc.pos-left .tile { transform: rotate(90deg); }
-    .chair.pos-right .tile, .disc.pos-right .tile { transform: rotate(-90deg); }
-    /* 左右弃牌: 列横向延伸 (玩家→桌中), 每列竖排 (沿桌中边), tile rotate 朝中心 */
-    .disc.pos-left, .disc.pos-right { flex-direction: row; align-items: center; }
-    .disc.pos-left .disc-row, .disc.pos-right .disc-row { flex-direction: column; }
+    /* 左右玩家手牌旋转 90° 朝中心 (弃牌不旋转, 统一横排左到右) */
+    .chair.pos-left .tile { transform: rotate(90deg); }
+    .chair.pos-right .tile { transform: rotate(-90deg); }
+    /* 左右弃牌: 统一横排左到右 (与上下方位一致), 不旋转 */
+    .disc.pos-left, .disc.pos-right { flex-direction: column; }
 
     /* 对局日志: 高层级浮动窗 (折叠/展开均浮在牌桌上方) */
     .log-panel { position: fixed; bottom: 10px; right: 10px; z-index: 250; width: 380px; max-width: 50vw; background: rgba(10,26,18,.96); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; box-shadow: 0 6px 22px rgba(0,0,0,.6); backdrop-filter: blur(8px); }
