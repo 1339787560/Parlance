@@ -64,10 +64,14 @@
     .play-row { display: flex; align-items: center; gap: 0; margin: 2px 0; flex-wrap: nowrap; min-height: 48px; }
     .meld-area { display: flex; flex-wrap: nowrap; gap: 0; align-items: center; justify-content: flex-start; }
     .meld-group { display: flex; gap: 0; padding: 1px 3px; background: rgba(255,255,255,.06); border-radius: 3px; margin-right: 5px; }
-    .hand-area { display: flex; flex-wrap: nowrap; gap: 0; align-items: center; justify-content: flex-end; flex: 1; min-width: 0; }
+    .hand-area { display: flex; flex-wrap: nowrap; gap: 0; align-items: center; justify-content: center; flex: 1; min-width: 0; }
     .catch-area { display: flex; align-items: center; justify-content: flex-end; margin-left: 14px; min-width: 30px; }
     .hu-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; width: 100%; margin-top: 4px; min-height: 0; }
-    /* 左右玩家: 手牌横向 (与上下方位一致), 胡牌在手牌下方另起 */
+    /* 左右玩家: tile 已 rotate, play-row 改纵向 (碰杠/手牌/抓牌 同列), 区域紧凑 */
+    .chair.pos-left .play-row, .chair.pos-right .play-row { flex-direction: column; gap: 4px; align-items: center; }
+    .chair.pos-left .hand-area, .chair.pos-right .hand-area { flex-direction: column; justify-content: flex-start; align-items: center; flex: none; }
+    .chair.pos-left .meld-area, .chair.pos-right .meld-area { flex-direction: column; }
+    .chair.pos-left .catch-area, .chair.pos-right .catch-area { margin-left: 0; margin-top: 10px; min-width: 0; min-height: 30px; }
 
     /* 中心: 墙余 + 4 弃牌区沿方位 */
     .center {
@@ -97,6 +101,10 @@
     .tile.back::after { content: "🀄"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; opacity: .5; }
     .tile.sm.back { width: 24px; height: 34px; }
     .tile.sm.back::after { font-size: 14px; }
+
+    /* 左右玩家手牌旋转 90° 朝中心 (弃牌不旋转, 统一横排左到右) */
+    .chair.pos-left .tile { transform: rotate(90deg); }
+    .chair.pos-right .tile { transform: rotate(-90deg); }
     /* 左右弃牌: 统一横排左到右 (与上下方位一致), 不旋转 */
     .disc.pos-left, .disc.pos-right { flex-direction: column; }
 
@@ -425,7 +433,7 @@
         let cards = null;
         if (s.phase.endsWith('亮牌')) { for (const r in s.recv) if (s.recv[r].from == String(c)) { cards = s.recv[r].cards; break; } }
         else { if (s.recv[c]) cards = s.recv[c].cards; }
-        dz.innerHTML = cards ? cards.map(t => tileHtml(t, true)).join('') : '';
+        dz.innerHTML = cards ? `<div class="disc-row">${cards.map(t => tileHtml(t, true)).join('')}</div>` : '';
       } else {
         dz.classList.remove('exchange-zone');
         const ds = s.discards[c];
