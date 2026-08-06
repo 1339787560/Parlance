@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>四川麻将记牌器 - 工具 By Liz</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+            background: #efefef;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+            padding: 28px 32px;
+        }
+        h1 { color: #2a2a2a; text-align: center; margin: 0 0 4px; font-size: 26px; }
+        .subtitle { text-align: center; color: #999; font-size: 13px; margin-bottom: 22px; }
+
+        .breadcrumb { margin-bottom: 22px; font-size: 14px; color: #6c757d; }
+        .breadcrumb a { color: #007bff; text-decoration: none; }
+        .breadcrumb a:hover { text-decoration: underline; }
+        .breadcrumb .current-page-title { font-weight: bold; color: #343a40; }
+
+        /* 顶部工具条 */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            margin-bottom: 22px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            background: #007bff; color: #fff; border: none;
+            padding: 9px 20px; border-radius: 6px; cursor: pointer;
+            font-size: 14px; transition: background .15s;
+        }
+        .btn:hover { background: #0056b3; }
+        .btn.warn { background: #dc3545; } .btn.warn:hover { background: #c82333; }
+        .btn.ghost { background: #6c757d; } .btn.ghost:hover { background: #5a6268; }
+        .stat {
+            display: flex; gap: 22px; font-size: 14px; color: #555;
+            padding: 6px 16px; background: #f4f4f4; border-radius: 6px;
+        }
+        .stat b { color: #c8332e; font-size: 15px; }
+
+        /* 牌桌：仿绿呢台面 */
+        .board {
+            background:
+                radial-gradient(ellipse at center, #1f6d44 0%, #134a2d 70%, #0a3220 100%);
+            border: 6px solid #5c3f1f;
+            border-radius: 14px;
+            padding: 22px 16px;
+            box-shadow: inset 0 4px 16px rgba(0,0,0,.55), 0 2px 10px rgba(0,0,0,.15);
+        }
+        .suit-block { margin-bottom: 18px; }
+        .suit-block:last-child { margin-bottom: 0; }
+        .suit-head {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 10px; padding: 0 8px;
+        }
+        .suit-head .label {
+            color: #f5d989; font-size: 14px; font-weight: bold;
+            letter-spacing: 5px; text-shadow: 0 1px 2px rgba(0,0,0,.6);
+            min-width: 60px;
+        }
+        .suit-head .line {
+            flex: 1; height: 1px;
+            background: linear-gradient(to right, rgba(245,217,137,.4), rgba(245,217,137,.05));
+        }
+        .suit-row {
+            display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+        }
+
+        /* 单张牌 */
+        .tile {
+            position: relative;
+            cursor: pointer;
+            user-select: none;
+            transition: transform .15s ease;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .tile:hover { transform: translateY(-5px); }
+        .tile.depleted { opacity: .42; filter: grayscale(.7); }
+        .tile.depleted:hover { transform: none; }
+
+        .tile-card {
+            width: 56px; height: 75px;
+            border-radius: 7px;
+            overflow: hidden;
+            border: 1px solid rgba(0,0,0,.25);
+            box-shadow:
+                0 3px 6px rgba(0,0,0,.45),
+                inset 0 1px 0 rgba(255,255,255,.35),
+                inset 0 -2px 4px rgba(0,0,0,.15);
+            background: #f3e8c8;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .tile-face {
+            background-image: url('/static/mj_color0.png');
+            background-repeat: no-repeat;
+            image-rendering: auto;
+            /* 宽高 + background-size/position 由 JS 按 SCALE 注入；牌卡露奶油底做内边距 */
+        }
+        .tile-name {
+            margin-top: 6px;
+            font-size: 12px; color: #ead9a8;
+            text-shadow: 0 1px 2px rgba(0,0,0,.6);
+        }
+        .remain-badge {
+            position: absolute;
+            top: -6px; right: -6px;
+            min-width: 19px; height: 19px; padding: 0 4px;
+            border-radius: 10px;
+            background: #c8332e; color: #fff;
+            font-size: 12px; font-weight: bold; line-height: 19px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,.5);
+            border: 1.5px solid #fff;
+        }
+        .remain-badge.zero { background: #4a4a4a; }
+
+        .hint {
+            text-align: center; color: #888; font-size: 12px;
+            margin-top: 18px;
+        }
+        .hint kbd {
+            background: #eee; border: 1px solid #ccc; border-radius: 3px;
+            padding: 1px 6px; font-family: monospace; font-size: 11px;
+        }
+
+        /* 夜间模式 */
+        body.dark-theme { background: #121212; color: #e0e0e0; }
+        body.dark-theme .container { background: #1e1e1e; color: #e0e0e0; }
+        body.dark-theme h1 { color: #f0f0f0; }
+        body.dark-theme .subtitle { color: #999; }
+        body.dark-theme .breadcrumb { color: #b0b0b0; }
+        body.dark-theme .breadcrumb a { color: #6cb7ff; }
+        body.dark-theme .breadcrumb .current-page-title { color: #f0f0f0; }
+        body.dark-theme .stat { background: #2a2a2a; color: #ccc; }
+        body.dark-theme .hint { color: #888; }
+        body.dark-theme .hint kbd { background: #333; border-color: #444; color: #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/">主页</a> &gt; <span class="current-page-title">四川麻将记牌器</span>
+        </div>
+        <h1>🀄 四川麻将记牌器</h1>
+        <div class="subtitle">血流血战 · 万条筒三色 · 每张 4 副 · 共 108 张</div>
+
+        <div class="toolbar">
+            <button class="btn ghost" onclick="resetAll()">↺ 重置</button>
+            <button class="btn warn" onclick="undoLast()">↶ 撤销</button>
+            <div class="stat">
+                <span>已出 <b id="seen-total">0</b></span>
+                <span>剩余 <b id="left-total">108</b></span>
+            </div>
+        </div>
+
+        <div class="board">
+            <div class="suit-block">
+                <div class="suit-head"><span class="label">万 子</span><span class="line"></span></div>
+                <div class="suit-row" id="row-wan"></div>
+            </div>
+            <div class="suit-block">
+                <div class="suit-head"><span class="label">条 子</span><span class="line"></span></div>
+                <div class="suit-row" id="row-tiao"></div>
+            </div>
+            <div class="suit-block">
+                <div class="suit-head"><span class="label">筒 子</span><span class="line"></span></div>
+                <div class="suit-row" id="row-tong"></div>
+            </div>
+        </div>
+
+        <div class="hint">
+            <kbd>左键</kbd> +1 张 · <kbd>右键</kbd> −1 张 · 牌面取自客户端 <code>mj_color0</code> 合图
+        </div>
+    </div>
+
+    <script>
+        if (localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-theme');
+
+        const CN_NUM = ['一','二','三','四','五','六','七','八','九'];
+
+        // mj_color0 合图坐标（1024×1024，自动检测自客户端纹理）
+        // 9 列：colBands [x0,x1]；3 个花色行：rowY { y0, y1 }
+        const COLS = [[5,107],[118,221],[235,333],[345,446],[462,559],[573,678],[687,789],[804,903],[916,1017]];
+        const ROW_Y = {
+            wan:  { y0: 7,   y1: 140 },  // R0 万子
+            tiao: { y0: 153, y1: 288 },  // R1 条子
+            tong: { y0: 301, y1: 431 }   // R2 筒子（447 是风牌，已修）
+        };
+        const ATLAS = 1024;
+        const SCALE = 0.42;                       // 贴图缩放（小于牌卡，留奶油内边距）
+        const BG_SIZE = ATLAS * SCALE;            // background-size
+
+        const SUITS = [
+            { key: 'wan',  name: '万' },
+            { key: 'tiao', name: '条' },
+            { key: 'tong', name: '筒' }
+        ];
+        const MAX = 4, TOTAL = 27 * MAX;
+        const state = {};
+        SUITS.forEach(s => { for (let n=1;n<=9;n++) state[`${s.key}-${n}`] = { seen: 0 }; });
+        const history = [];
+
+        function faceStyle(suit, idx) {
+            const r = ROW_Y[suit];
+            const c = COLS[idx];
+            const w = (c[1] - c[0] + 1) * SCALE;   // 贴图元素宽 = 单元格宽 × SCALE
+            const h = (r.y1 - r.y0 + 1) * SCALE;   // 贴图元素高
+            const x = -c[0] * SCALE;
+            const y = -r.y0 * SCALE;
+            return `width:${w.toFixed(2)}px;height:${h.toFixed(2)}px;` +
+                   `background-position:${x.toFixed(2)}px ${y.toFixed(2)}px;` +
+                   `background-size:${BG_SIZE.toFixed(2)}px ${BG_SIZE.toFixed(2)}px;`;
+        }
+
+        function renderRow(suit) {
+            const row = document.getElementById(`row-${suit.key}`);
+            row.innerHTML = '';
+            for (let n = 1; n <= 9; n++) {
+                const id = `${suit.key}-${n}`;
+                const wrap = document.createElement('div');
+                wrap.className = 'tile';
+                wrap.dataset.id = id;
+                wrap.innerHTML = `
+                    <div class="tile-card">
+                        <div class="tile-face" style="${faceStyle(suit.key, n-1)}"></div>
+                    </div>
+                    <div class="remain-badge" data-badge="${id}">${MAX}</div>
+                    <div class="tile-name">${CN_NUM[n-1]}${suit.name}</div>`;
+                wrap.addEventListener('click', () => onTileClick(id));
+                wrap.addEventListener('contextmenu', e => { e.preventDefault(); onTileRightClick(id); });
+                row.appendChild(wrap);
+            }
+        }
+
+        function refreshTile(id) {
+            const seen = state[id].seen;
+            const left = MAX - seen;
+            const tileEl = document.querySelector(`.tile[data-id="${id}"]`);
+            const badge = document.querySelector(`[data-badge="${id}"]`);
+            badge.textContent = left;
+            badge.classList.toggle('zero', left === 0);
+            tileEl.classList.toggle('depleted', left === 0);
+        }
+        function refreshStats() {
+            let seen = 0;
+            Object.values(state).forEach(s => seen += s.seen);
+            document.getElementById('seen-total').textContent = seen;
+            document.getElementById('left-total').textContent = TOTAL - seen;
+        }
+        function onTileClick(id) {
+            if (state[id].seen >= MAX) return;
+            state[id].seen++; history.push(id);
+            refreshTile(id); refreshStats();
+        }
+        function onTileRightClick(id) {
+            if (state[id].seen <= 0) return;
+            state[id].seen--;
+            const idx = history.lastIndexOf(id); if (idx >= 0) history.splice(idx, 1);
+            refreshTile(id); refreshStats();
+        }
+        function resetAll() {
+            if (!confirm('清空所有记数？')) return;
+            Object.keys(state).forEach(id => state[id].seen = 0);
+            history.length = 0;
+            SUITS.forEach(s => { for (let n=1;n<=9;n++) refreshTile(`${s.key}-${n}`); });
+            refreshStats();
+        }
+        function undoLast() {
+            if (!history.length) return;
+            const id = history.pop();
+            state[id].seen = Math.max(0, state[id].seen - 1);
+            refreshTile(id); refreshStats();
+        }
+
+        SUITS.forEach(renderRow);
+        refreshStats();
+    </script>
+</body>
+</html>

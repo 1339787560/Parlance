@@ -7,6 +7,7 @@ import time
 import Service
 import JsonConfigParser
 import json
+from multiprocessing.connection import Client
 from . import app
 from . import TemplateDB # 导入 TemplateDB
 
@@ -199,6 +200,35 @@ def api_restart_service():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+# ===== svn update 经 infoserver host 控制面 (停 serviceServer-rust+legacy → svn up infoServer 根 → 启) =====
+# legacy 自身是被停目标, 走 host (main.py) 编排: main.py 异步触发后 sleep 1.5s 才停 legacy,
+# 给本路由时间返 HTTP 响应。完成结果/日志查 /api/svn/update_log (读 host 写的 svn_update.log)。
+SVC_CTL_PIPE_WIN = r"\\.\pipe\infoserver_svc"
+SVC_CTL_SOCKET_POSIX = "/tmp/infoserver_svc.sock"
+
+def _svc_ctl_address():
+    if os.name == "nt":
+        return (SVC_CTL_PIPE_WIN, "AF_PIPE")
+    return (SVC_CTL_SOCKET_POSIX, "AF_UNIX")
+
+def _call_svc(method, params=None, timeout=15):
+    """连 main.py ServiceControlServer socket 调 JSON-RPC method, 返 result 内容 (unwrap envelope)。"""
+    addr, family = _svc_ctl_address()
+    conn = Client(addr, family=family)
+    try:
+        conn.send({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}})
+        resp = conn.recv()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    # unwrap JSON-RPC envelope: {id, jsonrpc, result} → result 内容
+    if isinstance(resp, dict) and "jsonrpc" in resp and "result" in resp:
+        return resp["result"]
+    return resp
+
+
 @app.route('/api/svn/status', methods=['GET'])
 def api_get_svn_status():
     try:
@@ -209,11 +239,28 @@ def api_get_svn_status():
 
 @app.route('/api/svn/update', methods=['POST'])
 def api_update_svn():
+    """触发 host 异步编排: 停 serviceServer-rust+legacy → svn up infoServer 根 → 启。
+    立即返「已触发」, 完成结果查 /api/svn/update_log。
+    """
     try:
-        success, message = Service.update_svn()
-        return jsonify({'success': success, 'message': message})
+        result = _call_svc("update", {"names": ["serviceServer-rust", "serviceServer-legacy"]})
+        ok = bool(result.get("ok")) if isinstance(result, dict) else False
+        message = result.get("message", "") if isinstance(result, dict) else str(result)
+        log_path = result.get("log", "") if isinstance(result, dict) else ""
+        return jsonify({
+            'success': ok,
+            'message': f"{message} | 日志: {log_path} (查 /api/svn/update_log)",
+        })
     except Exception as e:
-        return jsonify({'success': False, 'message': f'执行SVN更新失败: {str(e)}'}), 500
+        return jsonify({'success': False, 'message': f'触发 host update 失败: {e}'}), 500
+
+@app.route('/api/svn/update_log', methods=['GET'])
+def api_svn_update_log():
+    """查 host svn update 编排状态 + 最近一次日志 (前端轮询)。"""
+    try:
+        return jsonify(_call_svc("update_log"))
+    except Exception as e:
+        return jsonify({'running': False, 'message': f'查 update_log 失败: {e}'}), 500
 
 import subprocess
 import os
@@ -744,6 +791,155 @@ def deposit_page():
 def fileontimer_page():
     """显示FileOnTimer文件浏览页面"""
     return render_template('FileOnTimer.html')
+
+@app.route('/cardtracker')
+def cardtracker_page():
+    """显示四川麻将记牌器页面"""
+    return render_template('cardTracker.html')
+
+@app.route('/makecard')
+def makecard_page():
+    """显示做牌器页面"""
+    return render_template('makecard.html')
+
+# ===== 做牌器 test.ini 文件读写（直读 D:\game\{svc}\server_game，绕开 servicesvr 运行态要求） =====
+import re as _re
+import shutil as _shutil
+MAKECARD_SERVICES = {
+    'xzmo':  r'D:\game\xzmo\server_game',
+    'xzms':  r'D:\game\xzms\server_game',
+    'xzmo2': r'D:\game\xzmo2\server_game',
+}
+_MAKECARD_FILE_RE = _re.compile(r'^test[\w.-]*\.ini$', _re.IGNORECASE)
+
+@app.route('/api/makecard/files', methods=['GET'])
+def api_makecard_files():
+    """列出服务目录下所有 test*.ini（含场景备份与 remove/ 子目录）"""
+    svc = request.args.get('service')
+    base = MAKECARD_SERVICES.get(svc)
+    if not base:
+        return jsonify({'success': False, 'message': f'不支持的服务: {svc}'}), 400
+    files = []
+    if os.path.exists(base):
+        for f in sorted(os.listdir(base)):
+            if _MAKECARD_FILE_RE.match(f):
+                files.append(f)
+    # remove/ 子目录备份
+    remove_dir = os.path.join(base, 'remove')
+    if os.path.isdir(remove_dir):
+        for f in sorted(os.listdir(remove_dir)):
+            if _MAKECARD_FILE_RE.match(f):
+                files.append('remove/' + f)
+    return jsonify({'success': True, 'files': files, 'service': svc, 'base': base})
+
+@app.route('/api/makecard/read', methods=['GET'])
+def api_makecard_read():
+    """读取服务目录下指定 test*.ini 内容（自动探测编码）"""
+    svc = request.args.get('service')
+    file = request.args.get('file')
+    base = MAKECARD_SERVICES.get(svc)
+    if not base:
+        return jsonify({'success': False, 'message': f'不支持的服务: {svc}'}), 400
+    if not file or not _MAKECARD_FILE_RE.match(file.split('/')[-1]):
+        return jsonify({'success': False, 'message': '非法文件名（需 test*.ini）'}), 400
+    path = os.path.join(base, file)
+    if not os.path.abspath(path).startswith(os.path.abspath(base)):
+        return jsonify({'success': False, 'message': '路径越界'}), 400
+    if not os.path.exists(path):
+        return jsonify({'success': False, 'message': f'文件不存在: {file}'}), 404
+    try:
+        raw = open(path, 'rb').read()
+        content = None
+        for enc in ('utf-8-sig', 'utf-8', 'gbk', 'latin-1'):
+            try:
+                content = raw.decode(enc); break
+            except UnicodeDecodeError:
+                continue
+        return jsonify({'success': True, 'content': content, 'file': file, 'service': svc})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/makecard/save', methods=['POST'])
+def api_makecard_save():
+    """保存做牌内容到 test*.ini（写前 .bak 备份，原位写）"""
+    data = request.json or {}
+    svc = data.get('service')
+    file = data.get('file')
+    content = data.get('content')
+    base = MAKECARD_SERVICES.get(svc)
+    if not base:
+        return jsonify({'success': False, 'message': f'不支持的服务: {svc}'}), 400
+    if not file or not _MAKECARD_FILE_RE.match(file.split('/')[-1]):
+        return jsonify({'success': False, 'message': '非法文件名（需 test*.ini）'}), 400
+    if content is None:
+        return jsonify({'success': False, 'message': '缺少 content'}), 400
+    path = os.path.join(base, file)
+    if not os.path.abspath(path).startswith(os.path.abspath(base)):
+        return jsonify({'success': False, 'message': '路径越界'}), 400
+    try:
+        # 写前备份（同目录 .bak，不覆盖已存在的 .bak）
+        if os.path.exists(path):
+            bak = path + '.bak'
+            if not os.path.exists(bak):
+                try: _shutil.copy2(path, bak)
+                except Exception: pass
+        # 原位写（与 servicesvr 一致，避免 rename 漏文件监视）
+        with open(path, 'w', encoding='utf-8', newline='') as f:
+            f.write(content)
+        return jsonify({'success': True, 'message': '已保存', 'file': file,
+                        'service': svc, 'path': path})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/makecard/activate', methods=['POST'])
+def api_makecard_activate():
+    """将指定 test*.ini 设为生效：备份当前 test.ini → remove/test.ini.bak.{ts}，复制 file → test.ini"""
+    data = request.json or {}
+    svc = data.get('service')
+    file = data.get('file')
+    base = MAKECARD_SERVICES.get(svc)
+    if not base:
+        return jsonify({'success': False, 'message': f'不支持的服务: {svc}'}), 400
+    if not file or not _MAKECARD_FILE_RE.match(file.split('/')[-1]):
+        return jsonify({'success': False, 'message': '非法文件名（需 test*.ini）'}), 400
+    if file == 'test.ini':
+        return jsonify({'success': False, 'message': 'test.ini 已是生效文件'}), 400
+    src = os.path.join(base, file)
+    active = os.path.join(base, 'test.ini')
+    if not os.path.abspath(src).startswith(os.path.abspath(base)):
+        return jsonify({'success': False, 'message': '路径越界'}), 400
+    if not os.path.exists(src):
+        return jsonify({'success': False, 'message': f'文件不存在: {file}'}), 404
+    try:
+        # 读 branch 原始字节 + 解码
+        branch_raw = open(src, 'rb').read()
+        branch_text = None
+        for enc in ('utf-8-sig', 'utf-8', 'gbk', 'latin-1'):
+            try:
+                branch_text = branch_raw.decode(enc); break
+            except UnicodeDecodeError:
+                continue
+        # 备份当前 test.ini（时间戳，不覆盖）
+        backup_rel = ''
+        if os.path.exists(active):
+            from datetime import datetime as _dt
+            ts = _dt.now().strftime('%Y%m%d_%H%M%S')
+            remove_dir = os.path.join(base, 'remove')
+            if not os.path.isdir(remove_dir):
+                os.makedirs(remove_dir)
+            backup_rel = f'remove/test.ini.bak.{ts}'
+            _shutil.copy2(active, os.path.join(base, backup_rel))
+        # branch 原位写入 test.ini（保留原编码字节）
+        with open(active, 'wb') as f:
+            f.write(branch_raw)
+        return jsonify({
+            'success': True,
+            'message': f'已生效（旧 test.ini → {backup_rel or "无（原 test.ini 不存在）"}）',
+            'backup': backup_rel, 'content': branch_text,
+            'activated': file, 'service': svc,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/fileontimer/list', methods=['GET'])
 def api_fileontimer_list():

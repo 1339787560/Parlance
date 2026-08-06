@@ -44,6 +44,9 @@ services:
       SERVICESVR_CONFIG: ../serviceServer-legacy/config.json
       SERVICESVR_LEGACY_URL: http://127.0.0.1:5099
       RUST_LOG: info
+      SERVICESVR_HOST_ID: local
+      SERVICESVR_BASTION_53_URL: http://192.168.102.53:5000
+      SERVICESVR_BASTION_185_URL: http://192.168.52.185:5000
 
   - name: serviceServer-legacy
     command: python

@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>做牌器 - 工具 By Liz</title>
+    <style>
+        * { box-sizing: border-box; }
+        :root { --chair-w: 48px; --chair-h: 67px; --chair-font: 26px; }
+        html, body { height: 100%; }
+        body {
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            margin: 0; padding: 8px;
+            background: #efefef;
+            overflow: hidden;
+        }
+        .container {
+            width: 100%; height: 100%; margin: 0;
+            background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.08);
+            padding: 50px 12px 12px;
+            display: flex; flex-direction: column;
+            min-height: 0;
+        }
+
+        /* 悬浮工具栏（fixed, 不占文档流） */
+        .svc-bar {
+            position: fixed; top: 6px; left: 50%; transform: translateX(-50%);
+            z-index: 200;
+            display: flex; flex-wrap: nowrap; gap: 6px; align-items: center;
+            background: rgba(255,255,255,.95); backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 6px 10px; border-radius: 999px;
+            box-shadow: 0 6px 20px rgba(0,0,0,.18);
+            border: 1px solid rgba(0,0,0,.06);
+            max-width: calc(100vw - 16px);
+        }
+        body.dark-theme .svc-bar { background: rgba(34,34,34,.95); border-color: rgba(255,255,255,.08); }
+        .svc-bar select {
+            padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
+            font-size: 12px; background: #fff; min-width: 120px;
+        }
+        #file-sel { min-width: 200px; }
+        .svc-bar .lbl { font-size: 11px; color: #777; }
+        .svc-bar .count-pill {
+            font-size: 11px; color: #555; background: #eef1f5;
+            padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+        }
+        .svc-bar .count-pill b { color: #c8332e; }
+        body.dark-theme .svc-bar .count-pill { background: #2a2a2a; color: #ccc; }
+        .svc-bar .sep { width: 1px; height: 20px; background: #ddd; margin: 0 1px; }
+        .svc-bar .crumb { font-size: 12px; color: #888; white-space: nowrap; }
+        .svc-bar .crumb a { color: #007bff; text-decoration: none; }
+        .svc-bar .crumb a:hover { text-decoration: underline; }
+        body.dark-theme .svc-bar .crumb { color: #aaa; }
+        body.dark-theme .svc-bar .crumb a { color: #6cb7ff; }
+        body.dark-theme .svc-bar .sep { background: #444; }
+
+        .btn {
+            background: #007bff; color: #fff; border: none;
+            padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+            white-space: nowrap;
+        }
+        .btn:hover { background: #0056b3; }
+        .btn.warn { background: #dc3545; } .btn.warn:hover { background: #c82333; }
+        .btn.ghost { background: #6c757d; } .btn.ghost:hover { background: #5a6268; }
+        .btn.ok { background: #28a745; } .btn.ok:hover { background: #218838; }
+        .btn.icon { padding: 5px 8px; }
+
+        /* 区块 */
+        .section {
+            background: #fafafa; border: 1px solid #e3e3e3; border-radius: 8px;
+            padding: 8px 10px; margin-bottom: 8px;
+        }
+        /* 原始牌堆：固定大小不压缩 */
+        .section.bank-section {
+            height: 325px;
+            overflow-y: auto;
+            flex: 0 0 325px;
+        }
+        /* 选中区：flex:1 填满剩余视口 */
+        .section.select-section {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .section.select-section .select-wrap { flex: 1; min-height: 0; }
+
+        .view-tabs { display: flex; gap: 3px; background: #e9ecef; border-radius: 999px; padding: 2px; }
+        .view-tabs button {
+            border: none; background: transparent; padding: 3px 9px; font-size: 11px;
+            cursor: pointer; border-radius: 999px; color: #555;
+        }
+        .view-tabs button.active { background: #007bff; color: #fff; font-weight: bold; }
+
+        .tile-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+
+        /* 单张牌 */
+        .tile {
+            position: relative; cursor: pointer; user-select: none;
+            display: flex; flex-direction: column; align-items: center;
+            touch-action: none;
+        }
+        .tile.depleted { opacity: .22; filter: grayscale(.8); pointer-events: none; }
+        .tile-card {
+            width: 44px; height: 60px;
+            border-radius: 5px; overflow: hidden;
+            border: 1px solid rgba(0,0,0,.2);
+            box-shadow: 0 2px 3px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.3);
+            background: #f3e8c8;
+            display: flex; align-items: center; justify-content: center;
+            transition: box-shadow .1s, transform .1s;
+        }
+        /* 选中区（chairs/catch）响应式大 tile，17 张填满手牌区 */
+        .dropzone .tile-card {
+            width: var(--chair-w);
+            height: var(--chair-h);
+        }
+        .dropzone .tile-cid { font-size: calc(var(--chair-w) * 0.17); }
+        .tile:hover .tile-card { transform: translateY(-2px); }
+        .tile.selected .tile-card {
+            box-shadow: 0 0 0 2px #007bff, 0 4px 8px rgba(0,0,0,.4);
+            transform: translateY(-3px);
+        }
+        .tile-face {
+            background-image: var(--atlas-url, url('/static/mj_color0.png'));
+            background-repeat: no-repeat;
+        }
+        .tile-face.joker {
+            color: #b8112d; font-weight: bold; font-size: 28px;
+            font-family: STKaiti, KaiTi, serif; line-height: 60px;
+        }
+        .dropzone .tile-face.joker {
+            font-size: var(--chair-font);
+            line-height: var(--chair-h);
+        }
+        .tile-cid {
+            position: absolute; top: 1px; right: 2px;
+            font-size: 8px; color: #555; font-weight: bold;
+            background: rgba(255,255,255,.78); padding: 0 2px; border-radius: 2px;
+            line-height: 1.2; pointer-events: none; font-family: Consolas, monospace;
+        }
+
+        /* 选中区：左 牌堆(纵向高) | 右 4 椅纵向 1×4 */
+        .select-wrap { display: flex; gap: 10px; align-items: stretch; }
+        .select-left { flex: 1; display: flex; flex-direction: column; }
+        .select-right { flex: 2.4; display: flex; flex-direction: column; gap: 6px; }
+
+        .zone-label {
+            font-size: 11px; color: #666; padding: 2px 6px; margin-bottom: 3px;
+            font-weight: bold;
+        }
+        .zone-label b { color: #007bff; }
+
+        .target-zone {
+            cursor: pointer; border: 2px dashed transparent; border-radius: 7px;
+            padding: 2px; transition: background .1s, border-color .1s, box-shadow .1s;
+            flex: 1; display: flex; flex-direction: column;
+            position: relative;
+        }
+        .target-zone:hover { background: rgba(0,123,255,.05); }
+        .target-zone.active {
+            border-color: #007bff; background: rgba(0,123,255,.07);
+            box-shadow: 0 0 0 2px rgba(0,123,255,.15);
+        }
+        .zone-reset {
+            position: absolute; top: 3px; right: 5px; z-index: 10;
+            font-size: 10px; padding: 2px 8px;
+            background: rgba(220,53,69,.88); color: #fff;
+            border: none; border-radius: 3px; cursor: pointer;
+        }
+        .zone-reset:hover { background: rgba(200,40,40,1); }
+        .target-zone.catch-zone { padding: 4px; }
+        .select-left .target-zone { flex: 1; }
+
+        .dropzone {
+            background: #fff; border: 1px dashed #c5c5c5;
+            border-radius: 5px; padding: 4px; display: flex; flex-wrap: wrap;
+            gap: 4px; align-content: flex-start;
+            flex: 1; min-height: 50px;
+        }
+        /* catch 牌堆跟随 section 高度（内部滚动） */
+        .select-left .dropzone {
+            max-height: none;
+            overflow-y: auto;
+        }
+        .dropzone.empty { justify-content: center; align-items: center; }
+        .dropzone.empty::before {
+            content: ''; /* 无文本 */
+        }
+        .target-zone.active .dropzone { border-color: #007bff; }
+
+        .chair-block { display: flex; flex-direction: column; flex: 1; min-height: 54px; }
+        .chair-block .dropzone { flex: 1; }
+
+        .toast {
+            position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+            background: rgba(40,40,40,.92); color: #fff; padding: 8px 16px;
+            border-radius: 6px; font-size: 12px; opacity: 0; transition: opacity .2s;
+            pointer-events: none; z-index: 9999;
+        }
+        .toast.show { opacity: 1; }
+        .toast.err { background: rgba(200,40,40,.92); }
+        .toast.ok { background: rgba(40,140,60,.92); }
+
+        /* id 翻译悬浮窗 */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 1000;
+            background: rgba(0,0,0,.45); backdrop-filter: blur(3px);
+            display: none; align-items: center; justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-card {
+            background: #fff; border-radius: 10px; padding: 16px 18px;
+            width: min(760px, 94vw); max-height: 86vh;
+            display: flex; flex-direction: column;
+            box-shadow: 0 12px 44px rgba(0,0,0,.32);
+        }
+        body.dark-theme .modal-card { background: #1e1e1e; color: #e0e0e0; }
+        .modal-head {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 15px; font-weight: bold; margin-bottom: 10px;
+        }
+        .modal-head .close-x {
+            background: #dc3545; color: #fff; border: none;
+            width: 26px; height: 26px; border-radius: 50%; cursor: pointer; font-size: 14px;
+        }
+        .modal-card textarea {
+            width: 100%; min-height: 64px; padding: 8px 10px;
+            border: 1px solid #ccc; border-radius: 5px;
+            font-family: Consolas, monospace; font-size: 13px; resize: vertical;
+            background: #fff; color: #333;
+        }
+        body.dark-theme .modal-card textarea { background: #2a2a2a; color: #eee; border-color: #444; }
+        .modal-toolbar {
+            display: flex; gap: 8px; align-items: center; margin: 10px 0;
+            font-size: 12px; color: #666;
+        }
+        .modal-toolbar .id-stats { margin-left: auto; color: #888; }
+        .id-result {
+            flex: 1; min-height: 140px; overflow-y: auto;
+            background: #fafafa; border: 1px solid #e3e3e3; border-radius: 6px; padding: 8px;
+            display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start;
+        }
+        body.dark-theme .id-result { background: #252525; border-color: #383838; }
+        .id-result .tile-card { width: var(--chair-w); height: var(--chair-h); }
+        .id-result .tile { pointer-events: none; }
+        .id-result.empty::before {
+            content: '输入 cardid 后自动翻译'; color: #bbb; font-size: 12px;
+            width: 100%; text-align: center; padding: 40px 0;
+        }
+
+        /* 夜间 */
+        body.dark-theme { background: #121212; color: #e0e0e0; }
+        body.dark-theme .container { background: #1a1a1a; color: #e0e0e0; }
+        body.dark-theme .svc-bar select { background: #2a2a2a; color: #eee; border-color: #444; }
+        body.dark-theme .section { background: #232323; border-color: #383838; }
+        body.dark-theme .view-tabs { background: #333; }
+        body.dark-theme .view-tabs button { color: #aaa; }
+        body.dark-theme .view-tabs button.active { background: #007bff; color: #fff; }
+        body.dark-theme .dropzone { background: #252525; border-color: #444; }
+        body.dark-theme .chair-head { background: #333; color: #ccc; }
+        body.dark-theme .target-zone.active .chair-head { background: #2a4a6a; }
+        body.dark-theme .tile-cid { color: #ddd; background: rgba(0,0,0,.45); }
+        body.dark-theme .zone-label { color: #aaa; }
+    </style>
+</head>
+<body>
+    <!-- 悬浮工具栏（fixed, 不占文档流） -->
+    <div class="svc-bar">
+        <span class="crumb"><a href="/">主页</a> &rsaquo; 做牌器</span>
+        <div class="sep"></div>
+        <span class="lbl">服务</span>
+        <select id="service-sel" onchange="onServiceChange()">
+            <option value="xzmo">xzmo</option>
+            <option value="xzms">xzms</option>
+            <option value="xzmo2">xzmo2</option>
+        </select>
+        <span class="lbl">文件</span>
+        <select id="file-sel" onchange="onFileChange()"></select>
+        <div class="sep"></div>
+        <button class="btn ghost icon" onclick="loadFiles()" title="刷新列表">刷新</button>
+        <button class="btn icon" onclick="readFile()" title="读取">读取</button>
+        <button class="btn ok icon" onclick="saveFile()" title="保存">保存</button>
+        <button class="btn ghost icon" onclick="saveAs()" title="另存为新文件">另存</button>
+        <button class="btn ok icon" id="activate-btn" onclick="activateFile()" title="设为生效（复制覆盖 test.ini，旧文件备份 remove/）" disabled>生效</button>
+        <div class="sep"></div>
+        <button class="btn ok icon" onclick="randomDeal()" title="随机发牌">随机发牌</button>
+        <button class="btn warn icon" onclick="resetAll()" title="重置">重置</button>
+        <button class="btn ghost icon" id="undo-btn" onclick="undo()" title="撤销 (Ctrl+Z)" disabled>◀</button>
+        <button class="btn ghost icon" id="redo-btn" onclick="redo()" title="重做 (Ctrl+Y)" disabled>▶</button>
+        <button class="btn ghost" onclick="openIdModal()" title="id → 牌张翻译">id翻译</button>
+        <div class="sep"></div>
+        <div class="view-tabs">
+            <button id="tab-suit" class="active" onclick="setView('suit')">花色</button>
+            <button id="tab-cardid" onclick="setView('cardid')">cardid</button>
+        </div>
+        <span class="count-pill">牌堆 <b id="bank-count">0</b></span>
+    </div>
+
+    <div class="container">
+        <!-- 原始牌堆（固定大小不压缩） -->
+        <div class="section bank-section">
+            <div id="bank-grid" class="tile-grid"></div>
+        </div>
+
+        <!-- 选中区：左 catch（等高） | 右 4 椅纵向 -->
+        <div class="section select-section">
+            <div class="select-wrap">
+                <div class="select-left target-zone" id="tz-catch" data-zone="catch"
+                     onclick="setActive('catch')" ondblclick="onZoneDbl('catch', event)">
+                    <button class="zone-reset" onclick="event.stopPropagation(); resetZone('catch')">重置</button>
+                    <div class="zone-label">牌堆 <b id="catch-count">0</b></div>
+                    <div class="dropzone empty" id="zone-catch"></div>
+                </div>
+                <div class="select-right">
+                    <div class="chair-block target-zone" id="tz-chair-0" data-zone="chair-0"
+                         onclick="setActive('chair-0')" ondblclick="onZoneDbl('chair-0', event)">
+                        <button class="zone-reset" onclick="event.stopPropagation(); resetZone('chair-0')">重置</button>
+                        <div class="dropzone empty" id="zone-0"></div>
+                    </div>
+                    <div class="chair-block target-zone" id="tz-chair-1" data-zone="chair-1"
+                         onclick="setActive('chair-1')" ondblclick="onZoneDbl('chair-1', event)">
+                        <button class="zone-reset" onclick="event.stopPropagation(); resetZone('chair-1')">重置</button>
+                        <div class="dropzone empty" id="zone-1"></div>
+                    </div>
+                    <div class="chair-block target-zone" id="tz-chair-2" data-zone="chair-2"
+                         onclick="setActive('chair-2')" ondblclick="onZoneDbl('chair-2', event)">
+                        <button class="zone-reset" onclick="event.stopPropagation(); resetZone('chair-2')">重置</button>
+                        <div class="dropzone empty" id="zone-2"></div>
+                    </div>
+                    <div class="chair-block target-zone" id="tz-chair-3" data-zone="chair-3"
+                         onclick="setActive('chair-3')" ondblclick="onZoneDbl('chair-3', event)">
+                        <button class="zone-reset" onclick="event.stopPropagation(); resetZone('chair-3')">重置</button>
+                        <div class="dropzone empty" id="zone-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <!-- id 翻译悬浮窗 -->
+    <div class="modal-overlay" id="id-modal" onclick="onOverlayClick(event)">
+        <div class="modal-card">
+            <div class="modal-head">
+                <span>id 翻译</span>
+                <button class="close-x" onclick="closeIdModal()">×</button>
+            </div>
+            <textarea id="id-input" placeholder="支持 [0,1,2] / 0,1,2 / 0，1，2 / 0、1、2（半全角均可）" oninput="translateIds()"></textarea>
+            <div class="modal-toolbar">
+                <span>排序:</span>
+                <div class="view-tabs">
+                    <button id="id-tab-suit" class="active" onclick="setIdSort('suit')">花色</button>
+                    <button id="id-tab-cardid" onclick="setIdSort('cardid')">cardid</button>
+                </div>
+                <span class="id-stats" id="id-stats"></span>
+            </div>
+            <div class="id-result empty" id="id-result"></div>
+        </div>
+    </div>
+
+    <script>
+        if (localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-theme');
+
+        const CN_NUM = ['一','二','三','四','五','六','七','八','九'];
+        const SUITS = [{key:'wan',name:'万'},{key:'tiao',name:'条'},{key:'tong',name:'筒'}];
+
+        const ATLAS = 1024;
+        const COLS_X = [5, 118, 235, 345, 462, 573, 687, 804, 916];
+        const ROW_Y  = { wan: 7, tiao: 153, tong: 301 };
+        // 每 cell 真实 art 边界（cell 内偏移，像素排查得：cell band 内有灰填充环绕 art）
+        // ART_X[九列] 各列 art x0/x1；ART_Y[三花色行] art y0/y1
+        const ART_X = [[7,93],[8,94],[5,91],[9,100],[0,96],[9,95],[9,95],[5,94],[7,93]];
+        const ART_Y = { wan: [3, 133], tiao: [1, 134], tong: [5, 126] };
+        // bank 固定 tile；chairs/catch 响应式 tile（adjustTileSize 动态更新 CHAIR）
+        let SCALE_BANK = 0.36;
+        let BG_SIZE_BANK = ATLAS * SCALE_BANK;
+        let SCALE_CHAIR = 0.36;
+        let BG_SIZE_CHAIR = ATLAS * SCALE_CHAIR;
+
+        let currentService = 'xzmo';
+        let hasJoker = false;
+        let currentFile = '';
+        let viewMode = 'suit';
+        let activeZone = 'catch';
+        const HAND_LIMIT = 14;   // 手牌上限（后续可配置）
+        const state = {
+            bank: new Set(), catch: [], chairs: [[],[],[],[]], gang: [],
+            bankerno: 0, beginno: 0,
+        };
+
+        // ---- 撤销/重做（snapshot 栈）----
+        const history = [];
+        const future = [];
+        const HIST_LIMIT = 50;
+        function snapshot() {
+            return {
+                bank: new Set(state.bank),
+                catch: state.catch.slice(),
+                chairs: state.chairs.map(c => c.slice()),
+                gang: state.gang.slice(),
+                bankerno: state.bankerno,
+                beginno: state.beginno,
+            };
+        }
+        function restoreSnap(s) {
+            state.bank = new Set(s.bank);
+            state.catch = s.catch.slice();
+            state.chairs = s.chairs.map(c => c.slice());
+            state.gang = s.gang.slice();
+            state.bankerno = s.bankerno;
+            state.beginno = s.beginno;
+        }
+        function pushHistory() {
+            history.push(snapshot());
+            if (history.length > HIST_LIMIT) history.shift();
+            future.length = 0;
+            updateUndoRedoBtns();
+        }
+        function clearHistory() {
+            history.length = 0;
+            future.length = 0;
+            updateUndoRedoBtns();
+        }
+        function undo() {
+            if (!history.length) return;
+            future.push(snapshot());
+            restoreSnap(history.pop());
+            flipRender();
+            updateUndoRedoBtns();
+        }
+        function redo() {
+            if (!future.length) return;
+            history.push(snapshot());
+            restoreSnap(future.pop());
+            flipRender();
+            updateUndoRedoBtns();
+        }
+        function updateUndoRedoBtns() {
+            document.getElementById('undo-btn').disabled = history.length === 0;
+            document.getElementById('redo-btn').disabled = future.length === 0;
+        }
+
+        function cardMeta(cid) {
+            if (cid <= 107) {
+                const shape = Math.floor(cid / 36);
+                const value = cid % 9 + 1;
+                const copy = Math.floor((cid % 36) / 9);
+                return { shape, value, copy, suit: SUITS[shape].key, name: CN_NUM[value-1]+SUITS[shape].name, joker: false };
+            }
+            return { shape: 3, value: 5, copy: cid-108, suit: 'joker', name: '红中', joker: true };
+        }
+        function faceIdx(cid) {
+            const m = cardMeta(cid);
+            if (m.joker) return 27;
+            return m.shape * 9 + (m.value - 1);
+        }
+        function cmpFace(cidA, cidB) {
+            const fa = faceIdx(cidA), fb = faceIdx(cidB);
+            if (fa !== fb) return fa - fb;
+            return cardMeta(cidA).copy - cardMeta(cidB).copy;
+        }
+        function cmpCardid(a, b) { return a - b; }
+        function allCardIds() {
+            const max = hasJoker ? 114 : 108;
+            return Array.from({length: max}, (_, i) => i);
+        }
+        function usedSet() { return new Set([...state.catch, ...state.chairs.flat(), ...state.gang]); }
+        function rebuildBank() {
+            const used = usedSet();
+            state.bank = new Set(allCardIds().filter(id => !used.has(id)));
+        }
+
+        function faceStyle(cid, scale, bgSize) {
+            const m = cardMeta(cid);
+            if (m.joker) return null;
+            // 裁切到 cell 内真实 art 边界（去灰填充，避免放大后右侧黑裂隙）
+            const colIdx = m.value - 1;
+            const [ax0, ax1] = ART_X[colIdx];
+            const [ay0, ay1] = ART_Y[m.suit];
+            const x = -(COLS_X[colIdx] + ax0) * scale;
+            const y = -(ROW_Y[m.suit] + ay0) * scale;
+            const w = (ax1 - ax0 + 1) * scale;
+            const h = (ay1 - ay0 + 1) * scale;
+            return `width:${w.toFixed(2)}px;height:${h.toFixed(2)}px;` +
+                   `background-position:${x.toFixed(2)}px ${y.toFixed(2)}px;` +
+                   `background-size:${bgSize.toFixed(2)}px ${bgSize.toFixed(2)}px;`;
+        }
+        function tileEl(cid, origin, scale, bgSize) {
+            const m = cardMeta(cid);
+            const wrap = document.createElement('div');
+            wrap.className = 'tile';
+            wrap.dataset.cid = cid;
+            wrap.dataset.origin = origin;
+            const card = document.createElement('div');
+            card.className = 'tile-card';
+            const face = document.createElement('div');
+            if (m.joker) { face.className = 'tile-face joker'; face.textContent = '中'; }
+            else { face.className = 'tile-face'; face.style.cssText = faceStyle(cid, scale, bgSize) || ''; }
+            card.appendChild(face);
+            wrap.appendChild(card);
+            const cidLabel = document.createElement('div');
+            cidLabel.className = 'tile-cid';
+            cidLabel.textContent = cid;
+            wrap.appendChild(cidLabel);
+            wrap.addEventListener('pointerdown', e => onTileDown(e, cid, origin));
+            return wrap;
+        }
+
+        function renderBankDOM() {
+            const inBank = Array.from(state.bank);
+            inBank.sort(viewMode === 'suit' ? cmpFace : cmpCardid);
+            document.getElementById('bank-count').textContent = inBank.length;
+            reconcile(document.getElementById('bank-grid'), inBank, 'bank', SCALE_BANK, BG_SIZE_BANK);
+        }
+        // 手牌顺序无意义 → 排序；牌堆(catch)顺序有意义 → 保持插入序
+        function renderZoneDOM(zoneId, arr, origin) {
+            const ordered = origin === 'catch' ? arr.slice() : [...arr].sort(cmpFace);
+            reconcile(document.getElementById(zoneId), ordered, origin, SCALE_CHAIR, BG_SIZE_CHAIR);
+        }
+        // 增量 reconcile：复用已存在 tile 节点（DOM move），仅新建不存在的，避免全量重建掉帧
+        function reconcile(container, sortedCids, origin, scale, bgSize) {
+            const existing = new Map();
+            Array.from(container.children).forEach(n => {
+                if (n.classList && n.classList.contains('tile')) existing.set(n.dataset.cid, n);
+            });
+            const frag = document.createDocumentFragment();
+            sortedCids.forEach(cid => {
+                const key = String(cid);
+                let node = existing.get(key);
+                if (node) existing.delete(key);
+                else node = tileEl(cid, origin, scale, bgSize);
+                frag.appendChild(node);
+            });
+            container.innerHTML = '';
+            container.appendChild(frag);
+            container.classList.toggle('empty', sortedCids.length === 0);
+        }
+        // 响应式：根据 chair-0 宽度算 --chair-w（17 张填满），仅重建选中区牌面
+        function adjustTileSize() {
+            const dz = document.getElementById('zone-0');
+            if (!dz) return;
+            const gap = 4;
+            const content = dz.clientWidth - 8;
+            let tw = Math.floor((content - 16 * gap) / 17);
+            tw = Math.max(40, Math.min(110, tw));
+            const th = Math.round(tw * 1.4);
+            const font = Math.round(th * 0.45);
+            const root = document.documentElement;
+            root.style.setProperty('--chair-w', tw + 'px');
+            root.style.setProperty('--chair-h', th + 'px');
+            root.style.setProperty('--chair-font', font + 'px');
+            SCALE_CHAIR = (tw - 4) / 103;
+            BG_SIZE_CHAIR = ATLAS * SCALE_CHAIR;
+            // face size 变 → 清空选中区 tile 强制重建（bank 不动）
+            ['zone-catch', 'zone-0', 'zone-1', 'zone-2', 'zone-3'].forEach(id => {
+                document.getElementById(id).innerHTML = '';
+            });
+            renderZoneDOM('zone-catch', state.catch, 'catch');
+            for (let i = 0; i < 4; i++) renderZoneDOM('zone-' + i, state.chairs[i], 'chair-' + i);
+            document.getElementById('catch-count').textContent = state.catch.length;
+        }
+        function renderAllDOM() {
+            rebuildBank();
+            renderBankDOM();
+            renderZoneDOM('zone-catch', state.catch, 'catch');
+            for (let i = 0; i < 4; i++) {
+                renderZoneDOM('zone-' + i, state.chairs[i], 'chair-' + i);
+            }
+            document.getElementById('catch-count').textContent = state.catch.length;
+        }
+        function captureRects() {
+            const map = {};
+            document.querySelectorAll('.tile').forEach(t => {
+                const cid = t.dataset.cid;
+                if (cid != null && !(cid in map)) map[cid] = t.getBoundingClientRect();
+            });
+            return map;
+        }
+        function flipRender() {
+            const first = captureRects();
+            renderAllDOM();
+            document.querySelectorAll('.tile').forEach(t => {
+                const cid = t.dataset.cid;
+                if (!first[cid]) return;
+                const last = t.getBoundingClientRect();
+                const dx = first[cid].left - last.left;
+                const dy = first[cid].top - last.top;
+                if (!dx && !dy) return;
+                t.style.transition = 'none';
+                t.style.transform = `translate(${dx}px,${dy}px)`;
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    t.style.transition = 'transform .26s cubic-bezier(.2,.7,.3,1)';
+                    t.style.transform = '';
+                }));
+            });
+        }
+
+        function setActive(zone) {
+            activeZone = zone;
+            document.querySelectorAll('.target-zone').forEach(z => z.classList.remove('active'));
+            const el = document.getElementById('tz-' + (zone === 'catch' ? 'catch' : zone));
+            if (el) el.classList.add('active');
+            savePrefs();
+        }
+
+        function moveOne(cid, from, to) {
+            if (from === to) return false;
+            // 手牌上限：目标椅子满则拒绝（返回 false，调用方按需提示）
+            if (to.startsWith('chair-')) {
+                const ti = parseInt(to.split('-')[1]);
+                if (state.chairs[ti].length >= HAND_LIMIT) return false;
+            }
+            if (from === 'bank') state.bank.delete(cid);
+            else if (from === 'catch') state.catch = state.catch.filter(c => c !== cid);
+            else if (from.startsWith('chair-')) {
+                const i = parseInt(from.split('-')[1]);
+                state.chairs[i] = state.chairs[i].filter(c => c !== cid);
+            }
+            if (to === 'bank') state.bank.add(cid);
+            else if (to === 'catch') state.catch.push(cid);
+            else if (to.startsWith('chair-')) {
+                const i = parseInt(to.split('-')[1]);
+                state.chairs[i].push(cid);
+            }
+            return true;
+        }
+
+        // 矩形 lasso 多选：起点牌 → 当前指针所在牌，二者 bbox 合成矩形，相交即选
+        let selecting = false;
+        let selOrigin = null;
+        let startRect = null;
+        const selection = new Set();
+        function onTileDown(e, cid, origin) {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            selecting = true;
+            selOrigin = origin;
+            startRect = e.currentTarget.getBoundingClientRect();
+            selection.clear();
+            selection.add(Number(cid));
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup', onPointerUp);
+            e.preventDefault();
+            paintSel();
+        }
+        function tilesInZone(origin) {
+            return Array.from(document.querySelectorAll(`.tile[data-origin="${origin}"]`));
+        }
+        function onPointerMove(e) {
+            if (!selecting) return;
+            // 当前指针所在牌（覆盖一点点也算）
+            const el = document.elementFromPoint(e.clientX, e.clientY);
+            const endTile = el ? el.closest('.tile') : null;
+            let endRect;
+            if (endTile && endTile.dataset.origin === selOrigin) {
+                endRect = endTile.getBoundingClientRect();
+            } else {
+                endRect = { left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY };
+            }
+            const left = Math.min(startRect.left, endRect.left);
+            const right = Math.max(startRect.right, endRect.right);
+            const top = Math.min(startRect.top, endRect.top);
+            const bottom = Math.max(startRect.bottom, endRect.bottom);
+            // 选中同 origin 区内 bbox 与合成矩形相交的所有牌张
+            selection.clear();
+            tilesInZone(selOrigin).forEach(t => {
+                const r = t.getBoundingClientRect();
+                if (r.right >= left && r.left <= right && r.bottom >= top && r.top <= bottom) {
+                    selection.add(Number(t.dataset.cid));
+                }
+            });
+            paintSel();
+        }
+        function onPointerUp() {
+            selecting = false;
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup', onPointerUp);
+            if (!selection.size) return;
+            const target = selOrigin === 'bank' ? activeZone : 'bank';
+            const total = selection.size;
+            const before = snapshot();
+            let moved = 0;
+            selection.forEach(cid => { if (moveOne(cid, selOrigin, target)) moved++; });
+            selection.clear();
+            paintSel();
+            if (moved > 0) {
+                history.push(before);
+                if (history.length > HIST_LIMIT) history.shift();
+                future.length = 0;
+                flipRender();
+                updateUndoRedoBtns();
+                if (moved < total) toast(`手牌上限 ${HAND_LIMIT}，已投 ${moved}/${total} 张`, 'err');
+            } else {
+                toast(`手牌上限 ${HAND_LIMIT}，已投 0/${total} 张`, 'err');
+            }
+        }
+        function paintSel() {
+            document.querySelectorAll('.tile.selected').forEach(t => t.classList.remove('selected'));
+            selection.forEach(cid => {
+                const el = document.querySelector(`.tile[data-cid="${cid}"][data-origin="${selOrigin}"]`);
+                if (el) el.classList.add('selected');
+            });
+        }
+
+        function setView(mode) {
+            viewMode = mode;
+            document.getElementById('tab-suit').classList.toggle('active', mode === 'suit');
+            document.getElementById('tab-cardid').classList.toggle('active', mode === 'cardid');
+            flipRender();
+            savePrefs();
+        }
+
+        function shuffle(a) {
+            for (let i = a.length-1; i > 0; i--) {
+                const j = Math.floor(Math.random()*(i+1));
+                [a[i],a[j]] = [a[j],a[i]];
+            }
+            return a;
+        }
+        function randomDeal() {
+            pushHistory();
+            const pool = shuffle(allCardIds().slice());
+            state.chairs = [[],[],[],[]];
+            for (let i = 0; i < 4; i++) for (let k = 0; k < 13; k++) state.chairs[i].push(pool.shift());
+            state.catch = pool; state.gang = []; state.bankerno = 0; state.beginno = 0;
+            flipRender();
+            toast('随机发牌（每椅 13 · 牌堆 ' + state.catch.length + '）', 'ok');
+        }
+        function resetAll() {
+            pushHistory();
+            state.catch = []; state.chairs = [[],[],[],[]]; state.gang = [];
+            flipRender();
+        }
+
+        // 单区重置：该区牌张全还原始牌堆
+        function resetZone(zone) {
+            pushHistory();
+            if (zone === 'catch') {
+                state.catch.forEach(cid => state.bank.add(cid));
+                state.catch = [];
+            } else if (zone.startsWith('chair-')) {
+                const i = parseInt(zone.split('-')[1]);
+                state.chairs[i].forEach(cid => state.bank.add(cid));
+                state.chairs[i] = [];
+            }
+            flipRender();
+        }
+        // 双击空白区 → 从原始牌堆填充（catch=全填；椅子=庄14/闲13，全局仅一庄）
+        function onZoneDbl(zone, e) {
+            if (e.target.closest('.tile') || e.target.closest('button')) return;
+            e.preventDefault();
+            fillZone(zone);
+        }
+        // 从原始牌堆随机抽一张（顺序无意义，避免每次都从最小 id 取）
+        function randomBankId() {
+            const ids = Array.from(state.bank);
+            if (!ids.length) return null;
+            return ids[Math.floor(Math.random() * ids.length)];
+        }
+        function fillZone(zone) {
+            pushHistory();
+            if (zone === 'catch') {
+                // 牌堆顺序有意义 → 随机抽牌顺序入 catch（保持抽牌随机性）
+                const pool = shuffle(Array.from(state.bank));
+                pool.forEach(cid => moveOne(cid, 'bank', 'catch'));
+            } else if (zone.startsWith('chair-')) {
+                const i = parseInt(zone.split('-')[1]);
+                // 是否已有庄家（其他椅 14 张）
+                const hasBanker = state.chairs.some((c, idx) => idx !== i && c.length >= HAND_LIMIT);
+                const target = hasBanker ? 13 : 14;
+                let guard = 0;
+                while (state.chairs[i].length < target && state.bank.size > 0 && guard++ < 20) {
+                    const cid = randomBankId();
+                    if (cid == null || !moveOne(cid, 'bank', zone)) break;
+                }
+                toast(`椅${i} → ${state.chairs[i].length} 张${state.chairs[i].length >= 14 ? '（庄）' : ''}`, 'ok');
+            }
+            flipRender();
+        }
+
+        async function onServiceChange() {
+            currentService = document.getElementById('service-sel').value;
+            hasJoker = (currentService === 'xzms');
+            resetAll();
+            await loadFiles();
+            if (currentFile) await readFile();   // 切服务后自动读默认 test.ini
+            savePrefs();
+        }
+        async function loadFiles() {
+            const sel = document.getElementById('file-sel');
+            sel.innerHTML = '';
+            try {
+                const r = await fetch(`/api/makecard/files?service=${currentService}`);
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                d.files.forEach(f => { const o = document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o); });
+                if (d.files.includes('test.ini')) { sel.value='test.ini'; currentFile='test.ini'; }
+                else if (d.files.length) { sel.value=d.files[0]; currentFile=d.files[0]; }
+                else currentFile = '';
+            } catch (e) { toast('加载失败: ' + e.message, 'err'); }
+        }
+        async function onFileChange() {
+            currentFile = document.getElementById('file-sel').value;
+            updateActivateBtn();
+            savePrefs();
+            if (currentFile) await readFile();   // 切文件自动同步
+        }
+        function updateActivateBtn() {
+            const btn = document.getElementById('activate-btn');
+            btn.disabled = !currentFile || currentFile === 'test.ini';
+        }
+        async function activateFile() {
+            if (!currentFile || currentFile === 'test.ini') { toast('test.ini 已是生效', 'err'); return; }
+            if (!confirm(`将 ${currentFile} 设为生效？\n（复制覆盖 test.ini，旧 test.ini 备份到 remove/）`)) return;
+            try {
+                const r = await fetch('/api/makecard/activate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ service: currentService, file: currentFile })
+                });
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                applyIni(d.content);
+                await loadFiles();
+                document.getElementById('file-sel').value = 'test.ini';
+                currentFile = 'test.ini';
+                updateActivateBtn();
+                toast(d.message, 'ok');
+            } catch (e) { toast('生效失败: ' + e.message, 'err'); }
+        }
+        async function readFile() {
+            if (!currentFile) { toast('请先选文件', 'err'); return; }
+            try {
+                const r = await fetch(`/api/makecard/read?service=${currentService}&file=${encodeURIComponent(currentFile)}`);
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                applyIni(d.content);
+                toast(`读取 ${currentFile}`, 'ok');
+            } catch (e) { toast('读取失败: ' + e.message, 'err'); }
+        }
+        // 引擎生效键 = Total + Banker + BeginNO + Made（nChair/CatchCard/GangCard/bankerno/beginno 全是注释，不读）
+        // Total 布局：连续 4 张发牌算法
+        //   Total[r*16 + i*4 + k]  = 第 r 轮(0..2) 椅子 i(0..3) 的第 k 张(0..3)
+        //   Total[48-49]           = 庄家(Banker) 庄补 2 张
+        //   Total[50,51,52]        = 闲家(按椅子序) 各补 1 张
+        //   Total[53..]            = 牌墙（摸牌堆，顺序有意义）
+        function applyIni(text) {
+            const kv = {};
+            text.split(/\r?\n/).forEach(l => { const m = l.match(/^(\w+)=(.*)$/); if (m) kv[m[1]] = m[2]; });
+            const get = (...keys) => { for (const k of keys) if (kv[k] != null) return kv[k]; return ''; };
+            const ids = s => (s||'').split('|').map(x=>parseInt(x.trim())).filter(x=>!isNaN(x));
+            const total = ids(get('Total'));
+            const banker = parseInt(get('Banker', 'bankerno')||'0') || 0;
+            const beginno = parseInt(get('BeginNO', 'beginno')||'0') || 0;
+            state.bankerno = banker;
+            state.beginno = beginno;
+            if (total.length >= 53) {
+                // 解码连续 4 张布局
+                const handOf = i => {
+                    const h = [];
+                    for (let r = 0; r < 3; r++) for (let k = 0; k < 4; k++) h.push(total[r*16 + i*4 + k]);
+                    return h;
+                };
+                state.chairs = [0,1,2,3].map(handOf);
+                state.chairs[banker].push(total[48], total[49]);    // 庄补
+                let off = 50;
+                for (let i = 0; i < 4; i++) if (i !== banker) state.chairs[i].push(total[off++]);  // 闲补
+                state.catch = total.slice(53);   // 牌墙
+                state.gang = [];   // GangCard 引擎不读；杠牌已并入牌墙，UI 不单列
+            } else {
+                // 兼容无 Total 的旧文件：用 nChair 解析
+                state.chairs = [0,1,2,3].map(i => ids(get('nChair'+i)));
+                state.catch = ids(get('CatchCard'));
+                state.gang = ids(get('GangCard'));
+            }
+            const max = hasJoker ? 114 : 108;
+            const sane = arr => arr.filter(c => c>=0 && c<max);
+            state.chairs = state.chairs.map(sane);
+            state.catch = sane(state.catch);
+            state.gang = sane(state.gang);
+            flipRender();
+            clearHistory();   // 读文件 = 新基线，清撤销栈
+        }
+        function serializeIni() {
+            const flat = arr => arr.length ? arr.join('|') : '';
+            const banker = state.bankerno || 0;
+            const bankPool = Array.from(state.bank).sort((a,b)=>a-b);   // 椅子空槽时从此补（升序）
+            const takeBank = () => bankPool.length ? bankPool.shift() : 0;
+            const slot = (i, k) => {
+                const cid = state.chairs[i] && state.chairs[i][k];
+                return (cid != null && cid !== '') ? cid : takeBank();
+            };
+            const total = [];
+            // 3 轮 × 4 椅 × 4 张
+            for (let r = 0; r < 3; r++) {
+                for (let i = 0; i < 4; i++) {
+                    for (let k = 0; k < 4; k++) total.push(slot(i, r*4 + k));
+                }
+            }
+            // 庄补 2 + 闲补 1×3
+            total.push(slot(banker, 12));
+            total.push(slot(banker, 13));
+            for (let i = 0; i < 4; i++) if (i !== banker) total.push(slot(i, 12));
+            // 牌墙 = catch + gang + bank 余量
+            [...state.catch, ...state.gang, ...bankPool].forEach(c => total.push(c));
+
+            let s = '[Card]\r\nMade=1\r\n';
+            s += `Total=${flat(total)}\r\n`;
+            s += `Banker=${banker}\r\nBeginNO=${state.beginno||0}\r\n`;
+            return s;
+        }
+        async function saveFile() { if (!currentFile) { toast('请先选文件或另存', 'err'); return; } await doSave(currentFile); }
+        async function saveAs() {
+            const name = prompt('新文件名（test*.ini）:', 'test_mydeal.ini');
+            if (!name) return;
+            if (!/^test[\w.-]*\.ini$/i.test(name)) { toast('文件名需 test*.ini', 'err'); return; }
+            await doSave(name);
+            await loadFiles();
+            document.getElementById('file-sel').value = name;
+            currentFile = name;
+        }
+        async function doSave(file) {
+            const content = serializeIni();
+            try {
+                const r = await fetch('/api/makecard/save', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({service:currentService, file, content})
+                });
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                toast(`已保存到 ${file}`, 'ok');
+            } catch (e) { toast('保存失败: ' + e.message, 'err'); }
+        }
+
+        let toastTimer;
+        function toast(msg, kind) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show' + (kind ? ' '+kind : '');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+        }
+
+        // ---- id 翻译悬浮窗 ----
+        let idSort = 'suit';
+        function openIdModal() {
+            document.getElementById('id-modal').classList.add('show');
+            setTimeout(() => document.getElementById('id-input').focus(), 50);
+        }
+        function closeIdModal() {
+            document.getElementById('id-modal').classList.remove('show');
+        }
+        function onOverlayClick(e) {
+            if (e.target === e.currentTarget) closeIdModal();   // 点遮罩（非卡片）关闭
+        }
+        function setIdSort(mode) {
+            idSort = mode;
+            document.getElementById('id-tab-suit').classList.toggle('active', mode === 'suit');
+            document.getElementById('id-tab-cardid').classList.toggle('active', mode === 'cardid');
+            translateIds();
+            savePrefs();
+        }
+        // 容错解析：去 []（）全角半角，按半全角逗号/顿号/空白分割
+        function parseIds(text) {
+            const cleaned = text.replace(/[\[\]［］（）()]/g, '');
+            return cleaned.split(/[,，、\s]+/)
+                .map(s => s.trim())
+                .filter(s => s.length)
+                .map(s => parseInt(s, 10))
+                .filter(n => !isNaN(n));
+        }
+        function translateIds() {
+            const text = document.getElementById('id-input').value;
+            const ids = parseIds(text);
+            const max = hasJoker ? 114 : 108;
+            const valid = ids.filter(id => id >= 0 && id < max);
+            const outOfRange = ids.length - valid.length;
+            valid.sort(idSort === 'suit' ? cmpFace : cmpCardid);
+            const container = document.getElementById('id-result');
+            container.innerHTML = '';
+            container.classList.toggle('empty', valid.length === 0);
+            valid.forEach(id => container.appendChild(tileEl(id, 'idtrans', SCALE_CHAIR, BG_SIZE_CHAIR)));
+            const stats = document.getElementById('id-stats');
+            stats.textContent = valid.length
+                ? `${valid.length} 张${outOfRange ? ` · ${outOfRange} 越界忽略` : ''}`
+                : (ids.length ? `${ids.length} 个全部越界` : '');
+        }
+
+        // ---- 本地缓存：刷新后回到上次的 service/file/view/sort/zone ----
+        const PREF_KEY = 'makecard_prefs';
+
+        // ---- atlas 灰底抠透明（chroma-key），消除放大后牌面与牌卡的色差裂隙 ----
+        function processAtlas() {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const c = document.createElement('canvas');
+                    c.width = img.naturalWidth; c.height = img.naturalHeight;
+                    const ctx = c.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    const id = ctx.getImageData(0, 0, c.width, c.height);
+                    const d = id.data;
+                    const tol = 8;   // 紧容差，避免误删 art 阴影
+                    for (let i = 0; i < d.length; i += 4) {
+                        if (Math.abs(d[i]-195) < tol && Math.abs(d[i+1]-193) < tol && Math.abs(d[i+2]-191) < tol) {
+                            d[i+3] = 0;
+                        }
+                    }
+                    ctx.putImageData(id, 0, 0);
+                    document.documentElement.style.setProperty('--atlas-url', `url(${c.toDataURL('image/png')})`);
+                } catch (e) { console.warn('atlas chroma-key failed', e); }
+            };
+            img.src = '/static/mj_color0.png';
+        }
+        processAtlas();
+        function savePrefs() {
+            try { localStorage.setItem(PREF_KEY, JSON.stringify({
+                service: currentService, file: currentFile, viewMode, idSort, activeZone
+            })); } catch (e) {}
+        }
+        function loadPrefs() {
+            try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); }
+            catch (e) { return {}; }
+        }
+
+        (async function init() {
+            const prefs = loadPrefs();
+            if (prefs.service) {
+                currentService = prefs.service;
+                hasJoker = (currentService === 'xzms');
+            }
+            document.getElementById('service-sel').value = currentService;
+            await loadFiles();
+            if (prefs.file) {
+                const opts = [...document.getElementById('file-sel').options].map(o => o.value);
+                if (opts.includes(prefs.file)) {
+                    document.getElementById('file-sel').value = prefs.file;
+                    currentFile = prefs.file;
+                }
+            }
+            if (prefs.viewMode) setView(prefs.viewMode); else renderAllDOM();
+            setActive(prefs.activeZone || 'catch');
+            if (prefs.idSort) setIdSort(prefs.idSort);
+            if (currentFile) await readFile();
+            clearHistory();
+            requestAnimationFrame(adjustTileSize);
+            savePrefs();
+        })();
+        window.addEventListener('resize', () => requestAnimationFrame(adjustTileSize));
+        // Ctrl+Z 撤销 / Ctrl+Y 或 Ctrl+Shift+Z 重做
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                const m = document.getElementById('id-modal');
+                if (m.classList.contains('show')) { closeIdModal(); return; }
+            }
+            if (!e.ctrlKey && !e.metaKey) return;
+            const k = e.key.toLowerCase();
+            if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+            else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+        });
+    </script>
+</body>
+</html>

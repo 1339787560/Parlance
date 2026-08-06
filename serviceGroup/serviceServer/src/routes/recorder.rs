@@ -7,11 +7,15 @@
 use axum::body::Body;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::HeaderValue;
-use axum::response::{Html, Response};
+use axum::response::Response;
 
-/// GET /recorder — 返复盘器页面 HTML。
-pub async fn page() -> Html<&'static str> {
-    Html(include_str!("recorder.html"))
+/// GET /recorder — 返复盘器页面 HTML (no-cache, 避免浏览器缓存旧版界面)。
+pub async fn page() -> Response {
+    let mut resp = Response::new(Body::from(include_str!("recorder.html")));
+    let h = resp.headers_mut();
+    h.insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    h.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    resp
 }
 
 /// GET /recorder/demo — 返演示用 record 文本 (UTF-8 化的 xzms 样例)。

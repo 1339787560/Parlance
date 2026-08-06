@@ -26,6 +26,27 @@ pub fn atomic_write_bytes(file: &Path, bytes: &[u8]) -> Result<()> {
     }
 }
 
+/// 原位截断写 (等价 legacy `open('w').write()` 的单次 WriteFile)。
+///
+/// **何时用此函数而非 `atomic_write_bytes`**: 目标文件被下游
+/// `ReadDirectoryChangesW` 监视, 且消费者只认 `FILE_ACTION_MODIFIED` 时。
+/// 典型 = zgdb assist (`CConfigManager`) 配置同步中心: 启动时
+/// `dwNotifyFilter = FILTER_LAST_WRITE_NAME`, 回调 `DealConfigChange` 仅在
+/// `ACTION_MODIFIED` 分支 reload + ZMQ publish; `ACTION_RENAMED_OLD/NEW` 仅
+/// 打日志 (见 ConfigManagerModule.cpp)。
+///
+/// `atomic_write_bytes` 走 tmp + rename (MoveFileEx REPLACE_EXISTING), 在
+/// `FILE_NOTIFY_CHANGE_LAST_WRITE` 下对目标文件只产生 RENAMED_OLD/NEW 事件,
+/// **不产生 MODIFIED**, 导致 assistB 漏掉变更 → 跨服同步失效 (zgda/zgdf 收不到
+/// 配置更新)。此函数走 `fs::write` 截断直写, 单次 WriteFile 可靠触发 MODIFIED。
+///
+/// **代价**: 写中途失败 (进程崩溃/磁盘满) 留半文件, 无原子回滚。调用方须先
+/// `rotate_backup` 滚动备份兜底; 配置文件均为 ini/json/lua, 半文件可从
+/// `.config_history/` 恢复, 且 assistB 对空串/解析失败有跳过 + 告警防御。
+pub fn write_in_place_bytes(file: &Path, bytes: &[u8]) -> Result<()> {
+    fs::write(file, bytes).map_err(AppError::Io)
+}
+
 fn tmp_path(file: &Path) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -85,5 +106,24 @@ mod tests {
 
         let err = atomic_write_bytes(&f, b"x");
         assert!(err.is_err(), "父目录缺失应返错误");
+    }
+
+    /// 原位写覆盖既有文件: 新内容完整替换, 无 tmp 残留。
+    #[rstest]
+    fn test_write_in_place_overwrites_existing() {
+        let dir = tempdir().unwrap();
+        let f = dir.path().join("cfg.ini");
+        fs::write(&f, b"old").unwrap();
+
+        write_in_place_bytes(&f, b"new content").unwrap();
+
+        assert_eq!(fs::read(&f).unwrap(), b"new content");
+        let tmps: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(tmps.is_empty(), "原位写不应产生 tmp 文件");
     }
 }

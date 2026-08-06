@@ -772,7 +772,10 @@ def get_svn_status():
     try:
         # 检查工作副本状态
         # 使用 --non-interactive 防止需要凭据时挂起
-        result = subprocess.run(['svn', 'status', '-u', '--non-interactive'], capture_output=True, text=True, check=True, encoding='gbk')
+        # 注意: svnPath 是仓库 URL(非本地路径), 不能当 cwd; 工作副本根 = 进程 cwd (launcher 从 infoServer 根启动)
+        result = subprocess.run(['svn', 'status', '-u', '--non-interactive'],
+                                capture_output=True, text=True, check=True, encoding='gbk',
+                                cwd=os.getcwd())
         output = result.stdout.strip()
         
         # 将输出按行分割，并过滤掉 "Status against revision:" 开头的行
@@ -780,13 +783,9 @@ def get_svn_status():
         
         needs_update = False
         for line in status_lines:
-            # 用户要求：只要存在 *开头的行，说明是非最新的
-            if line.startswith('*') or line.startswith('!'):
-                needs_update = True
-                break
-
-            # 如果 该行中，第二个字符是 * 开头，比如 M * XXX,也认为是更改。
-            if len(line) >= 2 and line[1] == '*':
+            # 远程 out-of-date 标记 `*` 在 svn status -u 的第 8 列(index 8, 前 7 列是本地状态;
+            # 本地干净时 * 是整行唯一标记, 本地 M/? 不影响其位置)。`!` = 本地 missing, update 会拉回, 也需同步。
+            if line.startswith('!') or (len(line) >= 9 and line[8] == '*'):
                 needs_update = True
                 break
         

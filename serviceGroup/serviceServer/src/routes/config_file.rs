@@ -5,7 +5,7 @@
 //!   候选, 杜绝替换字符污染); 下载走原始字节流 (二进制 exe/dll/dmp 兜底)。
 //! - 写: 仅配置文件 (ini/json/lua), 滚动备份 + 原子写 (失败原文件零变更)。
 
-use crate::atomic_write::atomic_write_bytes;
+use crate::atomic_write::write_in_place_bytes;
 use crate::backup::rotate_backup;
 use crate::encoding;
 use crate::error::{AppError, Result};
@@ -135,8 +135,15 @@ pub struct SaveResp {
 ///
 /// 写仅限配置文件扩展名 (ini/json/lua, 见 ALLOWED_EXTS); 读与下载不限。
 /// 流程: 路径与扩展名校验 -> 按指定编码 strict 编码 (失败报错, 原文件未动)
-///       -> 滚动备份原文件 (copy) -> 原子写 (tmp + rename)。
-/// 编码或写失败时原文件字节零变更 (备份是额外 copy, 不影响原文件)。
+///       -> 滚动备份原文件 (copy) -> **原位截断写** (fs::write, 触发 MODIFIED)。
+/// 编码失败时原文件字节零变更; 写失败可能留半文件, 由 `.config_history/` 备份兜底。
+///
+/// **为何不用 tmp+rename 原子写**: 下游 zgdb assist `CConfigManager` 用
+/// `ReadDirectoryChangesW(FILTER_LAST_WRITE_NAME)` 监视配置, 回调仅处理
+/// `ACTION_MODIFIED` → reload + ZMQ publish。MoveFileEx REPLACE_EXISTING 在该
+/// filter 下只触发 RENAMED_OLD/NEW, 不触发 MODIFIED, 会导致 assistB 配置同步中心
+/// 失效。原位截断写 (等价 legacy `open('w').write`) 单次 WriteFile 可靠触发
+/// MODIFIED, 保持事件契约。详见 `atomic_write::write_in_place_bytes` 注释。
 pub async fn save_file(
     State(state): State<AppState>,
     Json(req): Json<SaveReq>,
@@ -153,10 +160,10 @@ pub async fn save_file(
     let enc_name = req.encoding.as_deref().unwrap_or("utf-8");
     // 1. strict 编码到内存 (失败此处抛, 原文件未动)
     let bytes = encoding::encode(&req.content, enc_name)?;
-    // 2. 滚动备份原文件 (copy, 原文件未动)
+    // 2. 滚动备份原文件 (copy, 原文件未动; 写失败可从此恢复)
     rotate_backup(&path)?;
-    // 3. 原子写 (tmp + rename, 失败原文件零变更)
-    atomic_write_bytes(&path, &bytes)?;
+    // 3. 原位截断写 (触发 FILE_ACTION_MODIFIED, 供 assistB FileSystemWatcher 同步)
+    write_in_place_bytes(&path, &bytes)?;
 
     Ok(Json(SaveResp {
         success: true,

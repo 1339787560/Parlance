@@ -1,0 +1,65 @@
+{
+  "timestamp": "2026-08-06 21:29:53",
+  "names": [
+    "serviceServer-rust",
+    "serviceServer-legacy"
+  ],
+  "stage": "done",
+  "working_copy_root": "D:\\Codlib\\VscodeCodlib\\Python\\infoServer",
+  "revision_before": "62140",
+  "dirty_check": "",
+  "stopped": [
+    {
+      "name": "serviceServer-rust",
+      "status": "exited",
+      "pid": 25708
+    },
+    {
+      "name": "serviceServer-legacy",
+      "status": "exited",
+      "pid": 48304
+    }
+  ],
+  "svn": {
+    "ok": true,
+    "working_copy_root": "D:\\Codlib\\VscodeCodlib\\Python\\infoServer",
+    "returncode": 0,
+    "stdout": "Updating '.':\nAt revision 62141.",
+    "stderr": "",
+    "revision_after": "62141"
+  },
+  "started": [
+    {
+      "name": "serviceServer-rust",
+      "status": "running",
+      "pid": 41888
+    },
+    {
+      "name": "serviceServer-legacy",
+      "status": "running",
+      "pid": 33704
+    }
+  ],
+  "started_at": "2026-08-06 21:29:55",
+  "probe": {
+    "ok": true,
+    "timeout": 30,
+    "services": [
+      {
+        "name": "serviceServer-rust",
+        "port": 5000,
+        "listening": true
+      },
+      {
+        "name": "serviceServer-legacy",
+        "port": 5099,
+        "listening": true
+      }
+    ]
+  },
+  "rollback": {
+    "needed": false
+  },
+  "ok": true,
+  "finished_at": "2026-08-06 21:29:56"
+}

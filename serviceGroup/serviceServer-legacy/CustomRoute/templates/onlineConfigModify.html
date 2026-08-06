@@ -102,9 +102,103 @@
             text-decoration: underline;
         }
 
+        /* 悬浮窗: 固定全屏遮罩 + 居中卡片, 占页 75% */
         .editor-container {
             display: none;
-            margin-top: 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* box-sizing reset (scoped to modal): 75vw 含 padding, 杜绝横向溢出 */
+        .editor-container *,
+        .editor-container *::before,
+        .editor-container *::after {
+            box-sizing: border-box;
+        }
+
+        .editor-container .card {
+            width: 75vw;
+            height: 75vh;
+            max-width: 75vw;
+            max-height: 75vh;
+            display: flex;
+            flex-direction: column;
+            overflow: auto;
+            margin-bottom: 0;
+            padding: 16px;
+        }
+
+        .editor-container textarea {
+            flex: 1;
+            min-height: 300px;
+            height: auto;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: auto;
+            word-break: break-all;
+        }
+
+        .close-btn {
+            background-color: #dc3545;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+
+        .close-btn:hover {
+            background-color: #c82333;
+        }
+
+        /* 备份折叠区 (details/summary), 节省垂直空间 */
+        .editor-container details {
+            margin-top: 8px;
+            border-top: 1px solid #ccc;
+            padding-top: 8px;
+            flex-shrink: 0;
+        }
+
+        .editor-container summary {
+            cursor: pointer;
+            font-weight: bold;
+            padding: 4px 0;
+            user-select: none;
+        }
+
+        .editor-container .branch-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            border-bottom: 1px solid #eee;
+            min-width: 0;
+        }
+
+        .editor-container .branch-row > span:first-child {
+            min-width: 0;
+            overflow-wrap: anywhere;
+            word-break: break-all;
+        }
+
+        .editor-container .branch-row:last-child {
+            border-bottom: none;
+        }
+
+        .editor-container .branch-row button {
+            padding: 4px 10px;
+            margin-left: 5px;
+        }
+
+        .editor-container .branch-empty {
+            color: #666;
+            padding: 4px 8px;
         }
 
         .editor-header {
@@ -170,27 +264,29 @@
             </div>
         </div>
 
-        <div class="editor-container" id="editor-container">
-            <div class="card">
+        <div class="editor-container" id="editor-container" onclick="onBackdropClick(event)">
+            <div class="card" onclick="event.stopPropagation()">
                 <div class="editor-header">
                     <h2 id="editing-file-title">编辑文件</h2>
-                    <div style="display: flex; align-items: center;">
+                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 5px;">
                         <label for="encoding-selector" style="margin-right: 5px;">编码:</label>
-                        <select id="encoding-selector" style="margin-right: 10px;">
+                        <select id="encoding-selector">
                             <option value="utf-8">UTF-8</option>
                             <option value="gbk">ANSI (GBK)</option>
                             <option value="utf-16-le">UTF-16 小端</option>
                             <option value="utf-16-be">UTF-16 大端</option>
                         </select>
+                        <button class="save" onclick="saveFile()">保存</button>
+                        <button onclick="promptCreateBranch()" title="创建命名备份">创建备份</button>
                         <button class="cancel" onclick="hideEditor()">取消</button>
+                        <button class="close-btn" onclick="hideEditor()" title="关闭">✕</button>
                     </div>
                 </div>
                 <textarea id="file-content" placeholder="文件内容将在此显示..."></textarea>
-                <div id="branch-files-container" style="margin-top: 10px;"></div>
-                <div style="margin-top: 10px;">
-                    <button class="save" onclick="saveFile()">保存</button>
-                    <button class="cancel" onclick="hideEditor()">取消</button>
-                </div>
+                <details id="branch-details">
+                    <summary>备份文件 (<span id="branch-count">0</span>)</summary>
+                    <div id="branch-files-container"></div>
+                </details>
             </div>
         </div>
     </div>
@@ -244,7 +340,7 @@
             // 重新展开当前服务的文件列表
             try {
                 // 发送服务ID获取配置文件列表
-                const response = await fetch(`/api/config/files?serviceId=${serviceId}`);
+                const response = await fetch(`/api/config/files?serviceId=${serviceId}&ext=ini,json,lua`);
                 const result = await response.json();
 
                 // 检查API响应是否成功
@@ -291,7 +387,7 @@
             selectedService = serviceInfo;
 
             try {
-                const response = await fetch(`/api/config/files?serviceId=${serviceId}`);
+                const response = await fetch(`/api/config/files?serviceId=${serviceId}&ext=ini,json,lua`);
                 const configFiles = await response.json();
 
                 // 清空之前的服务项，重新渲染选中的服务
@@ -374,7 +470,7 @@
 
             document.getElementById('editing-file-title').textContent = '编辑文件: ' + fileName;
             document.getElementById('file-content').value = content;
-            document.getElementById('editor-container').style.display = 'block';
+            document.getElementById('editor-container').style.display = 'flex';
             document.getElementById('encoding-selector').value = encoding; // Set the dropdown value
 
             // 加载备份文件列表
@@ -418,7 +514,7 @@
             }
         }
 
-        // 加载备份文件列表
+        // 加载备份文件列表 (紧凑行 + 计数, 无内联创建 UI; 创建走 promptCreateBranch)
         async function loadBranchFiles(filePath, fileName) {
             try {
                 const response = await fetch(`/api/config/file/branches?filePath=${encodeURIComponent(filePath)}`);
@@ -432,83 +528,58 @@
                 const branchContainer = document.getElementById('branch-files-container');
                 branchContainer.innerHTML = '';
 
-                // 创建备份文件控制UI
-                const branchControlDiv = document.createElement('div');
-                branchControlDiv.style.marginTop = '10px';
-                branchControlDiv.style.borderTop = '1px solid #ccc';
-                branchControlDiv.style.paddingTop = '10px';
-                
-                // 转义路径中的反斜杠以避免JavaScript语法错误
-                const escapedFilePath = filePath.replace(/\\/g, '\\\\');
-                const escapedFileName = result.current_file.replace(/\\/g, '\\\\');
-                
-                branchControlDiv.innerHTML = `
-                    <h4>备份配置文件</h4>
-                    <div>
-                        <label>当前文件: </label>
-                        <span>${result.current_file}</span>
-                    </div>
-                    <div style="margin-top: 5px;">
-                        <input type="text" id="new-branch-name" placeholder="输入新备份名称" style="margin-right: 5px; width: 150px;" />
-                        <button onclick="createNewBranch('${escapedFilePath}', '${escapedFileName}')">创建新备份</button>
-                    </div>
-                    <div id="branch-list" style="margin-top: 10px;">
-                        <strong>可用备份:</strong>
-                        <ul id="branch-list-ul" style="list-style-type: none; padding-left: 0;"></ul>
-                    </div>
-                `;
-                
-                branchContainer.appendChild(branchControlDiv);
-                
-                // 显示备份列表
-                const branchListUl = document.getElementById('branch-list-ul');
+                const countSpan = document.getElementById('branch-count');
+                if (countSpan) countSpan.textContent = result.branch_files.length;
+
+                const baseName = result.current_file.replace(/\.[^/.]+$/, "");
+                const list = document.createElement('div');
+
                 result.branch_files.forEach(branchFile => {
-                    const li = document.createElement('li');
-                    li.style.borderBottom = '1px solid #eee';
-                    li.style.padding = '5px 0';
-                    
-                    // 提取备份名称
-                    const baseName = result.current_file.replace(/\.[^/.]+$/, "");
                     const branchName = branchFile.substring(baseName.length + 1, branchFile.lastIndexOf('.'));
-                    
-                    // 转义路径中的反斜杠以避免JavaScript语法错误
-                    const escapedBranchFilePath = filePath.replace(/\\/g, '\\\\');
-                    const escapedBranchName = branchName.replace(/\\/g, '\\\\');
-                    const escapedBranchFileName = branchFile.replace(/\\/g, '\\\\');
-                    
-                    li.innerHTML = `
+                    const escPath = filePath.replace(/\\/g, '\\\\');
+                    const escBranch = branchName.replace(/\\/g, '\\\\');
+                    const escFile = branchFile.replace(/\\/g, '\\\\');
+                    const row = document.createElement('div');
+                    row.className = 'branch-row';
+                    row.innerHTML = `
                         <span>${branchFile}</span>
-                        <button onclick="switchToBranch('${escapedBranchFilePath}', '${escapedBranchName}')" style="margin-left: 10px;">切换</button>
-                        <button onclick="deleteBranch('${escapedBranchFilePath}', '${escapedBranchName}', '${escapedBranchFileName}')" style="margin-left: 5px; background-color: #dc3545;">删除</button>
+                        <span>
+                            <button onclick="switchToBranch('${escPath}', '${escBranch}')">切换</button>
+                            <button onclick="deleteBranch('${escPath}', '${escBranch}', '${escFile}')" style="background-color: #dc3545;">删除</button>
+                        </span>
                     `;
-                    branchListUl.appendChild(li);
+                    list.appendChild(row);
                 });
 
                 if (result.branch_files.length === 0) {
-                    const li = document.createElement('li');
-                    li.textContent = '无可用备份';
-                    li.style.color = '#666';
-                    branchListUl.appendChild(li);
+                    const empty = document.createElement('div');
+                    empty.className = 'branch-empty';
+                    empty.textContent = '无可用备份';
+                    list.appendChild(empty);
                 }
 
+                branchContainer.appendChild(list);
             } catch (error) {
                 console.error('加载备份文件失败:', error);
             }
         }
 
-        // 创建新备份
-        async function createNewBranch(filePath, fileName) {
-            const branchNameInput = document.getElementById('new-branch-name');
-            const branchName = branchNameInput.value.trim();
-            
-            if (!branchName) {
-                alert('请输入备份名称');
+        // 创建备份: prompt 弹窗输入名称 (创建按钮在 header 右上方)
+        async function promptCreateBranch() {
+            if (!editingFilePath) {
+                alert('请先选择文件');
                 return;
             }
-            
-            // 获取当前编辑器中的内容
+            const branchName = prompt('输入新备份名称 (仅字母数字、下划线、连字符):');
+            if (branchName === null) return;
+            const trimmed = branchName.trim();
+            if (!trimmed) {
+                alert('备份名称不能为空');
+                return;
+            }
+
             const currentContent = document.getElementById('file-content').value;
-            
+
             try {
                 const response = await fetch('/api/config/file/create_branch', {
                     method: 'POST',
@@ -516,9 +587,9 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        filePath: filePath,
-                        branchName: branchName,
-                        content: currentContent  // 添加当前编辑器内容
+                        filePath: editingFilePath,
+                        branchName: trimmed,
+                        content: currentContent
                     })
                 });
 
@@ -526,9 +597,8 @@
 
                 if (result.success) {
                     alert(`备份 "${result.branch_file}" 创建成功`);
-                    branchNameInput.value = ''; // 清空输入框
                     // 重新加载备份文件列表
-                    loadBranchFiles(filePath, fileName);
+                    loadBranchFiles(editingFilePath, '');
                 } else {
                     alert('创建备份失败: ' + result.message);
                 }
@@ -618,6 +688,12 @@
         function hideEditor() {
             document.getElementById('editor-container').style.display = 'none';
             editingFilePath = null;
+        }
+        // 遮罩点击关闭 (卡片 onclick stopPropagation 已挡冒泡)
+        function onBackdropClick(event) {
+            if (event.target === event.currentTarget) {
+                hideEditor();
+            }
         }
 
         // 页面加载完成后初始化

@@ -5,6 +5,7 @@
 //! POST   /api/config/file/switch_branch   分支切换为主文件 (当前入 remove/ 暂存)
 //! DELETE /api/config/file/remove_branch   删分支文件
 
+use crate::atomic_write::write_in_place_bytes;
 use crate::error::{AppError, Result};
 use crate::routes::checks::{assert_allowed_ext, assert_within_roots};
 use crate::state::AppState;
@@ -58,6 +59,7 @@ pub async fn list_branches(
 pub struct CreateBranchReq {
     #[serde(rename = "filePath")]
     pub file_path: String,
+    #[serde(rename = "branchName")]
     pub branch_name: String,
     pub content: Option<String>,
 }
@@ -103,6 +105,7 @@ pub async fn create_branch(
 pub struct SwitchReq {
     #[serde(rename = "filePath")]
     pub file_path: String,
+    #[serde(rename = "branchName")]
     pub branch_name: String,
 }
 
@@ -115,8 +118,15 @@ pub struct SwitchResp {
 
 /// POST /api/config/file/switch_branch — 分支切换为主文件。
 ///
-/// 流程: 当前主文件移入 remove/ 暂存 -> 复制分支为主文件 -> 字节比对验证
-///       -> 失败则从 remove/ 回滚主文件。
+/// 流程: 读分支字节 -> **copy** 当前主文件到 remove/ 暂存 (非 move, 保持主文件
+///       存在) -> `write_in_place_bytes` 原位覆盖主文件 (truncate+WriteFile,
+///       触发 `FILE_ACTION_MODIFIED` 供 assistB FileSystemWatcher 同步) -> 字节
+///       比对验证 -> 失败则从 remove/ 原位回滚主文件。
+///
+/// **禁用 rename-based 切换**: `rename(主→remove/) + copy(分支→主)` 对主文件触发
+/// `RENAMED_* + ADDED` 而非 `MODIFIED`, 下游 zgdb assist `CConfigManager`
+/// (`FILTER_LAST_WRITE_NAME` + 仅 `ACTION_MODIFIED` 同步) 会漏同步。详见
+/// `atomic_write::write_in_place_bytes` 契约。
 pub async fn switch_branch(
     State(state): State<AppState>,
     Json(req): Json<SwitchReq>,
@@ -133,6 +143,11 @@ pub async fn switch_branch(
         return Err(AppError::NotFound);
     }
 
+    // 1. 读分支字节 (切换源, 后续写与比对共用, 避免多次读盘)。
+    let branch_bytes = std::fs::read(&target_path)?;
+
+    // 2. 备份当前主文件到 remove/ (COPY 非 MOVE — 主文件留原位, 使下一步原位写
+    //    能触发 MODIFIED; remove/ 同时作为回滚源)。
     let remove_dir = dir.join("remove");
     std::fs::create_dir_all(&remove_dir)?;
     let removed_path = remove_dir.join(file_name_str(&path));
@@ -140,22 +155,22 @@ pub async fn switch_branch(
     if removed_path.exists() {
         let _ = std::fs::remove_file(&removed_path);
     }
-    std::fs::rename(&path, &removed_path)?;
+    std::fs::copy(&path, &removed_path)?;
+    let backup_bytes = std::fs::read(&removed_path).unwrap_or_default();
 
-    // 复制分支为主文件; 失败回滚。
-    if std::fs::copy(&target_path, &path).is_err() {
-        let _ = std::fs::rename(&removed_path, &path);
+    // 3. 原位覆盖主文件 (触发 FILE_ACTION_MODIFIED)。失败 (含半文件) → 回滚。
+    if write_in_place_bytes(&path, &branch_bytes).is_err() {
+        let _ = write_in_place_bytes(&path, &backup_bytes);
         return Err(AppError::Io(std::io::Error::new(
             std::io::ErrorKind::Other,
-            "切换分支失败: 无法创建目标文件",
+            "切换分支失败: 无法写入主文件",
         )));
     }
 
-    // 字节比对验证; 不一致回滚。
-    let target_bytes = std::fs::read(&target_path).unwrap_or_default();
+    // 4. 字节比对验证; 不一致回滚 (原位写, 保持 MODIFIED 契约)。
     let main_bytes = std::fs::read(&path).unwrap_or_default();
-    if target_bytes != main_bytes {
-        let _ = std::fs::rename(&removed_path, &path);
+    if branch_bytes != main_bytes {
+        let _ = write_in_place_bytes(&path, &backup_bytes);
         return Err(AppError::Io(std::io::Error::new(
             std::io::ErrorKind::Other,
             "切换分支失败: 文件内容验证失败",
