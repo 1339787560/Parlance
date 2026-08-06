@@ -42,7 +42,6 @@
     .chair { background: rgba(255,255,255,.04); border-radius: 8px; padding: 4px 4px; min-width: 0; position: relative; display: flex; flex-direction: column; }
     .chair.pos-top { grid-area: top; } .chair.pos-bottom { grid-area: bottom; }
     .chair.pos-left { grid-area: left; } .chair.pos-right { grid-area: right; }
-    .chair.pos-left, .chair.pos-right { justify-content: space-between; }
     .chair.active { outline: 2px solid #fc6; }
 
     .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; flex-wrap: wrap; }
@@ -54,24 +53,52 @@
     .que-chip.D { background: #5a1a1a; color: #f99; }
     .que-chip.pulse { animation: pulse .6s ease-out 2; }
     @keyframes pulse { 0%{transform:scale(1)} 50%{transform:scale(1.25)} 100%{transform:scale(1)} }
-    .deposit { margin-left: auto; font-size: 20px; font-weight: bold; font-family: Consolas, monospace; display: none; }
+    .deposit { font-size: 20px; font-weight: bold; font-family: Consolas, monospace; display: none; }
     .deposit.show { display: inline-block; }
     .deposit.pos { color: #fc6; text-shadow: 0 0 8px rgba(252,192,80,.5); }
     .deposit.neg { color: #6cf; text-shadow: 0 0 8px rgba(108,192,255,.5); }
     .deposit.zero { color: #6a8a7a; font-size: 14px; }
 
-    /* 玩家牌区: 碰杠(左) | 手牌(右对齐 gap0) | 抓牌(右 半张间隔 1张) 同行; 胡牌另起 */
-    .play-row { display: flex; align-items: center; gap: 0; margin: 2px 0; flex-wrap: nowrap; min-height: 48px; }
-    .meld-area { display: flex; flex-wrap: nowrap; gap: 0; align-items: center; justify-content: flex-start; }
-    .meld-group { display: flex; gap: 0; padding: 1px 3px; background: rgba(255,255,255,.06); border-radius: 3px; margin-right: 5px; }
-    .hand-area { display: flex; flex-wrap: nowrap; gap: 0; align-items: center; justify-content: center; flex: 1; min-width: 0; }
-    .catch-area { display: flex; align-items: center; justify-content: flex-end; margin-left: 14px; min-width: 30px; }
-    .hu-area { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; width: 100%; margin-top: 4px; min-height: 0; }
-    /* 左右玩家: tile 已 rotate, play-row 改纵向 (碰杠/手牌/抓牌 同列), 区域紧凑 */
-    .chair.pos-left .play-row, .chair.pos-right .play-row { flex-direction: column; gap: 4px; align-items: center; }
-    .chair.pos-left .hand-area, .chair.pos-right .hand-area { flex-direction: column; justify-content: flex-start; align-items: center; flex: none; }
-    .chair.pos-left .meld-area, .chair.pos-right .meld-area { flex-direction: column; }
-    .chair.pos-left .catch-area, .chair.pos-right .catch-area { margin-left: 0; margin-top: 10px; min-width: 0; min-height: 30px; }
+    /* 玩家牌区: 手牌区(固定宽/高, 居中) + 碰杠(左/上 绝对) + 抓牌(手牌右/下 绝对, 半张间隔); 胡牌另列前方左->右 */
+    .play-area { display: flex; gap: 8px; flex: 1 1 auto; min-height: 0; }
+    .play-row { display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; position: relative; }
+    .meld-area { display: flex; gap: 4px; align-items: center; position: absolute; z-index: 2; }
+    .meld-group { display: flex; gap: 0; padding: 1px 2px; background: rgba(255,255,255,.06); border-radius: 3px; }
+    /* 手牌区: 定位上下文, 内含 hand-tiles + catch-area; 固定尺寸 ⇒ 手牌严格居中且抓牌时无腾位/漂移 */
+    .hand-area { position: relative; display: flex; align-items: center; justify-content: center; z-index: 1; }
+    .hand-tiles { display: flex; flex-wrap: nowrap; gap: 1px; align-items: center; justify-content: center; }
+    /* 抓牌: 锚定 hand-area 右侧外 半张(16px); hand-area 固定 ⇒ 抓牌位固定, 手牌不腾位 */
+    .catch-area { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 16px; display: flex; align-items: center; justify-content: center; min-width: 43px; min-height: 43px; z-index: 2; }
+    .hu-area { display: flex; gap: 1px; align-items: center; }
+    /* 下/上(横排): 手牌区固定宽 13 张位, 碰杠左 */
+    .pos-bottom .hand-area, .pos-top .hand-area { min-width: 428px; }
+    .pos-bottom .meld-area, .pos-top .meld-area { left: 2px; top: 50%; transform: translateY(-50%); }
+    /* 左/右(纵列): 手牌区固定高 13 张位 */
+    .pos-left .hand-area, .pos-right .hand-area { min-height: 440px; flex-direction: column; }
+    .pos-left .meld-area { top: 2px; left: 50%; transform: translateX(-50%); flex-direction: column; }
+    .pos-right .meld-area { bottom: 2px; left: 50%; transform: translateX(-50%); flex-direction: column; }
+    /* 左(玩家面右): 抓牌在手牌下方; 右(玩家面左): 抓牌在手牌上方 */
+    .pos-left .catch-area { left: 50%; top: 100%; transform: translateX(-50%); margin: 16px 0 0 0; }
+    .pos-right .catch-area { left: 50%; top: auto; bottom: 100%; transform: translateX(-50%); margin: 0 0 16px 0; }
+    /* 下(0°): hu 上(靠中心), play-row 下; meld 左 hand 中 catch 右 */
+    .pos-bottom .play-area { flex-direction: column; }
+    /* 上(同底家方向不旋转): hu 下(靠中心), play-row 上; 同底家 meld 左 hand 中 catch 右 */
+    .pos-top .play-area { flex-direction: column-reverse; }
+    /* 左(90°)/右(-90°): 屏幕纵列 = 该玩家横排, 牌面向中心 */
+    .pos-left .play-area, .pos-right .play-area { align-items: center; }
+    .pos-left .play-area { flex-direction: row-reverse; }
+    .pos-left .play-row, .pos-left .hu-area { flex-direction: column; }
+    .pos-left .meld-group { flex-direction: column; }
+    .pos-left .hand-tiles { flex-direction: column; gap: 2px; }
+    .chair.pos-left .tile { transform: rotate(90deg); }
+    .pos-right .play-area { flex-direction: row; }
+    .pos-right .play-row, .pos-right .hu-area { flex-direction: column-reverse; }
+    .pos-right .meld-group { flex-direction: column; }
+    .pos-right .hand-tiles { flex-direction: column-reverse; gap: 2px; }
+    .chair.pos-right .tile { transform: rotate(-90deg); }
+    /* 左右旋转 tile 外包盒: 尺寸=旋转后视觉尺寸, 消除布局盒留白 */
+    .tile-wrap { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .tile-wrap > .tile { margin-right: 0; }
 
     /* 中心: 墙余 + 4 弃牌区沿方位 */
     .center {
@@ -81,6 +108,8 @@
     }
     .disc { background: transparent; padding: 2px; min-height: 30px; opacity: .5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; transition: opacity .2s; }
     .disc-row { display: flex; gap: 0; justify-content: center; }
+    /* 弃牌固定格槽: 预占位, 空槽不可见; 加弃牌填下一槽, 已有牌不动 */
+    .tile-slot { display: inline-block; width: 32px; height: 43px; vertical-align: middle; }
     .disc.exchange-zone { background: rgba(252,192,80,.1); box-shadow: 0 0 0 1px rgba(252,192,80,.3); }
     .disc.pos-top { grid-column: 2; grid-row: 1; }
     .disc.pos-left { grid-column: 1; grid-row: 2; }
@@ -102,10 +131,7 @@
     .tile.sm.back { width: 24px; height: 34px; }
     .tile.sm.back::after { font-size: 14px; }
 
-    /* 左右玩家手牌旋转 90° 朝中心 (弃牌不旋转, 统一横排左到右) */
-    .chair.pos-left .tile { transform: rotate(90deg); }
-    .chair.pos-right .tile { transform: rotate(-90deg); }
-    /* 左右弃牌: 统一横排左到右 (与上下方位一致), 不旋转 */
+    /* 弃牌区竖排错落 */
     .disc.pos-left, .disc.pos-right { flex-direction: column; }
 
     /* 对局日志: 高层级浮动窗 (折叠/展开均浮在牌桌上方) */
@@ -140,6 +166,10 @@
     <span class="sep"></span>
     <button id="btn-list">列 record</button>
     <span class="sep"></span>
+    <select id="src-sel" class="pill" title="数据源 (local 本机 / OSS 正式归档)"></select>
+    <input type="date" id="src-date" class="pill" title="日期 (YYYY-MM-DD, 空=全部/local 当日)">
+    <button id="btn-src-list" class="pill">列对局</button>
+    <span class="sep"></span>
     <button id="btn-reset">⏮</button>
     <button id="btn-prev">◀</button>
     <span class="pill" id="step-info">步 -/-</span>
@@ -150,16 +180,18 @@
     </span>
     <span class="sep"></span>
     <button id="btn-demo" class="primary">加载 demo</button>
+    <label class="pill" style="cursor:pointer">加载 record<input type="file" accept=".log,.txt" id="file-input" style="display:none"></label>
   </div>
 
   <div class="app">
     <div class="meta" id="meta">未加载</div>
+    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v6</div>
 
     <div class="table">
-      <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"></div><div class="catch-area"></div></div><div class="hu-area"></div></div>
-      <div class="chair" data-chair="1"><div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"></div><div class="catch-area"></div></div><div class="hu-area"></div></div>
-      <div class="chair" data-chair="2"><div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"></div><div class="catch-area"></div></div><div class="hu-area"></div></div>
-      <div class="chair" data-chair="3"><div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="que-chip" data-que>缺 -</span><span class="deposit" data-deposit>0</span></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"></div><div class="catch-area"></div></div><div class="hu-area"></div></div>
+      <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
+      <div class="chair" data-chair="1"><div class="player-info"><span class="name">玩家1</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
+      <div class="chair" data-chair="2"><div class="player-info"><span class="name">玩家2</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
+      <div class="chair" data-chair="3"><div class="player-info"><span class="name">玩家3</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
 
       <div class="center">
         <div class="disc" data-disc="0"></div>
@@ -189,6 +221,14 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="records-modal">
+    <div class="modal-content">
+      <span class="modal-close" id="records-close">×</span>
+      <h3 id="records-title">选择对局</h3>
+      <div id="records-list"></div>
+    </div>
+  </div>
+
 <script>
   const rec = { header: {}, rounds: [] };
   let curRound = 0, curStep = -1, listBuilt = false, perspective = 0, prevQue = ['','','',''];
@@ -203,25 +243,51 @@
   const QUE_NAME = { W: '万', T: '条', D: '筒' };
   const SUIT_ORDER = { F: 0, W: 1, T: 2, D: 3 };
 
-  function tileHtml(card, sm, extraCls = '') {
-    const scale = sm ? 0.32 : 0.4;
+  function tileHtml(card, sm, extraCls = '', rot = false) {
+    const scale = sm ? 0.28 : 0.32;
     let row, col;
     if (card[1] === 'F') { row = ZHONG.row; col = ZHONG.col; }
     else { row = SUIT_ROW[card[1]]; col = (+card[0]) - 1; }
     const x = COLS_X[col], y = ROWS_Y[row], w = COLS_W[col], h = ROWS_H[row];
     const bg = 1024 * scale;
-    return `<span class="tile${sm?' sm':''}${extraCls?' '+extraCls:''}" style="width:${(w*scale).toFixed(0)}px;height:${(h*scale).toFixed(0)}px;background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${(x*scale).toFixed(0)}px -${(y*scale).toFixed(0)}px"></span>`;
+    const wpx = (w * scale).toFixed(0), hpx = (h * scale).toFixed(0);
+    const tile = `<span class="tile${sm ? ' sm' : ''}${extraCls ? ' ' + extraCls : ''}" style="width:${wpx}px;height:${hpx}px;background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${(x * scale).toFixed(0)}px -${(y * scale).toFixed(0)}px"></span>`;
+    // 左右玩家(rot): tile rotate 90°/-90° 朝中心, 外包盒取旋转后尺寸(宽=牌高/高=牌宽), 填满无盒内留白
+    return rot ? `<span class="tile-wrap" style="width:${hpx}px;height:${wpx}px">${tile}</span>` : tile;
   }
-  function backHtml(sm) { return `<span class="tile${sm?' sm':''} back"></span>`; }
-  // 弃牌按 5/7/9/11/13/15 等差行错落排布
+  function backHtml(sm, rot) {
+    const t = `<span class="tile${sm ? ' sm' : ''} back"></span>`;
+    if (!rot) return t;
+    const w = sm ? 34 : 56, h = sm ? 24 : 40;
+    return `<span class="tile-wrap" style="width:${w}px;height:${h}px">${t}</span>`;
+  }
+  // 弃牌牌张 (scale 0.32, 与手牌同号大小)
+  function discTileHtml(card, extraCls = '') {
+    const scale = 0.32;
+    let row, col;
+    if (card[1] === 'F') { row = ZHONG.row; col = ZHONG.col; }
+    else { row = SUIT_ROW[card[1]]; col = (+card[0]) - 1; }
+    const x = COLS_X[col], y = ROWS_Y[row], w = COLS_W[col], h = ROWS_H[row];
+    const bg = 1024 * scale;
+    return `<span class="tile sm${extraCls ? ' ' + extraCls : ''}" style="width:${(w*scale).toFixed(0)}px;height:${(h*scale).toFixed(0)}px;background-size:${bg.toFixed(0)}px ${bg.toFixed(0)}px;background-position:-${(x*scale).toFixed(0)}px -${(y*scale).toFixed(0)}px"></span>`;
+  }
+  // 弃牌按 5/7/9/9 固定行错落, 每行满槽预占位(空槽 .tile-slot 不可见); 加弃牌填下一槽, 既有牌不动
+  // throw 高亮仅标末张(刚打出的那张), 不因牌面相同误亮其余
   function renderDiscRows(cards, throwHl) {
-    const rowSizes = [5, 7, 9, 11, 13, 15];
+    const rowSizes = [5, 7, 9, 9];
+    const lastIdx = cards.length - 1;
     let html = '', idx = 0;
     for (const n of rowSizes) {
-      if (idx >= cards.length) break;
-      const slice = cards.slice(idx, idx + n);
-      idx += n;
-      html += `<div class="disc-row">${slice.map(t => tileHtml(t, true, t === throwHl ? 'throw-hl' : '')).join('')}</div>`;
+      let row = '';
+      for (let c = 0; c < n; c++) {
+        if (idx < cards.length) {
+          const t = cards[idx];
+          const hl = (idx === lastIdx && t === throwHl) ? 'throw-hl' : '';
+          idx++;
+          row += discTileHtml(t, hl);
+        } else row += '<span class="tile-slot"></span>';
+      }
+      html += `<div class="disc-row">${row}</div>`;
     }
     return html;
   }
@@ -237,6 +303,28 @@
     if (!unixTs) return '-';
     const d = new Date((unixTs + offset) * 1000);
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  // 大数额缩减: <1万原值, <1亿 "X万", ≥1亿 "X亿"; 整数部分最多 4 位 (对齐 convertMoneyFormat)
+  function convertMoneyFormat(nMoney, nDigit = 4) {
+    nDigit = nDigit || 4;
+    const getNumberString = (value) => {
+      let s = value.toString();
+      let len = nDigit;
+      if (s.indexOf('.') !== -1) len++;
+      s = s.substr(0, len);
+      return parseFloat(s);
+    };
+    const isNeg = nMoney < 0;
+    const abs = Math.abs(nMoney);
+    const sign = isNeg ? '-' : '';
+    if (abs < 10000) return sign + abs.toString();
+    if (abs < 100000000) {
+      const i = Math.floor(abs / 10000).toString();
+      return sign + (i.length >= nDigit ? i + '万' : getNumberString(abs / 10000) + '万');
+    }
+    const i = Math.floor(abs / 100000000).toString();
+    return sign + (i.length >= nDigit ? i + '亿' : getNumberString(abs / 100000000) + '亿');
   }
 
   function parseRecord(txt) {
@@ -272,7 +360,7 @@
 
   function snapOf(hands, que, discards, melds, hu, exchanges, wall, deposit, depositInit, extra = {}) {
     return { hands: hands.map(a=>a.slice()), que: que.slice(), discards: discards.map(a=>a.slice()),
-      melds: melds.map(a=>a.slice()), hu: hu.map(a=>a.slice()), exchanges: exchanges.slice(),
+      melds: melds.map(a => a.map(m => m.slice())), hu: hu.map(a=>a.slice()), exchanges: exchanges.slice(),
       wall, deposit: deposit.slice(), depositInit: depositInit.slice(), ...extra };
   }
   const sumLen = a => a.reduce((s,x)=>s+x.length, 0);
@@ -328,6 +416,42 @@
           i++;
         }
         round.snaps.push(S({ phase: '结算' })); continue;
+      }
+      // 碰: caught(来自弃牌) + 手牌2 -> meld 3 张; 从打出者弃牌末位移除被碰牌
+      if (t === 'Peng') {
+        const pp = ev.rest.split(/\s+/), cc = +pp[0], caught = pp[1], hand2 = chunks(pp[2]||'');
+        if (cc>=0&&cc<4) {
+          for (const x of hand2) { const idx = hands[cc].indexOf(x); if (idx>=0) hands[cc].splice(idx,1); }
+          melds[cc].push([caught, ...hand2]);
+          for (let k=0;k<4;k++) { if (discards[k].length && discards[k][discards[k].length-1]===caught) { discards[k].pop(); break; } }
+        }
+        round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
+      }
+      // 暗杠: 4 张全来自手牌 -> meld 4 张
+      if (t === 'AnGang') {
+        const pp = ev.rest.split(/\s+/), cc = +pp[0], tile = pp[1], hand3 = chunks(pp[2]||'');
+        if (cc>=0&&cc<4) {
+          const gang = [tile, ...hand3];
+          for (const x of gang) { const idx = hands[cc].indexOf(x); if (idx>=0) hands[cc].splice(idx,1); }
+          melds[cc].push(gang);
+        }
+        round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
+      }
+      // 补杠: 已有 peng meld(3 张同牌) +newTile 升级为 4 张; newTile 从手牌移除
+      if (t === 'PnGang') {
+        const pp = ev.rest.split(/\s+/), cc = +pp[0], newTile = pp[1];
+        if (cc>=0&&cc<4) {
+          const target = melds[cc].find(m => m.length === 3 && m[0] === newTile);
+          if (target) target.push(newTile); else melds[cc].push([newTile, newTile, newTile, newTile]);
+          const idx = hands[cc].indexOf(newTile); if (idx>=0) hands[cc].splice(idx,1);
+        }
+        round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
+      }
+      // 胡: winning tile 入胡牌区(按胡牌顺序); 手牌不变(血战续打)
+      if (t === 'Hu') {
+        const pp = ev.rest.split(/\s+/), cc = +pp[0], tile = pp[1];
+        if (cc>=0&&cc<4) hu[cc].push(tile);
+        round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
       const p = ev.rest.split(/\s+/);
       const c = p[0] !== '' ? parseInt(p[0], 10) : NaN;
@@ -394,8 +518,9 @@
 
     for (let c = 0; c < 4; c++) {
       const chair = document.querySelector(`.chair[data-chair="${c}"]`);
+      const side = posOf(c) === 1 || posOf(c) === 3;
       const showHand = c === perspective || vis;
-      // 抓牌分离: 本步 catch 的牌移到抓牌区, 手牌排除该牌
+      // 抓牌分离: 本步 catch 的牌移到抓牌区(手牌左侧 半张间隔), 手牌排除该牌
       let handCards = s.hands[c].slice().sort(sortHand);
       let catchCard = null;
       if (catchInfo && catchInfo.chair === c) {
@@ -403,8 +528,9 @@
         const idx = handCards.indexOf(catchCard);
         if (idx >= 0) handCards.splice(idx, 1);
       }
-      chair.querySelector('.hand-area').innerHTML = showHand ? handCards.map(t => tileHtml(t, false)).join('') : handCards.map(() => backHtml(false)).join('');
-      chair.querySelector('.catch-area').innerHTML = (showHand && catchCard) ? tileHtml(catchCard, false, 'catch-hl') : '';
+      chair.querySelector('.hand-tiles').innerHTML = showHand ? handCards.map(t => tileHtml(t, false, '', side)).join('') : handCards.map(() => backHtml(false, side)).join('');
+      const catchEl = chair.querySelector('.catch-area');
+      catchEl.innerHTML = (showHand && catchCard) ? tileHtml(catchCard, false, 'catch-hl', side) : '';
 
       const chip = chair.querySelector('.que-chip');
       const q = s.que[c];
@@ -416,13 +542,16 @@
       const depEl = chair.querySelector('.deposit');
       if (isResult) {
         const init = s.depositInit[c], cur = s.deposit[c];
-        if (init !== null && cur !== null) { const delta = cur - init; depEl.textContent = (delta>0?'+':'')+delta; depEl.className = 'deposit show ' + (delta>0?'pos':delta<0?'neg':'zero'); }
+        if (init !== null && cur !== null) { const delta = cur - init; depEl.textContent = (delta>0?'+':'')+convertMoneyFormat(delta); depEl.className = 'deposit show ' + (delta>0?'pos':delta<0?'neg':'zero'); }
         else { depEl.textContent='0'; depEl.className='deposit show zero'; }
       } else depEl.className = 'deposit';
 
-      // 胡牌区 (前方 = player-info 下, 手牌上)
+      // 碰杠区 (按创建顺序, 每 meld 一组)
+      const meldEl = chair.querySelector('.meld-area');
+      meldEl.innerHTML = (s.melds[c] || []).map(m => `<div class="meld-group">${m.map(t => tileHtml(t, true, '', side)).join('')}</div>`).join('');
+      // 胡牌区 (另开一列在手牌前方, 按胡牌顺序左->右)
       const huEl = chair.querySelector('.hu-area');
-      huEl.innerHTML = (s.hu[c] || []).map(t => tileHtml(t, false)).join('');
+      huEl.innerHTML = (s.hu[c] || []).map(t => tileHtml(t, true, '', side)).join('');
     }
 
     // 弃牌区: 末张 throw 高亮
@@ -433,7 +562,7 @@
         let cards = null;
         if (s.phase.endsWith('亮牌')) { for (const r in s.recv) if (s.recv[r].from == String(c)) { cards = s.recv[r].cards; break; } }
         else { if (s.recv[c]) cards = s.recv[c].cards; }
-        dz.innerHTML = cards ? `<div class="disc-row">${cards.map(t => tileHtml(t, true)).join('')}</div>` : '';
+        dz.innerHTML = cards ? `<div class="disc-row">${cards.map(t => discTileHtml(t)).join('')}</div>` : '';
       } else {
         dz.classList.remove('exchange-zone');
         const ds = s.discards[c];
@@ -512,6 +641,12 @@
   document.getElementById('btn-next').onclick = () => { if (curStep < curSnaps().length - 1) renderSnap(curStep + 1); };
   document.getElementById('btn-reset').onclick = () => renderSnap(0);
   document.getElementById('btn-demo').onclick = () => loadDemo();
+  document.getElementById('file-input').onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const txt = await f.text(); parseRecord(txt); restoreState(); }
+    catch (err) { document.getElementById('meta').textContent = '加载失败: ' + err; }
+    e.target.value = '';
+  };
   document.getElementById('btn-rounds').onclick = () => { renderRoundsList(); document.getElementById('rounds-modal').classList.remove('hidden'); };
   document.getElementById('modal-close').onclick = () => document.getElementById('rounds-modal').classList.add('hidden');
   document.getElementById('rounds-modal').onclick = (e) => { if (e.target.id === 'rounds-modal') e.currentTarget.classList.add('hidden'); };
@@ -523,8 +658,67 @@
     else if (['1','2','3','4'].includes(e.key)) { perspective = +e.key - 1; applyLayout(); renderSnap(curStep); }
   });
 
+  // ── 数据源懒加载 (SDD v2): sources / list / get ──
+  async function loadSources() {
+    try {
+      const r = await fetch('/api/record/sources').then(r => r.json());
+      const sel = document.getElementById('src-sel');
+      sel.innerHTML = '';
+      (r.sources || []).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id; opt.textContent = s.label;
+        sel.appendChild(opt);
+      });
+    } catch (e) { console.warn('loadSources 失败', e); }
+  }
+  async function listRecords() {
+    const source = document.getElementById('src-sel').value;
+    const dateRaw = document.getElementById('src-date').value; // YYYY-MM-DD
+    const date = dateRaw ? dateRaw.replace(/-/g, '') : '';     // YYYYMMDD
+    const q = new URLSearchParams({ source });
+    if (date) q.set('date', date);
+    const title = document.getElementById('records-title');
+    const list = document.getElementById('records-list');
+    list.innerHTML = ''; list.textContent = '加载中...';
+    title.textContent = `${source} · ${date || '全部'}`;
+    document.getElementById('records-modal').classList.remove('hidden');
+    try {
+      const r = await fetch('/api/record/list?' + q).then(r => r.json());
+      list.innerHTML = '';
+      if (!r.success) { list.textContent = r.message || '查询失败'; return; }
+      const items = r.items || [];
+      if (!items.length) { list.textContent = '无对局'; return; }
+      title.textContent = `${source} · ${date || '全部'} · ${items.length} 局${r.cached ? ' (缓存)' : ''}`;
+      items.forEach(it => {
+        const row = document.createElement('div');
+        row.className = 'round-item';
+        row.style.cssText = 'padding:6px 4px;cursor:pointer;border-bottom:1px solid #2a4a3a;';
+        const kb = (it.size / 1024).toFixed(0);
+        row.textContent = `${it.table_no} · ${it.date} · ${kb}KB`;
+        row.onclick = () => loadRecord(source, it.id);
+        list.appendChild(row);
+      });
+    } catch (e) { list.textContent = '加载失败: ' + e; }
+  }
+  async function loadRecord(source, id) {
+    document.getElementById('records-modal').classList.add('hidden');
+    const meta = document.getElementById('meta');
+    meta.textContent = `加载中 ${id} ...`;
+    try {
+      const r = await fetch('/api/record/get?source=' + encodeURIComponent(source) + '&id=' + encodeURIComponent(id)).then(r => r.json());
+      if (!r.success) throw new Error(r.message || 'get 失败');
+      parseRecord(r.content);
+      restoreState();
+      meta.textContent = `${source} · ${id}`;
+    } catch (e) { meta.textContent = '加载失败: ' + e; }
+  }
+  document.getElementById('btn-src-list').onclick = listRecords;
+  document.getElementById('records-close').onclick = () => document.getElementById('records-modal').classList.add('hidden');
+  document.getElementById('records-modal').onclick = (e) => { if (e.target.id === 'records-modal') e.currentTarget.classList.add('hidden'); };
+
   applyLayout();
   loadDemo();
+  loadSources();
 </script>
 </body>
 </html>

@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import re
+import json
 from typing import List
 
 import requests
@@ -452,7 +453,7 @@ def _oss_list_date_files(bucket, service: str, host: str, date_str: str, subdir:
     import re
     prefix = f"{service}/{host}/{subdir}/"
     pat = re.compile(
-        r'^' + re.escape(prefix) + re.escape(service) + r'-' + date_str + r'\d{6}-log\.zip$'
+        r'^' + re.escape(prefix) + re.escape(service) + r'-' + date_str + r'\d{6}-' + re.escape(subdir) + r'\.zip$'
     )
     files = []
     for o in oss2.ObjectIterator(bucket, prefix=prefix, max_keys=1000):
@@ -498,6 +499,47 @@ def _oss_download_zip(bucket, key: str, dest_dir: str) -> str:
     return dest
 
 
+def _oss_list_record_files(bucket, service: str, host: str, date_str: str) -> list:
+    """列 {service}/{host}/Record/{date}*.zip 内层 `game/{service}/Record/{tableNO}_{date}.log`
+    作 record 索引项。每日一 zip, 内含多对局 .log (复盘器按对局选, 非 zip 粒度)。
+    返 [{key, zip_key, inner, table_no, date, size}]。key = zip_key + '::' + inner (供 --fetch 定位)。
+    依赖 _oss_list_date_files 正则已参数化 subdir (匹配 `-Record.zip`)。"""
+    import io
+    import re
+    import zipfile
+    zips = _oss_list_date_files(bucket, service, host, date_str, subdir='Record')
+    inner_re = re.compile(rf'game/{re.escape(service)}/Record/(\d+)_(\d{{8}})\.log$')
+    items = []
+    for zip_key, _display in zips:
+        data = bucket.get_object(zip_key).read()
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        for info in zf.infolist():
+            m = inner_re.match(info.filename)
+            if not m:
+                continue
+            items.append({
+                'key': f'{zip_key}::{info.filename}',
+                'zip_key': zip_key,
+                'inner': info.filename,
+                'table_no': m.group(1),
+                'date': m.group(2),
+                'size': info.file_size,
+            })
+    items.sort(key=lambda x: (x['date'], x['table_no']))
+    return items
+
+
+def _oss_fetch_record_file(bucket, key: str) -> bytes:
+    """key = '{zip_key}::{inner}' → 下载 zip, 取 inner 单 record .log 原始字节 (GBK,
+    不 Python 解码; 交调用方 Rust crate::encoding::decode 统一处理, 与 local 源一致)。"""
+    import io
+    import zipfile
+    zip_key, inner = key.split('::', 1)
+    data = bucket.get_object(zip_key).read()
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    return zf.read(inner)
+
+
 def _ensure_oss_output_dir(service: str, host: str) -> str:
     project_root = os.path.dirname(os.path.abspath(__file__))
     out = os.path.join(project_root, 'tmp', 'oss_html', f"{service}_{host}")
@@ -506,9 +548,25 @@ def _ensure_oss_output_dir(service: str, host: str) -> str:
 
 
 def _run_oss_source(args, dates: list):
-    """OSS 源主流程, 镜像 HTTP 源: 列 zip → 解压 grep → HTML 汇总。"""
+    """OSS 源主流程, 镜像 HTTP 源: 列 zip → 解压 grep → HTML 汇总。
+    分流: --fetch 取单 record 文本 / --json list 返 JSON 索引 (record 子目录按内层 .log 分条) / 默认 HTML 报告。"""
     bucket = _oss_connect()
+
+    # --fetch 最先: key = zip_key::inner 已含定位, 不需 --service/--host (复盘器 get 用)
+    if args.fetch:
+        sys.stdout.buffer.write(_oss_fetch_record_file(bucket, args.fetch))
+        return
+
     service, host = _oss_resolve_service_host(args.service, args.host)
+
+    # --json: list 返 JSON 索引 (Record 子目录按 zip 内层 .log 分条, 非 zip 粒度; 复盘器 list 用)
+    if args.json:
+        items = []
+        for d in dates:
+            items.extend(_oss_list_record_files(bucket, service, host, d.strftime('%Y%m%d')))
+        sys.stdout.write(json.dumps(items, ensure_ascii=False))
+        return
+
     out_dir = _ensure_oss_output_dir(service, host)
     bucket_name = bucket.bucket_name
     project_label = f"{service}_{host}"
@@ -630,9 +688,12 @@ def main():
     parser.add_argument("--host", default=None, help="[OSS] hostID, 如 3291; 注册表内可省 --service")
     parser.add_argument("--subdir", default="log", help="[OSS] 子目录: log | Record (默认 log)")
     parser.add_argument("--log-name", default=None, help="[OSS] zip 内 .log 文件名正则过滤 (默认全部 .log)")
+    parser.add_argument("--json", action="store_true", help="[OSS] list 返 JSON 索引 (stdout 纯 JSON, 不产 HTML; 配 --subdir Record 取对局牌谱索引, 按内层 .log 分条)")
+    parser.add_argument("--fetch", default=None, help="[OSS] 取单 record 文本 (key = --json list 返的 key; 配 --subdir Record)")
     parser.add_argument("dates", nargs="*", help="日期参数（0-2 个），格式：YYYY-MM-DD")
     args = parser.parse_args()
-    print("参数：",args)
+    if not (args.json or args.fetch):
+        print("参数：",args)
 
     try:
         start_date, end_date = _parse_dates(args.dates)
