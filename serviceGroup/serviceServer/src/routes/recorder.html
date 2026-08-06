@@ -157,6 +157,9 @@
     .round-item.active { background: #3a5a4a; color: #ffe; }
     .round-item .ri-no { color: #fc6; font-weight: bold; min-width: 36px; }
     .modal-close { float: right; cursor: pointer; color: #9ab; font-size: 16px; }
+  select.pill, input.pill { color:#fff; background:#1a3a2a; border:1px solid #3a5a4a; padding:2px 8px; border-radius:8px; font-size:12px; }
+  select.pill option { color:#000; background:#fff; }
+  input[type=date].pill { color-scheme: dark; }
   </style>
 </head>
 <body>
@@ -164,11 +167,12 @@
   <div class="svc-bar">
     <button id="btn-rounds" class="pill">对局 -/-</button>
     <span class="sep"></span>
-    <button id="btn-list">列 record</button>
-    <span class="sep"></span>
-    <select id="src-sel" class="pill" title="数据源 (local 本机 / OSS 正式归档)"></select>
-    <input type="date" id="src-date" class="pill" title="日期 (YYYY-MM-DD, 空=全部/local 当日)">
+    <select id="src-sel" class="pill"></select>
+    <input type="date" id="src-date" class="pill">
+    <select id="src-room" class="pill"><option value="">全部房间</option></select>
+    <input type="text" id="src-players" class="pill" placeholder="uid,逗号分隔筛" style="width:130px" title="玩家 uid 逗号分隔 (4 玩家完全包含输入集合)">
     <button id="btn-src-list" class="pill">列对局</button>
+    <span id="src-progress" class="pill" style="display:none;min-width:90px;background:#fc6;color:#000"></span>
     <span class="sep"></span>
     <button id="btn-reset">⏮</button>
     <button id="btn-prev">◀</button>
@@ -179,7 +183,6 @@
       <button data-p="0">0</button><button data-p="1">1</button><button data-p="2">2</button><button data-p="3">3</button>
     </span>
     <span class="sep"></span>
-    <button id="btn-demo" class="primary">加载 demo</button>
     <label class="pill" style="cursor:pointer">加载 record<input type="file" accept=".log,.txt" id="file-input" style="display:none"></label>
   </div>
 
@@ -658,66 +661,106 @@
     else if (['1','2','3','4'].includes(e.key)) { perspective = +e.key - 1; applyLayout(); renderSnap(curStep); }
   });
 
-  // ── 数据源懒加载 (SDD v2): sources / list / get ──
+  // ── 数据源懒加载 (SDD v2): sources / list / get + 房间/玩家筛 + 进度 ──
+  let myHostId = 'local';
+  let allRecords = []; // 当前 list 全量缓存 (房间/玩家筛走前端, 不重 fetch)
+  function fmtDate(d) { return d.toISOString().slice(0,10); }
+  function showProgress(msg) { const p = document.getElementById('src-progress'); p.style.display=''; p.textContent = msg; }
+  function hideProgress() { document.getElementById('src-progress').style.display='none'; }
   async function loadSources() {
     try {
       const r = await fetch('/api/record/sources').then(r => r.json());
+      myHostId = r.my_host_id || 'local';
       const sel = document.getElementById('src-sel');
       sel.innerHTML = '';
       (r.sources || []).forEach(s => {
+        // 本机 bastion 源隐 (local 已覆盖本机 FS); 非本机 bastion 显 (代理远端)
+        if (s.kind === 'bastion' && s.bastion_host === myHostId) return;
         const opt = document.createElement('option');
-        opt.value = s.id; opt.textContent = s.label;
+        opt.value = s.id;
+        // label 优先用 region + 金/银标 (oss 大区), 否则 label (local/bastion)
+        opt.textContent = s.region ? (s.region + (s.ver ? '(' + s.ver + ')')) : s.label;
         sel.appendChild(opt);
       });
+      // 日期默认前日 + max today-2 (OSS 滚动上传延迟 2 日, 近 2 日未上传)
+      const di = document.getElementById('src-date');
+      const today = new Date();
+      const maxD = new Date(today); maxD.setDate(today.getDate() - 2);
+      di.max = fmtDate(maxD);
+      const saved = localStorage.getItem('rec_date');
+      di.value = saved || fmtDate(maxD);
+      di.onchange = () => localStorage.setItem('rec_date', di.value);
     } catch (e) { console.warn('loadSources 失败', e); }
   }
   async function listRecords() {
     const source = document.getElementById('src-sel').value;
-    const dateRaw = document.getElementById('src-date').value; // YYYY-MM-DD
-    const date = dateRaw ? dateRaw.replace(/-/g, '') : '';     // YYYYMMDD
+    const dateRaw = document.getElementById('src-date').value;
+    const date = dateRaw ? dateRaw.replace(/-/g, '') : '';
     const q = new URLSearchParams({ source });
     if (date) q.set('date', date);
-    const title = document.getElementById('records-title');
-    const list = document.getElementById('records-list');
-    list.innerHTML = ''; list.textContent = '加载中...';
-    title.textContent = `${source} · ${date || '全部'}`;
+    showProgress('下载中...');
     document.getElementById('records-modal').classList.remove('hidden');
+    document.getElementById('records-list').textContent = '加载中...';
     try {
       const r = await fetch('/api/record/list?' + q).then(r => r.json());
-      list.innerHTML = '';
-      if (!r.success) { list.textContent = r.message || '查询失败'; return; }
-      const items = r.items || [];
-      if (!items.length) { list.textContent = '无对局'; return; }
-      title.textContent = `${source} · ${date || '全部'} · ${items.length} 局${r.cached ? ' (缓存)' : ''}`;
-      items.forEach(it => {
-        const row = document.createElement('div');
-        row.className = 'round-item';
-        row.style.cssText = 'padding:6px 4px;cursor:pointer;border-bottom:1px solid #2a4a3a;';
-        const kb = (it.size / 1024).toFixed(0);
-        row.textContent = `${it.table_no} · ${it.date} · ${kb}KB`;
-        row.onclick = () => loadRecord(source, it.id);
-        list.appendChild(row);
-      });
-    } catch (e) { list.textContent = '加载失败: ' + e; }
+      hideProgress();
+      if (!r.success) { document.getElementById('records-list').textContent = r.message || '查询失败'; return; }
+      allRecords = r.items || [];
+      // 填房间 select (unique room_id, 供大区内房间筛)
+      const roomSel = document.getElementById('src-room');
+      const curRoom = roomSel.value;
+      const rooms = [...new Set(allRecords.map(x => x.room_id).filter(Boolean))].sort((a,b)=>+a-+b);
+      roomSel.innerHTML = '<option value="">全部房间</option>' + rooms.map(rm => `<option value="${rm}">${rm}</option>`).join('');
+      if (curRoom && rooms.includes(curRoom)) roomSel.value = curRoom;
+      renderFilteredRecords(source);
+    } catch (e) { hideProgress(); document.getElementById('records-list').textContent = '加载失败: ' + e; }
+  }
+  // 前端筛 (缓存 allRecords, 房间/玩家变更即时, 不重 fetch)
+  function renderFilteredRecords(source) {
+    const room = document.getElementById('src-room').value;
+    const playersStr = document.getElementById('src-players').value.trim();
+    const need = playersStr ? playersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    let items = allRecords;
+    if (room) items = items.filter(x => x.room_id === room);
+    if (need.length) items = items.filter(x => need.every(n => (x.players || []).includes(n)));
+    const list = document.getElementById('records-list');
+    const title = document.getElementById('records-title');
+    list.innerHTML = '';
+    const total = allRecords.length;
+    title.textContent = `${source} · ${items.length} 局` + (items.length !== total ? ` / ${total}` : '') + (need.length ? ` (含 ${need.join(',')})` : '');
+    if (!items.length) { list.textContent = '无匹配'; return; }
+    items.forEach(it => {
+      const row = document.createElement('div');
+      row.className = 'round-item';
+      row.style.cssText = 'padding:6px 4px;cursor:pointer;border-bottom:1px solid #2a4a3a;';
+      const kb = (it.size / 1024).toFixed(0);
+      const namesStr = (it.names || []).filter(Boolean).join(',');
+      row.textContent = `${it.room_id || it.table_no} · ${it.date} · ${kb}KB${namesStr ? ' · ' + namesStr : ''}`;
+      row.onclick = () => loadRecord(source, it.id);
+      list.appendChild(row);
+    });
   }
   async function loadRecord(source, id) {
     document.getElementById('records-modal').classList.add('hidden');
     const meta = document.getElementById('meta');
     meta.textContent = `加载中 ${id} ...`;
+    showProgress('下载 record...');
     try {
       const r = await fetch('/api/record/get?source=' + encodeURIComponent(source) + '&id=' + encodeURIComponent(id)).then(r => r.json());
+      hideProgress();
       if (!r.success) throw new Error(r.message || 'get 失败');
       parseRecord(r.content);
       restoreState();
       meta.textContent = `${source} · ${id}`;
-    } catch (e) { meta.textContent = '加载失败: ' + e; }
+    } catch (e) { hideProgress(); meta.textContent = '加载失败: ' + e; }
   }
   document.getElementById('btn-src-list').onclick = listRecords;
+  document.getElementById('src-room').onchange = () => renderFilteredRecords(document.getElementById('src-sel').value);
+  document.getElementById('src-players').oninput = () => renderFilteredRecords(document.getElementById('src-sel').value);
   document.getElementById('records-close').onclick = () => document.getElementById('records-modal').classList.add('hidden');
   document.getElementById('records-modal').onclick = (e) => { if (e.target.id === 'records-modal') e.currentTarget.classList.add('hidden'); };
 
   applyLayout();
-  loadDemo();
   loadSources();
 </script>
 </body>

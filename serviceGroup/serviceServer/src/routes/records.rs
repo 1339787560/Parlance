@@ -1,15 +1,22 @@
 //! `/api/record/*` — 复盘器数据源统一路由 (SDD running/四川麻将复盘器-数据源)。
 //!
-//! 两类源 dispatch:
+//! 三类源 dispatch:
 //! - **local**: 本机 FS 直读 (`D:\game\{xzms,xzmo2}\server_game\Record\`)
 //! - **oss**: 正式 OSS record 归档 (xzmosvr/xzmssvr 数字 id, subprocess spideOnlineLog)
+//! - **bastion**: 堡垒机 53/185 servicesvr 代理 (reqwest GET 远端 `/api/record/*`,
+//!   近 2 日 OSS 未上传的 record; 需 53/185 部署本同款 servicesvr + env
+//!   SERVICESVR_BASTION_<host>_URL)
 //!
-//! 索引缓存: 进程级 `RwLock<HashMap<(source,date), Vec<RecordMeta>>>`, 无 TTL (record 历史只追加)。
+//! list 返每项含头部元数据 (room_id + players[4 uid] + names[4]) — 供前端按房间/玩家筛。
+//! 索引缓存: 进程级 `RwLock<HashMap<(source,date), Vec<RecordMeta>>>`, 无 TTL。
 //!
 //! hostID 速查表 hardcode (参 oss_hosts.yaml roomsvr + probe 2026-08-06):
 //! record service 前缀 = `{代}svr` (gamesvr: xzms→xzmssvr / xzmo→xzmosvr),
-//! 数字 id 与 roomsvr 重合 (同机器跨 service 复用 hostID) → region/ver 从 roomsvr 段映射。
+//! 数字 id 与 roomsvr 重合 → region/ver 从 roomsvr 段映射。
 //! IP 子目录 (xzmosvr/112.124.x.x 等) = 历史机器仅 log/video, 不列。
+//!
+//! `my_host_id` (env SERVICESVR_HOST_ID, 缺省 "local") 返前端, 用于堡垒机自指判断
+//! (bastion-{my_host_id} 源 = 本机, 前端隐, 因 local 已覆盖)。
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -26,51 +33,66 @@ use crate::error::{AppError, Result};
 struct RecordSource {
     id: &'static str,
     label: &'static str,
-    /// local / oss
+    /// local / bastion / oss
     kind: &'static str,
     /// xzms (六红中) / xzmo (血战血流)
     game: &'static str,
-    /// oss 专 (local 项 None): record service 前缀 (gamesvr)
+    /// oss 专 (local/bastion 项 None): record service 前缀 (gamesvr)
     oss_service: Option<&'static str>,
-    /// oss 专: 数字 hostID
+    /// oss 专: 数字 hostID (大区)
     host_id: Option<u32>,
     /// oss 专: 大区/玩法
     region: Option<&'static str>,
     /// oss 专: 金币/银子
     ver: Option<&'static str>,
+    /// bastion 专: 堡垒机代号 ("53"/"185"), 配 env SERVICESVR_BASTION_<host>_URL
+    bastion_host: Option<&'static str>,
+    /// bastion 专: 远端 servicesvr 的 local source id (local-xzms/local-xzmo2)
+    remote_source: Option<&'static str>,
 }
 
 /// 静态源清单 (hostID 速查表 hardcode, 前端源下拉用)。
+/// local 本机 + oss 8 大区 + bastion 4 (53/185 × xzms/xzmo2)。
 const SOURCES: &[RecordSource] = &[
     // local 本机 FS
-    RecordSource { id: "local-xzms",  label: "本机·六红中",   kind: "local", game: "xzms", oss_service: None, host_id: None, region: None, ver: None },
-    RecordSource { id: "local-xzmo2", label: "本机·血血流战", kind: "local", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None },
+    RecordSource { id: "local-xzms",  label: "本机·六红中",   kind: "local", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
+    RecordSource { id: "local-xzmo2", label: "本机·血血流战", kind: "local", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
     // oss-xzms (xzmssvr 血流六红中, 全金币)
-    RecordSource { id: "oss-xzms-3291", label: "OSS·六红中1区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3291), region: Some("血流六红中1区"), ver: Some("金币") },
-    RecordSource { id: "oss-xzms-3058", label: "OSS·六红中2区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3058), region: Some("血流六红中2区"), ver: Some("金币") },
-    RecordSource { id: "oss-xzms-3153", label: "OSS·六红中3区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3153), region: Some("血流六红中3区"), ver: Some("金币") },
-    RecordSource { id: "oss-xzms-3335", label: "OSS·六红中4区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3335), region: Some("血流六红中4区"), ver: Some("金币") },
+    RecordSource { id: "oss-xzms-3291", label: "OSS·六红中1区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3291), region: Some("血流六红中1区"), ver: Some("金币"), bastion_host: None, remote_source: None },
+    RecordSource { id: "oss-xzms-3058", label: "OSS·六红中2区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3058), region: Some("血流六红中2区"), ver: Some("金币"), bastion_host: None, remote_source: None },
+    RecordSource { id: "oss-xzms-3153", label: "OSS·六红中3区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3153), region: Some("血流六红中3区"), ver: Some("金币"), bastion_host: None, remote_source: None },
+    RecordSource { id: "oss-xzms-3335", label: "OSS·六红中4区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3335), region: Some("血流六红中4区"), ver: Some("金币"), bastion_host: None, remote_source: None },
     // oss-xzmo (xzmosvr 血流血战)
-    RecordSource { id: "oss-xzmo-3718", label: "OSS·血战到底", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3718), region: Some("血战到底"), ver: Some("金币") },
-    RecordSource { id: "oss-xzmo-3292", label: "OSS·血流成河", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3292), region: Some("血流成河"), ver: Some("金币") },
-    RecordSource { id: "oss-xzmo-3701", label: "OSS·血战大区", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3701), region: Some("血战大区"), ver: Some("银子") },
-    RecordSource { id: "oss-xzmo-3728", label: "OSS·血流大区", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3728), region: Some("血流大区"), ver: Some("银子") },
+    RecordSource { id: "oss-xzmo-3718", label: "OSS·血战到底", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3718), region: Some("血战到底"), ver: Some("金币"), bastion_host: None, remote_source: None },
+    RecordSource { id: "oss-xzmo-3292", label: "OSS·血流成河", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3292), region: Some("血流成河"), ver: Some("金币"), bastion_host: None, remote_source: None },
+    RecordSource { id: "oss-xzmo-3701", label: "OSS·血战大区", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3701), region: Some("血战大区"), ver: Some("银子"), bastion_host: None, remote_source: None },
+    RecordSource { id: "oss-xzmo-3728", label: "OSS·血流大区", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3728), region: Some("血流大区"), ver: Some("银子"), bastion_host: None, remote_source: None },
+    // bastion (堡垒机 53/185 近 2 日 record, OSS 未上传; reqwest 代理远端 servicesvr)
+    // proxy_url 走 env SERVICESVR_BASTION_<host>_URL (部署时配, 避硬编 IP)
+    RecordSource { id: "bastion-53-xzms",  label: "53·六红中",   kind: "bastion", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzms") },
+    RecordSource { id: "bastion-53-xzmo2", label: "53·血血流战", kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzmo2") },
+    RecordSource { id: "bastion-185-xzms",  label: "185·六红中",  kind: "bastion", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzms") },
+    RecordSource { id: "bastion-185-xzmo2", label: "185·血血流战",kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzmo2") },
 ];
 
 fn find_source(id: &str) -> Option<&'static RecordSource> {
     SOURCES.iter().find(|s| s.id == id)
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct RecordMeta {
-    /// 文件名 (local) / oss key (oss, zip_key::inner)
+    /// 文件名 (local) / oss key (oss, zip_key::inner) / 远端文件名 (bastion 透传)
     pub id: String,
-    /// 桌号 (文件名前缀 / oss table_no)
     pub table_no: String,
     /// YYYYMMDD
     pub date: String,
-    /// 字节
     pub size: u64,
+    /// 头部元数据 (list 读前 2KB 解析, 供前端房间/玩家筛)
+    pub room_id: String,
+    /// 4 玩家 uid (ChairNO 0-3)
+    pub players: Vec<String>,
+    /// 4 玩家名 (Name 0-3)
+    pub names: Vec<String>,
 }
 
 type CacheKey = (String, String);
@@ -86,9 +108,11 @@ fn local_dir(source: &str) -> Option<&'static str> {
     }
 }
 
-/// `GET /api/record/sources` — 列可用数据源 (含 hostID/region/ver 元数据)。
+/// `GET /api/record/sources` — 列可用数据源 + 本机 host_id (前端隐本机 bastion 源)。
 pub async fn sources() -> Json<Value> {
-    Json(json!({ "success": true, "sources": SOURCES }))
+    let my_host_id =
+        std::env::var("SERVICESVR_HOST_ID").unwrap_or_else(|_| "local".to_string());
+    Json(json!({ "success": true, "sources": SOURCES, "my_host_id": my_host_id }))
 }
 
 #[derive(Deserialize)]
@@ -128,7 +152,7 @@ pub async fn list(Query(p): Query<ListParams>) -> Result<Json<Value>> {
 #[derive(Deserialize)]
 pub struct GetParams {
     pub source: String,
-    /// 文件名 (local) / oss key (zip_key::inner)
+    /// 文件名 (local) / oss key (zip_key::inner) / bastion 远端文件名
     pub id: String,
 }
 
@@ -153,6 +177,7 @@ async fn dispatch_list(source: &str, date: &str) -> Result<Vec<RecordMeta>> {
     match src.kind {
         "local" => list_local(local_dir(source).unwrap(), date).await,
         "oss" => list_oss(src, date).await,
+        "bastion" => list_bastion(src, date).await,
         _ => Err(AppError::MissingParam("source")),
     }
 }
@@ -162,8 +187,44 @@ async fn dispatch_get(source: &str, id: &str) -> Result<String> {
     match src.kind {
         "local" => get_local(local_dir(source).unwrap(), id).await,
         "oss" => get_oss(id).await,
+        "bastion" => get_bastion(src, id).await,
         _ => Err(AppError::MissingParam("source")),
     }
+}
+
+// ── 头部解析 (RoomID + 4 ChairNO uid + 4 Name) ──────────────────────────────
+
+/// 解析 record 头部 (前 2KB 文本) → (room_id, players[4], names[4])。
+/// 用于 list 增返元数据供前端按房间/玩家筛。格式参 memory `xzms-record-log-format`:
+/// `RoomID <id>` / `ChairNO <idx> <uid> ...` / `Name <idx> <name>`。
+fn parse_record_head(text: &str) -> (String, Vec<String>, Vec<String>) {
+    let mut room_id = String::new();
+    let mut players = vec![String::new(); 4];
+    let mut names = vec![String::new(); 4];
+    for line in text.lines().take(40) {
+        if let Some(v) = line.strip_prefix("RoomID ") {
+            room_id = v.split_whitespace().next().unwrap_or("").to_string();
+        } else if let Some(rest) = line.strip_prefix("ChairNO ") {
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(i) = parts[0].parse::<usize>() {
+                    if i < 4 {
+                        players[i] = parts[1].to_string();
+                    }
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("Name ") {
+            let parts: Vec<&str> = rest.splitn(2, ' ').collect();
+            if parts.len() >= 2 {
+                if let Ok(i) = parts[0].parse::<usize>() {
+                    if i < 4 {
+                        names[i] = parts[1].to_string();
+                    }
+                }
+            }
+        }
+    }
+    (room_id, players, names)
 }
 
 // ── local 源 ─────────────────────────────────────────────────────────────────
@@ -176,6 +237,7 @@ async fn list_local(dir: &str, date: &str) -> Result<Vec<RecordMeta>> {
     }
     let mut items = Vec::new();
     let mut rd = tokio::fs::read_dir(root).await?;
+    use tokio::io::AsyncReadExt;
     while let Some(e) = rd.next_entry().await? {
         let name = e.file_name().to_string_lossy().to_string();
         if let Some((tno, d)) = parse_record_name(&name) {
@@ -183,7 +245,19 @@ async fn list_local(dir: &str, date: &str) -> Result<Vec<RecordMeta>> {
                 continue;
             }
             let size = tokio::fs::metadata(e.path()).await.map(|m| m.len()).unwrap_or(0);
-            items.push(RecordMeta { id: name, table_no: tno, date: d, size });
+            // 读前 2KB 头部解析 room_id + 玩家 (供前端筛)
+            let (room_id, players, names) = match tokio::fs::File::open(e.path()).await {
+                Ok(mut f) => {
+                    let mut buf = vec![0u8; 2048];
+                    let n = f.read(&mut buf).await.unwrap_or(0);
+                    let txt = crate::encoding::decode(&buf[..n]).content;
+                    parse_record_head(&txt)
+                }
+                Err(_) => (String::new(), vec![String::new(); 4], vec![String::new(); 4]),
+            };
+            items.push(RecordMeta {
+                id: name, table_no: tno, date: d, size, room_id, players, names,
+            });
         }
     }
     items.sort_by(|a, b| a.table_no.cmp(&b.table_no).then(a.id.cmp(&b.id)));
@@ -222,7 +296,7 @@ fn parse_record_name(name: &str) -> Option<(String, String)> {
 // 调 `python spideOnlineLog.py` (exe 同目录, 走 PATH python — 该解释器装了 oss2/CredsManager)。
 // 两模式:
 //   list: `--source oss --service {oss_service} --host {host_id} --subdir Record --json --no-download [date]`
-//         stdout = JSON 索引 (每对局一项, key=zip_key::inner)
+//         stdout = JSON 索引 (每对局一项, 含 room_id/players/names, key=zip_key::inner)
 //   get:  `--source oss --subdir Record --fetch {key}` (key=id, 含 zip+inner 定位)
 //         stdout = record .log 原始字节 (GBK, 交 crate::encoding::decode)
 // 滚动保留近 2 日 → 当日 record 在命名日期 +2 日后才全 (list 容忍部分缺)。
@@ -230,7 +304,7 @@ fn parse_record_name(name: &str) -> Option<(String, String)> {
 const SPIDE_SCRIPT: &str = "spideOnlineLog.py";
 const PYTHON: &str = "python";
 /// oss subprocess 超时。对齐 spideorder COMMAND_TIMEOUT=300s — OSS 远程 (杭州) +
-/// 10MB zip 下载 + 内层 record .log namelist 解析, 3718 单日 1706 项实测 ~185s。
+/// 10MB zip 下载 + 内层 record .log 头部解析 (流式 2KB), 3718 单日 1706 项实测 ~215s。
 /// 120s 实测不足 (HTTP 404 ServiceUnavailable)。
 const OSS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
@@ -240,6 +314,12 @@ struct OssRecordItem {
     table_no: String,
     date: String,
     size: u64,
+    #[serde(default)]
+    room_id: String,
+    #[serde(default)]
+    players: Vec<String>,
+    #[serde(default)]
+    names: Vec<String>,
 }
 
 async fn list_oss(src: &RecordSource, date: &str) -> Result<Vec<RecordMeta>> {
@@ -269,6 +349,9 @@ async fn list_oss(src: &RecordSource, date: &str) -> Result<Vec<RecordMeta>> {
             table_no: it.table_no,
             date: it.date,
             size: it.size,
+            room_id: it.room_id,
+            players: pad4(it.players),
+            names: pad4(it.names),
         })
         .collect())
 }
@@ -331,6 +414,82 @@ fn format_date_arg(date: &str) -> String {
     }
 }
 
+/// 不足 4 元素补空串 (players/names 容错)。
+fn pad4(mut v: Vec<String>) -> Vec<String> {
+    while v.len() < 4 {
+        v.push(String::new());
+    }
+    v
+}
+
+// ── bastion 源 (reqwest 代理远端 servicesvr) ────────────────────────────────
+//
+// 近 2 日 OSS 未上传的 record → 走堡垒机 53/185 本机 FS (远端 servicesvr local 源)。
+// 需 53/185 部署本同款 servicesvr (含 records.rs) + env SERVICESVR_BASTION_<host>_URL。
+// 远端 list/get 返同结构 RecordMeta (含 room_id/players/names), 本机透传。
+
+/// bastion 代理超时 (远端 servicesvr local FS 快; 远端 oss 不经 bastion)。
+const BASTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn bastion_proxy_url(src: &RecordSource) -> Result<String> {
+    let host = src.bastion_host.unwrap();
+    let key = format!("SERVICESVR_BASTION_{}_URL", host);
+    std::env::var(&key).map_err(|_| {
+        tracing::warn!("bastion env {key} 未设 (源 {})", src.id);
+        AppError::ServiceUnavailable
+    })
+}
+
+async fn list_bastion(src: &RecordSource, date: &str) -> Result<Vec<RecordMeta>> {
+    let proxy = bastion_proxy_url(src)?;
+    let remote = src.remote_source.unwrap();
+    let client = reqwest::Client::builder()
+        .timeout(BASTION_TIMEOUT)
+        .build()
+        .map_err(|_| AppError::ServiceUnavailable)?;
+    let mut req = client
+        .get(format!("{proxy}/api/record/list"))
+        .query(&[("source", remote)]);
+    if !date.is_empty() {
+        req = req.query(&[("date", date)]);
+    }
+    let resp = req.send().await.map_err(|e| {
+        tracing::warn!("bastion list {} 连接失败: {e}", src.id);
+        AppError::ServiceUnavailable
+    })?;
+    let bytes = resp.bytes().await.map_err(|_| AppError::ServiceUnavailable)?;
+    let v: Value = serde_json::from_slice(&bytes).map_err(|_| AppError::ServiceUnavailable)?;
+    if !v.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
+        return Err(AppError::ServiceUnavailable);
+    }
+    let items_val = v.get("items").cloned().unwrap_or(Value::Array(vec![]));
+    serde_json::from_value(items_val).map_err(|_| AppError::ServiceUnavailable)
+}
+
+async fn get_bastion(src: &RecordSource, id: &str) -> Result<String> {
+    let proxy = bastion_proxy_url(src)?;
+    let remote = src.remote_source.unwrap();
+    let client = reqwest::Client::builder()
+        .timeout(BASTION_TIMEOUT)
+        .build()
+        .map_err(|_| AppError::ServiceUnavailable)?;
+    let resp = client
+        .get(format!("{proxy}/api/record/get"))
+        .query(&[("source", remote), ("id", id)])
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::warn!("bastion get {} 连接失败: {e}", src.id);
+            AppError::ServiceUnavailable
+        })?;
+    let bytes = resp.bytes().await.map_err(|_| AppError::ServiceUnavailable)?;
+    let v: Value = serde_json::from_slice(&bytes).map_err(|_| AppError::ServiceUnavailable)?;
+    v.get("content")
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string())
+        .ok_or(AppError::ServiceUnavailable)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,18 +519,23 @@ mod tests {
 
     #[test]
     fn sources_table_sanity() {
-        // 两 local + 四 oss-xzms + 四 oss-xzmo = 10
-        assert_eq!(SOURCES.len(), 10, "源清单数量");
+        // 2 local + 4 oss-xzms + 4 oss-xzmo + 4 bastion = 14
+        assert_eq!(SOURCES.len(), 14, "源清单数量");
         assert!(SOURCES.iter().all(|s| !s.id.is_empty() && !s.label.is_empty()));
-        // local 项无 oss 元数据
+        // local 项无 oss/bastion 元数据
         for s in SOURCES.iter().filter(|s| s.kind == "local") {
-            assert!(s.oss_service.is_none() && s.host_id.is_none());
+            assert!(s.oss_service.is_none() && s.host_id.is_none() && s.bastion_host.is_none());
         }
         // oss 项必填 oss_service + host_id + region + ver
         for s in SOURCES.iter().filter(|s| s.kind == "oss") {
             assert!(s.oss_service.is_some(), "oss 源缺 oss_service: {}", s.id);
             assert!(s.host_id.is_some(), "oss 源缺 host_id: {}", s.id);
             assert!(s.region.is_some() && s.ver.is_some());
+        }
+        // bastion 项必填 bastion_host + remote_source
+        for s in SOURCES.iter().filter(|s| s.kind == "bastion") {
+            assert!(s.bastion_host.is_some(), "bastion 源缺 bastion_host: {}", s.id);
+            assert!(s.remote_source.is_some(), "bastion 源缺 remote_source: {}", s.id);
         }
         // id 唯一
         let mut ids: Vec<&str> = SOURCES.iter().map(|s| s.id).collect();
@@ -387,5 +551,17 @@ mod tests {
     #[case("2025061", "2025061")]
     fn fmt_date_arg(#[case] input: &str, #[case] want: &str) {
         assert_eq!(format_date_arg(input), want);
+    }
+
+    #[test]
+    fn parse_head_extracts_room_players_names() {
+        let txt = "Version 1.1\r\nTimestamp 1750198483\r\nRoomID 31966\r\nTableNO 2\r\n\
+ChairNO 0 255452784 2112 -1\r\nChairNO 1 259461239 1073741824 0\r\n\
+ChairNO 2 259461227 1073741824 6\r\nChairNO 3 259461213 1073741824 0\r\n\
+Flags 7\r\nName 0 玩家A\r\nName 1 玩家B\r\nName 2 玩家C\r\nName 3 玩家D\r\n";
+        let (room, players, names) = parse_record_head(txt);
+        assert_eq!(room, "31966");
+        assert_eq!(players, vec!["255452784", "259461239", "259461227", "259461213"]);
+        assert_eq!(names, vec!["玩家A", "玩家B", "玩家C", "玩家D"]);
     }
 }

@@ -502,8 +502,11 @@ def _oss_download_zip(bucket, key: str, dest_dir: str) -> str:
 def _oss_list_record_files(bucket, service: str, host: str, date_str: str) -> list:
     """列 {service}/{host}/Record/{date}*.zip 内层 `game/{service}/Record/{tableNO}_{date}.log`
     作 record 索引项。每日一 zip, 内含多对局 .log (复盘器按对局选, 非 zip 粒度)。
-    返 [{key, zip_key, inner, table_no, date, size}]。key = zip_key + '::' + inner (供 --fetch 定位)。
-    依赖 _oss_list_date_files 正则已参数化 subdir (匹配 `-Record.zip`)。"""
+    每项含 table_no/date/size + **头部元数据** (流式读前 2KB 解析 RoomID + 4 ChairNO uid + 4 Name),
+    供前端按房间/玩家筛选。返 [{key, zip_key, inner, table_no, date, size, room_id, players[4], names[4]}]。
+    key = zip_key + '::' + inner (供 --fetch 定位)。
+    流式 zf.open(inner).read(2048) — zlib decompressor 只解压前 2KB (RoomID+ChairNO×4+Name×4 ~600B),
+    不解全 record (单局可达 26MB, 1706 项×26MB 不可行)。"""
     import io
     import re
     import zipfile
@@ -517,6 +520,28 @@ def _oss_list_record_files(bucket, service: str, host: str, date_str: str) -> li
             m = inner_re.match(info.filename)
             if not m:
                 continue
+            # 流式读前 2KB 头部解析 (RoomID + ChairNO uid + Name), 供前端房间/玩家筛
+            head = {}
+            try:
+                with zf.open(info) as f:
+                    raw = f.read(2048)
+                for line in raw.decode('gb18030', errors='replace').splitlines():
+                    if line.startswith('RoomID '):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            head['room_id'] = parts[1]
+                    elif line.startswith('ChairNO '):
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            head.setdefault('players', {})[parts[1]] = parts[2]
+                    elif line.startswith('Name '):
+                        parts = line.split(None, 2)
+                        if len(parts) >= 3:
+                            head.setdefault('names', {})[parts[1]] = parts[2]
+                    if 'room_id' in head and len(head.get('players', {})) >= 4 and len(head.get('names', {})) >= 4:
+                        break
+            except Exception:
+                pass
             items.append({
                 'key': f'{zip_key}::{info.filename}',
                 'zip_key': zip_key,
@@ -524,6 +549,9 @@ def _oss_list_record_files(bucket, service: str, host: str, date_str: str) -> li
                 'table_no': m.group(1),
                 'date': m.group(2),
                 'size': info.file_size,
+                'room_id': head.get('room_id', ''),
+                'players': [head.get('players', {}).get(str(i), '') for i in range(4)],
+                'names': [head.get('names', {}).get(str(i), '') for i in range(4)],
             })
     items.sort(key=lambda x: (x['date'], x['table_no']))
     return items
