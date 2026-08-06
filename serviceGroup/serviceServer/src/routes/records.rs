@@ -87,13 +87,14 @@ pub struct RecordMeta {
     /// YYYYMMDD
     pub date: String,
     pub size: u64,
-    /// 头部元数据 (list 读前 2KB 解析, 供前端房间/玩家筛)
+    /// 头部元数据 (list 读前 2KB 解析, 供前端房间/玩家筛; #[serde(default)] 容错远端旧版缺字段)
+    #[serde(default)]
     pub room_id: String,
-    /// 4 玩家 uid (ChairNO 0-3)
+    #[serde(default)]
     pub players: Vec<String>,
-    /// 4 玩家名 (Name 0-3)
+    #[serde(default)]
     pub names: Vec<String>,
-    /// 头部 Timestamp (unix 秒), 前端转 HH:MM:SS (日期已选定)
+    #[serde(default)]
     pub timestamp: u64,
 }
 
