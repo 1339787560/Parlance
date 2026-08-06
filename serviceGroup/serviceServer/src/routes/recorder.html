@@ -643,7 +643,6 @@
   document.getElementById('btn-prev').onclick = () => { if (curStep > 0) renderSnap(curStep - 1); };
   document.getElementById('btn-next').onclick = () => { if (curStep < curSnaps().length - 1) renderSnap(curStep + 1); };
   document.getElementById('btn-reset').onclick = () => renderSnap(0);
-  document.getElementById('btn-demo').onclick = () => loadDemo();
   document.getElementById('file-input').onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
     try { const txt = await f.text(); parseRecord(txt); restoreState(); }
@@ -679,7 +678,7 @@
         const opt = document.createElement('option');
         opt.value = s.id;
         // label 优先用 region + 金/银标 (oss 大区), 否则 label (local/bastion)
-        opt.textContent = s.region ? (s.region + (s.ver ? '(' + s.ver + ')')) : s.label;
+        opt.textContent = s.region ? (s.region + (s.ver ? ('(' + s.ver + ')') : '')) : s.label;
         sel.appendChild(opt);
       });
       // 日期默认前日 + max today-2 (OSS 滚动上传延迟 2 日, 近 2 日未上传)
@@ -704,7 +703,7 @@
     try {
       const r = await fetch('/api/record/list?' + q).then(r => r.json());
       hideProgress();
-      if (!r.success) { document.getElementById('records-list').textContent = r.message || '查询失败'; return; }
+      if (!r.success) { document.getElementById('records-list').textContent = '该源不可用（远端目录不存在或未达，如 185·六红中 = 185 机无 xzms Record 目录）'; console.warn('list fail:', r); return; }
       allRecords = r.items || [];
       // 填房间 select (unique room_id, 供大区内房间筛)
       const roomSel = document.getElementById('src-room');
