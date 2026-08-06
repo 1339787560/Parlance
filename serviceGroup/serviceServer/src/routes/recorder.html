@@ -165,14 +165,14 @@
 <body>
 
   <div class="svc-bar">
-    <button id="btn-rounds" class="pill">对局 -/-</button>
-    <span class="sep"></span>
     <select id="src-sel" class="pill"></select>
     <input type="date" id="src-date" class="pill">
     <select id="src-room" class="pill"><option value="">全部房间</option></select>
     <input type="text" id="src-players" class="pill" placeholder="uid,逗号分隔筛" style="width:130px" title="玩家 uid 逗号分隔 (4 玩家完全包含输入集合)">
-    <button id="btn-src-list" class="pill">列对局</button>
+    <button id="btn-src-list" class="pill">查找</button>
     <span id="src-progress" class="pill" style="display:none;min-width:90px;background:#fc6;color:#000"></span>
+    <span class="sep"></span>
+    <button id="btn-rounds" class="pill">对局 -/-</button>
     <span class="sep"></span>
     <button id="btn-reset">⏮</button>
     <button id="btn-prev">◀</button>
@@ -664,6 +664,16 @@
   let myHostId = 'local';
   let allRecords = []; // 当前 list 全量缓存 (房间/玩家筛走前端, 不重 fetch)
   function fmtDate(d) { return d.toISOString().slice(0,10); }
+  function fmtHHMMSS(unix) { const d = new Date((unix||0)*1000); return [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':'); }
+  // oss 源 max=today-2 (滚动上传延迟 2 日); local/bastion 不限
+  function adjustDateMax(source) {
+    const di = document.getElementById('src-date');
+    if (source && source.startsWith('oss-')) {
+      const today = new Date(); const maxD = new Date(today); maxD.setDate(today.getDate()-2);
+      di.max = fmtDate(maxD);
+      if (di.value && di.value > di.max) di.value = di.max;
+    } else { di.max = ''; }
+  }
   function showProgress(msg) { const p = document.getElementById('src-progress'); p.style.display=''; p.textContent = msg; }
   function hideProgress() { document.getElementById('src-progress').style.display='none'; }
   async function loadSources() {
@@ -681,14 +691,14 @@
         opt.textContent = s.region ? (s.region + (s.ver ? ('(' + s.ver + ')') : '')) : s.label;
         sel.appendChild(opt);
       });
-      // 日期默认前日 + max today-2 (OSS 滚动上传延迟 2 日, 近 2 日未上传)
+      // 日期默认前日; oss max today-2 (滚动延迟), local/bastion 不限 (adjustDateMax 按 source)
       const di = document.getElementById('src-date');
-      const today = new Date();
-      const maxD = new Date(today); maxD.setDate(today.getDate() - 2);
-      di.max = fmtDate(maxD);
+      adjustDateMax(sel.value);
       const saved = localStorage.getItem('rec_date');
-      di.value = saved || fmtDate(maxD);
+      const today = new Date(); const prev = new Date(today); prev.setDate(today.getDate() - 2);
+      di.value = saved || fmtDate(prev);
       di.onchange = () => localStorage.setItem('rec_date', di.value);
+      sel.onchange = () => adjustDateMax(sel.value);
     } catch (e) { console.warn('loadSources 失败', e); }
   }
   async function listRecords() {
@@ -697,6 +707,11 @@
     const date = dateRaw ? dateRaw.replace(/-/g, '') : '';
     const q = new URLSearchParams({ source });
     if (date) q.set('date', date);
+    // 清旧 (避切源后残留上源 title/room 致跨源错觉)
+    allRecords = [];
+    document.getElementById('records-title').textContent = source + ' · ' + (date || '全部');
+    document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>';
+    document.getElementById('records-list').innerHTML = '';
     showProgress('下载中...');
     document.getElementById('records-modal').classList.remove('hidden');
     document.getElementById('records-list').textContent = '加载中...';
@@ -733,8 +748,9 @@
       row.className = 'round-item';
       row.style.cssText = 'padding:6px 4px;cursor:pointer;border-bottom:1px solid #2a4a3a;';
       const kb = (it.size / 1024).toFixed(0);
-      const namesStr = (it.names || []).filter(Boolean).join(',');
-      row.textContent = `${it.room_id || it.table_no} · ${it.date} · ${kb}KB${namesStr ? ' · ' + namesStr : ''}`;
+      const ts = it.timestamp ? fmtHHMMSS(it.timestamp) : '';
+      const uids = (it.players || []).filter(Boolean).join(',');
+      row.textContent = `${ts} · ${it.room_id || it.table_no} · ${kb}KB${uids ? ' · ' + uids : ''}`;
       row.onclick = () => loadRecord(source, it.id);
       list.appendChild(row);
     });

@@ -56,7 +56,7 @@ struct RecordSource {
 const SOURCES: &[RecordSource] = &[
     // local 本机 FS
     RecordSource { id: "local-xzms",  label: "本机·六红中",   kind: "local", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
-    RecordSource { id: "local-xzmo2", label: "本机·血血流战", kind: "local", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
+    RecordSource { id: "local-xzmo2", label: "本机·血流血战", kind: "local", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
     // oss-xzms (xzmssvr 血流六红中, 全金币)
     RecordSource { id: "oss-xzms-3291", label: "OSS·六红中1区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3291), region: Some("血流六红中1区"), ver: Some("金币"), bastion_host: None, remote_source: None },
     RecordSource { id: "oss-xzms-3058", label: "OSS·六红中2区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3058), region: Some("血流六红中2区"), ver: Some("金币"), bastion_host: None, remote_source: None },
@@ -93,6 +93,8 @@ pub struct RecordMeta {
     pub players: Vec<String>,
     /// 4 玩家名 (Name 0-3)
     pub names: Vec<String>,
+    /// 头部 Timestamp (unix 秒), 前端转 HH:MM:SS (日期已选定)
+    pub timestamp: u64,
 }
 
 type CacheKey = (String, String);
@@ -197,13 +199,16 @@ async fn dispatch_get(source: &str, id: &str) -> Result<String> {
 /// 解析 record 头部 (前 2KB 文本) → (room_id, players[4], names[4])。
 /// 用于 list 增返元数据供前端按房间/玩家筛。格式参 memory `xzms-record-log-format`:
 /// `RoomID <id>` / `ChairNO <idx> <uid> ...` / `Name <idx> <name>`。
-fn parse_record_head(text: &str) -> (String, Vec<String>, Vec<String>) {
+fn parse_record_head(text: &str) -> (String, Vec<String>, Vec<String>, u64) {
     let mut room_id = String::new();
     let mut players = vec![String::new(); 4];
     let mut names = vec![String::new(); 4];
+    let mut timestamp: u64 = 0;
     for line in text.lines().take(40) {
         if let Some(v) = line.strip_prefix("RoomID ") {
             room_id = v.split_whitespace().next().unwrap_or("").to_string();
+        } else if let Some(v) = line.strip_prefix("Timestamp ") {
+            timestamp = v.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
         } else if let Some(rest) = line.strip_prefix("ChairNO ") {
             let parts: Vec<&str> = rest.split_whitespace().collect();
             if parts.len() >= 2 {
@@ -224,7 +229,7 @@ fn parse_record_head(text: &str) -> (String, Vec<String>, Vec<String>) {
             }
         }
     }
-    (room_id, players, names)
+    (room_id, players, names, timestamp)
 }
 
 // ── local 源 ─────────────────────────────────────────────────────────────────
@@ -246,17 +251,17 @@ async fn list_local(dir: &str, date: &str) -> Result<Vec<RecordMeta>> {
             }
             let size = tokio::fs::metadata(e.path()).await.map(|m| m.len()).unwrap_or(0);
             // 读前 2KB 头部解析 room_id + 玩家 (供前端筛)
-            let (room_id, players, names) = match tokio::fs::File::open(e.path()).await {
+            let (room_id, players, names, timestamp) = match tokio::fs::File::open(e.path()).await {
                 Ok(mut f) => {
                     let mut buf = vec![0u8; 2048];
                     let n = f.read(&mut buf).await.unwrap_or(0);
                     let txt = crate::encoding::decode(&buf[..n]).content;
                     parse_record_head(&txt)
                 }
-                Err(_) => (String::new(), vec![String::new(); 4], vec![String::new(); 4]),
+                Err(_) => (String::new(), vec![String::new(); 4], vec![String::new(); 4], 0),
             };
             items.push(RecordMeta {
-                id: name, table_no: tno, date: d, size, room_id, players, names,
+                id: name, table_no: tno, date: d, size, room_id, players, names, timestamp,
             });
         }
     }
@@ -320,6 +325,8 @@ struct OssRecordItem {
     players: Vec<String>,
     #[serde(default)]
     names: Vec<String>,
+    #[serde(default)]
+    timestamp: u64,
 }
 
 async fn list_oss(src: &RecordSource, date: &str) -> Result<Vec<RecordMeta>> {
@@ -352,6 +359,7 @@ async fn list_oss(src: &RecordSource, date: &str) -> Result<Vec<RecordMeta>> {
             room_id: it.room_id,
             players: pad4(it.players),
             names: pad4(it.names),
+            timestamp: it.timestamp,
         })
         .collect())
 }
@@ -559,8 +567,9 @@ mod tests {
 ChairNO 0 255452784 2112 -1\r\nChairNO 1 259461239 1073741824 0\r\n\
 ChairNO 2 259461227 1073741824 6\r\nChairNO 3 259461213 1073741824 0\r\n\
 Flags 7\r\nName 0 玩家A\r\nName 1 玩家B\r\nName 2 玩家C\r\nName 3 玩家D\r\n";
-        let (room, players, names) = parse_record_head(txt);
+        let (room, players, names, ts) = parse_record_head(txt);
         assert_eq!(room, "31966");
+        assert_eq!(ts, 1750198483);
         assert_eq!(players, vec!["255452784", "259461239", "259461227", "259461213"]);
         assert_eq!(names, vec!["玩家A", "玩家B", "玩家C", "玩家D"]);
     }

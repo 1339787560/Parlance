@@ -530,6 +530,10 @@ def _oss_list_record_files(bucket, service: str, host: str, date_str: str) -> li
                         parts = line.split()
                         if len(parts) >= 2:
                             head['room_id'] = parts[1]
+                    elif line.startswith('Timestamp '):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            head['timestamp'] = parts[1]
                     elif line.startswith('ChairNO '):
                         parts = line.split()
                         if len(parts) >= 3:
@@ -550,6 +554,7 @@ def _oss_list_record_files(bucket, service: str, host: str, date_str: str) -> li
                 'date': m.group(2),
                 'size': info.file_size,
                 'room_id': head.get('room_id', ''),
+                'timestamp': int(head.get('timestamp', 0) or 0),
                 'players': [head.get('players', {}).get(str(i), '') for i in range(4)],
                 'names': [head.get('names', {}).get(str(i), '') for i in range(4)],
             })
