@@ -597,7 +597,8 @@ def _run_oss_source(args, dates: list):
         items = []
         for d in dates:
             items.extend(_oss_list_record_files(bucket, service, host, d.strftime('%Y%m%d')))
-        sys.stdout.write(json.dumps(items, ensure_ascii=False))
+        # UTF-8 bytes (避 Windows stdout cp936/GBK 编码中文致 Rust serde_json 解析失败)
+        sys.stdout.buffer.write(json.dumps(items, ensure_ascii=False).encode('utf-8'))
         return
 
     out_dir = _ensure_oss_output_dir(service, host)

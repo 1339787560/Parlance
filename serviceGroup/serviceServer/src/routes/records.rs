@@ -339,15 +339,18 @@ async fn list_oss(src: &RecordSource, date: &str) -> Result<Vec<RecordMeta>> {
         "--subdir", "Record", "--json", "--no-download",
     ];
     if !date_arg.is_empty() {
+        // spideOnlineLog _parse_dates 单参 = start..today (多日扫, 致 1706 项多日累加 + 200s 超时);
+        // 传两同参 = start=end=date 单日 (zip 实际 ~4 对局 .log)
+        args.push(&date_arg);
         args.push(&date_arg);
     }
-    let cwd = spide_cwd()?;
+    let cwd = spide_cwd().map_err(|e| { write_dbg_log("spide_cwd_err", &[], &format!("{:?}", e)); e })?;
     let out = run_spide(&cwd, &args).await?;
     let items: Vec<OssRecordItem> = serde_json::from_slice(&out).map_err(|e| {
-        tracing::warn!(
-            "oss list JSON 解析失败: {e}; stdout={}",
-            String::from_utf8_lossy(&out)
-        );
+        let stdout_str = String::from_utf8_lossy(&out);
+        let head = &stdout_str[..stdout_str.len().min(400)];
+        tracing::warn!("oss list JSON 解析失败: {e}; stdout={head}");
+        write_dbg_log("json_err", &args, &format!("{e}; stdout_head={head}"));
         AppError::ServiceUnavailable
     })?;
     Ok(items
@@ -373,7 +376,7 @@ async fn get_oss(id: &str) -> Result<String> {
 
 /// 跑 spideOnlineLog.py, 返 stdout bytes。失败 (非零 exit / spawn 失败 / 超时) → ServiceUnavailable。
 async fn run_spide(cwd: &std::path::Path, args: &[&str]) -> Result<Vec<u8>> {
-    let out = tokio::time::timeout(OSS_TIMEOUT, async {
+    let out = match tokio::time::timeout(OSS_TIMEOUT, async {
         tokio::process::Command::new(PYTHON)
             .arg(SPIDE_SCRIPT)
             .args(args)
@@ -384,23 +387,43 @@ async fn run_spide(cwd: &std::path::Path, args: &[&str]) -> Result<Vec<u8>> {
             .await
     })
     .await
-    .map_err(|_| {
-        tracing::warn!("spideOnlineLog 超时 {OSS_TIMEOUT:?} (args={args:?})");
-        AppError::ServiceUnavailable
-    })?
-    .map_err(|e| {
-        tracing::warn!("spideOnlineLog spawn 失败: {e}");
-        AppError::ServiceUnavailable
-    })?;
+    {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => {
+            tracing::warn!("spideOnlineLog spawn 失败: {e}");
+            write_dbg_log("spawn_err", args, &e.to_string());
+            return Err(AppError::ServiceUnavailable);
+        }
+        Err(_) => {
+            tracing::warn!("spideOnlineLog 超时 {OSS_TIMEOUT:?} (args={args:?})");
+            write_dbg_log("timeout", args, "");
+            return Err(AppError::ServiceUnavailable);
+        }
+    };
     if !out.status.success() {
-        tracing::warn!(
-            "spideOnlineLog exit={:?} stderr={}",
-            out.status.code(),
-            String::from_utf8_lossy(&out.stderr)
-        );
+        let stderr_str = String::from_utf8_lossy(&out.stderr);
+        tracing::warn!("spideOnlineLog exit={:?} stderr={}", out.status.code(), stderr_str);
+        write_dbg_log("exit", args, &stderr_str);
         return Err(AppError::ServiceUnavailable);
     }
+    write_dbg_log("ok", args, &format!("stdout_len={}", out.stdout.len()));
     Ok(out.stdout)
+}
+
+/// 临时诊断: 写 subprocess stderr/exit/args 到 servicesvr-debug.log (exe 同目录), 定位 oss/bastion 拉取失败。
+fn write_dbg_log(kind: &str, args: &[&str], stderr: &str) {
+    use std::io::Write;
+    let dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let path = dir.join("servicesvr-debug.log");
+    let content = format!("kind={kind} args={args:?} stderr={stderr}\n");
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| f.write_all(content.as_bytes()));
 }
 
 /// spideOnlineLog.py 工作目录 = servicesvr exe 同目录 (脚本与 exe 同放, 参 spideorder)。
