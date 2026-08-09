@@ -755,13 +755,13 @@
     title.textContent = `${source} · ${items.length} 局` + (items.length !== total ? ` / ${total}` : '') + (need.length ? ` (含 ${need.join(',')})` : '');
     if (!items.length) { list.textContent = '无匹配'; return; }
     items.forEach(it => {
+      const globalIdx = allRecords.indexOf(it) + 1;
       const row = document.createElement('div');
       row.className = 'round-item';
       row.style.cssText = 'padding:6px 4px;cursor:pointer;border-bottom:1px solid #2a4a3a;';
-      const kb = (it.size / 1024).toFixed(0);
-      const ts = it.timestamp ? fmtHHMMSS(it.timestamp) : '';
+      const ts = it.timestamp ? fmtHHMMSS(it.timestamp) : '--:--:--';
       const uids = (it.players || []).filter(Boolean).join(',');
-      row.textContent = `${ts} · ${it.room_id || it.table_no} · ${kb}KB${uids ? ' · ' + uids : ''}`;
+      row.textContent = `${globalIdx}/${total} · ${ts} · 桌${it.table_no} · ${uids}`;
       row.onclick = () => loadRecord(source, it.id);
       list.appendChild(row);
     });
