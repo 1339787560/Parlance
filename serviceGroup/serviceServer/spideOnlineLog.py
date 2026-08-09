@@ -499,6 +499,37 @@ def _oss_download_zip(bucket, key: str, dest_dir: str) -> str:
     return dest
 
 
+def _oss_cached_zip(bucket, zip_key: str) -> bytes:
+    """tmp 文件缓存 record zip (7 日未命中清理, 非常驻内存)。
+    命中刷 mtime; 未中下+存+扫清。路径 = serviceServer/tmp/record_cache/{md5(key)}.zip。"""
+    import hashlib
+    import time
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tmp', 'record_cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    h = hashlib.md5(zip_key.encode()).hexdigest()[:16]
+    path = os.path.join(cache_dir, h + '.zip')
+    if os.path.exists(path):
+        os.utime(path)  # 命中刷 mtime (LRU 7 日未命中清理)
+        with open(path, 'rb') as f:
+            return f.read()
+    data = bucket.get_object(zip_key).read()
+    try:
+        with open(path, 'wb') as f:
+            f.write(data)
+    except Exception:
+        pass  # 写失败(磁盘满/权限) 退内存
+    # 清理: mtime > 7 日 删 (命中已刷; 未中老文件清)
+    now = time.time()
+    for fn in os.listdir(cache_dir):
+        fp = os.path.join(cache_dir, fn)
+        if os.path.isfile(fp) and now - os.path.getmtime(fp) > 7 * 86400:
+            try:
+                os.remove(fp)
+            except Exception:
+                pass
+    return data
+
+
 def _oss_list_record_files(bucket, service: str, host: str, date_str: str) -> list:
     """列 {service}/{host}/Record/{date}*.zip 内层 `game/{service}/Record/{tableNO}_{date}.log`
     作 record 索引项。每日一 zip, 内含多对局 .log (复盘器按对局选, 非 zip 粒度)。
@@ -514,7 +545,7 @@ def _oss_list_record_files(bucket, service: str, host: str, date_str: str) -> li
     inner_re = re.compile(rf'game/{re.escape(service)}/Record/(\d+)_(\d{{8}})\.log$')
     items = []
     for zip_key, _display in zips:
-        data = bucket.get_object(zip_key).read()
+        data = _oss_cached_zip(bucket, zip_key)
         zf = zipfile.ZipFile(io.BytesIO(data))
         for info in zf.infolist():
             m = inner_re.match(info.filename)
@@ -568,7 +599,7 @@ def _oss_fetch_record_file(bucket, key: str) -> bytes:
     import io
     import zipfile
     zip_key, inner = key.split('::', 1)
-    data = bucket.get_object(zip_key).read()
+    data = _oss_cached_zip(bucket, zip_key)
     zf = zipfile.ZipFile(io.BytesIO(data))
     return zf.read(inner)
 
