@@ -45,6 +45,8 @@
     .chair.active { outline: 2px solid #fc6; }
 
     .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; flex-wrap: wrap; }
+    /* 顺序: name(1) uid(2) que-chip(3) deposit(4) — deposit(diff) 在 que 右, 避出现时界面明显跳变 */
+    .player-info .name { order: 1; } .player-info .uid { order: 2; } .player-info .que-chip { order: 3; } .player-info .deposit { order: 4; margin-left: 4px; }
     .name { font-weight: bold; color: #ffe; }
     .uid { color: #6a8a7a; font-size: 10px; }
     .que-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px; background: #3a2a1a; color: #fc6; }
@@ -73,10 +75,9 @@
     /* 下/上(横排): 手牌区固定宽 13 张位, 碰杠左 */
     .pos-bottom .hand-area, .pos-top .hand-area { min-width: 428px; }
     .pos-bottom .meld-area, .pos-top .meld-area { left: 2px; top: 50%; transform: translateY(-50%); }
-    /* 左/右(纵列): 手牌区固定高 13 张位 */
+    /* 左/右(纵列): 手牌区固定高 13 张位; meld 非绝对 (流内独立, 避与 hand 重合) */
     .pos-left .hand-area, .pos-right .hand-area { min-height: 440px; flex-direction: column; }
-    .pos-left .meld-area { top: 2px; left: 50%; transform: translateX(-50%); flex-direction: column; }
-    .pos-right .meld-area { bottom: 2px; left: 50%; transform: translateX(-50%); flex-direction: column; }
+    .pos-left .meld-area, .pos-right .meld-area { position: static; top: auto; bottom: auto; left: auto; transform: none; flex-direction: column; align-self: center; }
     /* 左(玩家面右): 抓牌在手牌下方; 右(玩家面左): 抓牌在手牌上方 */
     .pos-left .catch-area { left: 50%; top: 100%; transform: translateX(-50%); margin: 16px 0 0 0; }
     .pos-right .catch-area { left: 50%; top: auto; bottom: 100%; transform: translateX(-50%); margin: 0 0 16px 0; }
