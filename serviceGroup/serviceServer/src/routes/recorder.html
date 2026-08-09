@@ -374,7 +374,8 @@
     const deposit = [null,null,null,null], depositInit = [null,null,null,null];
     const TOTAL = 114;
     const evs = round.events, n = evs.length;
-    const wallNow = () => TOTAL - sumLen(hands) - sumLen(discards) - sumLen(melds) - sumLen(hu);
+    let wallOffset = 0;  // 杠后无显式 Catch 的隐式补摸 (杠牌堆减 1; 碰不变, 杠减一)
+    const wallNow = () => TOTAL - sumLen(hands) - sumLen(discards) - sumLen(melds) - sumLen(hu) + wallOffset;
     const S = (extra = {}) => snapOf(hands, que, discards, melds, hu, exchanges, wallNow(), deposit, depositInit, extra);
     round.snaps.length = 0;
     round.snaps.push(S());
@@ -439,6 +440,8 @@
           for (const x of gang) { const idx = hands[cc].indexOf(x); if (idx>=0) hands[cc].splice(idx,1); }
           melds[cc].push(gang);
         }
+        // 杠后补摸: 紧接 Catch 显式则按 catch, 无则隐式 wall 减 1
+        if (!evs[i+1] || evs[i+1].type !== 'Catch') wallOffset -= 1;
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
       // 补杠: 已有 peng meld(3 张同牌) +newTile 升级为 4 张; newTile 从手牌移除
@@ -449,6 +452,8 @@
           if (target) target.push(newTile); else melds[cc].push([newTile, newTile, newTile, newTile]);
           const idx = hands[cc].indexOf(newTile); if (idx>=0) hands[cc].splice(idx,1);
         }
+        // 补杠后补摸 (同暗杠): 紧接 Catch 则按 catch, 无则隐式 wall 减 1
+        if (!evs[i+1] || evs[i+1].type !== 'Catch') wallOffset -= 1;
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
       // 胡: winning tile 入胡牌区(按胡牌顺序); 手牌不变(血战续打)
