@@ -456,10 +456,15 @@
         if (!evs[i+1] || evs[i+1].type !== 'Catch') wallOffset -= 1;
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
-      // 胡: winning tile 入胡牌区(按胡牌顺序); 手牌不变(血战续打)
+      // 胡: winning tile 入胡牌区; 自摸 tile 在手牌移除, 点炮 tile 在某弃牌末位移除 (避 discard+hu 双计)
       if (t === 'Hu') {
         const pp = ev.rest.split(/\s+/), cc = +pp[0], tile = pp[1];
-        if (cc>=0&&cc<4) hu[cc].push(tile);
+        if (cc>=0&&cc<4) {
+          const idx = hands[cc].indexOf(tile);
+          if (idx>=0) hands[cc].splice(idx,1);
+          else { for (let k=0;k<4;k++) { if (discards[k].length && discards[k][discards[k].length-1]===tile) { discards[k].pop(); break; } } }
+          hu[cc].push(tile);
+        }
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
       const p = ev.rest.split(/\s+/);
