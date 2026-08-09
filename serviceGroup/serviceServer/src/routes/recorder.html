@@ -660,7 +660,7 @@
     catch (err) { document.getElementById('meta').textContent = '加载失败: ' + err; }
     e.target.value = '';
   };
-  document.getElementById('btn-rounds').onclick = () => { renderRoundsList(); document.getElementById('rounds-modal').classList.remove('hidden'); };
+  document.getElementById('btn-rounds').onclick = () => { renderFilteredRecords(document.getElementById('src-sel').value); document.getElementById('records-modal').classList.remove('hidden'); };
   document.getElementById('modal-close').onclick = () => document.getElementById('rounds-modal').classList.add('hidden');
   document.getElementById('rounds-modal').onclick = (e) => { if (e.target.id === 'rounds-modal') e.currentTarget.classList.add('hidden'); };
   document.querySelectorAll('#persp-btns button').forEach(b => b.onclick = () => { perspective = +b.dataset.p; applyLayout(); renderSnap(curStep); });
@@ -724,7 +724,6 @@
     document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>';
     document.getElementById('records-list').innerHTML = '';
     showProgress('下载中...');
-    document.getElementById('records-modal').classList.remove('hidden');
     document.getElementById('records-list').textContent = '加载中...';
     try {
       const r = await fetch('/api/record/list?' + q).then(r => r.json());
@@ -761,7 +760,7 @@
       row.style.cssText = 'padding:6px 4px;cursor:pointer;border-bottom:1px solid #2a4a3a;';
       const ts = it.timestamp ? fmtHHMMSS(it.timestamp) : '--:--:--';
       const uids = (it.players || []).filter(Boolean).join(',');
-      row.textContent = `${globalIdx}/${total} · ${ts} · 桌${it.table_no} · ${uids}`;
+      row.textContent = `${globalIdx}/${total} · ${it.room_id || it.table_no} · ${ts} · ${uids}`;
       row.onclick = () => loadRecord(source, it.id);
       list.appendChild(row);
     });
