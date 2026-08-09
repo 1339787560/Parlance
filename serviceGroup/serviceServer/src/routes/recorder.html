@@ -237,6 +237,7 @@
   const rec = { header: {}, rounds: [] };
   let curRound = 0, curStep = -1, listBuilt = false, perspective = 0, prevQue = ['','','',''];
   const STORE_KEY = 'recorder_state_v1';
+  const STORE_KEY_RECORD = 'recorder_record_v1';
 
   const ROWS_Y = [8, 153, 301, 448, 590, 745];
   const ROWS_H = [133, 136, 131, 132, 137, 120];
@@ -653,7 +654,20 @@
 
   document.getElementById('btn-prev').onclick = () => { if (curStep > 0) renderSnap(curStep - 1); };
   document.getElementById('btn-next').onclick = () => { if (curStep < curSnaps().length - 1) renderSnap(curStep + 1); };
-  document.getElementById('btn-reset').onclick = () => renderSnap(0);
+  document.getElementById('btn-reset').onclick = () => {
+    // 重置 = 清 list/record 状态 (现刷新效果; 刷新本身已持久重现)
+    sessionStorage.removeItem('rec_list');
+    localStorage.removeItem(STORE_KEY_RECORD);
+    localStorage.removeItem(STORE_KEY);
+    allRecords = [];
+    document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>';
+    document.getElementById('src-players').value = '';
+    document.getElementById('records-list').innerHTML = '';
+    document.getElementById('meta').textContent = '未加载';
+    rec.header = {}; rec.rounds = []; curRound = 0; curStep = -1; listBuilt = false;
+    document.querySelectorAll('.hand-tiles').forEach(e => e.innerHTML = '');
+    applyLayout();
+  };
   document.getElementById('file-input').onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
     try { const txt = await f.text(); parseRecord(txt); restoreState(); }
@@ -737,6 +751,7 @@
       roomSel.innerHTML = '<option value="">全部房间</option>' + rooms.map(rm => `<option value="${rm}">${rm}</option>`).join('');
       if (curRoom && rooms.includes(curRoom)) roomSel.value = curRoom;
       renderFilteredRecords(source);
+      try { sessionStorage.setItem('rec_list', JSON.stringify({ source, date, allRecords, room: document.getElementById('src-room').value, players: document.getElementById('src-players').value })); } catch {}
     } catch (e) { hideProgress(); document.getElementById('records-list').textContent = '加载失败: ' + e; }
   }
   // 前端筛 (缓存 allRecords, 房间/玩家变更即时, 不重 fetch)
@@ -777,6 +792,7 @@
       parseRecord(r.content);
       restoreState();
       meta.textContent = `${source} · ${id}`;
+      try { localStorage.setItem(STORE_KEY_RECORD, JSON.stringify({ source, id })); } catch {}
     } catch (e) { hideProgress(); meta.textContent = '加载失败: ' + e; }
   }
   document.getElementById('btn-src-list').onclick = listRecords;
@@ -786,7 +802,23 @@
   document.getElementById('records-modal').onclick = (e) => { if (e.target.id === 'records-modal') e.currentTarget.classList.add('hidden'); };
 
   applyLayout();
-  loadSources();
+  loadSources().then(() => {
+    // 刷新重现: list (sessionStorage) + record (localStorage id, 重 get)
+    try {
+      const ls = JSON.parse(sessionStorage.getItem('rec_list') || 'null');
+      if (ls && ls.allRecords) {
+        document.getElementById('src-sel').value = ls.source;
+        document.getElementById('src-date').value = ls.date || '';
+        document.getElementById('src-players').value = ls.players || '';
+        allRecords = ls.allRecords;
+        const rooms = [...new Set(allRecords.map(x => x.room_id).filter(Boolean))].sort((a, b) => +a - +b);
+        document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>' + rooms.map(rm => `<option value="${rm}">${rm}</option>`).join('');
+        if (ls.room) document.getElementById('src-room').value = ls.room;
+      }
+      const rs = JSON.parse(localStorage.getItem(STORE_KEY_RECORD) || 'null');
+      if (rs && rs.source && rs.id) loadRecord(rs.source, rs.id);
+    } catch {}
+  });
 </script>
 </body>
 </html>
