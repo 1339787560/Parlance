@@ -808,7 +808,8 @@
       const ls = JSON.parse(localStorage.getItem('rec_list') || 'null');
       if (ls && ls.allRecords) {
         document.getElementById('src-sel').value = ls.source;
-        document.getElementById('src-date').value = ls.date || '';
+        const dn = ls.date && ls.date.length === 8 ? `${ls.date.slice(0,4)}-${ls.date.slice(4,6)}-${ls.date.slice(6,8)}` : (ls.date || '');
+        document.getElementById('src-date').value = dn;
         document.getElementById('src-players').value = ls.players || '';
         allRecords = ls.allRecords;
         const rooms = [...new Set(allRecords.map(x => x.room_id).filter(Boolean))].sort((a, b) => +a - +b);
