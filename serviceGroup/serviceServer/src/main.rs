@@ -100,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/record/sources", get(records::sources))
         .route("/api/record/list", get(records::list))
         .route("/api/record/get", get(records::get))
+        .route("/api/record/scan_rounds", get(records::scan_rounds))
         .route("/api/config/files", get(config_files::list_files))
         .route("/api/config", get(config_files::get_config))
         .route("/api/fetch-title", get(fetch::fetch_title))
