@@ -11,6 +11,7 @@ app = Flask(__name__, static_folder=static_folder_path, static_url_path='/static
 from .BaseRoute import *
 from .ServiceRoute import *
 from .SequenceRoute import *
+from .CpDataRoute import *
 
 # 定义包的公共接口
 __all__ = [
@@ -18,7 +19,8 @@ __all__ = [
 
     # 所有的自定义路由应该放在这个位置。
     'BaseRoute',
-    'ServiceRoute', 
-    'SequenceRoute'
+    'ServiceRoute',
+    'SequenceRoute',
+    'CpDataRoute'
 ]
 

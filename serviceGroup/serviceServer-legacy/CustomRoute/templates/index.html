@@ -1459,16 +1459,31 @@
 
                 // 3. 显示结果 (svn stdout/stderr + 服务状态)
                 if (log && log.last) {
-                    const svn = log.last.svn || {};
+                    const svn = log.last.svn;
                     const started = (log.last.started || []).map(s => `${s.name}=${s.status}`).join(', ');
-                    const summary = `SVN 更新${svn.ok ? '成功' : '失败'} (returncode=${svn.returncode})\n` +
-                        `工作副本根: ${svn.working_copy_root || '-'}\n` +
-                        `svn stdout:\n${svn.stdout || '(空)'}\n` +
-                        (svn.stderr ? `svn stderr:\n${svn.stderr}\n` : '') +
-                        `服务: ${started}`;
-                    alert(summary);
+                    if (svn) {
+                        // svn 步骤已执行 (正常流程)
+                        const summary = `SVN 更新${svn.ok ? '成功' : '失败'} (returncode=${svn.returncode})\n` +
+                            `工作副本根: ${svn.working_copy_root || '-'}\n` +
+                            `svn stdout:\n${svn.stdout || '(空)'}\n` +
+                            (svn.stderr ? `svn stderr:\n${svn.stderr}\n` : '') +
+                            `服务: ${started}`;
+                        console.error('[SVN Update]', summary);
+                        alert(summary);
+                    } else {
+                        // svn 步骤未执行 (dirty check 失败 / 停服务失败 / svn info 失败等)
+                        const stage = log.last.stage || 'unknown';
+                        const errMsg = log.last.error || log.last.dirty_check || '无详细信息';
+                        const summary = `SVN 更新失败 (阶段: ${stage})\n` +
+                            `工作副本根: ${log.last.working_copy_root || '-'}\n` +
+                            `错误: ${errMsg}`;
+                        console.error('[SVN Update]', summary);
+                        alert(summary);
+                    }
                 } else {
-                    alert('SVN 更新超时, 查 /api/svn/update_log 或 svn_update.log');
+                    const msg = 'SVN 更新超时, 查 /api/svn/update_log 或 svn_update.log';
+                    console.error('[SVN Update]', msg);
+                    alert(msg);
                 }
             } catch (error) {
                 console.error('执行SVN更新失败:', error);

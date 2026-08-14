@@ -53,6 +53,17 @@ def get_templates():
     conn.close()
     return templates
 
+def update_template(template_id, name, type, data):
+    """更新指定ID的模板（覆盖）"""
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE templates SET name=?, type=?, data=? WHERE id=?", (name, type, json.dumps(data), template_id))
+    conn.commit()
+    rows_affected = cursor.rowcount
+    conn.close()
+    return rows_affected > 0
+
 def delete_template(template_id):
     """删除指定ID的模板"""
     db_path = get_db_path()
