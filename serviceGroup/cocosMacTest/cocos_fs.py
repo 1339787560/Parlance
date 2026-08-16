@@ -1529,6 +1529,484 @@ def bulk_set_property(
             "skipped": skipped, "errors": errors, "dryRun": dry_run}
 
 
+# ── 语义化 Diff(scene/prefab 节点级变更对比, 规避 __id__ 漂移) ───────────────
+
+def scene_diff(
+    old_path: str,
+    new_path: str,
+    project_path: str = "",
+    max_results: int = 200,
+) -> Dict[str, Any]:
+    """对比两个 .scene/.prefab(或同文件 git 两版本), 输出节点级语义变更。
+
+    Cocos JSON 数组 `__id__` 下标极易漂移(删/增节点后全错位), 原始 diff 不可读。
+    本函数按**节点路径 + 组件类型**对齐, 输出人类/LLM 易读的变更列表。
+
+    返 {count, changes: [{type, path, prop?, comp?, before?, after?, detail}]}。
+    type: added_node / removed_node / added_component / removed_component /
+          changed_prop / renamed_node / moved_node
+    """
+    try:
+        old_data = load_cocos_asset(old_path)
+        new_data = load_cocos_asset(new_path)
+    except FileNotFoundError as e:
+        return {"error": f"文件不存在: {e}"}
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+
+    def build_view(data: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """path → {comps: {type: props}, name, parent} 语义视图。"""
+        root_idx = find_root_index(data)
+        if root_idx is None:
+            return {}
+        view: Dict[str, Dict[str, Any]] = {}
+
+        def comps_of(node: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+            out: Dict[str, Dict[str, Any]] = {}
+            for cref in node.get("_components", []) or []:
+                cid = cref.get("__id__")
+                if cid is None or not (0 <= cid < len(data)):
+                    continue
+                cobj = data[cid]
+                ctype = cobj.get("__type__", "?")
+                props = {k: v for k, v in cobj.items()
+                         if not k.startswith("__") and k not in ("node",)}
+                # 压缩 uuid 脚本组件 → 脚本名提升可读性
+                base = ctype.split("@", 1)[0]
+                if (not ctype.startswith("cc.") and len(base) in (22, 23)
+                        and ctype not in out):
+                    res = resolve_script_component(ctype, project_path=project_path)
+                    if res.get("script"):
+                        ctype = f"{ctype} ({res['script']})"
+                out[ctype] = props
+            return out
+
+        def walk(idx: int, parent_path: str):
+            node = data[idx]
+            if node.get("__type__") not in ("cc.Node", "cc.Scene"):
+                return
+            name = node.get("_name", "?")
+            path = (parent_path + "/" + name) if parent_path else name
+            view[path] = {
+                "name": name,
+                "parent": parent_path,
+                "comps": comps_of(node),
+            }
+            for child_ref in node.get("_children", []) or []:
+                cid = child_ref.get("__id__")
+                if cid is not None:
+                    walk(cid, path)
+
+        walk(root_idx, "")
+        return view
+
+    old_view = build_view(old_data)
+    new_view = build_view(new_data)
+    changes: List[Dict[str, Any]] = []
+
+    # 节点新增/删除/重命名(按路径对齐; 同名同父视为同一节点)
+    old_paths = set(old_view)
+    new_paths = set(new_view)
+    for p in sorted(new_paths - old_paths):
+        # 尝试匹配旧路径: 同父 + 同名
+        name = new_view[p]["name"]
+        parent = new_view[p]["parent"]
+        old_cand = [op for op in old_paths if old_view[op]["name"] == name
+                    and old_view[op]["parent"] == parent]
+        if old_cand:
+            changes.append({"type": "renamed_node", "path": p, "oldPath": old_cand[0],
+                            "detail": f"重命名 {old_cand[0]} → {p}"})
+        else:
+            changes.append({"type": "added_node", "path": p,
+                            "detail": f"新增节点 {name}"})
+    for p in sorted(old_paths - new_paths):
+        name = old_view[p]["name"]
+        parent = old_view[p]["parent"]
+        new_cand = [np for np in new_paths if new_view[np]["name"] == name
+                    and new_view[np]["parent"] == parent]
+        if not new_cand:
+            changes.append({"type": "removed_node", "path": p,
+                            "detail": f"删除节点 {name}"})
+    # 已对齐节点: 组件差异
+    for p in sorted(old_paths & new_paths):
+        o = old_view[p]
+        n = new_view[p]
+        for ctype in sorted(set(o["comps"]) | set(n["comps"])):
+            if ctype not in o["comps"]:
+                changes.append({"type": "added_component", "path": p, "comp": ctype,
+                                "detail": f"{p} 新增组件 {ctype}"})
+                continue
+            if ctype not in n["comps"]:
+                changes.append({"type": "removed_component", "path": p, "comp": ctype,
+                                "detail": f"{p} 移除组件 {ctype}"})
+                continue
+            oprops = o["comps"][ctype]
+            nprops = n["comps"][ctype]
+            for k in sorted(set(oprops) | set(nprops)):
+                ov = oprops.get(k, "<新增>")
+                nv = nprops.get(k, "<移除>")
+                if ov != nv:
+                    prop_name = k[1:] if k.startswith("_") and k[1:] else k
+                    changes.append({
+                        "type": "changed_prop", "path": p, "comp": ctype, "prop": prop_name,
+                        "before": ov, "after": nv,
+                        "detail": f"{p} [{ctype}].{prop_name}: {_short_val(ov)} → {_short_val(nv)}",
+                    })
+
+    truncated = False
+    if len(changes) > max_results:
+        truncated = True
+        changes = changes[:max_results]
+    return {"count": len(changes), "truncated": truncated, "changes": changes}
+
+
+def _short_val(v: Any) -> str:
+    """值截断成可读短串(用于 diff 展示)。"""
+    s = json.dumps(v, ensure_ascii=False) if not isinstance(v, str) else v
+    s = s.replace("\n", " ")
+    return s[:80] + "…" if len(s) > 80 else s
+
+
+# ── UI 文本提取/注入(L10n: Label/RichText 字符串 ↔ JSON) ─────────────────────
+
+def extract_ui_text(
+    project_path: str,
+    out_json: str = "",
+    max_results: int = 2000,
+) -> Dict[str, Any]:
+    """遍历 UI 场景/prefab, 提取所有 cc.Label/RichText 文本串。
+
+    返 {count, texts: [{key, path, nodePath, comp, text}]}。
+    key 生成: 路径去分隔符 + 组件序号(稳定, 注入时按 key 定位)。
+    out_json 给定时写 JSON 文件(不落盘仅返回则空串)。
+    """
+    if not project_path or not os.path.isdir(os.path.join(project_path, "assets")):
+        return {"error": f"无效项目根: {project_path}"}
+    texts: List[Dict[str, Any]] = []
+
+    for root, dirs, files in os.walk(os.path.join(project_path, "assets")):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("Temp", "library")]
+        for fname in files:
+            if not fname.endswith((".scene", ".prefab")):
+                continue
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, project_path).replace(os.sep, "/")
+            try:
+                data = load_cocos_asset(fpath)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            root_idx = find_root_index(data)
+            path_index = _build_path_index(data, root_idx) if root_idx is not None else {}
+            node_path_of = {i: p for p, i in path_index.items()}
+
+            for i, o in enumerate(data):
+                if not isinstance(o, dict):
+                    continue
+                t = o.get("__type__", "")
+                if t not in ("cc.Label", "cc.RichText"):
+                    continue
+                text = o.get("_string") or o.get("_text") or ""
+                if not text:
+                    continue
+                # 定位宿主节点路径(经 node 引用)
+                np = node_path_of.get(i, "?")
+                if np == "?" and isinstance(o.get("node"), dict):
+                    hid = o["node"].get("__id__")
+                    if hid in node_path_of:
+                        np = node_path_of[hid]
+                key = f"{rel}::{np}::{t[3:] or t}"
+                texts.append({"key": key, "path": rel, "nodePath": np,
+                              "comp": t, "text": text})
+
+    truncated = False
+    if len(texts) > max_results:
+        truncated = True
+        texts = texts[:max_results]
+    result = {"count": len(texts), "truncated": truncated, "texts": texts}
+    if out_json:
+        try:
+            Path(out_json).parent.mkdir(parents=True, exist_ok=True)
+            Path(out_json).write_text(
+                json.dumps([{"key": t["key"], "text": t["text"]} for t in texts],
+                           ensure_ascii=False, indent=2), encoding="utf-8")
+            result["outJson"] = out_json
+        except OSError as e:
+            return {"error": f"写入失败: {e}"}
+    return result
+
+
+def inject_ui_text(
+    project_path: str,
+    lang_json: str,
+    dry_run: bool = False,
+    max_files: int = 50,
+) -> Dict[str, Any]:
+    """按提取的 key 把翻译后的文本注入回场景/prefab。
+
+    lang_json: extract_ui_text 产出的 [{key, text(新值)}] 文件。
+    key 含 路径::节点路径::组件, 解析后定位并改 _string/_text。
+    每文件改前 .bak; dry_run 只预览。
+
+    返 {count, files: [{path, changes: [{nodePath, comp, before, after}]}]}。
+    """
+    if not project_path or not os.path.isdir(os.path.join(project_path, "assets")):
+        return {"error": f"无效项目根: {project_path}"}
+    if not os.path.isfile(lang_json):
+        return {"error": f"翻译文件不存在: {lang_json}"}
+    try:
+        entries = json.loads(Path(lang_json).read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError as e:
+        return {"error": f"翻译文件解析失败: {e}"}
+
+    # key → 新文本(保留带空串的条目=提取时该字段为空)
+    key_map: Dict[str, str] = {}
+    for e in entries:
+        if isinstance(e, dict) and "key" in e:
+            key_map[e["key"]] = e.get("text", "")
+
+    changed_files = []
+    errors = []
+    total = 0
+    for key, new_text in key_map.items():
+        parts = key.split("::")
+        if len(parts) < 3:
+            continue
+        rel, node_path, comp_name = parts[0], parts[1], parts[2]
+        fpath = os.path.join(project_path, rel.replace("/", os.sep))
+        if not os.path.isfile(fpath):
+            errors.append({"key": key, "error": f"文件不存在: {fpath}"})
+            continue
+        try:
+            data = load_cocos_asset(fpath)
+        except (json.JSONDecodeError, ValueError) as e:
+            errors.append({"key": key, "error": f"解析失败: {e}"})
+            continue
+        root_idx = find_root_index(data)
+        path_index = _build_path_index(data, root_idx) if root_idx is not None else {}
+        node_path_of = {i: p for p, i in path_index.items()}
+
+        target_comp = None
+        for i, o in enumerate(data):
+            if not isinstance(o, dict):
+                continue
+            t = o.get("__type__", "")
+            if t != "cc." + comp_name and t != comp_name:
+                continue
+            np = node_path_of.get(i, "?")
+            if np == "?" and isinstance(o.get("node"), dict):
+                hid = o["node"].get("__id__")
+                if hid in node_path_of:
+                    np = node_path_of[hid]
+            if np == node_path:
+                target_comp = o
+                break
+        if target_comp is None:
+            errors.append({"key": key, "error": f"节点未找到: {node_path}"})
+            continue
+        field = "_string" if "_string" in target_comp else ("_text" if "_text" in target_comp else "")
+        if not field:
+            errors.append({"key": key, "error": f"组件无文本字段: {comp_name}"})
+            continue
+        before = target_comp[field]
+        if before == new_text:
+            continue
+        target_comp[field] = new_text
+        total += 1
+        # 按文件聚合
+        existing = next((f for f in changed_files if f["path"] == rel), None)
+        if existing is None:
+            existing = {"path": rel, "changes": []}
+            changed_files.append(existing)
+        existing["changes"].append({"nodePath": node_path, "comp": comp_name,
+                                    "before": before, "after": new_text})
+
+    # 每文件写回
+    if not dry_run:
+        for f in changed_files:
+            fpath = os.path.join(project_path, f["path"].replace("/", os.sep))
+            try:
+                data = load_cocos_asset(fpath)
+            except (json.JSONDecodeError, ValueError) as e:
+                errors.append({"path": f["path"], "error": f"重读失败: {e}"})
+                continue
+            bak = fpath + ".bak"
+            if not os.path.exists(bak):
+                try:
+                    os.replace(fpath, bak)
+                except OSError:
+                    pass
+            try:
+                Path(fpath).write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            except OSError as e:
+                errors.append({"path": f["path"], "error": str(e)})
+
+    return {"count": total, "files": changed_files, "errors": errors,
+            "dryRun": dry_run, "fileCount": len(changed_files)}
+
+
+# ── 项目配置: Layer 字典 + 物理碰撞矩阵 ──────────────────────────────────────
+
+def get_project_config(
+    project_path: str,
+    what: str = "layers",
+) -> Dict[str, Any]:
+    """读取项目配置: Layer 字典 / 物理碰撞矩阵 / 设计分辨率。
+
+    what: layers(默认) / physics / resolution
+    - layers: 读 settings/v2/packages/project.json 的 layer 数组
+      [{name, value}] → 名字 + 二进制位移(1<<idx)
+    - physics: 多路径探测碰撞矩阵
+      ① scene 内 cc.PhysicsSystem2D/3D 组件 collisionMatrix
+      ② settings/v2/packages/project.json physics 段
+      未启用物理 → 友好提示
+    - resolution: designResolution {width, height, fitHeight, fitWidth}
+    """
+    if not project_path or not os.path.isdir(project_path):
+        return {"error": f"无效项目根: {project_path}"}
+    pkg_path = os.path.join(project_path, "settings", "v2", "packages", "project.json")
+    cfg: Dict[str, Any] = {}
+
+    if what == "layers":
+        if not os.path.isfile(pkg_path):
+            return {"error": f"project.json 不存在: {pkg_path}"}
+        try:
+            cfg = json.loads(Path(pkg_path).read_text(encoding="utf-8-sig"))
+        except json.JSONDecodeError as e:
+            return {"error": f"project.json 解析失败: {e}"}
+        raw = cfg.get("layer") or []
+        layers = []
+        for i, l in enumerate(raw):
+            if isinstance(l, dict) and "name" in l:
+                layers.append({"name": l["name"], "value": l.get("value", 0),
+                               "bit": 1 << i})
+        return {"count": len(layers), "layers": layers,
+                "designResolution": cfg.get("general", {}).get("designResolution", {})}
+
+    if what == "resolution":
+        if not os.path.isfile(pkg_path):
+            return {"error": f"project.json 不存在: {pkg_path}"}
+        try:
+            cfg = json.loads(Path(pkg_path).read_text(encoding="utf-8-sig"))
+        except json.JSONDecodeError as e:
+            return {"error": f"project.json 解析失败: {e}"}
+        return {"designResolution": cfg.get("general", {}).get("designResolution", {})}
+
+    if what == "physics":
+        # ① 扫全部 scene 找 PhysicsSystem2D/3D 组件
+        found = []
+        assets_dir = os.path.join(project_path, "assets")
+        if os.path.isdir(assets_dir):
+            for root, dirs, files in os.walk(assets_dir):
+                dirs[:] = [d for d in dirs if not d.startswith(".")
+                           and d not in ("Temp", "library")]
+                for fname in files:
+                    if not fname.endswith(".scene"):
+                        continue
+                    fpath = os.path.join(root, fname)
+                    try:
+                        data = load_cocos_asset(fpath)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    for o in data:
+                        if not isinstance(o, dict):
+                            continue
+                        t = o.get("__type__", "")
+                        if t in ("cc.PhysicsSystem2D", "cc.PhysicsSystem"):
+                            matrix = o.get("collisionMatrix") or o.get("_collisionMatrix")
+                            if matrix is not None:
+                                found.append({"file": os.path.relpath(fpath, project_path),
+                                              "type": t, "collisionMatrix": matrix})
+        # ② 引擎/项目配置 physics 段
+        engine_cfg = {}
+        engine_path = os.path.join(project_path, "settings", "v2", "packages", "engine.json")
+        if os.path.isfile(engine_path):
+            try:
+                engine_cfg = json.loads(Path(engine_path).read_text(encoding="utf-8-sig"))
+            except json.JSONDecodeError:
+                pass
+        if not found:
+            return {"error": "项目未启用物理引擎(未找到 PhysicsSystem 组件的 collisionMatrix)",
+                    "hint": "Layer 字典仍可用: get_project_config(what='layers')",
+                    "engineModules": engine_cfg.get("modules", {})}
+        return {"count": len(found), "systems": found,
+                "engineModules": engine_cfg.get("modules", {})}
+
+    return {"error": f"未知查询类型: {what} (layers/physics/resolution)"}
+
+
+# ── Asset Bundle 分析器(bundle 划分 + 资源 + 预估大小) ──────────────────────
+
+def analyze_bundles(project_path: str, max_results: int = 200) -> Dict[str, Any]:
+    """解析项目 Bundle 划分: 每 bundle 包含的资源 + 预估大小。
+
+    Bundle = assets/ 下文件夹 .meta 中 userData.isBundle=true 的目录。
+    - 资源统计: 递归扫 bundle 目录, 按 importer 类型分组计数 + 累加文件大小
+    - 大小: 主资产文件字节数(不含 .meta/.scene 内部资产重复计数)
+
+    返 {count, bundles: [{name, path, assetCount, sizeBytes, types: {type: count}}]}。
+    """
+    if not project_path or not os.path.isdir(os.path.join(project_path, "assets")):
+        return {"error": f"无效项目根: {project_path}"}
+    assets_dir = os.path.join(project_path, "assets")
+
+    # 找全部 bundle 目录(直接子目录 .meta isBundle)
+    bundles: List[Dict[str, Any]] = []
+    try:
+        for entry in os.listdir(assets_dir):
+            dir_path = os.path.join(assets_dir, entry)
+            if not os.path.isdir(dir_path):
+                continue
+            meta_path = dir_path + ".meta"
+            if not os.path.isfile(meta_path):
+                continue
+            try:
+                meta = json.loads(Path(meta_path).read_text(encoding="utf-8-sig"))
+            except json.JSONDecodeError:
+                continue
+            ud = meta.get("userData") or {}
+            if not ud.get("isBundle"):
+                continue
+            bundles.append({"name": ud.get("bundleName") or entry,
+                            "path": entry, "assetCount": 0, "sizeBytes": 0,
+                            "types": {}})
+    except OSError as e:
+        return {"error": f"assets 目录读取失败: {e}"}
+
+    for b in bundles:
+        bundle_dir = os.path.join(assets_dir, b["path"])
+        for root, dirs, files in os.walk(bundle_dir):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for fname in files:
+                if fname.endswith(".meta"):
+                    continue
+                fpath = os.path.join(root, fname)
+                ext = os.path.splitext(fname)[1].lower()
+                # 按 importer 分组(读对应 .meta)
+                importer = ext.lstrip(".")
+                meta_path = fpath + ".meta"
+                if os.path.isfile(meta_path):
+                    try:
+                        importer = json.loads(
+                            Path(meta_path).read_text(encoding="utf-8-sig")
+                        ).get("importer", importer)
+                    except json.JSONDecodeError:
+                        pass
+                b["types"][importer] = b["types"].get(importer, 0) + 1
+                b["assetCount"] += 1
+                try:
+                    b["sizeBytes"] += os.path.getsize(fpath)
+                except OSError:
+                    pass
+
+    bundles.sort(key=lambda x: -x["sizeBytes"])
+    total_assets = sum(b["assetCount"] for b in bundles)
+    total_size = sum(b["sizeBytes"] for b in bundles)
+    return {"count": len(bundles), "bundles": bundles,
+            "totalAssets": total_assets, "totalSizeBytes": total_size,
+            "sizeMB": round(total_size / 1048576, 2)}
+
+
 # ── 资产搜索 ────────────────────────────────────────────────────────────────
 
 # importer → 友好类型名映射
