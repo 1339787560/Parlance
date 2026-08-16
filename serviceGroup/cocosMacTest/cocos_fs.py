@@ -222,6 +222,24 @@ def _walk_tree(
                                 if ext_tree and isinstance(ext_tree, dict):
                                     ext_tree["_nestedFromUuid"] = asset_uuid
                                     ext_tree["_nestedPath"] = os.path.relpath(ext_path, ctx.get("project_path", "")).replace(os.sep, "/") if ctx.get("project_path") else ext_path
+                                    # 实例自身新增 children: prefab 内容在外部文件,
+                                    # 宿主文件里实例根的 _children = 实例化后额外添加的节点
+                                    extra_refs = node.get("_children", []) or []
+                                    if extra_refs:
+                                        extras = []
+                                        base_path = ext_tree.get("path") or node_path
+                                        for child_ref in extra_refs:
+                                            cid = child_ref.get("__id__")
+                                            if cid is None:
+                                                continue
+                                            child = _walk_tree(
+                                                data, cid, depth + 1, max_depth,
+                                                base_path, include_inactive, ctx,
+                                            )
+                                            if child is not None:
+                                                extras.append(child)
+                                        if extras:
+                                            ext_tree["_nestedExtra"] = extras
                                     return ext_tree
                         except (json.JSONDecodeError, ValueError):
                             pass  # 解析失败降级走正常 walk
@@ -939,10 +957,10 @@ def _node_detail(node: Dict[str, Any], include_nest: bool = True) -> str:
     return f"{comp_str}{more}{nest}"
 
 
-def _node_line(node: Dict[str, Any]) -> str:
+def _node_line(node: Dict[str, Any], include_nest: bool = True) -> str:
     """单节点行: [!]名称 + 详情。"""
     act = "" if node.get("active", True) else "!"
-    return f"{act}{node.get('name', '?')}{_node_detail(node)}"
+    return f"{act}{node.get('name', '?')}{_node_detail(node, include_nest=include_nest)}"
 
 
 def tree_to_text(root: Dict[str, Any]) -> str:
@@ -954,7 +972,9 @@ def tree_to_text(root: Dict[str, Any]) -> str:
     - (N) = 该层未展开的子节点数(深度截断处)
     - @path = 嵌套 prefab 实例来源(只留文件名)
     - 前向声明(2026-08-16): 树内出现 ≥2 次的 prefab 在顶部声明一次(完整结构),
-      树内实例以 `名称 ×N →@prefab` 引用式展示, 不再重复组件详情
+      树内实例折叠为 `名称 ×N →@prefab` 引用, 不再重复展开
+    - 实例新增内容(2026-08-16 增强): 实例根在宿主文件里的额外 _children
+      (超出 prefab 原始内容)标记 ✚N, 独立一行并在其下展开新增节点
     """
     from collections import Counter
     # 第一遍: 统计嵌套 prefab 实例数 + 记录示例节点(取详情)
@@ -972,38 +992,68 @@ def tree_to_text(root: Dict[str, Any]) -> str:
     count_prefabs(root)
     declared = {p for p, c in prefab_count.items() if c >= 2}
 
+    def is_declared(node: Dict[str, Any]) -> bool:
+        return bool(node.get("_nestedPath")) and node["_nestedPath"] in declared
+
+    def short(nested: str) -> str:
+        return nested.rsplit("/", 1)[-1]
+
+    def _emit_children(node: Dict[str, Any], prefix: str, out: List[str],
+                       declared: set):
+        """递归输出节点子级(声明区用): 完整展开非 declared, declared 折叠引用。"""
+        children = node.get("children", []) or []
+        for i, ch in enumerate(children):
+            last = i == len(children) - 1
+            if is_declared(ch):
+                out.append(f"{prefix}{'└─' if last else '├─'}"
+                           f"{ch.get('name', '?')} →@{short(ch['_nestedPath'])}")
+            else:
+                out.append(f"{prefix}{'└─' if last else '├─'}"
+                           f"{_node_line(ch, include_nest=False)}")
+                _emit_children(ch, prefix + ("  " if last else "│ "), out, declared)
+
     lines: List[str] = []
     if declared:
-        lines.append("前向声明 (重复 prefab, 树内以引用展示):")
+        lines.append("前向声明 (重复 prefab, 完整结构, 树内以引用展示):")
         for path in sorted(declared, key=lambda p: -prefab_count[p]):
             ex = prefab_example[path]
-            fname = path.rsplit("/", 1)[-1]
-            lines.append(f"  @{fname} ×{prefab_count[path]}: "
-                         f"{ex.get('name', '?')}{_node_detail(ex, include_nest=False)}")
+            lines.append(f"  @{short(path)} ×{prefab_count[path]}: "
+                         f"{_node_line(ex, include_nest=False)}")
+            # 声明区展开 prefab 自身子节点(完整结构, 供树内引用)
+            _emit_children(ex, "    ", lines, declared)
         lines.append("")
 
     def walk(node: Dict[str, Any], prefix: str, is_last: bool):
-        nested = node.get("_nestedPath", "")
-        if nested in declared:
-            ref = f"→@{nested.rsplit('/', 1)[-1]}"
-            lines.append(f"{prefix}{'└─' if is_last else '├─'}{node.get('name', '?')} {ref}")
-        else:
-            lines.append(f"{prefix}{'└─' if is_last else '├─'}{_node_line(node)}")
         children = node.get("children", []) or []
+        # ── declared prefab 实例: 完全折叠(不展开其 children) ──
+        if is_declared(node):
+            extra = node.get("_nestedExtra", []) or []
+            ref = f"→@{short(node['_nestedPath'])}"
+            if extra:
+                # 有新增内容: 独立一行 ✚N, 新增节点展开在下方
+                lines.append(f"{prefix}{'└─' if is_last else '├─'}"
+                             f"{node.get('name', '?')} ✚{len(extra)} {ref}")
+                for i, x in enumerate(extra):
+                    walk(x, prefix + ("  " if is_last else "│ "), i == len(extra) - 1)
+            else:
+                lines.append(f"{prefix}{'└─' if is_last else '├─'}"
+                             f"{node.get('name', '?')} {ref}")
+            return
+        lines.append(f"{prefix}{'└─' if is_last else '├─'}{_node_line(node)}")
         i = 0
         while i < len(children):
             ch = children[i]
-            ch_nested = ch.get("_nestedPath", "")
-            # 前向声明 prefab 的连续叶子实例合并引用
-            if ch_nested in declared and not ch.get("children"):
+            # 连续 declared prefab 叶子/非叶子实例合并(无新增时)
+            if is_declared(ch) and not ch.get("_nestedExtra"):
                 j = i + 1
                 while (j < len(children)
-                       and children[j].get("_nestedPath") == ch_nested
-                       and not children[j].get("children")):
+                       and is_declared(children[j])
+                       and not children[j].get("_nestedExtra")
+                       and children[j].get("_nestedPath") == ch["_nestedPath"]):
                     j += 1
                 count = j - i
-                ref = f"→@{ch_nested.rsplit('/', 1)[-1]}"
                 if count > 1:
+                    ref = f"→@{short(ch['_nestedPath'])}"
                     lines.append(f"{prefix}{'└─' if j == len(children) else '├─'}"
                                  f"{ch.get('name', '?')} ×{count} {ref}")
                     i = j
