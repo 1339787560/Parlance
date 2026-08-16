@@ -1145,6 +1145,390 @@ def remove_component(
             "dryRun": dry_run, "write": wr["message"]}
 
 
+# ── TS @property 解析(组件编辑器暴露属性) ────────────────────────────────────
+#
+# Cocos 组件在编辑器 Inspector 暴露的变量 = 带 @property 装饰器的成员。
+# LLM 给组件赋值/写控制逻辑前, 用此接口获取该组件暴露了哪些变量 + 类型。
+# 支持两种形态: @property(Type) / @property({type/displayName/...}) + destructure 别名。
+
+import re as _ts_re
+
+_TS_DECOR_ALIASES = ("property", "ln")  # const { property, ln } = _decorator 常见别名
+
+_TS_PROPERTY_PATTERNS = [
+    # @property(Node) / @property(cc.Node)
+    _ts_re.compile(r"@(?:property|ln)\s*\(\s*([A-Za-z_][\w.]*)\s*\)"),
+    # @property / @property({...}) — 无括号参数或对象字面量
+    _ts_re.compile(r"@(?:property|ln)\s*(?:\(\s*\{[^}]*\}\s*\)|\(\))?\s*$"),
+]
+
+
+def scan_ts_properties(
+    project_path: str,
+    file_path: str = "",
+    max_results: int = 200,
+) -> Dict[str, Any]:
+    """扫描项目 TS 脚本, 提取组件类 + @property 暴露属性。
+
+    - file_path 指定(相对 assets/)则只扫该文件; 空 = 扫全部 assets/ 下 .ts
+    - 每属性: {name, tsType, decorator(原始装饰器串), displayName?}
+    - 类: {className, extends, file, properties: [...]}
+
+    返 {count, classes: [{className, file, properties}]}。
+    """
+    if not project_path:
+        return {"error": "需 project_path"}
+    assets_dir = os.path.join(project_path, "assets")
+    if not os.path.isdir(assets_dir):
+        return {"error": f"assets 目录不存在: {assets_dir}"}
+
+    target_files = []
+    if file_path:
+        p = os.path.join(assets_dir, file_path) if not os.path.isabs(file_path) else file_path
+        if os.path.isfile(p):
+            target_files = [p]
+        else:
+            return {"error": f"文件不存在: {p}"}
+    else:
+        for root, dirs, files in os.walk(assets_dir):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("Temp", "library")]
+            for fname in files:
+                if fname.endswith(".ts"):
+                    target_files.append(os.path.join(root, fname))
+
+    classes = []
+    for path in target_files:
+        try:
+            with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                lines = f.readlines()
+        except OSError:
+            continue
+        _scan_ts_file_classes(path, lines, classes)
+
+    # 截断
+    total = sum(len(c["properties"]) for c in classes)
+    truncated = False
+    if total > max_results:
+        truncated = True
+        budget = max_results
+        slim: List[Dict[str, Any]] = []
+        for c in classes:
+            take = c["properties"][:budget]
+            if take:
+                slim.append({"className": c["className"], "extends": c["extends"],
+                             "file": c["file"], "properties": take})
+                budget -= len(take)
+            if budget <= 0:
+                break
+        classes = slim
+    return {"count": total, "truncated": truncated, "classes": classes}
+
+
+def _scan_ts_file_classes(path: str, lines: List[str],
+                          out: List[Dict[str, Any]]) -> None:
+    """单 TS 文件: 找 export class X extends Component + 其后 @property 成员。"""
+    rel = os.path.relpath(path, os.path.join(os.path.dirname(path).rsplit("assets", 1)[0], "assets")) \
+        if "assets" in path else path
+    cur_class: Optional[Dict[str, Any]] = None
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i].rstrip("\n")
+        # 类声明(带 @ccclass 装饰器的组件)
+        m = _ts_re.search(r"export\s+class\s+(\w+)\s+extends\s+([\w.]+)", line)
+        if m:
+            cur_class = {"className": m.group(1), "extends": m.group(2),
+                         "file": rel, "properties": []}
+            out.append(cur_class)
+            i += 1
+            continue
+        # @property 装饰器(可跨行: @property({...}) 括号内换行)
+        if cur_class is not None and _ts_re.search(r"@(?:property|ln)", line):
+            decor = line.strip()
+            # 收集装饰器完整内容(可能跨行)
+            while _ts_re.search(r"@(?:property|ln)\s*\(\s*\{", decor) \
+                    and decor.count("{") > decor.count("}") and i + 1 < n:
+                i += 1
+                decor += lines[i].rstrip("\n").strip()
+            # 属性声明行(装饰器块之后紧跟的 名字: 类型 = 值;) 并入解析
+            if i + 1 < n and _ts_re.search(r"@(?:property|ln)", line):
+                decl = lines[i + 1].rstrip("\n")
+                if _ts_re.search(r"^\s*[A-Za-z_$][\w$]*\s*(?::|[=;])", decl) \
+                        and not decl.lstrip().startswith("@"):
+                    decor += "\n" + decl
+                    i += 1
+            prop_info = _parse_ts_property(decor)
+            if prop_info:
+                cur_class["properties"].append(prop_info)
+            i += 1
+            continue
+        i += 1
+
+
+def _parse_ts_property(decor_block: str) -> Optional[Dict[str, Any]]:
+    """解析 @property 装饰器块, 提取属性名/类型/displayName。
+
+    支持:
+      @property(Node)            → type=Node
+      @property({type: Node,...}) → type=Node
+      @property({displayName:'..'})
+      @property(Node)\n slider: Node | null = null;  → 属性声明在下一行
+    """
+    info: Dict[str, Any] = {"decorator": decor_block.strip()[:160]}
+    # 类型: @property(Type) 或 {type: Type}
+    m = _ts_re.search(r"@(?:property|ln)\s*\(\s*([A-Za-z_][\w.]*)\s*\)", decor_block)
+    if m:
+        info["type"] = m.group(1)
+    else:
+        m2 = _ts_re.search(r"type\s*:\s*([A-Za-z_][\w.]*)", decor_block)
+        if m2:
+            info["type"] = m2.group(1)
+    # displayName
+    m3 = _ts_re.search(r"displayName\s*:\s*['\"]([^'\"]+)['\"]", decor_block)
+    if m3:
+        info["displayName"] = m3.group(1)
+    # 属性名 + TS 类型: 下一行声明(调用方已把后续行并入 decor_block)
+    # 格式: name: Type = value; 或 name = value;
+    m4 = _ts_re.search(
+        r"^\s*([A-Za-z_$][\w$]*)\s*(?::\s*([^=\n]+?)\s*)?=\s*[^;]*;",
+        decor_block.split("\n", 1)[1] if "\n" in decor_block else "",
+    )
+    if not m4:
+        # 属性名可能就在装饰器同块下(无换行拼接场景)
+        m4 = _ts_re.search(
+            r"\b([A-Za-z_$][\w$]*)\s*(?::\s*([^=\n]+?)\s*)?=\s*[^;]*;",
+            decor_block,
+        )
+    if m4:
+        info["name"] = m4.group(1)
+        if m4.group(2):
+            info["tsType"] = m4.group(2).strip()
+    if "name" not in info:
+        return None
+    return info
+
+
+# ── 冗余资产检测(orphan: 无任何引用的资产) ──────────────────────────────────
+
+def scan_orphan_assets(project_path: str, max_results: int = 100) -> Dict[str, Any]:
+    """找出 assets/ 下无任何引用且不在 resources/ 动态加载目录的资产。
+
+    反向于 scan_missing: missing 找"引用了不存在的", orphan 找"没被任何人引用的"。
+
+    - 引用来源: 全部 .scene/.prefab/.anim/.ts/.js 中出现的 __uuid__ / 字符串 uuid
+    - 排除: resources/ 目录(运行时动态加载, 无静态引用正常)
+    - 排除: 脚本(.ts/.js, 由 import 关系引用, 非 uuid 引用)
+
+    返 {count, orphans: [{path, type, uuid}]}。--full 全量, 默认前 100。
+    """
+    if not project_path or not os.path.isdir(os.path.join(project_path, "assets")):
+        return {"error": f"无效项目根: {project_path}"}
+    uuid_index = _get_uuid_index(project_path)
+
+    # 收集全部被引用 uuid(场景/预制体/动画 + 脚本里的字符串 uuid)
+    referenced: set = set()
+
+    def collect_uuid_refs_in_file(fpath: str):
+        ext = os.path.splitext(fpath)[1].lower()
+        try:
+            if ext in (".scene", ".prefab"):
+                data = load_cocos_asset(fpath)
+                for o in data:
+                    if not isinstance(o, dict):
+                        continue
+                    for k, v in o.items():
+                        if k.startswith("__"):
+                            continue
+                        if isinstance(v, dict) and "__uuid__" in v:
+                            referenced.add(v["__uuid__"].split("@", 1)[0])
+                        elif isinstance(v, list):
+                            for item in v:
+                                if isinstance(item, dict) and "__uuid__" in item:
+                                    referenced.add(item["__uuid__"].split("@", 1)[0])
+            elif ext in (".anim", ".ts", ".js", ".json", ".effect", ".mtl"):
+                with open(fpath, "r", encoding="utf-8-sig", errors="ignore") as f:
+                    content = f.read()
+                for m in _UUID_RE.finditer(content):
+                    referenced.add(m.group(1))
+        except Exception:
+            pass
+
+    assets_dir = os.path.join(project_path, "assets")
+    for root, dirs, files in os.walk(assets_dir):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("Temp", "library")]
+        for fname in files:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in (".scene", ".prefab", ".anim", ".ts", ".js", ".json", ".effect", ".mtl"):
+                collect_uuid_refs_in_file(os.path.join(root, fname))
+
+    # orphan = 有 uuid 但从未被引用, 且不在 resources/ 下, 且非脚本/非目录
+    orphans = []
+    resources_prefix = os.path.join("assets", "resources") + os.sep
+    for uuid, path in uuid_index.items():
+        if uuid in referenced:
+            continue
+        rel = os.path.relpath(path, project_path).replace(os.sep, "/")
+        if rel.startswith("assets/resources/"):
+            continue
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".ts", ".js"):
+            continue
+        # 子资产(如 @f9941 spriteFrame 子 meta)不单独列, 归主资产
+        if "@" in uuid:
+            continue
+        if not os.path.isfile(path):
+            continue
+        importer = ""
+        try:
+            with open(path + ".meta", "r", encoding="utf-8-sig") as f:
+                importer = json.load(f).get("importer", "")
+        except Exception:
+            pass
+        orphans.append({"path": rel, "type": importer, "uuid": uuid})
+
+    orphans.sort(key=lambda x: x["path"])
+    total = len(orphans)
+    truncated = False
+    if total > max_results:
+        truncated = True
+        orphans = orphans[:max_results]
+    return {"count": total, "truncated": truncated, "orphans": orphans,
+            "referencedCount": len(referenced)}
+
+
+# ── 批量属性编辑(bulk: 遍历 scene/prefab 按条件批量改) ──────────────────────
+
+def bulk_set_property(
+    project_path: str,
+    comp_type: str,
+    prop: str,
+    value: Any = None,
+    bind_uuid: str = "",
+    bind_type: str = "",
+    filter_node: str = "",
+    dry_run: bool = False,
+    max_files: int = 50,
+) -> Dict[str, Any]:
+    """批量修改项目全部 .scene/.prefab 中指定类型组件的属性。
+
+    - comp_type: 组件类型(如 cc.Label / cc.Sprite / 脚本 23 位 uuid)
+    - filter_node: 可选, 只处理节点路径包含该子串的组件(如 'Hall')
+    - bind_uuid: 资产绑定(同 set_component_property)
+    - 每文件改动前 .bak 备份; dry_run 只预览
+
+    返 {count, files: [{path, nodePath, comp, prop, before, after}], skipped, errors}。
+    """
+    if not project_path or not os.path.isdir(os.path.join(project_path, "assets")):
+        return {"error": f"无效项目根: {project_path}"}
+    if not comp_type or not prop:
+        return {"error": "comp_type + prop 必填"}
+    if not bind_uuid and value is None:
+        return {"error": "value 或 bind_uuid 必填"}
+
+    # 值解析(同 set_component_property)
+    if bind_uuid:
+        target_uuid = bind_uuid
+        if bind_uuid.startswith("db://"):
+            abs_target = resolve_asset_path(bind_uuid, project_path)
+            meta_path = abs_target + ".meta"
+            if not os.path.isfile(meta_path):
+                return {"error": f"绑定目标无 .meta: {bind_uuid}"}
+            try:
+                target_uuid = json.loads(Path(meta_path).read_text(encoding="utf-8-sig")).get("uuid", "")
+            except json.JSONDecodeError:
+                return {"error": f".meta 解析失败: {meta_path}"}
+        new_val = {"__uuid__": target_uuid}
+        if bind_type:
+            new_val["__expectedType__"] = bind_type
+    else:
+        new_val = value
+
+    changed_files = []
+    skipped = 0
+    errors = []
+    match_key = comp_type[3:] if comp_type.startswith("cc.") else comp_type
+
+    for root, dirs, files in os.walk(os.path.join(project_path, "assets")):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("Temp", "library")]
+        for fname in files:
+            if not fname.endswith((".scene", ".prefab")):
+                continue
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, project_path).replace(os.sep, "/")
+            try:
+                data = load_cocos_asset(fpath)
+            except (json.JSONDecodeError, ValueError):
+                skipped += 1
+                continue
+            root_idx = find_root_index(data)
+            path_index = _build_path_index(data, root_idx) if root_idx is not None else {}
+            node_path_of = {i: p for p, i in path_index.items()}
+
+            def comp_node_path(comp_id: int) -> str:
+                """组件对象 → 宿主节点路径: 通过 node.__id__ 反查。"""
+                if comp_id in node_path_of:
+                    return node_path_of[comp_id]
+                host = data[comp_id].get("node") if isinstance(data[comp_id], dict) else None
+                if isinstance(host, dict) and "__id__" in host:
+                    hid = host["__id__"]
+                    if hid in node_path_of:
+                        return node_path_of[hid]
+                return "?"
+
+            file_changed = False
+            file_results = []
+            for i, o in enumerate(data):
+                if not isinstance(o, dict):
+                    continue
+                t = o.get("__type__", "")
+                t_match = (t == comp_type) or (t.startswith("cc.") and t[3:] == match_key) \
+                    or (t == match_key and match_key != comp_type)
+                if not t_match:
+                    continue
+                # 节点路径过滤
+                if filter_node:
+                    np = comp_node_path(i)
+                    if filter_node not in np:
+                        continue
+                # 属性存在检查(精确 + _ 前缀兼容)
+                prop_key = prop if prop in o else ("_" + prop if ("_" + prop) in o else "")
+                if not prop_key:
+                    skipped += 1
+                    continue
+                before = o[prop_key]
+                if before == new_val:
+                    continue
+                file_results.append({"nodePath": comp_node_path(i),
+                                     "comp": t, "prop": prop, "before": before,
+                                     "after": new_val})
+                o[prop_key] = new_val
+                file_changed = True
+
+            if file_results:
+                if not dry_run:
+                    bak = fpath + ".bak"
+                    if not os.path.exists(bak):
+                        try:
+                            os.replace(fpath, bak)
+                        except OSError:
+                            pass
+                    try:
+                        Path(fpath).write_text(
+                            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                    except OSError as e:
+                        errors.append({"path": rel, "error": str(e)})
+                        continue
+                changed_files.append({"path": rel, "count": len(file_results),
+                                      "results": file_results})
+                if len(changed_files) >= max_files:
+                    break
+        if len(changed_files) >= max_files:
+            break
+
+    return {"count": sum(f["count"] for f in changed_files), "files": changed_files,
+            "skipped": skipped, "errors": errors, "dryRun": dry_run}
+
+
 # ── 资产搜索 ────────────────────────────────────────────────────────────────
 
 # importer → 友好类型名映射
