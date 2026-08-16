@@ -601,6 +601,7 @@ def set_component_property(
     bind_type: str = "",
     project_path: str = "",
     comp_index: int = -1,
+    dry_run: bool = False,
 ) -> Dict[str, Any]:
     """文件级组件属性写入(纯函数, 不改编辑器缓存)。
 
@@ -610,6 +611,7 @@ def set_component_property(
     - 文件内引用: value 传 {"__id__": N} 结构(指向文件数组下标, 如 node/子资产)
 
     返回 {ok, path, nodePath, compType, prop, before, after, data}。
+    dry_run=True 只预览不落盘(无 .bak 无写文件)。
     写前自动备份 .bak, 不破坏原文件。**注意**: 直接改文件不改编辑器内缓存,
     需编辑器刷新(project_refresh_assets / 重开场景)才可见。
     """
@@ -664,9 +666,15 @@ def set_component_property(
         cobj[prop_key] = new_val
     if old_val == new_val:
         return {"ok": True, "path": abs_path, "nodePath": node_path, "compType": comp_type,
-                "prop": prop, "changed": False, "before": old_val, "after": new_val}
+                "prop": prop, "changed": False, "before": old_val, "after": new_val,
+                "dryRun": dry_run}
     if prop in cobj:
         cobj[prop] = new_val
+    # dry-run: 只预览, 不写盘不备份
+    if dry_run:
+        return {"ok": True, "path": abs_path, "nodePath": node_path, "compType": comp_type,
+                "prop": prop, "changed": True, "before": old_val, "after": new_val,
+                "dryRun": True}
     # 写回(保留原文件 .bak)
     bak = abs_path + ".bak"
     if not os.path.exists(bak):
@@ -677,7 +685,8 @@ def set_component_property(
     Path(abs_path).write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True, "path": abs_path, "nodePath": node_path, "compType": comp_type,
-            "prop": prop, "changed": True, "before": old_val, "after": new_val}
+            "prop": prop, "changed": True, "before": old_val, "after": new_val,
+            "dryRun": False}
 
 
 # ── 全项目缺失扫描(missing script / missing node / missing asset) ───────────
@@ -776,6 +785,364 @@ def scan_missing(project_path: str, scan_type: str = "all") -> Dict[str, Any]:
             "summary": {"script": sum(1 for x in issues if x["kind"] == "script"),
                         "node": sum(1 for x in issues if x["kind"] == "node"),
                         "asset": sum(1 for x in issues if x["kind"] == "asset")}}
+
+
+# ── 节点/组件 新增与删除(文件级写, 纯函数, .bak 备份) ────────────────────────
+#
+# Cocos 3.8 序列化: 顶层数组, __id__ 隐式 = 数组下标, 引用靠 {"__id__": N}。
+# 新增节点/组件 = append 新对象到数组尾 + 更新父节点 _children / 节点 _components 引用。
+# 删除节点/组件 = 从引用数组摘除 + 从扁平数组移除(重建 __id__ 映射, 防下标漂移)。
+
+def _write_back(abs_path: str, data: List[Dict[str, Any]], dry_run: bool) -> Dict[str, Any]:
+    """统一写回: dry_run 只预览; 否则 .bak 备份 + 落盘。返 (ok, msg)。"""
+    if dry_run:
+        return {"ok": True, "dryRun": True, "message": "dry-run 预览, 未写盘"}
+    bak = abs_path + ".bak"
+    if not os.path.exists(bak):
+        try:
+            os.replace(abs_path, bak)
+        except OSError:
+            pass
+    Path(abs_path).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "dryRun": False, "message": "已写盘(.bak 已备份)"}
+
+
+# 常用组件最小序列化模板(字段与编辑器序列化一致, 缺省可被编辑器补默认值)
+_COMP_TEMPLATES: Dict[str, Dict[str, Any]] = {
+    "cc.UITransform": {
+        "__type__": "cc.UITransform", "_name": "", "_objFlags": 0, "_enabled": True,
+        "_contentSize": {"__type__": "cc.Size", "width": 100, "height": 100},
+        "_anchorPoint": {"__type__": "cc.Vec2", "x": 0.5, "y": 0.5},
+    },
+    "cc.Sprite": {
+        "__type__": "cc.Sprite", "_name": "", "_objFlags": 0, "_enabled": True,
+        "_spriteFrame": None, "_type": 0, "_fillType": 0, "_sizeMode": 0,
+        "_trim": True, "_srcBlendFactor": 2, "_dstBlendFactor": 4,
+        "_color": {"__type__": "cc.Color", "r": 255, "g": 255, "b": 255, "a": 255},
+    },
+    "cc.Label": {
+        "__type__": "cc.Label", "_name": "", "_objFlags": 0, "_enabled": True,
+        "_string": "Label", "_fontSize": 40, "_lineHeight": 40,
+        "_useSystemFont": True, "_horizontalAlign": 1, "_verticalAlign": 1,
+        "_color": {"__type__": "cc.Color", "r": 255, "g": 255, "b": 255, "a": 255},
+    },
+    "cc.Button": {
+        "__type__": "cc.Button", "_name": "", "_objFlags": 0, "_enabled": True,
+        "_transition": 1, "_normalColor": {"__type__": "cc.Color", "r": 255, "g": 255, "b": 255, "a": 255},
+        "_pressedColor": {"__type__": "cc.Color", "r": 200, "g": 200, "b": 200, "a": 255},
+        "_hoverColor": {"__type__": "cc.Color", "r": 235, "g": 235, "b": 235, "a": 255},
+        "_disabledColor": {"__type__": "cc.Color", "r": 120, "g": 120, "b": 120, "a": 255},
+    },
+}
+
+
+def _new_node_obj(name: str, parent_id: Optional[int], layer: int = 33554432) -> Dict[str, Any]:
+    """构造新 cc.Node 序列化对象(挂入数组尾部, __id__ = len(data))。"""
+    return {
+        "__type__": "cc.Node", "_name": name, "_objFlags": 0,
+        "_parent": ({"__id__": parent_id} if parent_id is not None else None),
+        "_children": [], "_active": True, "_components": [],
+        "_prefab": None,
+        "_lpos": {"__type__": "cc.Vec3", "x": 0, "y": 0, "z": 0},
+        "_lrot": {"__type__": "cc.Quat", "x": 0, "y": 0, "z": 0, "w": 1},
+        "_lscale": {"__type__": "cc.Vec3", "x": 1, "y": 1, "z": 1},
+        "_mobility": 0, "_layer": layer,
+        "_euler": {"__type__": "cc.Vec3", "x": 0, "y": 0, "z": 0},
+        "_id": "",
+    }
+
+
+def add_node(
+    asset_path: str,
+    parent_path: str,
+    name: str,
+    project_path: str = "",
+    comp_types: Optional[List[str]] = None,
+    layer: int = 33554432,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """文件级新增子节点(可选挂组件)。
+
+    - parent_path: 父节点路径(场景/prefab 内, 如 'Canvas/Panel'); 空 = 挂根
+    - comp_types: 组件类型列表, 如 ["cc.UITransform", "cc.Sprite"]
+    - 返回 {ok, path, parentPath, node, nodeId, components, dryRun}
+    """
+    abs_path = resolve_asset_path(asset_path, project_path)
+    if not os.path.isfile(abs_path):
+        return {"error": f"文件不存在: {abs_path}"}
+    if not name:
+        return {"error": "name 必填"}
+    try:
+        data = load_cocos_asset(abs_path)
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+
+    root_idx = find_root_index(data)
+    if root_idx is None:
+        return {"error": "未找到根节点(非 scene/prefab 格式)"}
+
+    parent_id: Optional[int] = None
+    if parent_path:
+        idx = _build_path_index(data, root_idx)
+        parent_id = idx.get(parent_path)
+        if parent_id is None:
+            return {"error": f"父节点路径未找到: {parent_path}",
+                    "availableRoots": list(idx.keys())[:20]}
+    else:
+        parent_id = root_idx
+
+    node_id = len(data)
+    node_obj = _new_node_obj(name, parent_id, layer)
+    comp_ids = []
+    # 先 append 组件(占位 node 引用), 再 append 节点, 最后回填组件 node 反向引用
+    for ct in comp_types or []:
+        comp_obj = dict(_COMP_TEMPLATES.get(ct, {"__type__": ct, "_name": "", "_objFlags": 0,
+                                                 "_enabled": True}))
+        comp_id = len(data)
+        comp_ids.append(comp_id)
+        comp_obj["node"] = {"__id__": node_id}
+        node_obj["_components"].append({"__id__": comp_id})
+        data.append(comp_obj)
+    node_id = len(data)
+    node_obj = _new_node_obj(name, parent_id, layer)
+    node_obj["_components"] = [{"__id__": c} for c in comp_ids]
+    for cid in comp_ids:
+        data[cid]["node"] = {"__id__": node_id}
+    data.append(node_obj)
+    # 父节点 _children 引用新节点
+    data[parent_id].setdefault("_children", []).append({"__id__": node_id})
+
+    wr = _write_back(abs_path, data, dry_run)
+    return {"ok": True, "path": abs_path, "parentPath": parent_path or "(根)",
+            "node": name, "nodeId": node_id, "components": comp_ids,
+            "dryRun": dry_run, "write": wr["message"]}
+
+
+def add_component(
+    asset_path: str,
+    node_path: str,
+    comp_type: str,
+    project_path: str = "",
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """文件级给节点新增组件(挂到 _components + append 数组尾)。
+
+    支持内置模板(cc.UITransform/Sprite/Label/Button), 其他类型生成最小骨架。
+    """
+    abs_path = resolve_asset_path(asset_path, project_path)
+    if not os.path.isfile(abs_path):
+        return {"error": f"文件不存在: {abs_path}"}
+    if not comp_type:
+        return {"error": "comp_type 必填(如 cc.UITransform)"}
+    try:
+        data = load_cocos_asset(abs_path)
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+
+    root_idx = find_root_index(data)
+    if root_idx is None:
+        return {"error": "未找到根节点(非 scene/prefab 格式)"}
+    idx = _build_path_index(data, root_idx)
+    node_id = idx.get(node_path)
+    if node_id is None:
+        suffix = node_path.rsplit("/", 1)[-1]
+        cands = [p for p in idx if p.endswith("/" + suffix) or p == suffix]
+        if len(cands) == 1:
+            node_id = idx[cands[0]]
+            node_path = cands[0]
+        elif cands:
+            return {"error": f"节点路径不唯一, 候选: {cands}", "nodePath": node_path}
+        else:
+            return {"error": f"节点路径未找到: {node_path}",
+                    "availableRoots": list(idx.keys())[:20]}
+
+    comp_obj = dict(_COMP_TEMPLATES.get(comp_type, {"__type__": comp_type, "_name": "",
+                                                    "_objFlags": 0, "_enabled": True}))
+    comp_obj["node"] = {"__id__": node_id}
+    comp_id = len(data)
+    data.append(comp_obj)
+    data[node_id].setdefault("_components", []).append({"__id__": comp_id})
+
+    wr = _write_back(abs_path, data, dry_run)
+    return {"ok": True, "path": abs_path, "nodePath": node_path,
+            "compType": comp_type, "compId": comp_id,
+            "dryRun": dry_run, "write": wr["message"]}
+
+
+def _collect_subtree_ids(data: List[Dict[str, Any]], node_id: int) -> set:
+    """收集节点及其子树(所有后代节点 + 其组件)的数组下标集合。"""
+    ids: set = set()
+
+    def walk(nid: int):
+        if nid in ids:
+            return
+        ids.add(nid)
+        node = data[nid]
+        for comp_ref in node.get("_components", []) or []:
+            cid = comp_ref.get("__id__")
+            if cid is not None and 0 <= cid < len(data):
+                ids.add(cid)
+        for child_ref in node.get("_children", []) or []:
+            cid = child_ref.get("__id__")
+            if cid is not None and 0 <= cid < len(data):
+                walk(cid)
+
+    walk(node_id)
+    return ids
+
+
+def remove_node(
+    asset_path: str,
+    node_path: str,
+    project_path: str = "",
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """文件级删除节点(含子树 + 组件), 重建 __id__ 映射防下标漂移。
+
+    - 从父节点 _children 摘除引用
+    - 删除节点 + 全部后代节点 + 它们的组件
+    - 删除后数组剩余对象按原序重排, 所有 __id__ 引用重建映射
+    """
+    abs_path = resolve_asset_path(asset_path, project_path)
+    if not os.path.isfile(abs_path):
+        return {"error": f"文件不存在: {abs_path}"}
+    try:
+        data = load_cocos_asset(abs_path)
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+
+    root_idx = find_root_index(data)
+    if root_idx is None:
+        return {"error": "未找到根节点(非 scene/prefab 格式)"}
+    idx = _build_path_index(data, root_idx)
+    node_id = idx.get(node_path)
+    if node_id is None:
+        suffix = node_path.rsplit("/", 1)[-1]
+        cands = [p for p in idx if p.endswith("/" + suffix) or p == suffix]
+        if len(cands) == 1:
+            node_id = idx[cands[0]]
+            node_path = cands[0]
+        elif cands:
+            return {"error": f"节点路径不唯一, 候选: {cands}", "nodePath": node_path}
+        else:
+            return {"error": f"节点路径未找到: {node_path}",
+                    "availableRoots": list(idx.keys())[:20]}
+
+    if node_id == root_idx:
+        return {"error": "不能删除根节点"}
+
+    # 收集删除集(子树节点 + 组件), 并摘除父引用
+    removed = _collect_subtree_ids(data, node_id)
+    parent_ref = data[node_id].get("_parent")
+    if isinstance(parent_ref, dict) and "__id__" in parent_ref:
+        pid = parent_ref["__id__"]
+        if 0 <= pid < len(data):
+            children = data[pid].get("_children") or []
+            data[pid]["_children"] = [r for r in children if r.get("__id__") != node_id]
+
+    # 重建 __id__ 映射(剩余对象保序, 引用指向新下标)
+    old2new: Dict[int, int] = {}
+    new_data: List[Dict[str, Any]] = []
+    for i, o in enumerate(data):
+        if i in removed:
+            continue
+        old2new[i] = len(new_data)
+        new_data.append(o)
+    for o in new_data:
+        _remap_ids(o, old2new)
+
+    wr = _write_back(abs_path, new_data, dry_run)
+    return {"ok": True, "path": abs_path, "nodePath": node_path,
+            "removedCount": len(removed), "removedIds": sorted(removed),
+            "dryRun": dry_run, "write": wr["message"]}
+
+
+def _remap_ids(obj: Any, old2new: Dict[int, int]) -> None:
+    """递归把对象内所有 {"__id__": old} 引用重映射到新下标。"""
+    if isinstance(obj, dict):
+        for k, v in list(obj.items()):
+            if k == "__id__" and isinstance(v, int):
+                if v in old2new:
+                    obj[k] = old2new[v]
+            elif isinstance(v, (dict, list)):
+                _remap_ids(v, old2new)
+    elif isinstance(obj, list):
+        for item in obj:
+            if isinstance(item, (dict, list)):
+                _remap_ids(item, old2new)
+
+
+def remove_component(
+    asset_path: str,
+    node_path: str,
+    comp_type: str = "",
+    comp_index: int = -1,
+    project_path: str = "",
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """文件级移除节点组件: 从 _components 摘引用 + 数组删除 + __id__ 重映射。"""
+    abs_path = resolve_asset_path(asset_path, project_path)
+    if not os.path.isfile(abs_path):
+        return {"error": f"文件不存在: {abs_path}"}
+    try:
+        data = load_cocos_asset(abs_path)
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+
+    root_idx = find_root_index(data)
+    if root_idx is None:
+        return {"error": "未找到根节点(非 scene/prefab 格式)"}
+    idx = _build_path_index(data, root_idx)
+    node_id = idx.get(node_path)
+    if node_id is None:
+        suffix = node_path.rsplit("/", 1)[-1]
+        cands = [p for p in idx if p.endswith("/" + suffix) or p == suffix]
+        if len(cands) == 1:
+            node_id = idx[cands[0]]
+            node_path = cands[0]
+        elif cands:
+            return {"error": f"节点路径不唯一, 候选: {cands}", "nodePath": node_path}
+        else:
+            return {"error": f"节点路径未找到: {node_path}",
+                    "availableRoots": list(idx.keys())[:20]}
+
+    node = data[node_id]
+    comp_ids = [r.get("__id__") for r in (node.get("_components") or [])]
+    target: Optional[int] = None
+    if comp_index >= 0 and not comp_type:
+        if comp_index >= len(comp_ids):
+            return {"error": f"组件下标越界: {comp_index} >= {len(comp_ids)}"}
+        target = comp_ids[comp_index]
+    else:
+        for cid in comp_ids:
+            if cid is None:
+                continue
+            t = data[cid].get("__type__", "")
+            if t == comp_type or (t.startswith("cc.") and t[3:] == comp_type):
+                target = cid
+                break
+    if target is None:
+        avail = [data[cid].get("__type__", "?") if cid is not None else "?" for cid in comp_ids]
+        return {"error": f"组件未找到: {comp_type}", "availableComps": avail}
+
+    # 摘引用 + 删除数组元素 + 重映射
+    node["_components"] = [r for r in (node.get("_components") or []) if r.get("__id__") != target]
+    removed = {target}
+    old2new: Dict[int, int] = {}
+    new_data: List[Dict[str, Any]] = []
+    for i, o in enumerate(data):
+        if i in removed:
+            continue
+        old2new[i] = len(new_data)
+        new_data.append(o)
+    for o in new_data:
+        _remap_ids(o, old2new)
+
+    wr = _write_back(abs_path, new_data, dry_run)
+    return {"ok": True, "path": abs_path, "nodePath": node_path,
+            "compType": comp_type or f"index{comp_index}", "compId": target,
+            "dryRun": dry_run, "write": wr["message"]}
 
 
 # ── 资产搜索 ────────────────────────────────────────────────────────────────
@@ -1082,10 +1449,17 @@ _REF_TEXT_EXTS = {
 }
 
 
-def find_uuid_refs(project_path: str, uuid: str, max_results: int = 100) -> Dict[str, Any]:
+def find_uuid_refs(project_path: str, uuid: str, max_results: int = 100,
+                   structured: bool = True) -> Dict[str, Any]:
     """扫描项目 assets/ 下文本文件, 找引用该 uuid 的文件。
 
-    返 {uuid, count, refs: [{path, count}]}。引用计数 = uuid 字符串出现次数。
+    对 .scene/.prefab(JSON 数组) 做**结构化**扫描: 把每个 __uuid__ 引用定位到
+    节点路径/组件/属性(替代纯文本子串误报)。其他类型走文本子串计数。
+
+    - structured=True: scene/prefab 输出 {path, count, nodes: [{nodePath, comp, prop, uuid}]}
+    - 非 scene/prefab 或结构化解析失败 → 回退文本 {path, count}
+
+    返 {uuid, count, refs: [{path, count, nodes?}]}。
     """
     if not project_path:
         return {"error": "需 project_path"}
@@ -1101,16 +1475,94 @@ def find_uuid_refs(project_path: str, uuid: str, max_results: int = 100) -> Dict
                 continue
             path = os.path.join(root, fname)
             try:
+                if structured and ext in (".scene", ".prefab"):
+                    node_refs = _structured_uuid_refs(path, uuid)
+                    if node_refs is not None:
+                        if node_refs:
+                            refs.append({"path": path, "count": len(node_refs),
+                                         "nodes": node_refs})
+                            if len(refs) >= max_results:
+                                return {"uuid": uuid, "count": len(refs), "truncated": True,
+                                        "refs": refs, "structured": True}
+                        continue
+                # 文本子串计数(非 scene/prefab 或结构化失败回退)
                 with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
                     content = f.read()
                 cnt = content.count(uuid)
                 if cnt:
                     refs.append({"path": path, "count": cnt})
                     if len(refs) >= max_results:
-                        return {"uuid": uuid, "count": len(refs), "truncated": True, "refs": refs}
+                        return {"uuid": uuid, "count": len(refs), "truncated": True,
+                                "refs": refs, "structured": structured}
             except Exception:
                 continue
-    return {"uuid": uuid, "count": len(refs), "refs": refs}
+    return {"uuid": uuid, "count": len(refs), "refs": refs, "structured": structured}
+
+
+def _structured_uuid_refs(file_path: str, uuid: str) -> Optional[List[Dict[str, Any]]]:
+    """scene/prefab JSON 内 __uuid__ 引用 → [{nodePath, comp, prop, uuid}]。
+
+    返回 None 表示结构化失败(应回退文本); [] 表示解析成功但无该 uuid 引用。
+    """
+    try:
+        data = load_cocos_asset(file_path)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(data, list):
+        return None
+    base_u = uuid.split("@", 1)[0]
+
+    # 节点名索引 + 路径索引(报告用)
+    name_of: Dict[int, str] = {}
+    for i, o in enumerate(data):
+        if isinstance(o, dict):
+            name_of[i] = o.get("_name") or o.get("__type__") or "?"
+    root_idx = find_root_index(data)
+    path_index = _build_path_index(data, root_idx) if root_idx is not None else {}
+
+    def node_path_of(idx: int) -> str:
+        if not path_index:
+            return name_of.get(idx, "?")
+        # 反向: 数组下标 → 最近路径(非节点对象则用其宿主节点路径)
+        if idx in path_index:
+            return path_index[idx]
+        # 找最近祖先节点路径
+        best = ""
+        for p, i in path_index.items():
+            if i <= idx and (not best or i > path_index[best]):
+                best = p
+        return best or name_of.get(idx, "?")
+
+    out: List[Dict[str, Any]] = []
+    for i, o in enumerate(data):
+        if not isinstance(o, dict):
+            continue
+        otype = o.get("__type__", "")
+        # 遍历非内部字段找 __uuid__ 引用
+        for k, v in o.items():
+            if k.startswith("__") or not isinstance(v, dict):
+                continue
+            if "__uuid__" in v:
+                u = v.get("__uuid__", "")
+                if u == uuid or u.split("@", 1)[0] == base_u:
+                    out.append({
+                        "nodePath": node_path_of(i),
+                        "comp": otype,
+                        "prop": k,
+                        "uuid": u,
+                    })
+            elif isinstance(v, list):
+                for item in v:
+                    if isinstance(item, dict) and "__uuid__" in item:
+                        u = item.get("__uuid__", "")
+                        if u == uuid or u.split("@", 1)[0] == base_u:
+                            out.append({
+                                "nodePath": node_path_of(i),
+                                "comp": otype,
+                                "prop": k,
+                                "uuid": u,
+                            })
+    return out
 
 
 # ── 压缩 uuid 编解码(引擎 decode-uuid.ts 算法) ───────────────────────────────
