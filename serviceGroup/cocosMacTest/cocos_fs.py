@@ -16,6 +16,7 @@ Cocos 3.8 文件格式要点:
 
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -244,14 +245,25 @@ def _walk_tree(
                         except (json.JSONDecodeError, ValueError):
                             pass  # 解析失败降级走正常 walk
 
-    # 组件: 仅取 __type__, 不读属性(避重 dump)
+    # 组件: 仅取 __type__ + 脚本组件解析为脚本名, 不读属性(避重 dump)
     comps = []
     for comp_ref in node.get("_components", []) or []:
         cid = comp_ref.get("__id__")
         if cid is None or cid < 0 or cid >= len(data):
             continue
         cobj = data[cid]
-        comps.append({"type": cobj.get("__type__", "?"), "index": cid})
+        ctype = cobj.get("__type__", "?")
+        comp = {"type": ctype, "index": cid}
+        # 脚本组件(非 cc. 前缀 + 压缩 uuid 形态): 反查脚本资产名, 提升可读性
+        if (ctx is not None and not ctype.startswith("cc.")
+                and not ctype.startswith(("dragonBones", "sp.", "CC"))
+                and len(ctype.split("@", 1)[0]) in (22, 23)):
+            resolved = resolve_script_component(ctype, uuid_index=ctx.get("uuid_index"))
+            if resolved.get("path"):
+                comp["script"] = resolved["script"]
+            elif resolved.get("missing"):
+                comp["missing"] = True
+        comps.append(comp)
 
     children = []
     # max_depth <= 0 = 不限深度(全量展开, 慎用防超大输出)
@@ -530,6 +542,240 @@ def build_node_components(
         },
         "components": comps_out,
     }
+
+
+# ── 组件属性写入(绑定/改值, 纯函数文件级) ────────────────────────────────────
+
+def _locate_component_obj(
+    data: List[Dict[str, Any]],
+    node_path: str,
+    comp_type: str = "",
+    comp_index: int = -1,
+) -> Dict[str, Any]:
+    """定位组件对象(文件内数组下标)。comp_type 精确匹配优先, comp_index 兜底。
+
+    返 {ok, cid, cobj, nodePath} 或 {error, ...}。
+    """
+    root_idx = find_root_index(data)
+    if root_idx is None:
+        return {"error": "未找到根节点(非 scene/prefab 格式)"}
+    path_index = _build_path_index(data, root_idx)
+    target_idx = path_index.get(node_path)
+    if target_idx is None:
+        suffix = node_path.rsplit("/", 1)[-1]
+        cands = [p for p in path_index if p.endswith("/" + suffix) or p == suffix]
+        if len(cands) == 1:
+            target_idx = path_index[cands[0]]
+            node_path = cands[0]
+        elif cands:
+            return {"error": f"路径不唯一, 候选: {cands}", "nodePath": node_path}
+        else:
+            return {"error": f"节点路径未找到: {node_path}", "nodePath": node_path}
+    node = data[target_idx]
+    comp_ids = [r.get("__id__") for r in (node.get("_components") or [])]
+    # comp_index >= 0 且未给 type: 直接按下标
+    if comp_index >= 0 and not comp_type:
+        if comp_index >= len(comp_ids):
+            return {"error": f"组件下标越界: {comp_index} >= {len(comp_ids)}", "nodePath": node_path}
+        cid = comp_ids[comp_index]
+        if cid is None or not (0 <= cid < len(data)):
+            return {"error": f"组件 __id__ 无效: {cid}", "nodePath": node_path}
+        return {"ok": True, "cid": cid, "cobj": data[cid], "nodePath": node_path}
+    # 按类型匹配(可带 cc. 前缀或裸类名)
+    for cid in comp_ids:
+        if cid is None or not (0 <= cid < len(data)):
+            continue
+        t = data[cid].get("__type__", "")
+        if t == comp_type or t[3:] == comp_type if t.startswith("cc.") else t == comp_type:
+            return {"ok": True, "cid": cid, "cobj": data[cid], "nodePath": node_path}
+    return {"error": f"组件未找到: {comp_type}", "nodePath": node_path}
+
+
+def set_component_property(
+    asset_path: str,
+    node_path: str,
+    comp_type: str = "",
+    prop: str = "",
+    value: Any = None,
+    bind_uuid: str = "",
+    bind_type: str = "",
+    project_path: str = "",
+    comp_index: int = -1,
+) -> Dict[str, Any]:
+    """文件级组件属性写入(纯函数, 不改编辑器缓存)。
+
+    - 普通值: set_component_property(asset, node, comp_type, prop, value)
+    - 资产绑定: bind_uuid 给定时把 prop 写成 {"__uuid__": uuid, "__expectedType__": type}
+      (跨文件资产引用, uuid 可传 db:// 路径或 36 位 uuid; 自动反查 uuid)
+    - 文件内引用: value 传 {"__id__": N} 结构(指向文件数组下标, 如 node/子资产)
+
+    返回 {ok, path, nodePath, compType, prop, before, after, data}。
+    写前自动备份 .bak, 不破坏原文件。**注意**: 直接改文件不改编辑器内缓存,
+    需编辑器刷新(project_refresh_assets / 重开场景)才可见。
+    """
+    abs_path = resolve_asset_path(asset_path, project_path)
+    if not os.path.isfile(abs_path):
+        return {"error": f"文件不存在: {abs_path}"}
+    if not prop:
+        return {"error": "prop 必填(如 spriteFrame / _mjMesh / size)"}
+    try:
+        data = load_cocos_asset(abs_path)
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+
+    loc = _locate_component_obj(data, node_path, comp_type, comp_index)
+    if not loc.get("ok"):
+        return loc
+    cid, cobj, node_path = loc["cid"], loc["cobj"], loc["nodePath"]
+
+    # 值解析: bind_uuid 优先(资产绑定), 否则原样 value
+    if bind_uuid:
+        target_uuid = bind_uuid
+        if bind_uuid.startswith("db://"):
+            # 路径 → uuid: 读 .meta
+            abs_target = resolve_asset_path(bind_uuid, project_path)
+            meta_path = abs_target + ".meta"
+            if not os.path.isfile(meta_path):
+                return {"error": f"绑定目标无 .meta: {bind_uuid}"}
+            try:
+                target_uuid = json.loads(Path(meta_path).read_text(encoding="utf-8-sig")).get("uuid", "")
+            except json.JSONDecodeError:
+                return {"error": f".meta 解析失败: {meta_path}"}
+            if not target_uuid:
+                return {"error": f".meta 无 uuid: {meta_path}"}
+        bind_val = {"__uuid__": target_uuid}
+        if bind_type:
+            bind_val["__expectedType__"] = bind_type
+        new_val = bind_val
+    else:
+        new_val = value
+
+    # 找属性键: 先精确, 再 _ 前缀兼容
+    keys = list(cobj.keys())
+    if prop in cobj:
+        old_val = cobj[prop]
+    else:
+        underscored = "_" + prop if not prop.startswith("_") else prop
+        if underscored in cobj:
+            prop_key = underscored
+            old_val = cobj[prop_key]
+        else:
+            return {"error": f"属性不存在: {prop}", "availableProps": [k for k in keys if not k.startswith("__")][:30]}
+        cobj[prop_key] = new_val
+    if old_val == new_val:
+        return {"ok": True, "path": abs_path, "nodePath": node_path, "compType": comp_type,
+                "prop": prop, "changed": False, "before": old_val, "after": new_val}
+    if prop in cobj:
+        cobj[prop] = new_val
+    # 写回(保留原文件 .bak)
+    bak = abs_path + ".bak"
+    if not os.path.exists(bak):
+        try:
+            os.replace(abs_path, bak)
+        except OSError:
+            pass
+    Path(abs_path).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "path": abs_path, "nodePath": node_path, "compType": comp_type,
+            "prop": prop, "changed": True, "before": old_val, "after": new_val}
+
+
+# ── 全项目缺失扫描(missing script / missing node / missing asset) ───────────
+
+def scan_missing(project_path: str, scan_type: str = "all") -> Dict[str, Any]:
+    """扫描项目全部 .scene/.prefab, 收集三类缺失引用。
+
+    scan_type: all / script / node / asset
+    - script: 脚本组件 __type__(22/23 位压缩 uuid) 反查不到脚本资产 → missing script
+    - node:   __id__ 引用越界 / 指向类型不符 → missing node(坏引用)
+    - asset:  __uuid__ 资产引用在 uuid 索引中找不到 → missing asset
+
+    返 {count, issues: [{kind, file, nodePath?, comp?, prop?, uuid?, detail}]}。
+    全量扫 ~1-2s(复用 uuid 索引), 不写文件只读。
+    """
+    if not project_path or not os.path.isdir(os.path.join(project_path, "assets")):
+        return {"error": f"无效项目根: {project_path}"}
+    uuid_index = _get_uuid_index(project_path)
+    # 引擎内置资源(编译进 Creator 二进制, 项目内无 .meta, 不算缺失)
+    # 实测 3.8.1 常见: 默认白图/默认 spriteFrame/默认材质等
+    _BUILTIN_UUIDS = {
+        "20835ba4-6145-4fbc-a58a-051ce700aa3e",  # 默认贴图(白图)
+        "544e49d6-3f05-4fa8-9a9e-091f98fc2ce8",  # 内置 spriteFrame
+        "951249e0-9f16-456d-8b85-a6ca954da16b",  # 内置纹理
+        "7d8f9b89-4fd1-4c9f-a3ab-38ec7cded7ca",  # 默认 spriteFrame
+        "f12a23c4-b924-4322-a260-3d982428f1e8",  # 内置资源
+        "45828f25-b50d-4c52-a591-e19491a62b8c",  # 默认材质
+        "777f1101-6f5a-49e3-a232-9ef4bd598db1",  # 内置资源
+        "57520716-48c8-4a19-8acf-41c9f8777fb0",  # 内置资源
+        "28765e2f-040a-4c65-8e8c-f9d0bb79d863",  # 内置资源
+        "6d93d377-a90b-4fcb-a0d1-69eb6537de04",  # 内置资源
+        "a89c1129-6f18-4fc3-ad18-fa598c29db9c",  # 内置资源
+    }
+    issues = []
+
+    def add(kind, f, node_path, comp, prop, uuid, detail):
+        issues.append({"kind": kind, "file": f, "nodePath": node_path,
+                       "comp": comp, "prop": prop, "uuid": uuid, "detail": detail})
+
+    for root, dirs, files in os.walk(os.path.join(project_path, "assets")):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("Temp", "library")]
+        for fname in files:
+            if not fname.endswith((".scene", ".prefab")):
+                continue
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, project_path).replace(os.sep, "/")
+            try:
+                data = load_cocos_asset(fpath)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if not isinstance(data, list):
+                continue
+            # 节点名索引(报告用)
+            name_of = {}
+            for i, o in enumerate(data):
+                if isinstance(o, dict):
+                    name_of[i] = o.get("_name") or o.get("__type__") or "?"
+            # ── 遍历所有对象, 收集 __id__ / __uuid__ / 脚本组件引用 ──
+            for i, o in enumerate(data):
+                if not isinstance(o, dict):
+                    continue
+                otype = o.get("__type__", "")
+                # 脚本组件(非引擎类型): __type__ 是压缩 uuid
+                base_type = otype.split("@", 1)[0]
+                if (otype and not otype.startswith("cc.")
+                        and not otype.startswith(("dragonBones", "sp.", "CC", "cc"))
+                        and len(base_type) in (22, 23)
+                        and otype != "CCPropertyOverrideInfo"):
+                    if scan_type in ("all", "script"):
+                        full = decode_uuid(otype)
+                        if full and "-" in full and full not in uuid_index:
+                            add("script", rel, name_of.get(i), otype, None, full,
+                                "脚本组件引用项目内不存在的脚本资产")
+                # __id__ 引用检查(节点/资产文件内引用)
+                if scan_type in ("all", "node"):
+                    for k, v in o.items():
+                        if k.startswith("__"):
+                            continue
+                        if isinstance(v, dict) and "__id__" in v:
+                            rid = v["__id__"]
+                            if not isinstance(rid, int) or not (0 <= rid < len(data)):
+                                add("node", rel, name_of.get(i), otype, k, None,
+                                    f"__id__ 越界: {rid} (数组长 {len(data)})")
+                # __uuid__ 资产引用
+                if scan_type in ("all", "asset"):
+                    for k, v in o.items():
+                        if isinstance(v, dict) and "__uuid__" in v:
+                            u = v["__uuid__"]
+                            base_u = u.split("@", 1)[0]
+                            if (base_u and base_u not in uuid_index
+                                    and base_u not in _BUILTIN_UUIDS):
+                                add("asset", rel, name_of.get(i), otype, k, u,
+                                    "资产引用在项目 .meta 中未找到")
+
+    return {"count": len(issues), "issues": issues,
+            "summary": {"script": sum(1 for x in issues if x["kind"] == "script"),
+                        "node": sum(1 for x in issues if x["kind"] == "node"),
+                        "asset": sum(1 for x in issues if x["kind"] == "asset")}}
 
 
 # ── 资产搜索 ────────────────────────────────────────────────────────────────
@@ -877,35 +1123,51 @@ _UUID_INDICES = [i for i in range(36) if i not in (8, 13, 18, 23)]
 
 
 def decode_uuid(compressed: str) -> str:
-    """压缩 uuid(22 位 base64 变体) → 36 位完整 uuid。
+    """压缩 uuid → 36 位完整 uuid。
 
-    引擎 cocos/core/utils/decode-uuid.ts 算法复刻:
-    - 前 2 字符原样保留(hex 字符在 base64 字母表内同值)
-    - 剩余 20 字符按 2→3 拆成 10 组 12bit, 每组产出 3 个 hex
+    支持两种压缩格式(引擎 EditorExtends.UuidUtils):
+    - 22 位(min=true, 引擎 decode-uuid.ts): 2 头字符 + 20 base64(30 hex)
+    - 23 位(min=false, 脚本组件 __type__ 实际格式): 5 头 hex + 18 base64(27 hex)
+      实测项目所有脚本组件 __type__ 均为 23 位(2026-08-16)
     - @后缀(子资产 id, 如 @6c48a / @f9941)保留
-    - 非 22 位输入原样返回(避免误判)
+    - 无法识别时原样返回
     """
     base, sep, sub = compressed.partition("@")
-    if len(base) != 22:
-        return compressed
-    tpl = list("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")  # dash 在 8,13,18,23
-    tpl[0] = base[0]
-    tpl[1] = base[1]
-    j = 2
-    for i in range(2, 22, 2):
-        lhs = _BASE64_VALUES[base[i]]
-        rhs = _BASE64_VALUES[base[i + 1]]
-        tpl[_UUID_INDICES[j]] = _HEX[lhs >> 2]
-        j += 1
-        tpl[_UUID_INDICES[j]] = _HEX[((lhs & 3) << 2) | (rhs >> 4)]
-        j += 1
-        tpl[_UUID_INDICES[j]] = _HEX[rhs & 0xF]
-        j += 1
-    return "".join(tpl) + (sep + sub if sep else "")
+    if len(base) == 22:
+        tpl = list("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")  # dash 在 8,13,18,23
+        tpl[0] = base[0]
+        tpl[1] = base[1]
+        j = 2
+        for i in range(2, 22, 2):
+            lhs = _BASE64_VALUES[base[i]]
+            rhs = _BASE64_VALUES[base[i + 1]]
+            tpl[_UUID_INDICES[j]] = _HEX[lhs >> 2]
+            j += 1
+            tpl[_UUID_INDICES[j]] = _HEX[((lhs & 3) << 2) | (rhs >> 4)]
+            j += 1
+            tpl[_UUID_INDICES[j]] = _HEX[rhs & 0xF]
+            j += 1
+        return "".join(tpl) + (sep + sub if sep else "")
+    if len(base) == 23:
+        # 5 头 hex 直接保留, 18 base64 → 27 hex
+        try:
+            hexes = base[:5]
+            for i in range(5, 23, 2):
+                lhs = _BASE64_VALUES[base[i]]
+                rhs = _BASE64_VALUES[base[i + 1]]
+                hexes += _HEX[lhs >> 2]
+                hexes += _HEX[((lhs & 3) << 2) | (rhs >> 4)]
+                hexes += _HEX[rhs & 0xF]
+            full = (hexes[:8] + "-" + hexes[8:12] + "-" + hexes[12:16]
+                    + "-" + hexes[16:20] + "-" + hexes[20:])
+            return full + (sep + sub if sep else "")
+        except (KeyError, ValueError):
+            return compressed
+    return compressed
 
 
 def compress_uuid(full: str) -> str:
-    """36 位完整 uuid → 22 位压缩 uuid(decode_uuid 的逆运算)。
+    """36 位完整 uuid → 22 位压缩 uuid(decode_uuid 22 位格式的逆运算)。
 
     - 前 2 hex 原样保留
     - 剩余 30 hex 按 3→2 拆成 10 组 12bit, 每组产出 2 个 base64 字符
@@ -922,29 +1184,87 @@ def compress_uuid(full: str) -> str:
     return out + (sep + sub if sep else "")
 
 
+def compress_uuid23(full: str) -> str:
+    """36 位完整 uuid → 23 位压缩 uuid(脚本组件 __type__ 格式)。
+
+    - 前 5 hex 原样保留
+    - 剩余 27 hex 按 3→2 拆成 9 组 12bit, 每组产出 2 个 base64 字符
+    - @后缀保留; 非 36 位输入原样返回
+    """
+    base, sep, sub = full.partition("@")
+    if len(base) != 36:
+        return full
+    hexchars = base.replace("-", "")  # 32 hex
+    out = hexchars[:5]
+    for i in range(5, 32, 3):
+        v = int(hexchars[i:i + 3], 16)  # 12bit
+        out += _BASE64_KEYS[v >> 6] + _BASE64_KEYS[v & 0x3F]
+    return out + (sep + sub if sep else "")
+
+
 def uuid_convert(uuid: str) -> Dict[str, str]:
-    """识别输入形态并双向转换。返 {input, kind, full, compressed}。
-    kind: compressed(22位) / full(36位) / unknown(无法识别, 原样回显)。
+    """识别输入形态并双向转换。返 {input, kind, full, compressed, compressed23}。
+    kind: compressed(22位) / compressed23(23位) / full(36位) / unknown。
     @ 子资产后缀允许存在且保留。"""
     base = uuid.split("@", 1)[0]
     if len(base) == 22:
-        return {"kind": "compressed", "full": decode_uuid(uuid), "compressed": uuid}
+        return {"kind": "compressed", "full": decode_uuid(uuid), "compressed": uuid,
+                "compressed23": compress_uuid23(decode_uuid(uuid))}
+    if len(base) == 23:
+        full = decode_uuid(uuid)
+        return {"kind": "compressed23", "full": full, "compressed": compress_uuid(full),
+                "compressed23": uuid}
     if len(base) == 36 and base.count("-") == 4:
-        return {"kind": "full", "full": uuid, "compressed": compress_uuid(uuid)}
-    return {"kind": "unknown", "full": uuid, "compressed": uuid}
+        return {"kind": "full", "full": uuid, "compressed": compress_uuid(uuid),
+                "compressed23": compress_uuid23(uuid)}
+    return {"kind": "unknown", "full": uuid, "compressed": uuid, "compressed23": uuid}
+
+
+def resolve_script_component(comp_type: str, project_path: str = "",
+                             uuid_index: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """脚本组件 __type__(23 位压缩 uuid) → 脚本资产定位。
+
+    返 {script, name, path, uuid, missing}:
+    - script: 脚本文件名(如 G3D_Layout.ts), 反查失败用原 __type__
+    - missing: True = uuid 无法在项目内定位(旧引用/已删除脚本)
+    """
+    if not comp_type or comp_type.startswith("cc."):
+        return {"script": comp_type, "missing": False}
+    base = comp_type.split("@", 1)[0]
+    if len(base) not in (22, 23):
+        return {"script": comp_type, "missing": False}
+    full = decode_uuid(comp_type)
+    if not full or "-" not in full:
+        return {"script": comp_type, "missing": False}
+    idx = uuid_index if uuid_index is not None else (
+        _get_uuid_index(project_path) if project_path else {})
+    path = idx.get(full)
+    if path:
+        return {"script": os.path.basename(path), "name": os.path.splitext(os.path.basename(path))[0],
+                "path": path, "uuid": full, "missing": False}
+    return {"script": comp_type, "uuid": full, "missing": True}
 
 
 # ── 紧凑序列化(尽最大可能压缩, 防上下文膨胀) ────────────────────────────────
 
 def _node_detail(node: Dict[str, Any], include_nest: bool = True) -> str:
-    """节点行详情: [组件类型](未展开子节点数)@嵌套prefab路径(不含名字)。"""
+    """节点行详情: [组件类型](未展开子节点数)@嵌套prefab路径(不含名字)。
+
+    组件显示: cc. 前缀去除; 脚本组件显示脚本文件名(G3D_Layout.ts),
+    missing(项目内无对应脚本)标 ⚠ + 原始压缩 uuid 保留可查。
+    """
     comps = node.get("components", []) or []
     comp_str = ""
     if comps:
         types = []
         for c in comps:
             t = c.get("type", "?")
-            types.append(t[3:] if t.startswith("cc.") else t)
+            if c.get("script"):
+                types.append(c["script"])  # 脚本文件名(G3D_Layout.ts)
+            elif c.get("missing"):
+                types.append(f"⚠{t}")     # 压缩 uuid 反查失败
+            else:
+                types.append(t[3:] if t.startswith("cc.") else t)
         comp_str = "[" + ",".join(types) + "]"
     children = node.get("children", []) or []
     cc = node.get("childCount", 0)
@@ -977,23 +1297,50 @@ def tree_to_text(root: Dict[str, Any]) -> str:
       (超出 prefab 原始内容)标记 ✚N, 独立一行并在其下展开新增节点
     """
     from collections import Counter
-    # 第一遍: 统计嵌套 prefab 实例数 + 记录示例节点(取详情)
+    # ── 第一遍: 全量统计实例数(含嵌套) → 定 declared 集合 ──
     prefab_count: Counter = Counter()
     prefab_example: Dict[str, Dict[str, Any]] = {}
 
-    def count_prefabs(node: Dict[str, Any]):
+    def count_all(node: Dict[str, Any]):
         nested = node.get("_nestedPath", "")
         if nested:
             prefab_count[nested] += 1
             prefab_example.setdefault(nested, node)
         for ch in node.get("children", []) or []:
-            count_prefabs(ch)
+            count_all(ch)
 
-    count_prefabs(root)
+    count_all(root)
     declared = {p for p, c in prefab_count.items() if c >= 2}
 
     def is_declared(node: Dict[str, Any]) -> bool:
         return bool(node.get("_nestedPath")) and node["_nestedPath"] in declared
+
+    # ── 第二遍: 直接引用计数 + 嵌套来源关系 ──
+    # direct_count[p] = 树内"可见"的直接实例数(声明区内嵌套实例不重复计数)
+    # 嵌套关系: 遍历声明区示例树时, 记录 declared prefab 内部引用了哪些 declared prefab
+    direct_count: Counter = Counter()
+    nested_in: Dict[str, set] = {}  # 外层 prefab → {内层 prefab}
+
+    def scan_direct(node: Dict[str, Any], in_declared: str = ""):
+        """统计直接引用: in_declared 非空 = 当前在某个 declared prefab 子树内。
+        树内直接可见的实例(非 declared 内部)计入 direct_count;
+        declared 内部嵌套的 declared 实例记录 nested_in 关系, 不重复计。
+        """
+        nested = node.get("_nestedPath", "")
+        if nested:
+            if not in_declared:
+                direct_count[nested] += 1
+            elif nested in declared and in_declared != nested:
+                nested_in.setdefault(in_declared, set()).add(nested)
+        # declared prefab 内部: 用示例节点做结构展示(不递归计数, 只记录嵌套关系)
+        if nested and nested in declared and not in_declared:
+            for ch in node.get("children", []) or []:
+                scan_direct(ch, in_declared=nested)
+            return
+        for ch in node.get("children", []) or []:
+            scan_direct(ch, in_declared=in_declared)
+
+    scan_direct(root)
 
     def short(nested: str) -> str:
         return nested.rsplit("/", 1)[-1]
@@ -1015,9 +1362,26 @@ def tree_to_text(root: Dict[str, Any]) -> str:
     lines: List[str] = []
     if declared:
         lines.append("前向声明 (重复 prefab, 完整结构, 树内以引用展示):")
-        for path in sorted(declared, key=lambda p: -prefab_count[p]):
+        # 先大后小排序: 外层容器先声明, 被包含者后声明(嵌套关系拓扑序)
+        # depth[p] = prefab 的嵌套深度(0=直接挂场景/普通节点, 1=在某个 declared 内, ...)
+        # 深度浅(外层)先声明; 同深度按直接引用数降序
+        depth = {p: 0 for p in declared}
+        changed = True
+        while changed:
+            changed = False
+            for outer, inners in nested_in.items():
+                for inner in inners:
+                    if depth[inner] <= depth[outer]:
+                        depth[inner] = depth[outer] + 1
+                        changed = True
+        for path in sorted(declared, key=lambda p: (depth.get(p, 0), -direct_count.get(p, 0))):
             ex = prefab_example[path]
-            lines.append(f"  @{short(path)} ×{prefab_count[path]}: "
+            dc = direct_count.get(path, 0)
+            tc = prefab_count[path]
+            cnt_str = f"×{dc}"
+            if tc != dc:
+                cnt_str += f" (含嵌套 {tc})"
+            lines.append(f"  @{short(path)} {cnt_str}: "
                          f"{_node_line(ex, include_nest=False)}")
             # 声明区展开 prefab 自身子节点(完整结构, 供树内引用)
             _emit_children(ex, "    ", lines, declared)
