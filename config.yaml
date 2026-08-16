@@ -102,6 +102,16 @@ services:
     tags: [hair, appearance, web, 3d]
     enabled: true
 
+  - name: cocos-mac-test
+    command_mac: ./.venv/bin/python
+    command_win: python
+    args: ["main.py", "--port", "5010"]
+    cwd: ./serviceGroup/cocosMacTest
+    port: 5010
+    auto_restart: true
+    tags: [cocos, test, web]
+    enabled: true
+
   - name: cocos-creator
     command: "D:\\IDE\\Cocos Download\\Creator\\Creator\\3.8.1\\CocosCreator.exe"
     command_mac: "/Applications/Cocos/Creator/3.8.1/CocosCreator.app/Contents/MacOS/CocosCreator"

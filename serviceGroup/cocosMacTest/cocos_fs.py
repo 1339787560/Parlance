@@ -1,0 +1,1039 @@
+#!/usr/bin/env python3
+"""
+Cocos fs layer — 纯 Python 文件系统 + JSON 解析逻辑。
+
+读 .scene/.prefab/.meta 直接拿节点树/组件/资产，零 Editor.Message 开销。
+设计为可被 Rust exe 替换的纯函数集（无 MCP/网络依赖）。
+
+Cocos 3.8 文件格式要点:
+- .scene / .prefab: 顶层数组, 每元素带 __type__, __id__ 隐式 = 数组下标
+- 引用靠 {"__id__": N} 指向数组元素
+- cc.Prefab[0].data.__id__ → 根节点; cc.SceneAsset[0].scene.__id__ → cc.Scene
+- 节点字段: _name / _children:[{__id__}] / _components:[{__id__}] / _active / _lpos / _lrot / _lscale / _layer / _prefab
+- 组件字段: __type__ (类名或脚本 uuid) + 各 _prop 私有字段
+- .meta: {ver, importer, uuid, subMetas, userData} — importer 标类型(texture/prefab/scene/...)
+"""
+
+import json
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+
+# ── 路径解析 ────────────────────────────────────────────────────────────────
+
+def resolve_asset_path(asset_path: str, project_path: str = "") -> str:
+    """解析 db:// URL / 相对路径 / 绝对路径 → OS 绝对路径。
+
+    - db://assets/foo/bar.prefab → <project_path>/assets/foo/bar.prefab
+    - 相对路径 → 拼到 project_path 下
+    - 绝对路径 → 直接返
+    """
+    if asset_path.startswith("db://"):
+        if not project_path:
+            raise ValueError("db:// URL 需 projectPath, 传 projectPath 参数或先调 cocos_set_project")
+        rel = asset_path[len("db://"):]
+        return os.path.join(project_path, rel.replace("/", os.sep))
+    if os.path.isabs(asset_path):
+        return asset_path
+    if project_path:
+        return os.path.join(project_path, asset_path.replace("/", os.sep))
+    return asset_path
+
+
+# ── 加载与根节点定位 ─────────────────────────────────────────────────────────
+
+def load_cocos_asset(asset_path: str) -> List[Dict[str, Any]]:
+    """加载 .scene/.prefab JSON 为数组。非合法格式抛 ValueError。"""
+    with open(asset_path, "r", encoding="utf-8-sig") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError(f"非 Cocos scene/prefab 格式(顶层数组): {asset_path}")
+    return data
+
+
+def find_root_index(data: List[Dict[str, Any]]) -> Optional[int]:
+    """定位根节点数组下标。
+
+    优先级: cc.Prefab.data.__id__ > cc.SceneAsset.scene.__id__ > 首个 _parent=null 的 cc.Node
+    """
+    for obj in data:
+        t = obj.get("__type__", "")
+        if t == "cc.Prefab" and isinstance(obj.get("data"), dict):
+            return obj["data"].get("__id__")
+        if t == "cc.SceneAsset" and isinstance(obj.get("scene"), dict):
+            scene_idx = obj["scene"].get("__id__")
+            if scene_idx is not None:
+                # cc.Scene 节点本身（其 _children 是场景根节点集合）
+                return scene_idx
+    # fallback: 首个无父的 cc.Node
+    for i, obj in enumerate(data):
+        if obj.get("__type__") == "cc.Node" and obj.get("_parent") is None:
+            return i
+    return None
+
+
+# ── 节点树构建 ───────────────────────────────────────────────────────────────
+
+# uuid → 资产文件绝对路径 的 lazy 缓存(按 project_path 分桶)
+# 嵌套 prefab 解析时按 _prefab.asset.__uuid__ 反查外部 prefab 文件路径
+# 2026-08-16: 缓存带 mtime 失效 — CocosCreator 重组/重导入资产时 .meta 变,
+# 旧索引按旧路径找文件失败 → 嵌套 prefab 显示 "?"。查询时扫 .meta 最大 mtime,
+# 若晚于索引构建时间则自动重建(stat 不读内容, 快)。
+_UUID_INDEX_CACHE: Dict[str, Dict[str, Any]] = {}
+_UUID_RE = None
+try:
+    import re as _re
+    _UUID_RE = _re.compile(r'"uuid"\s*:\s*"([0-9a-fA-F-]+)"')
+except ImportError:
+    pass
+
+
+def _build_uuid_index(assets_dir: str):
+    """扫 assets_dir 下所有 .meta, 建 {asset_uuid: 主资产文件绝对路径}。
+
+    性能: 只读前 2KB + regex 抽 uuid(避全 JSON parse)。实测万级 .meta ~1-2s。
+    返回 (index, max_meta_mtime)。
+    """
+    import re as _re
+    uuid_re = _re.compile(r'"uuid"\s*:\s*"([0-9a-fA-F-]+)"')
+    index: Dict[str, str] = {}
+    max_mtime = 0.0
+    if not os.path.isdir(assets_dir):
+        return index, max_mtime
+    for root, dirs, files in os.walk(assets_dir):
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('Temp', 'library')]
+        for fname in files:
+            if not fname.endswith('.meta'):
+                continue
+            path = os.path.join(root, fname)
+            try:
+                st = os.stat(path)
+                if st.st_mtime > max_mtime:
+                    max_mtime = st.st_mtime
+                # uuid 在 .meta 头部, 读前 2KB 足够 + regex 比 json.load 快 5-10×
+                with open(path, 'rb') as f:
+                    head = f.read(2048)
+                m = uuid_re.search(head.decode('utf-8-sig', errors='ignore'))
+                if m:
+                    index[m.group(1)] = path[:-5]  # 去 .meta 后缀
+            except Exception:
+                continue
+    return index, max_mtime
+
+
+def _scan_meta_mtimes(assets_dir: str) -> float:
+    """assets/ 下 .meta 文件的最大 mtime (仅 stat, 不读内容, ~100ms/万级)。"""
+    latest = 0.0
+    if not os.path.isdir(assets_dir):
+        return latest
+    for root, dirs, files in os.walk(assets_dir):
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('Temp', 'library')]
+        for fname in files:
+            if not fname.endswith('.meta'):
+                continue
+            try:
+                st = os.stat(os.path.join(root, fname))
+                if st.st_mtime > latest:
+                    latest = st.st_mtime
+            except OSError:
+                continue
+    return latest
+
+
+def _get_uuid_index(project_path: str) -> Dict[str, str]:
+    """取/建 project_path 的 uuid→路径索引。
+
+    mtime 失效: 每次调用先扫 .meta 最大 mtime, 若晚于索引构建时间 → 重建。
+    项目未被 CocosCreator 改动时命中缓存(扫描开销仅 ~100ms)。
+    """
+    if not project_path:
+        return {}
+    assets_dir = os.path.join(project_path, 'assets')
+    latest = _scan_meta_mtimes(assets_dir)
+    cached = _UUID_INDEX_CACHE.get(project_path)
+    if cached and latest <= cached.get("max_mtime", 0):
+        return cached["index"]
+    index, max_mtime = _build_uuid_index(assets_dir)
+    _UUID_INDEX_CACHE[project_path] = {"index": index, "max_mtime": max_mtime}
+    return index
+
+
+def _walk_tree(
+    data: List[Dict[str, Any]],
+    idx: int,
+    depth: int,
+    max_depth: int,
+    parent_path: str,
+    include_inactive: bool,
+    ctx: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """递归构建紧凑节点字典。ctx 携带嵌套 prefab 解析上下文(可选)。"""
+    if idx < 0 or idx >= len(data):
+        return None
+    node = data[idx]
+    # cc.Scene 在文件里 __type__="cc.Scene" 非cc.Node, 但语义是节点容器(_children 可走)
+    if node.get("__type__") not in ("cc.Node", "cc.Scene"):
+        # 引用指向非节点(异常), 返占位
+        return {"error": f"non-node at __id__ {idx}", "type": node.get("__type__")}
+
+    name = node.get("_name") or "?"
+    active = node.get("_active", True)
+    if not active and not include_inactive:
+        return None
+    node_path = (parent_path + "/" + name) if parent_path else name
+
+    # ── 嵌套 prefab 实例解析 ──
+    # 节点 _prefab 指向 PrefabInfo, 若 PrefabInfo.root.__id__ == idx (本节点是实例根)
+    # 且 asset.__uuid__ 存在 → 跨文件加载外部 prefab, 用其根替换本节点(继承 parent_path)
+    # 循环检测: 用 resolution_chain(当前解析路径上的 uuid 栈), 非 global visited。
+    # 同 uuid 在兄弟节点多次实例化(如 3 个 CardMJ)应各自解析, 不互相屏蔽。
+    # 深度边界(depth == max_depth)也解析: 只取外部根节点名/组件, 不展开子节点,
+    # 避免占位 "?" 出现在树边界(2026-08-16 修复)。
+    if ctx is not None:
+        prefab_ref = node.get("_prefab")
+        if isinstance(prefab_ref, dict) and "__id__" in prefab_ref:
+            pi_idx = prefab_ref["__id__"]
+            if 0 <= pi_idx < len(data):
+                pi = data[pi_idx]
+                asset_uuid = ((pi.get("asset") or {}).get("__uuid__") or "").strip()
+                root_id = (pi.get("root") or {}).get("__id__")
+                is_instance_root = root_id == idx and bool(asset_uuid)
+                nest_depth = ctx.get("nest_depth", 0)
+                max_nest = ctx.get("max_nest", 3)
+                chain = ctx.setdefault("resolution_chain", [])
+                if (is_instance_root and asset_uuid not in chain
+                        and nest_depth < max_nest):
+                    ext_path = ctx.get("uuid_index", {}).get(asset_uuid)
+                    if ext_path and os.path.isfile(ext_path):
+                        try:
+                            ext_data = load_cocos_asset(ext_path)
+                            ext_root_idx = find_root_index(ext_data)
+                            if ext_root_idx is not None:
+                                chain.append(asset_uuid)
+                                ctx["nest_depth"] = nest_depth + 1
+                                ctx["resolved_count"] = ctx.get("resolved_count", 0) + 1
+                                # 外部 prefab 用剩余深度预算 + 原 parent_path 继承
+                                ext_tree = _walk_tree(
+                                    ext_data, ext_root_idx, depth, max_depth,
+                                    parent_path, include_inactive, ctx,
+                                )
+                                ctx["nest_depth"] = nest_depth
+                                chain.pop()
+                                if ext_tree and isinstance(ext_tree, dict):
+                                    ext_tree["_nestedFromUuid"] = asset_uuid
+                                    ext_tree["_nestedPath"] = os.path.relpath(ext_path, ctx.get("project_path", "")).replace(os.sep, "/") if ctx.get("project_path") else ext_path
+                                    return ext_tree
+                        except (json.JSONDecodeError, ValueError):
+                            pass  # 解析失败降级走正常 walk
+
+    # 组件: 仅取 __type__, 不读属性(避重 dump)
+    comps = []
+    for comp_ref in node.get("_components", []) or []:
+        cid = comp_ref.get("__id__")
+        if cid is None or cid < 0 or cid >= len(data):
+            continue
+        cobj = data[cid]
+        comps.append({"type": cobj.get("__type__", "?"), "index": cid})
+
+    children = []
+    # max_depth <= 0 = 不限深度(全量展开, 慎用防超大输出)
+    if depth < max_depth or max_depth <= 0:
+        for child_ref in node.get("_children", []) or []:
+            cid = child_ref.get("__id__")
+            if cid is None:
+                continue
+            child = _walk_tree(data, cid, depth + 1, max_depth, node_path, include_inactive, ctx)
+            if child is not None:
+                children.append(child)
+
+    return {
+        "name": name,
+        "path": node_path,
+        "active": active,
+        "layer": node.get("_layer"),
+        "components": comps,
+        "childCount": len(node.get("_children", []) or []),
+        "children": children,
+    }
+
+
+def build_scene_tree(
+    asset_path: str,
+    max_depth: int = 2,
+    include_inactive: bool = True,
+    project_path: str = "",
+    path_filter: str = "",
+    resolve_nested: bool = True,
+    max_nest: int = 3,
+) -> Dict[str, Any]:
+    """读 .scene/.prefab 构建紧凑节点树。
+
+    返 {assetPath, rootNode: {name, path, active, components:[{type,index}], children:[...]}}。
+    组件只含 type+index(无属性值), 拿属性用 build_node_components。
+
+    max_depth 默认 2(平衡 token: game.scene depth2=2.5K tok / depth3=8K tok / depth10=34K tok 爆)。
+    max_depth <= 0 = 不限深度(全量展开; 嵌套 prefab 受 max_nest 限制)。
+    path_filter 给定时只返该路径子树(如 'Node_GameDesk/Main Light'), 避免整场景 dump。
+        - 精确匹配优先, 失败时末段模糊(多候选报错列出)。
+    resolve_nested=true 时跨文件解析嵌套 prefab 实例(_prefab.asset.__uuid__ 反查外部 prefab
+        文件, 用其根替换占位节点)。需 project_path。max_nest 限嵌套深度(默认 3)。
+        外部 prefab 用剩余 depth 预算。注: 不应用 instance targetOverrides(实例覆盖), 显示默认值。
+    """
+    abs_path = resolve_asset_path(asset_path, project_path)
+    if not os.path.isfile(abs_path):
+        return {"error": f"文件不存在: {abs_path}"}
+    try:
+        data = load_cocos_asset(abs_path)
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+
+    root_idx = find_root_index(data)
+    if root_idx is None:
+        return {"error": "未找到根节点(非 cc.Prefab/cc.SceneAsset/cc.Node 格式)"}
+
+    start_idx = root_idx
+    start_parent_path = ""
+    if path_filter:
+        path_index = _build_path_index(data, root_idx)
+        target_idx = path_index.get(path_filter)
+        if target_idx is None:
+            suffix = path_filter.rsplit("/", 1)[-1]
+            cands = [p for p in path_index if p.endswith("/" + suffix) or p == suffix]
+            if len(cands) == 1:
+                target_idx = path_index[cands[0]]
+                path_filter = cands[0]
+            elif cands:
+                return {"error": f"path_filter 不唯一, 候选: {cands[:10]}", "pathFilter": path_filter}
+            else:
+                return {"error": f"path_filter 未找到: {path_filter}", "availablePathsSample": list(path_index.keys())[:30]}
+        start_idx = target_idx
+        # 让 walker 拼出绝对路径: parent_path + "/" + node_name = path_filter
+        start_parent_path = path_filter.rsplit("/", 1)[0] if "/" in path_filter else ""
+
+    ctx: Optional[Dict[str, Any]] = None
+    if resolve_nested and project_path:
+        ctx = {
+            "uuid_index": _get_uuid_index(project_path),
+            "project_path": project_path,
+            "resolution_chain": [],  # 当前解析链(uuid 栈), 循环检测用
+            "nest_depth": 0,
+            "max_nest": max_nest,
+            "resolved_count": 0,
+        }
+
+    tree = _walk_tree(data, start_idx, 0, max_depth, start_parent_path, include_inactive, ctx)
+    return {
+        "assetPath": asset_path,
+        "resolvedPath": abs_path,
+        "totalObjects": len(data),
+        "pathFilter": path_filter or None,
+        "nestedResolved": ctx.get("resolved_count", 0) if ctx else 0,
+        "root": tree,
+    }
+
+
+# ── 节点定位与组件详情 ──────────────────────────────────────────────────────
+
+def _build_path_index(data: List[Dict[str, Any]], root_idx: int) -> Dict[str, int]:
+    """构建 path → 节点数组下标 的映射(全树扫一次)。
+
+    与 _walk_tree 一致: 根可为 cc.Scene(场景容器)或 cc.Node。
+    """
+    index: Dict[str, int] = {}
+
+    def walk(idx: int, parent_path: str):
+        node = data[idx]
+        if node.get("__type__") not in ("cc.Node", "cc.Scene"):
+            return
+        name = node.get("_name", "?")
+        node_path = (parent_path + "/" + name) if parent_path else name
+        index[node_path] = idx
+        for child_ref in node.get("_children", []):
+            cid = child_ref.get("__id__")
+            if cid is not None:
+                walk(cid, node_path)
+
+    walk(root_idx, "")
+    return index
+
+
+def _filter_comp_fields(cobj: Dict[str, Any]) -> Dict[str, Any]:
+    """过滤组件字段: 跳过内部下划线字段 + 元信息, 保留业务属性。
+
+    Cocos 序列化字段多数以 _ 前缀存私有; 此处保留它们但去掉纯内部字段。
+    返 {propName: value}, propName 去掉 _ 前缀(与 Editor 公开属性名对齐)。
+    """
+    skip = {"__type__", "__editorExtras__", "_objFlags", "_name", "node", "_id",
+            "__prefab", "__scriptAsset"}
+    out: Dict[str, Any] = {}
+    for k, v in cobj.items():
+        if k in skip:
+            continue
+        # 去掉私有下划线前缀, 与 Editor Inspector 公开名对齐
+        pub = k[1:] if k.startswith("_") and not k.startswith("__") else k
+        if pub in ("name", "enabled"):
+            # enabled/name 是 cc.Component 基类公开字段, 保留原值
+            out[pub] = v
+        elif not pub.startswith("_"):
+            out[pub] = v
+    return out
+
+
+def _vec3(v: Any) -> Optional[List[float]]:
+    """cc.Vec3/cc.Vec2 字典 → [x, y, (z)]。"""
+    if isinstance(v, dict):
+        out = [v.get("x"), v.get("y")]
+        if "z" in v:
+            out.append(v.get("z"))
+        return out
+    return None
+
+
+def _quat_to_euler(q: Any) -> Optional[List[float]]:
+    """cc.Quat → 欧拉角(度)。"""
+    if not isinstance(q, dict):
+        return None
+    x, y, z, w = q.get("x", 0), q.get("y", 0), q.get("z", 0), q.get("w", 1)
+    import math
+    # 归一化
+    n = math.sqrt(x * x + y * y + z * z + w * w)
+    if n == 0:
+        return [0, 0, 0]
+    x, y, z, w = x / n, y / n, z / n, w / n
+    # ZYX 欧拉(与 Cocos 编辑器一致)
+    sp = -2.0 * (y * z - w * x)
+    if abs(sp) > 0.9999:
+        # 万向锁
+        pitch = math.copysign(math.pi / 2, sp)
+        yaw = math.atan2(-x * z + w * y, 0.5 - y * y - z * z)
+        roll = 0.0
+    else:
+        pitch = math.asin(sp)
+        yaw = math.atan2(x * z + w * y, 0.5 - x * x - y * y)
+        roll = math.atan2(x * y + w * z, 0.5 - x * x - z * z)
+    deg = lambda r: round(math.degrees(r), 1)
+    return [deg(roll), deg(pitch), deg(yaw)]
+
+
+def _extract_refs(props: Dict[str, Any], uuid_index: Dict[str, str]) -> List[Dict[str, Any]]:
+    """从组件属性中抽取资产绑定引用(__uuid__ 字段), 解析为资产路径。
+
+    返 [{prop, uuid, type, asset}] — prop 为点路径(如 spriteFrame / material),
+    type 为 __expectedType__ (如 cc.SpriteFrame), asset 为解析出的资产路径(空=未找到)。
+    """
+    refs: List[Dict[str, Any]] = []
+
+    def walk(key: str, val: Any):
+        if isinstance(val, dict):
+            if "__uuid__" in val:
+                u = val["__uuid__"]
+                refs.append({
+                    "prop": key,
+                    "uuid": u,
+                    "type": val.get("__expectedType__", ""),
+                    "asset": uuid_index.get(u, ""),
+                })
+            else:
+                for k, v in val.items():
+                    walk(f"{key}.{k}", v)
+        elif isinstance(val, list):
+            for i, v in enumerate(val):
+                walk(f"{key}[{i}]", v)
+
+    for k, v in props.items():
+        walk(k, v)
+    return refs
+
+
+def build_node_components(
+    asset_path: str,
+    node_path: str,
+    project_path: str = "",
+) -> Dict[str, Any]:
+    """读文件定位节点, 返其全组件清单 + 各组件序列化属性值。
+
+    node_path 是 build_scene_tree 返回的 path 字段(如 'Node_GameDesk/Main Light')。
+    返 {assetPath, nodePath, components: [{type, index, enabled, properties:{prop:value}}]}。
+    """
+    abs_path = resolve_asset_path(asset_path, project_path)
+    if not os.path.isfile(abs_path):
+        return {"error": f"文件不存在: {abs_path}"}
+    try:
+        data = load_cocos_asset(abs_path)
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+
+    root_idx = find_root_index(data)
+    if root_idx is None:
+        return {"error": "未找到根节点"}
+
+    path_index = _build_path_index(data, root_idx)
+    target_idx = path_index.get(node_path)
+    if target_idx is None:
+        # 模糊匹配: 末段名匹配
+        suffix = node_path.rsplit("/", 1)[-1]
+        candidates = [p for p in path_index if p.endswith("/" + suffix) or p == suffix]
+        if len(candidates) == 1:
+            target_idx = path_index[candidates[0]]
+            node_path = candidates[0]
+        elif candidates:
+            return {"error": f"路径不唯一, 候选: {candidates}", "nodePath": node_path}
+        else:
+            return {"error": f"节点路径未找到: {node_path}", "availablePaths": list(path_index.keys())[:30]}
+
+    node = data[target_idx]
+    uuid_index = _get_uuid_index(project_path) if project_path else {}
+    comps_out = []
+    for comp_ref in node.get("_components", []):
+        cid = comp_ref.get("__id__")
+        if cid is None or cid < 0 or cid >= len(data):
+            continue
+        cobj = data[cid]
+        props = _filter_comp_fields(cobj)
+        comps_out.append({
+            "type": cobj.get("__type__", "?"),
+            "index": cid,
+            "enabled": cobj.get("enabled", cobj.get("_enabled", True)),
+            "properties": props,
+            "refs": _extract_refs(props, uuid_index),
+        })
+
+    return {
+        "assetPath": asset_path,
+        "nodePath": node_path,
+        "nodeName": node.get("_name"),
+        "nodeProps": {
+            "position": _vec3(node.get("_lpos")),
+            "rotation": _quat_to_euler(node.get("_lrot")),
+            "scale": _vec3(node.get("_lscale")),
+            "active": node.get("_active", True),
+            "layer": node.get("_layer"),
+            "childCount": len(node.get("_children", []) or []),
+        },
+        "components": comps_out,
+    }
+
+
+# ── 资产搜索 ────────────────────────────────────────────────────────────────
+
+# importer → 友好类型名映射
+_IMPORTER_TYPE_MAP = {
+    "scene": "cc.SceneAsset",
+    "prefab": "cc.Prefab",
+    "texture": "cc.Texture2D",
+    "image": "cc.ImageAsset",
+    "audio-clip": "cc.AudioClip",
+    "animation-clip": "cc.AnimationClip",
+    "material": "cc.Material",
+    "effect": "cc.EffectAsset",
+    "mesh": "cc.Mesh",
+    "font": "cc.TTFFont",
+    "bitmap-font": "cc.BitmapFont",
+    "json": "cc.JsonAsset",
+    "text": "cc.TextAsset",
+    "typescript": "cc.ScriptAsset",
+}
+
+
+def find_assets(
+    folder: str,
+    asset_type: str = "",
+    name_pattern: str = "",
+    project_path: str = "",
+    max_results: int = 200,
+) -> Dict[str, Any]:
+    """递归扫 assets folder, 读 .meta 拿 uuid + 类型, 按条件过滤。
+
+    folder: 起始目录(db:// 或绝对路径或相对 project_path)
+    asset_type: 资产类型, 多种形式兼容:
+        - importer 名(scene/prefab/texture/material/effect/...)
+        - 类名(cc.Prefab/cc.DirectionalLight/...)
+    name_pattern: 名称子串(大小写不敏感)
+    返 {folder, count, assets: [{uuid, path(db://), name, type, importer}]}。
+    """
+    abs_folder = resolve_asset_path(folder, project_path) if folder else (
+        os.path.join(project_path, "assets") if project_path else folder
+    )
+    if not abs_folder or not os.path.isdir(abs_folder):
+        return {"error": f"目录不存在: {abs_folder}", "folder": folder}
+
+    # 归一化 asset_type 为 importer 名
+    wanted_importer = ""
+    wanted_class = ""
+    if asset_type:
+        if asset_type.startswith("cc."):
+            wanted_class = asset_type
+            # 反查 importer
+            for imp, cls in _IMPORTER_TYPE_MAP.items():
+                if cls == asset_type:
+                    wanted_importer = imp
+                    break
+        else:
+            wanted_importer = asset_type.lower()
+
+    results = []
+    name_lower = name_pattern.lower() if name_pattern else ""
+
+    for root, dirs, files in os.walk(abs_folder):
+        # 跳过 .creator/Temp/library 等内部目录
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("Temp", "library")]
+        for fname in files:
+            if not fname.endswith(".meta"):
+                continue
+            # 主资源文件 = 去 .meta 后缀
+            asset_fname = fname[:-5]
+            if asset_fname.endswith(".meta"):  # defensive
+                continue
+            stem, _ = os.path.splitext(asset_fname)
+            if name_lower and name_lower not in stem.lower():
+                continue
+
+            meta_path = os.path.join(root, fname)
+            try:
+                with open(meta_path, "r", encoding="utf-8-sig") as f:
+                    meta = json.load(f)
+            except Exception:
+                continue
+
+            importer = meta.get("importer", "")
+            uuid = meta.get("uuid", "")
+            if not uuid:
+                continue
+
+            # 类型过滤
+            if wanted_importer and importer != wanted_importer:
+                continue
+            # 类名过滤(importer 不可逆时读 userData)
+            if wanted_class and not wanted_importer:
+                ud = meta.get("userData", {})
+                if ud.get("type") != wanted_class:
+                    continue
+
+            # 算 db:// path
+            asset_abs = os.path.join(root, asset_fname)
+            if project_path:
+                rel_to_proj = os.path.relpath(asset_abs, project_path).replace(os.sep, "/")
+                db_path = f"db://{rel_to_proj}"
+            else:
+                db_path = asset_abs.replace(os.sep, "/")
+
+            friendly_type = _IMPORTER_TYPE_MAP.get(importer, importer)
+            results.append({
+                "uuid": uuid,
+                "path": db_path,
+                "name": stem,
+                "type": friendly_type,
+                "importer": importer,
+            })
+            if len(results) >= max_results:
+                return {
+                    "folder": folder, "count": len(results), "truncated": True,
+                    "assets": results,
+                    "hint": f"达上限 {max_results}, 收紧 name_pattern 或缩小 folder",
+                }
+
+    return {
+        "folder": folder,
+        "filterType": asset_type or None,
+        "filterName": name_pattern or None,
+        "count": len(results),
+        "assets": results,
+    }
+
+
+# ── 同名节点查找 / uuid 查询与引用 ──────────────────────────────────────────
+
+def find_nodes_by_name(
+    asset_path: str,
+    node_name: str,
+    project_path: str = "",
+    fuzzy: bool = False,
+) -> Dict[str, Any]:
+    """查找场景/prefab 中所有同名节点, 一同返回(不因重名报错)。
+
+    fuzzy=True 时按名称子串匹配(大小写不敏感), 精确匹配优先。
+    返 {assetPath, nodeName, count, nodes: [{path, index, active, components:[{type,index}]}]}。
+    """
+    abs_path = resolve_asset_path(asset_path, project_path)
+    if not os.path.isfile(abs_path):
+        return {"error": f"文件不存在: {abs_path}"}
+    try:
+        data = load_cocos_asset(abs_path)
+    except (json.JSONDecodeError, ValueError) as e:
+        return {"error": f"解析失败: {e}"}
+    root_idx = find_root_index(data)
+    if root_idx is None:
+        return {"error": "未找到根节点"}
+
+    exact: List[Dict[str, Any]] = []
+    fuzzy_hits: List[Dict[str, Any]] = []
+    nl = node_name.lower() if node_name else ""
+
+    def walk(idx: int, parent_path: str):
+        node = data[idx]
+        if node.get("__type__") not in ("cc.Node", "cc.Scene"):
+            return
+        name = node.get("_name", "?")
+        node_path = (parent_path + "/" + name) if parent_path else name
+        if name == node_name:
+            matches = exact
+        elif fuzzy and nl and nl in name.lower():
+            matches = fuzzy_hits
+        else:
+            matches = None
+        if matches is not None:
+            comps = []
+            for comp_ref in node.get("_components", []) or []:
+                cid = comp_ref.get("__id__")
+                if cid is not None and 0 <= cid < len(data):
+                    comps.append({"type": data[cid].get("__type__", "?"), "index": cid})
+            matches.append({
+                "path": node_path, "index": idx,
+                "active": node.get("_active", True),
+                "components": comps,
+            })
+        for child_ref in node.get("_children", []) or []:
+            cid = child_ref.get("__id__")
+            if cid is not None:
+                walk(cid, node_path)
+
+    walk(root_idx, "")
+    nodes = exact if exact else fuzzy_hits
+    return {
+        "assetPath": asset_path,
+        "nodeName": node_name,
+        "fuzzy": bool(fuzzy and not exact),
+        "count": len(nodes),
+        "nodes": nodes,
+    }
+
+
+def find_nodes_in_tree(
+    asset_path: str,
+    node_name: str,
+    project_path: str = "",
+    fuzzy: bool = False,
+    max_depth: int = 0,
+) -> Dict[str, Any]:
+    """跨嵌套 prefab 查找节点(基于解析后的节点树)。
+
+    与 find_nodes_by_name 的区别: 后者只搜单文件; 本函数沿解析树递归,
+    嵌套 prefab 实例的内容也命中。每个命中记录:
+      - path:     解析树内完整路径(含嵌套层级)
+      - file:     节点实际所在文件(嵌套 prefab 时为其 prefab 文件)
+      - filePath: 节点在该文件内的路径(可传给 build_node_components 查详情)
+    max_depth <= 0 = 不限深度(嵌套受 max_nest 限制)。
+    """
+    res = build_scene_tree(asset_path, max_depth=max_depth, project_path=project_path)
+    if res.get("error"):
+        return res
+    uuid_index = _get_uuid_index(project_path) if project_path else {}
+    root = res.get("root") or {}
+    root_file = resolve_asset_path(asset_path, project_path)
+    exact: List[Dict[str, Any]] = []
+    fuzzy_hits: List[Dict[str, Any]] = []
+    nl = node_name.lower() if node_name else ""
+
+    def walk(node: Dict[str, Any], file_ctx: str, within_path: str):
+        name = node.get("name", "?")
+        nested_uuid = node.get("_nestedFromUuid", "")
+        if nested_uuid and uuid_index.get(nested_uuid):
+            # 进入嵌套 prefab: 文件上下文切换到 prefab 文件, 路径从根名重计
+            file_ctx = uuid_index[nested_uuid]
+            within_path = ""
+        node_within = (within_path + "/" + name) if within_path else name
+        if name == node_name:
+            target = exact
+        elif fuzzy and nl and nl in name.lower():
+            target = fuzzy_hits
+        else:
+            target = None
+        if target is not None:
+            target.append({
+                "path": node.get("path"),
+                "file": file_ctx,
+                "filePath": node_within,
+                "active": node.get("active", True),
+                "components": node.get("components", []),
+            })
+        for ch in node.get("children", []) or []:
+            walk(ch, file_ctx, node_within)
+
+    walk(root, root_file, "")
+    nodes = exact if exact else fuzzy_hits
+    return {
+        "assetPath": asset_path,
+        "nodeName": node_name,
+        "fuzzy": bool(fuzzy and not exact),
+        "crossFile": True,
+        "count": len(nodes),
+        "nodes": nodes,
+    }
+
+
+def lookup_uuid(project_path: str, uuid: str) -> Dict[str, Any]:
+    """uuid → 资产文件: 路径 + 类型 + 内容摘要。
+
+    基于 assets/ 下 .meta 的 uuid 索引(首次扫 ~1-2s, 缓存)。
+    """
+    if not project_path:
+        return {"error": "需 project_path"}
+    index = _get_uuid_index(project_path)
+    path = index.get(uuid)
+    if not path:
+        return {"error": f"uuid 未找到: {uuid}", "hint": "uuid 索引基于 assets/ 下 .meta"}
+    importer = ""
+    try:
+        with open(path + ".meta", "r", encoding="utf-8-sig") as f:
+            meta = json.load(f)
+        importer = meta.get("importer", "")
+    except Exception:
+        pass
+    summary: Dict[str, Any] = {}
+    if os.path.isfile(path):
+        summary["size"] = os.path.getsize(path)
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".scene", ".prefab"):
+            try:
+                data = load_cocos_asset(path)
+                summary["objects"] = len(data)
+                root_idx = find_root_index(data)
+                if root_idx is not None:
+                    summary["rootName"] = data[root_idx].get("_name")
+            except Exception:
+                pass
+    return {
+        "uuid": uuid,
+        "path": path,
+        "importer": importer,
+        "type": _IMPORTER_TYPE_MAP.get(importer, importer),
+        "summary": summary,
+    }
+
+
+# 引用扫描覆盖的文本资产扩展名
+_REF_TEXT_EXTS = {
+    ".scene", ".prefab", ".meta", ".ts", ".js", ".json", ".effect", ".mtl",
+    ".anim", ".plist", ".fnt", ".txt", ".md", ".yaml", ".yml",
+}
+
+
+def find_uuid_refs(project_path: str, uuid: str, max_results: int = 100) -> Dict[str, Any]:
+    """扫描项目 assets/ 下文本文件, 找引用该 uuid 的文件。
+
+    返 {uuid, count, refs: [{path, count}]}。引用计数 = uuid 字符串出现次数。
+    """
+    if not project_path:
+        return {"error": "需 project_path"}
+    assets_dir = os.path.join(project_path, "assets")
+    if not os.path.isdir(assets_dir):
+        return {"error": f"assets 目录不存在: {assets_dir}"}
+    refs: List[Dict[str, Any]] = []
+    for root, dirs, files in os.walk(assets_dir):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("Temp", "library")]
+        for fname in files:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext not in _REF_TEXT_EXTS:
+                continue
+            path = os.path.join(root, fname)
+            try:
+                with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                    content = f.read()
+                cnt = content.count(uuid)
+                if cnt:
+                    refs.append({"path": path, "count": cnt})
+                    if len(refs) >= max_results:
+                        return {"uuid": uuid, "count": len(refs), "truncated": True, "refs": refs}
+            except Exception:
+                continue
+    return {"uuid": uuid, "count": len(refs), "refs": refs}
+
+
+# ── 压缩 uuid 编解码(引擎 decode-uuid.ts 算法) ───────────────────────────────
+
+_BASE64_KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+_BASE64_VALUES = {c: i for i, c in enumerate(_BASE64_KEYS)}
+_HEX = "0123456789abcdef"
+# 36 位模板: dash 在 8,13,18,23 → 32 个 hex 槽位
+_UUID_INDICES = [i for i in range(36) if i not in (8, 13, 18, 23)]
+
+
+def decode_uuid(compressed: str) -> str:
+    """压缩 uuid(22 位 base64 变体) → 36 位完整 uuid。
+
+    引擎 cocos/core/utils/decode-uuid.ts 算法复刻:
+    - 前 2 字符原样保留(hex 字符在 base64 字母表内同值)
+    - 剩余 20 字符按 2→3 拆成 10 组 12bit, 每组产出 3 个 hex
+    - @后缀(子资产 id, 如 @6c48a / @f9941)保留
+    - 非 22 位输入原样返回(避免误判)
+    """
+    base, sep, sub = compressed.partition("@")
+    if len(base) != 22:
+        return compressed
+    tpl = list("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")  # dash 在 8,13,18,23
+    tpl[0] = base[0]
+    tpl[1] = base[1]
+    j = 2
+    for i in range(2, 22, 2):
+        lhs = _BASE64_VALUES[base[i]]
+        rhs = _BASE64_VALUES[base[i + 1]]
+        tpl[_UUID_INDICES[j]] = _HEX[lhs >> 2]
+        j += 1
+        tpl[_UUID_INDICES[j]] = _HEX[((lhs & 3) << 2) | (rhs >> 4)]
+        j += 1
+        tpl[_UUID_INDICES[j]] = _HEX[rhs & 0xF]
+        j += 1
+    return "".join(tpl) + (sep + sub if sep else "")
+
+
+def compress_uuid(full: str) -> str:
+    """36 位完整 uuid → 22 位压缩 uuid(decode_uuid 的逆运算)。
+
+    - 前 2 hex 原样保留
+    - 剩余 30 hex 按 3→2 拆成 10 组 12bit, 每组产出 2 个 base64 字符
+    - @后缀保留; 非 36 位输入原样返回
+    """
+    base, sep, sub = full.partition("@")
+    if len(base) != 36:
+        return full
+    hexchars = base.replace("-", "")  # 32 hex
+    out = hexchars[:2]
+    for i in range(2, 32, 3):
+        v = int(hexchars[i:i + 3], 16)  # 12bit
+        out += _BASE64_KEYS[v >> 6] + _BASE64_KEYS[v & 0x3F]
+    return out + (sep + sub if sep else "")
+
+
+def uuid_convert(uuid: str) -> Dict[str, str]:
+    """识别输入形态并双向转换。返 {input, kind, full, compressed}。
+    kind: compressed(22位) / full(36位) / unknown(无法识别, 原样回显)。
+    @ 子资产后缀允许存在且保留。"""
+    base = uuid.split("@", 1)[0]
+    if len(base) == 22:
+        return {"kind": "compressed", "full": decode_uuid(uuid), "compressed": uuid}
+    if len(base) == 36 and base.count("-") == 4:
+        return {"kind": "full", "full": uuid, "compressed": compress_uuid(uuid)}
+    return {"kind": "unknown", "full": uuid, "compressed": uuid}
+
+
+# ── 紧凑序列化(尽最大可能压缩, 防上下文膨胀) ────────────────────────────────
+
+def _node_detail(node: Dict[str, Any], include_nest: bool = True) -> str:
+    """节点行详情: [组件类型](未展开子节点数)@嵌套prefab路径(不含名字)。"""
+    comps = node.get("components", []) or []
+    comp_str = ""
+    if comps:
+        types = []
+        for c in comps:
+            t = c.get("type", "?")
+            types.append(t[3:] if t.startswith("cc.") else t)
+        comp_str = "[" + ",".join(types) + "]"
+    children = node.get("children", []) or []
+    cc = node.get("childCount", 0)
+    more = f"({cc})" if cc > len(children) else ""
+    nest = ""
+    if include_nest:
+        nested = node.get("_nestedPath", "")
+        # 嵌套 prefab 路径只留文件名(如 @CardMJ.prefab), 省字符; 全路径可用 uuid 查询
+        nest = f"@{nested.rsplit('/', 1)[-1]}" if nested else ""
+    return f"{comp_str}{more}{nest}"
+
+
+def _node_line(node: Dict[str, Any]) -> str:
+    """单节点行: [!]名称 + 详情。"""
+    act = "" if node.get("active", True) else "!"
+    return f"{act}{node.get('name', '?')}{_node_detail(node)}"
+
+
+def tree_to_text(root: Dict[str, Any]) -> str:
+    """节点树 → 紧凑文本树(去结构化, 最大压缩)。
+
+    每行: [├─|└─][!]名称[组件类型列表](未展开子节点数)@嵌套prefab路径
+    - 组件类型去 cc. 前缀(脚本组件 uuid 原样)
+    - ! 前缀 = inactive 节点
+    - (N) = 该层未展开的子节点数(深度截断处)
+    - @path = 嵌套 prefab 实例来源(只留文件名)
+    - 前向声明(2026-08-16): 树内出现 ≥2 次的 prefab 在顶部声明一次(完整结构),
+      树内实例以 `名称 ×N →@prefab` 引用式展示, 不再重复组件详情
+    """
+    from collections import Counter
+    # 第一遍: 统计嵌套 prefab 实例数 + 记录示例节点(取详情)
+    prefab_count: Counter = Counter()
+    prefab_example: Dict[str, Dict[str, Any]] = {}
+
+    def count_prefabs(node: Dict[str, Any]):
+        nested = node.get("_nestedPath", "")
+        if nested:
+            prefab_count[nested] += 1
+            prefab_example.setdefault(nested, node)
+        for ch in node.get("children", []) or []:
+            count_prefabs(ch)
+
+    count_prefabs(root)
+    declared = {p for p, c in prefab_count.items() if c >= 2}
+
+    lines: List[str] = []
+    if declared:
+        lines.append("前向声明 (重复 prefab, 树内以引用展示):")
+        for path in sorted(declared, key=lambda p: -prefab_count[p]):
+            ex = prefab_example[path]
+            fname = path.rsplit("/", 1)[-1]
+            lines.append(f"  @{fname} ×{prefab_count[path]}: "
+                         f"{ex.get('name', '?')}{_node_detail(ex, include_nest=False)}")
+        lines.append("")
+
+    def walk(node: Dict[str, Any], prefix: str, is_last: bool):
+        nested = node.get("_nestedPath", "")
+        if nested in declared:
+            ref = f"→@{nested.rsplit('/', 1)[-1]}"
+            lines.append(f"{prefix}{'└─' if is_last else '├─'}{node.get('name', '?')} {ref}")
+        else:
+            lines.append(f"{prefix}{'└─' if is_last else '├─'}{_node_line(node)}")
+        children = node.get("children", []) or []
+        i = 0
+        while i < len(children):
+            ch = children[i]
+            ch_nested = ch.get("_nestedPath", "")
+            # 前向声明 prefab 的连续叶子实例合并引用
+            if ch_nested in declared and not ch.get("children"):
+                j = i + 1
+                while (j < len(children)
+                       and children[j].get("_nestedPath") == ch_nested
+                       and not children[j].get("children")):
+                    j += 1
+                count = j - i
+                ref = f"→@{ch_nested.rsplit('/', 1)[-1]}"
+                if count > 1:
+                    lines.append(f"{prefix}{'└─' if j == len(children) else '├─'}"
+                                 f"{ch.get('name', '?')} ×{count} {ref}")
+                    i = j
+                    continue
+            walk(ch, prefix + ("  " if is_last else "│ "), i == len(children) - 1)
+            i += 1
+
+    walk(root, "", True)
+    return "\n".join(lines)
+
+
+def node_compact(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """节点查询结果 → 紧凑结构(短键, 组件类型去 cc. 前缀)。
+
+    每节点: {p: 路径, a: active, np: 节点属性, c: [{t: 类型, p: 属性, r: 绑定引用}]}
+    """
+    out: List[Dict[str, Any]] = []
+    for n in nodes:
+        comps = []
+        for c in n.get("components", []):
+            t = c.get("type", "?")
+            comps.append({
+                "t": t[3:] if t.startswith("cc.") else t,
+                "p": c.get("properties", {}),
+                "r": c.get("refs", []),
+            })
+        out.append({
+            "p": n.get("path"),
+            "a": n.get("active", True),
+            "np": n.get("nodeProps", {}),
+            "c": comps,
+        })
+    return out
