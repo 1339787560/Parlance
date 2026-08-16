@@ -127,8 +127,9 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 
 let selectedItem = null;   // {path, name, ext}
 let currentProject = null; // 当前选中项目绝对路径
+let expandedDirs = new Set(); // 已展开目录绝对路径(持久化, 刷新后文件树不变)
 
-// ── 状态持久化(localStorage, 刷新保留选项与展示内容) ──
+// ── 状态持久化(localStorage, 刷新保留选项/展开状态/展示内容) ──
 const LS_KEY = 'cocosMacTestState:v1';
 
 function saveState() {
@@ -137,6 +138,7 @@ function saveState() {
       projSel: {},
       currentProject: currentProject,
       selectedItem: selectedItem,
+      expandedDirs: Array.from(expandedDirs),
       form: {
         treeDepth: $('#tree-depth').value,
         treeUnlimited: $('#tree-unlimited').checked,
@@ -240,12 +242,56 @@ async function initProjects() {
     await selectProject(saved.currentProject);
     selectedItem = saved.selectedItem || null;
     renderOps();
+    // 重新展开上次展开的目录(内容实时拉取, 展开结构保留)
+    if (saved.expandedDirs && Array.isArray(saved.expandedDirs)) {
+      expandedDirs = new Set(saved.expandedDirs);
+      expandDirsFromCache(expandedDirs);
+    }
     saveState(); // 树已重渲染, 刷新持久化(选中项/表单最新值)
   }
 }
 
+// 展开缓存中的目录(深度优先逐层展开, 仅 fetch targets 内路径及其祖先)
+async function expandDirsFromCache(targets) {
+  const expandNode = async (li, dirPath) => {
+    // 该目录或其任一后代在 targets 中才需要展开(父缺失时祖先自动带上)
+    const needExpand = targets.has(dirPath) || Array.from(targets).some(t => t.startsWith(dirPath + '/'));
+    if (!needExpand) return;
+    const row = li.querySelector(':scope > .row');
+    const childUl = li.querySelector(':scope > ul');
+    if (!row || !childUl) return;
+    if (!row.dataset.loaded) {
+      row.querySelector('.tw').textContent = '…';
+      try {
+        const d2 = await api('/api/tree?project=' + encodeURIComponent(currentProject) + '&dir=' + encodeURIComponent(dirPath));
+        childUl.innerHTML = '';
+        for (const e of d2.entries) {
+          if (e.type === 'dir') childUl.appendChild(renderDir(e.name, e.path, false));
+          else childUl.appendChild(renderFile(e));
+        }
+        row.dataset.loaded = '1';
+      } catch (e) {
+        row.querySelector('.tw').textContent = '!';
+        childUl.innerHTML = '<li class="empty" style="color:var(--err)">' + esc(e.message) + '</li>';
+        targets.delete(dirPath); // 目录已删/不可达: 从缓存剔除, 避免每次刷新重复尝试
+        return;
+      }
+    }
+    row.querySelector('.tw').textContent = '▾';
+    childUl.style.display = 'block';
+    for (const child of childUl.querySelectorAll(':scope > li.dir')) {
+      const cr = child.querySelector(':scope > .row');
+      if (cr && cr.dataset.path) await expandNode(child, cr.dataset.path);
+    }
+  };
+  const rootLi = document.querySelector('#tree-body ul.tree > li.dir');
+  const rootRow = rootLi && rootLi.querySelector(':scope > .row');
+  if (rootLi && rootRow && rootRow.dataset.path) await expandNode(rootLi, rootRow.dataset.path);
+}
+
 // ── 资源树 ─────────────────────────────────────────────
 async function selectProject(projPath) {
+  if (projPath !== currentProject) expandedDirs = new Set(); // 切换项目: 展开状态清零(路径项目相关)
   selectedItem = null;
   currentProject = projPath;
   $('#tree-proj').textContent = projPath ? projPath.split(/[\\/]/).pop() : '未选项目';
@@ -270,13 +316,13 @@ function renderDir(name, dirPath, isRoot) {
   li.className = 'dir';
   const row = document.createElement('div');
   row.className = 'row';
+  row.dataset.path = dirPath;
   row.innerHTML = '<span class="tw">▸</span><span class="ic">📁</span><span class="nm">' + esc(name) + '</span>';
   const childUl = document.createElement('ul');
   childUl.style.display = 'none';
-  let loaded = false;
   row.onclick = async (ev) => {
     ev.stopPropagation();
-    if (!loaded) {
+    if (!row.dataset.loaded) {
       row.querySelector('.tw').textContent = '…';
       try {
         const d2 = await api('/api/tree?project=' + encodeURIComponent(currentProject) + '&dir=' + encodeURIComponent(dirPath));
@@ -285,7 +331,7 @@ function renderDir(name, dirPath, isRoot) {
           if (e.type === 'dir') childUl.appendChild(renderDir(e.name, e.path, false));
           else childUl.appendChild(renderFile(e));
         }
-        loaded = true;
+        row.dataset.loaded = '1';
       } catch (e) {
         row.querySelector('.tw').textContent = '!';
         childUl.innerHTML = '<li class="empty" style="color:var(--err)">' + esc(e.message) + '</li>';
@@ -294,6 +340,8 @@ function renderDir(name, dirPath, isRoot) {
     const open = childUl.style.display !== 'none';
     childUl.style.display = open ? 'none' : 'block';
     row.querySelector('.tw').textContent = open ? '▸' : '▾';
+    if (open) expandedDirs.delete(dirPath); else expandedDirs.add(dirPath);
+    saveState();
   };
   li.appendChild(row);
   li.appendChild(childUl);
