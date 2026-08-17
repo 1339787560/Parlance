@@ -468,9 +468,10 @@
             <div class="tabs">
                 <button class="tab-button active" onclick="switchTab('points')">积分</button>
                 <button class="tab-button" onclick="switchTab('silver')">银两</button>
-                <button class="tab-button" onclick="switchTab('cpdata')">CP 数据</button>
-                <button class="tab-button" onclick="switchTab('cpconfig')">CP 配置</button>
-                <button class="tab-button" onclick="switchTab('cprequest')">模拟请求</button>
+                <!-- CP 三 tab 暂隐藏 (CP_ENABLED=False 排查期), 恢复时去掉 hidden -->
+                <button class="tab-button" onclick="switchTab('cpdata')" hidden>CP 数据</button>
+                <button class="tab-button" onclick="switchTab('cpconfig')" hidden>CP 配置</button>
+                <button class="tab-button" onclick="switchTab('cprequest')" hidden>模拟请求</button>
             </div>
 
             <!-- 积分选项卡内容 -->
@@ -2197,8 +2198,12 @@
 
         // 页面加载完成后执行
         document.addEventListener('DOMContentLoaded', () => {
+            const CP_TABS_HIDDEN = true; // CP tab 隐藏期: 缓存兜底跳 points (恢复 CP 时改 false)
             const savedTab = localStorage.getItem('depositActiveTab');
-            switchTab(savedTab && TAB_GROUP[savedTab] ? savedTab : 'points', true); // 还原上次 tab (skipClear 保留缓存结果回显)
+            const cpTabs = ['cpdata', 'cpconfig', 'cprequest'];
+            const safeTab = savedTab && TAB_GROUP[savedTab] && !(CP_TABS_HIDDEN && cpTabs.includes(savedTab))
+                ? savedTab : 'points';
+            switchTab(safeTab, true); // 还原上次 tab (skipClear 保留缓存结果回显)
             cpFillConfigOptions(); // 模块配置下拉
             cpFillReqOptions();    // 模拟请求下拉
             cpRestoreState();    // CP 面板状态还原 (输入 + 上次查询结果)
