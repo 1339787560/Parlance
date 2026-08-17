@@ -16,6 +16,10 @@ import urllib.request
 from flask import request, jsonify
 from . import app
 
+# ---- CP 测试面总开关 (2026-08-17 暂关: CP redis 连接事故排查期, 停发 exec_script 全通路) ----
+# False = 全部 /api/cp-data/* 端点 503 拒绝 (不触 125); 恢复 = True 后 cwd_infoserver_reload()
+CP_ENABLED = False
+
 CP_HOST = "http://192.168.1.125:65505"
 DEFAULT_APPCODE = "xzmp"
 DEFAULT_DB_BACK = "8"
@@ -228,6 +232,8 @@ CP_MODULES = ["award", "cmdailyquestion", "cmdecoration", "cmmonthcard", "cmnewp
 @app.route('/api/cp-data/config', methods=['POST'])
 def api_cp_data_config():
     """模块配置直读。{module, appcode?=xzmp} — 模块 VM 内 modsvr.parse_config, 不走 OnClientRequest, 零副作用。"""
+    if not CP_ENABLED:
+        return jsonify({'success': False, 'message': 'CP 测试面已暂时关闭 (CP redis 连接事故排查期)'}), 503
     try:
         data = request.json or {}
         module = (data.get('module') or '').strip()
@@ -252,6 +258,8 @@ def api_cp_data_config():
 @app.route('/api/cp-data/redis', methods=['POST'])
 def api_cp_data_redis():
     """redis 只读查询。{db, key, op?} — key 含通配符自动 SCAN 列 key。"""
+    if not CP_ENABLED:
+        return jsonify({'success': False, 'message': 'CP 测试面已暂时关闭 (CP redis 连接事故排查期)'}), 503
     try:
         data = request.json or {}
         db = data.get('db', 10)
@@ -271,6 +279,8 @@ def api_cp_data_redis():
 def api_cp_data_mysql():
     """mysql 只读查询 (仅 SELECT/EXPLAIN/SHOW/DESC)。{sql}。
     注意: 查不存在的表会触发 CP 钉钉报警, 前端已隐去此面板, 仅接口保留。"""
+    if not CP_ENABLED:
+        return jsonify({'success': False, 'message': 'CP 测试面已暂时关闭 (CP redis 连接事故排查期)'}), 503
     try:
         data = request.json or {}
         sql = (data.get('sql') or '').strip().rstrip(';')
@@ -295,6 +305,8 @@ def api_cp_data_modules():
     """列用户全部模块数据。{userid, appcode?=xzmp, fetch?=true}。
     redis db10 双 pattern (userid()/uid() 两种命名) + TYPE 分派读值;
     mysql tblcpuserdata_<module>_<appcode> 落盘数据联查。"""
+    if not CP_ENABLED:
+        return jsonify({'success': False, 'message': 'CP 测试面已暂时关闭 (CP redis 连接事故排查期)'}), 503
     try:
         data = request.json or {}
         userid = data.get('userid')
@@ -395,6 +407,8 @@ def api_cp_data_write():
       (name = key 尾段 FUNC_INFO; data 列 = JSON)
     - 写前自动快照原值 (redis + mysql 双快照) 供撤回
     - hash 型 key / 无归属校验失败 / mysql 直改绕过模块名 均拒绝"""
+    if not CP_ENABLED:
+        return jsonify({'success': False, 'message': 'CP 测试面已暂时关闭 (CP redis 连接事故排查期)'}), 503
     try:
         data = request.json or {}
         userid = data.get('userid')
@@ -626,6 +640,8 @@ def _parse_client_resp(raw):
 def api_cp_data_request():
     """客户端模拟请求。{module, req, params{}, userid, appcode?} — db9 自动取五元组构造 src。
     只读 schema 白名单内的 req; 写操作 (takeReward 等) 不开放。"""
+    if not CP_ENABLED:
+        return jsonify({'success': False, 'message': 'CP 测试面已暂时关闭 (CP redis 连接事故排查期)'}), 503
     try:
         data = request.json or {}
         module = (data.get('module') or '').strip()
