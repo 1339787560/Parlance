@@ -149,48 +149,46 @@ def _exec_ret_string(raw):
     return None
 
 
+def _with_db(db, body_js):
+    """生成 try/finally 包裹的 redis script: 切 db -> body -> finally 复位 db8。
+    SELECT 是连接级状态, script 中途抛异常若不复位 -> 连接带错误 db 归还连接池, 污染 CP 业务。
+    (2026-08-17 CP redis 连接事故根因; finally 保证任何异常路径都复位)"""
+    return (
+        '(function(){'
+        f'  redis.command({{"cmd":"SELECT","args":["{db}"]}});'
+        '  try {'
+        f'    {body_js}'
+        '  } finally {'
+        f'    redis.command({{"cmd":"SELECT","args":["{DEFAULT_DB_BACK}"]}});'
+        '  }'
+        '})()'
+    )
+
+
 def _redis_query(db, key, op):
     """redis 读。通配符自动 SCAN; HGETALL 转 dict; 白名单外命令拒。"""
     db = str(db)
     if op != "SCAN" and any(c in key for c in "*?["):
         op = "SCAN"
     if op == "SCAN":
-        script = (
-            '(function(){'
-            f'  redis.command({{"cmd":"SELECT","args":["{db}"]}});'
-            '  var cur="0", keys=[], r;'
-            '  do { r=redis.command({"cmd":"SCAN","args":[cur,"MATCH",%s,"COUNT","500"]})[0];'
-            '       cur=r[0]; keys=keys.concat(r[1]); } while(cur!=="0");'
-            f'  redis.command({{"cmd":"SELECT","args":["{DEFAULT_DB_BACK}"]}});'
-            '  return JSON.stringify(keys);'
-            '})()' % json.dumps(key)
+        body = (
+            'var cur="0", keys=[], r;'
+            'do { r=redis.command({"cmd":"SCAN","args":[cur,"MATCH",%s,"COUNT","500"]})[0];'
+            '     cur=r[0]; keys=keys.concat(r[1]); } while(cur!=="0");'
+            'return JSON.stringify(keys);' % json.dumps(key)
         )
-        return _exec_script(script)
+        return _exec_script(_with_db(db, body))
     if op not in REDIS_RO_OPS:
         raise RuntimeError(f"redis 命令 {op} 不在只读白名单")
     if op == "HGETALL":
         # 防御: string 型 key 跑 HGETALL 会拆成字符对 flat 数组 -> dict(zip) 产垃圾; 先 TYPE 校验
-        script_type = (
-            '(function(){'
-            f'  redis.command({{"cmd":"SELECT","args":["{db}"]}});'
-            '  var t=redis.command({"cmd":"TYPE","args":[%s]});'
-            f'  redis.command({{"cmd":"SELECT","args":["{DEFAULT_DB_BACK}"]}});'
-            '  return JSON.stringify(t);'
-            '})()' % json.dumps(key)
-        )
-        t = _exec_script(script_type)
+        t = _exec_script(_with_db(db,
+            'var t=redis.command({"cmd":"TYPE","args":[%s]}); return JSON.stringify(t);' % json.dumps(key)))
         t = t[0] if isinstance(t, list) and t else t
         if t != 'hash':
             return {'__error__': f'key 类型为 {t}, HGETALL 仅适用于 hash (string 请用 GET)'}
-        script = (
-            '(function(){'
-            f'  redis.command({{"cmd":"SELECT","args":["{db}"]}});'
-            '  var h=redis.command({"cmd":"HGETALL","args":[%s]});'
-            f'  redis.command({{"cmd":"SELECT","args":["{DEFAULT_DB_BACK}"]}});'
-            '  return JSON.stringify(h);'
-            '})()' % json.dumps(key)
-        )
-        flat = _exec_script(script)
+        flat = _exec_script(_with_db(db,
+            'var h=redis.command({"cmd":"HGETALL","args":[%s]}); return JSON.stringify(h);' % json.dumps(key)))
         if not flat:
             return None
         return dict(zip(flat[0::2], flat[1::2]))
@@ -200,15 +198,8 @@ def _redis_query(db, key, op):
     if op == "ZRANGE_ALL" or op == "LRANGE_ALL":
         real_op, extra_args = op[:-4], ["0", "-1"]
     args_js = ", ".join(json.dumps(a) for a in [key] + extra_args)
-    script = (
-        '(function(){'
-        f'  redis.command({{"cmd":"SELECT","args":["{db}"]}});'
-        '  var v=redis.command({"cmd":%s,"args":[%s]});'
-        f'  redis.command({{"cmd":"SELECT","args":["{DEFAULT_DB_BACK}"]}});'
-        '  return JSON.stringify(v);'
-        '})()' % (json.dumps(real_op), args_js)
-    )
-    return _exec_script(script)
+    body = 'var v=redis.command({"cmd":%s,"args":[%s]}); return JSON.stringify(v);' % (json.dumps(real_op), args_js)
+    return _exec_script(_with_db(db, body))
 
 
 _SQL_RO_RE = re.compile(r"^\s*(select|explain|show|desc|describe)\b", re.I)
@@ -330,11 +321,8 @@ def api_cp_data_modules():
             parts = ''.join(
                 ' out.push(redis.command({"cmd":"TYPE","args":[%s]}));' % json.dumps(k)
                 for k in keys)
-            script = ('(function(){ redis.command({"cmd":"SELECT","args":["%s"]});'
-                      ' var out=[]; %s'
-                      ' redis.command({"cmd":"SELECT","args":["%s"]});'
-                      ' return JSON.stringify(out); })()' % (db, parts, DEFAULT_DB_BACK))
-            types = _exec_script(script) or []
+            types = _exec_script(_with_db(db,
+                'var out=[]; %s return JSON.stringify(out);' % parts)) or []
 
         modules = []
         for k, t in zip(keys, types):
@@ -437,15 +425,8 @@ def api_cp_data_write():
 
         db = '10'
         # ---- 快照 redis 原值 ----
-        script_get = (
-            '(function(){'
-            f'  redis.command({{"cmd":"SELECT","args":["{db}"]}});'
-            '  var g=redis.command({"cmd":"GET","args":[%s]});'
-            f'  redis.command({{"cmd":"SELECT","args":["{DEFAULT_DB_BACK}"]}});'
-            '  return JSON.stringify(g);'
-            '})()' % json.dumps(key)
-        )
-        orig_raw = _exec_script(script_get)
+        orig_raw = _exec_script(_with_db(db,
+            'var g=redis.command({"cmd":"GET","args":[%s]}); return JSON.stringify(g);' % json.dumps(key)))
         orig = orig_raw[0] if isinstance(orig_raw, list) and orig_raw else orig_raw
         if orig == 'nil':
             orig = None
@@ -486,15 +467,9 @@ def api_cp_data_write():
 
         # ---- redis 写 ----
         val_str = json.dumps(value, ensure_ascii=False)
-        script_set = (
-            '(function(){'
-            f'  redis.command({{"cmd":"SELECT","args":["{db}"]}});'
-            '  var r=redis.command({"cmd":"set","args":[%s, %s]}, {"cmd":"EXPIRE","args":[%s, "86400"]});'
-            f'  redis.command({{"cmd":"SELECT","args":["{DEFAULT_DB_BACK}"]}});'
-            '  return JSON.stringify(r);'
-            '})()' % (json.dumps(key), json.dumps(val_str), json.dumps(key))
-        )
-        r = _exec_script(script_set)
+        r = _exec_script(_with_db(db,
+            'var r=redis.command({"cmd":"set","args":[%s, %s]}, {"cmd":"EXPIRE","args":[%s, "86400"]});'
+            'return JSON.stringify(r);' % (json.dumps(key), json.dumps(val_str), json.dumps(key))))
 
         snapshot = {'db': db, 'key': key, 'before': orig, 'module': module,
                     'mysqlBefore': mysql_before, 'mysqlTable': table if dual_write else None,
@@ -599,15 +574,9 @@ CP_REQ_SCHEMA = {
 
 def _fetch_halllogon(userid):
     """读 db9 halllogon hash -> ClientInfo dict。无记录返 None。"""
-    script = (
-        '(function(){'
-        '  redis.command({"cmd":"SELECT","args":["9"]});'
-        '  var h=redis.command({"cmd":"HGETALL","args":[%s]});'
-        f'  redis.command({{"cmd":"SELECT","args":["{DEFAULT_DB_BACK}"]}});'
-        '  return JSON.stringify(h);'
-        '})()' % json.dumps(f"mod(pick):halllogon:userid({userid}):hash")
-    )
-    flat = _exec_script(script)
+    flat = _exec_script(_with_db('9',
+        'var h=redis.command({"cmd":"HGETALL","args":[%s]}); return JSON.stringify(h);'
+        % json.dumps(f"mod(pick):halllogon:userid({userid}):hash")))
     if not flat:
         return None
     return dict(zip(flat[0::2], flat[1::2]))
