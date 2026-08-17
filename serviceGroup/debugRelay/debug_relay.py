@@ -30,7 +30,7 @@ import subprocess
 from math import isfinite
 from pathlib import Path
 from datetime import datetime, date
-from typing import Set, Dict, Optional, Any
+from typing import Set, Dict, Optional, Any, List
 from dataclasses import dataclass, field
 
 try:
@@ -110,6 +110,7 @@ class MsgType:
 
 CONSOLE_BUFFER_MAX = 50000
 PERF_BUFFER_MAX = 1800  # ~30min @ 1Hz, 覆盖完整 3 局趋势分析
+MAX_SCENE_NODES = 50    # POST /api/scene_nodes 单批上限
 
 
 def _new_perf_peaks() -> dict:
@@ -173,6 +174,9 @@ class ClientCtx:
     perf_peaks: dict = field(default_factory=_new_perf_peaks)
     # REST->WS 请求/响应关联（单飞 per response_key），per-client 隔离
     response_futures: Dict[str, "asyncio.Future"] = field(default_factory=dict)
+    # 批量 scene_nodes 专用: path -> future。单飞 key (SCENE_NODE_INFO) 并发会互相 cancel,
+    # 批量改用 path 做关联键, 与单节点查询的单飞 future 互不干扰。per-client 隔离。
+    batch_futures: Dict[str, "asyncio.Future"] = field(default_factory=dict)
     eval_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     pending_eval_future: Optional["asyncio.Future"] = None
     # 断点集合 "file:line"（服务端记录，订阅时 replay）
@@ -1860,6 +1864,7 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
 
     elif msg_type in (MsgType.SCENE_TREE, MsgType.SCENE_NODE_INFO):
         _resolve_response_future(ctx, msg_type, msg)
+        _resolve_batch_future(ctx, msg)
         await _send_to_subscribers(cid, _stamp(msg, cid))
 
     elif msg_type == MsgType.AUTOTEST_ARM_RESULT:
@@ -2071,24 +2076,144 @@ async def api_scene_node_info(path: str, client: str = None):
     )
 
 
+class SceneNodesRequest(BaseModel):
+    paths: List[str]
+    client: Optional[str] = None
+
+
+def _resolve_batch_future(ctx: ClientCtx, msg: dict) -> None:
+    """按响应中的 path 匹配批量 scene_nodes 的 pending future (若存在)。"""
+    path = msg.get("path")
+    if not path:
+        return
+    fut = ctx.batch_futures.pop(path, None)
+    if fut is not None and not fut.done():
+        try:
+            fut.set_result(msg)
+        except asyncio.InvalidStateError:
+            pass
+
+
+async def _fetch_scene_node(path: str, ctx: ClientCtx) -> dict:
+    """抓取单个 path 的节点详情 (并发批内独立异常, 单节点失败不拖垮整批)。
+
+    与单节点路由不同, 不用单飞 key (并发会互相 cancel), 而是按 path 注册
+    ctx.batch_futures, 由 handle_game_message 按响应中的 path 匹配 resolve。
+    """
+    loop = asyncio.get_event_loop()
+    fut = loop.create_future()
+    ctx.batch_futures[path] = fut
+    try:
+        await ctx.ws.send_json({"type": MsgType.SCENE_GET_NODE_INFO, "path": path})
+    except Exception as e:
+        ctx.batch_futures.pop(path, None)
+        return {"path": path, "ok": False, "error": f"send failed: {e}"}
+    try:
+        msg = await asyncio.wait_for(fut, timeout=8.0)
+    except asyncio.TimeoutError:
+        ctx.batch_futures.pop(path, None)
+        return {"path": path, "ok": False, "error": f"timeout waiting for {path}"}
+    except asyncio.CancelledError:
+        ctx.batch_futures.pop(path, None)
+        raise
+    # 透传 game 端原消息 (含 path/name/components/position 等), 与单节点格式一致
+    return {"path": path, "data": msg}
+
+
+@app.post("/api/scene_nodes")
+async def api_scene_nodes(req: SceneNodesRequest, client: str = None):
+    """批量获取指定客户端多个节点的详情 (并发向游戏端发请求, 单节点失败不影响整批)。
+
+    Agent 调用:
+      curl -X POST http://host:5003/api/scene_nodes -H "Content-Type: application/json" \\
+           -d '{"paths":["Scene/Canvas/Btn_Start","Scene/Canvas/Btn_Exit"]}'
+
+    一次最多 50 个 path; 每个 path 独立请求/超时, 返回:
+      {ok:true, count:N, results:[{path, data} | {path, ok:false, error}]}
+    data 与 /api/scene_node_info 单节点返回格式一致 (game 端原消息透传)。
+    多客户端定位: ?client=<id> 查询参数 (本文件 REST 惯例) 或 body 内 client 字段。
+    """
+    if not req.paths:
+        return JSONResponse({"ok": False, "error": "paths 不能为空"}, status_code=400)
+    if len(req.paths) > MAX_SCENE_NODES:
+        return JSONResponse({
+            "ok": False,
+            "error": f"paths 最多 {MAX_SCENE_NODES} 个, 收到 {len(req.paths)} 个",
+        }, status_code=400)
+    ctx, err = _resolve_client(req.client or client)
+    if err:
+        return err
+    results = await asyncio.gather(*(_fetch_scene_node(p, ctx) for p in req.paths))
+    return {"ok": True, "count": len(req.paths), "results": results}
+
+
+def _perf_agg(snapshots: list, agg: str) -> dict:
+    """对 perf snapshot 数值字段做聚合, 返回 {field: {avg, max}}。
+
+    agg: "avg" | "max"。仅标量数值字段参与 (bool/嵌套 dict 跳过);
+    元数据字段 (type/ts) 不聚合。空列表返回空 dict。
+    """
+    # 元数据字段: 消息类型 / 时间戳 (数值但无聚合意义)
+    META_FIELDS = {"type", "ts"}
+    per_field: Dict[str, dict] = {}
+    for snap in snapshots:
+        if not isinstance(snap, dict):
+            continue
+        for field, value in snap.items():
+            if field in META_FIELDS:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            acc = per_field.get(field)
+            if acc is None:
+                acc = per_field[field] = {"total": 0.0, "count": 0, "max": value}
+            acc["total"] += float(value)
+            acc["count"] += 1
+            if value > acc["max"]:
+                acc["max"] = value
+    out: Dict[str, dict] = {}
+    for field, acc in per_field.items():
+        out[field] = {
+            "avg": round(acc["total"] / acc["count"], 2) if acc["count"] else None,
+            "max": acc["max"],
+        }
+    return out
+
+
 @app.get("/api/perf")
-async def api_perf(limit: int = 20, client: str = None):
-    """读指定客户端最近 N 条 perf_snapshot（从该客户端 perf_buffer 切片）。"""
+async def api_perf(limit: int = 20, agg: str = None, client: str = None):
+    """读指定客户端最近 N 条 perf_snapshot（从该客户端 perf_buffer 切片）。
+
+    agg=avg|max 时附加数值字段聚合 (per-client 同口径):
+       {snapshots, count, buffer_total, agg:{field:{avg, max}}}
+    无 agg 时返回原格式完全不变 (兼容)。
+    """
+    if agg is not None and agg not in ("avg", "max"):
+        return JSONResponse({"ok": False, "error": "agg 仅支持 avg|max"}, status_code=400)
     ctx, err = _resolve_client(client)
     if err:
         return err
     n = max(1, min(int(limit), len(ctx.perf_buffer)))
-    _last_leak = (ctx.perf_buffer[-1].get("leak") or {}) if ctx.perf_buffer else {}
-    _slopes = _compute_slopes(ctx.perf_buffer)
+    if agg is None:
+        _last_leak = (ctx.perf_buffer[-1].get("leak") or {}) if ctx.perf_buffer else {}
+        _slopes = _compute_slopes(ctx.perf_buffer)
+        return {
+            "client_id": ctx.id,
+            "snapshots": ctx.perf_buffer[-n:] if n else [],
+            "count": n,
+            "buffer_total": len(ctx.perf_buffer),
+            "peaks": ctx.perf_peaks,
+            "slopes": _slopes,
+            "leak_latest": dict(_last_leak),
+            "leak_slopes": _slopes.get("leak_slopes_per_min", {}),
+        }
+    snaps = ctx.perf_buffer[-n:] if n else []
     return {
         "client_id": ctx.id,
-        "snapshots": ctx.perf_buffer[-n:] if n else [],
-        "count": n,
+        "snapshots": snaps,
+        "count": len(snaps),
         "buffer_total": len(ctx.perf_buffer),
-        "peaks": ctx.perf_peaks,
-        "slopes": _slopes,
-        "leak_latest": dict(_last_leak),
-        "leak_slopes": _slopes.get("leak_slopes_per_min", {}),
+        "agg": _perf_agg(snaps, agg),
     }
 
 
