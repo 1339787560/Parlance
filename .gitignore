@@ -18,3 +18,5 @@ diagnose*
 *.jsonl
 *snapshots/
 .svn/
+.venv
+logs/

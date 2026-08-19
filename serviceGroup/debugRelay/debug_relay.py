@@ -105,6 +105,10 @@ class MsgType:
     AUTOTEST_STATE = "autotest_state"      # Relay -> Game: autotest 开关 + scenario url（game 连入初同步 + toggle 广播）
     AUTOTEST_ARM_RESULT = "autotest_arm_result"  # Game -> Relay: arm 成败上报（T4，relay 聚合四家 arm 全景）
 
+    # Relay -> Game (Device 模拟, 真机无 eval 的代码通道)
+    DEVICE = "device"                    # Relay -> Game: 设备模拟/抓取/诊断 (action + payload)
+    DEVICE_RESULT = "device_result"      # Game -> Relay: 设备操作结果
+
 
 # ---- State ----
 
@@ -879,6 +883,14 @@ async def ui_launcher_js():
 @app.get("/debug-autotest.js")
 async def ui_autotest_js():
     f = UI_DIR / "debug-autotest.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
+@app.get("/debug-device.js")
+async def ui_device_js():
+    f = UI_DIR / "debug-device.js"
     if f.exists():
         return FileResponse(str(f), media_type="application/javascript")
     return JSONResponse({"error": "not found"}, status_code=404)
@@ -1880,6 +1892,11 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
         }
         await _send_to_subscribers(cid, _stamp(msg, cid))
 
+    elif msg_type == MsgType.DEVICE_RESULT:
+        # game → relay 设备操作结果（真机无 eval 的代码通道）: resolve REST future + 转发浏览器
+        _resolve_response_future(ctx, MsgType.DEVICE_RESULT, msg)
+        await _send_to_subscribers(cid, _stamp(msg, cid))
+
     # eval 结果：resolve REST 等待中的 future（无 type 字段，靠 eval_result 判断），再转发
     if "eval_result" in msg:
         _resolve_response_future(ctx, MsgType.EVAL, msg)
@@ -2053,6 +2070,28 @@ async def api_eval(req: EvalRequest):
         return err
     msg = {"type": MsgType.EVAL, "expr": req.expr}
     return await _send_game_and_await(msg, MsgType.EVAL, ctx, timeout=max(req.timeout + 3.0, 8.0))
+
+
+class DeviceRequest(BaseModel):
+    """Device 模拟请求（真机无 eval 的代码通道）: action=apply/restore/capture/diag + payload"""
+    action: str
+    payload: Optional[dict] = None
+    client: Optional[str] = None
+
+
+@app.post("/api/device")
+async def api_device(req: DeviceRequest):
+    """在指定客户端执行设备模拟操作（代码通道, 非 eval, 真机可用）。
+    body: {"action","payload"?,"client"?} → game DebugPlugin._onDevice → DEVICE_RESULT 回传。
+    action: apply(改 windowSize+safeArea) / restore / capture(抓真机参数) / diag(打包彻查)。
+    """
+    ctx, err = _resolve_client(req.client)
+    if err:
+        return err
+    msg = {"type": MsgType.DEVICE, "action": req.action}
+    if req.payload:
+        msg["payload"] = req.payload
+    return await _send_game_and_await(msg, MsgType.DEVICE_RESULT, ctx, timeout=8.0)
 
 
 @app.get("/api/scene_tree")

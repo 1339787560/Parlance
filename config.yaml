@@ -92,6 +92,16 @@ services:
     tags: [reader, novel, web]
     enabled: true
 
+  # dsh web — DeepSeek Harness Web UI。不直接用 dsh.cmd (Popen 无 shell 拉不起批处理),
+  # 等价展开 = node <npm全局>/node_modules/@deepseek-ai/dsh/lib/bin.js web (dsh.cmd 原样转发)
+  - name: dsh-web
+    command: node
+    args: ["C:\\Users\\admin\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js", "web"]
+    port: 3080
+    auto_restart: true
+    tags: [dsh, deepseek, agent, web]
+    enabled: true
+
   - name: hair-sim
     command_mac: /Users/liz/codlib/python/hair-sim/.venv/bin/python
     command_win: python
