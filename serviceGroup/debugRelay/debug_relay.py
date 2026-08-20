@@ -72,6 +72,7 @@ class MsgType:
     PERF_MARK = "perf_mark"
     RUNTIME_SOURCE = "runtime_source"
     IMPORTANT_EVENT = "important_event"
+    CLIENT_INFO = "client_info"            # Game -> Relay: 上报 preview index + userId（聚合给 agent）
 
     # 场景节点树
     SCENE_TREE = "scene_tree"
@@ -171,6 +172,9 @@ class ClientCtx:
     label: str
     ip: str
     ws: WebSocket
+    # 客户端上报的业务身份（DebugPlugin 发送 client_info 聚合；未上报为 None）
+    preview_index: Optional[int] = None
+    user_id: Optional[Any] = None
     console_buffer: list = field(default_factory=list)
     console_seq: int = 0
     perf_buffer: list = field(default_factory=list)
@@ -257,7 +261,13 @@ def _next_client_id(ip: str):
 
 
 def _client_summary(c: ClientCtx) -> dict:
-    return {"id": c.id, "label": c.label, "ip": c.ip}
+    return {
+        "id": c.id,
+        "label": c.label,
+        "ip": c.ip,
+        "preview_index": c.preview_index,
+        "user_id": c.user_id,
+    }
 
 
 def _client_summaries() -> list:
@@ -1873,6 +1883,13 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
         stamped = _stamp(msg, cid)
         persist_important_event(stamped)
         await _send_to_subscribers(cid, stamped)
+
+    elif msg_type == MsgType.CLIENT_INFO:
+        # 客户端上报业务身份：preview 序号 + userId，聚合到 client_list/api_clients 供 agent 定位。
+        ctx.preview_index = msg.get("preview_index")
+        ctx.user_id = msg.get("user_id")
+        print(f"[debug-relay] {cid} client_info: preview_index={ctx.preview_index} user_id={ctx.user_id}", flush=True)
+        await _broadcast_client_list()
 
     elif msg_type in (MsgType.SCENE_TREE, MsgType.SCENE_NODE_INFO):
         _resolve_response_future(ctx, msg_type, msg)
