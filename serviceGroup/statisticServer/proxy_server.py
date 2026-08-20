@@ -301,19 +301,30 @@ def extract_usage(usage: dict, fmt: str) -> dict:
 
 
 def build_headers(fmt: str, request_headers) -> dict:
-    """构造转发到上游的 headers - 优先透传客户端 key，回退到代理 key"""
-    auth = request_headers.get("authorization") or f"Bearer {DEEPSEEK_API_KEY}"
+    """构造转发到上游的 headers - 优先透传客户端 key（Authorization 或 x-api-key），回退到代理 key"""
+    auth = request_headers.get("authorization")
+    api_key = request_headers.get("x-api-key")
     if fmt == "openai":
-        return {
-            "Authorization": auth,
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if auth:
+            headers["Authorization"] = auth
+        elif api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        elif DEEPSEEK_API_KEY:
+            headers["Authorization"] = f"Bearer {DEEPSEEK_API_KEY}"
+        return headers
     else:
-        return {
-            "Authorization": auth,
+        headers = {
             "Content-Type": "application/json",
             "anthropic-version": request_headers.get("anthropic-version", "2023-06-01"),
         }
+        if auth:
+            headers["Authorization"] = auth
+        elif api_key:
+            headers["x-api-key"] = api_key
+        elif DEEPSEEK_API_KEY:
+            headers["Authorization"] = f"Bearer {DEEPSEEK_API_KEY}"
+        return headers
 
 
 # ---- DB ----
@@ -443,8 +454,8 @@ async def proxy(request: Request, path: str):
     if path.startswith("api/") and not path.startswith("api/events"):
         return await handle_api(request, path)
 
-    if not DEEPSEEK_API_KEY and not request.headers.get("authorization"):
-        return JSONResponse(500, {"error": "no API key: set DEEPSEEK_API_KEY or provide Authorization header"})
+    if not DEEPSEEK_API_KEY and not (request.headers.get("authorization") or request.headers.get("x-api-key")):
+        return JSONResponse(500, {"error": "no API key: set DEEPSEEK_API_KEY or provide Authorization/x-api-key header"})
 
     # Detect format from path
     fmt, target_base = detect_format(path)
