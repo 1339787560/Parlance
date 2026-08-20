@@ -68,6 +68,9 @@ services:
     auto_restart: true
     tags: [statistics, proxy]
     enabled: true
+    env:
+      ANTHROPIC_TARGET: "http://aiapi.tcy365.net:82"
+      OPENAI_TARGET: "http://aiapi.tcy365.net:82/v1"
 
   - name: debug-relay
     command_mac: ./.venv/bin/python

@@ -443,8 +443,8 @@ async def proxy(request: Request, path: str):
     if path.startswith("api/") and not path.startswith("api/events"):
         return await handle_api(request, path)
 
-    if not DEEPSEEK_API_KEY:
-        return JSONResponse(500, {"error": "DEEPSEEK_API_KEY not set"})
+    if not DEEPSEEK_API_KEY and not request.headers.get("authorization"):
+        return JSONResponse(500, {"error": "no API key: set DEEPSEEK_API_KEY or provide Authorization header"})
 
     # Detect format from path
     fmt, target_base = detect_format(path)
@@ -775,12 +775,11 @@ if __name__ == "__main__":
         PORT = args.port
 
     if not DEEPSEEK_API_KEY:
-        print("ERROR: set DEEPSEEK_API_KEY env var")
-    else:
-        print(f"Proxy http://{args.host}:{PORT}")
-        print(f"  Anthropic → {ANTHROPIC_TARGET}")
-        print(f"  OpenAI    → {OPENAI_TARGET}")
-        print(f"Claude:    ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT}")
-        print(f"OpenAI SDK: base_url=http://127.0.0.1:{PORT}/v1")
-        get_db()  # init on startup
-        uvicorn.run(app, host=args.host, port=PORT, log_level="info")
+        print("WARNING: DEEPSEEK_API_KEY not set; requests must provide Authorization header")
+    print(f"Proxy http://{args.host}:{PORT}")
+    print(f"  Anthropic → {ANTHROPIC_TARGET}")
+    print(f"  OpenAI    → {OPENAI_TARGET}")
+    print(f"Claude:    ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT}")
+    print(f"OpenAI SDK: base_url=http://127.0.0.1:{PORT}/v1")
+    get_db()  # init on startup
+    uvicorn.run(app, host=args.host, port=PORT, log_level="info")
