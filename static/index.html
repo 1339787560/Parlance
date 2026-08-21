@@ -60,6 +60,14 @@
         <circle cx="12" cy="14" r="2"/>
       </svg>
     </button>
+    <button class="btn-icon" id="btnUploadPanel" title="上传管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <span class="upload-badge" id="uploadBadge" style="display:none"></span>
+    </button>
   </div>
   <textarea id="msgInput" rows="1" placeholder="输入消息，或粘贴文件..." maxlength="50000"></textarea>
   <button class="btn-send" id="btnSend"><span>发送</span></button>
@@ -105,9 +113,21 @@
 <!-- Hidden file input (zip modal) -->
 <input type="file" id="zipFileInput" style="display:none" multiple>
 
+<!-- Upload manager drawer (background transfers keep running while closed) -->
+<div class="upload-panel" id="uploadPanel">
+  <div class="upload-panel-header">
+    <h3>上传管理</h3>
+    <button class="upload-panel-close" id="btnUploadClose" title="收起面板">&#10005;</button>
+  </div>
+  <div class="upload-panel-body">
+    <div class="upload-list" id="uploadList"></div>
+    <div class="upload-detail" id="uploadDetail"></div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 <script src="/static/shader-runner.js"></script>
-<script src="/static/script.js?v=4"></script>
+<script src="/static/script.js?v=5"></script>
 </body>
 </html>

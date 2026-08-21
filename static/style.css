@@ -1818,3 +1818,127 @@
   60%  { box-shadow: 0 0  8px rgba(255,0,127,0.06), 0 0 15px rgba(255,0,127,0.02), inset 0 0  6px rgba(255,174,0,0.05); }
   100% { box-shadow: 0 0 22px rgba(255,0,127,0.35), 0 0 45px rgba(255,0,127,0.12), inset 0 0 14px rgba(255,174,0,0.15); }
 }
+/* ── Upload manager panel (background transfer monitor) ─────── */
+.btn-icon { position: relative; }
+.upload-badge {
+  position: absolute; top: -4px; right: -6px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px;
+  background: var(--cn-red); color: #fff;
+  font-size: 11px; line-height: 16px; text-align: center;
+  font-weight: bold;
+}
+
+.upload-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(760px, 94vw);
+  background: var(--cn-bubble);
+  border-left: 3px solid var(--cn-red);
+  box-shadow: -4px 0 24px color-mix(in srgb, var(--cn-ink) 25%, transparent);
+  transform: translateX(105%);
+  transition: transform 0.25s ease;
+  z-index: 1200;
+  display: flex; flex-direction: column;
+}
+.upload-panel.open { transform: translateX(0); }
+
+.upload-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--cn-wood);
+  background: linear-gradient(135deg, var(--cn-bubble), color-mix(in srgb, var(--cn-bubble) 92%, var(--cn-paper) 20%));
+}
+.upload-panel-header h3 {
+  margin: 0; font-size: 17px; color: var(--cn-ink);
+}
+.upload-panel-close {
+  border: 1px solid var(--cn-ink-faint); background: transparent;
+  color: var(--cn-ink-light); border-radius: 6px;
+  width: 28px; height: 28px; cursor: pointer; font-size: 13px;
+}
+.upload-panel-close:hover { border-color: var(--cn-red); color: var(--cn-red); }
+
+.upload-panel-body { flex: 1; display: flex; min-height: 0; }
+
+.upload-list {
+  flex: 1; min-width: 240px;
+  overflow-y: auto;
+  border-right: 1px solid var(--cn-wood);
+}
+.upload-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--cn-wood);
+  cursor: pointer;
+}
+.upload-item:hover { background: color-mix(in srgb, var(--cn-ink-faint) 6%, transparent); }
+.upload-item.active { background: var(--cn-red-light); border-left: 3px solid var(--cn-red); padding-left: 9px; }
+.upload-item-name {
+  font-size: 13px; color: var(--cn-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.upload-item-meta {
+  display: flex; justify-content: space-between;
+  font-size: 12px; color: var(--cn-ink-light); margin-top: 3px;
+}
+.upload-item-bar {
+  height: 3px; margin-top: 6px; border-radius: 2px;
+  background: color-mix(in srgb, var(--cn-ink-faint) 20%, transparent);
+  overflow: hidden;
+}
+.upload-item-bar > div {
+  height: 100%; background: var(--cn-red);
+  transition: width 0.3s ease;
+}
+.upload-empty {
+  padding: 40px 16px; text-align: center;
+  color: var(--cn-ink-faint); font-size: 13px;
+}
+
+.upload-detail {
+  flex: 1.2; min-width: 0;
+  padding: 18px;
+  overflow-y: auto;
+}
+.up-d-name {
+  font-size: 15px; font-weight: bold; color: var(--cn-ink);
+  word-break: break-all;
+}
+.up-d-status { font-size: 13px; margin: 8px 0 12px; }
+.up-d-bar {
+  height: 12px; border-radius: 6px;
+  background: color-mix(in srgb, var(--cn-ink-faint) 20%, transparent);
+  overflow: hidden;
+  border: 1px solid var(--cn-wood);
+}
+.up-d-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cn-red), var(--cn-red-hover));
+  transition: width 0.3s ease;
+}
+.up-d-grid {
+  margin-top: 14px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px;
+}
+.up-d-grid > div { font-size: 13px; }
+.up-d-grid label {
+  display: block;
+  color: var(--cn-ink-faint); font-size: 12px; margin-bottom: 2px;
+}
+.up-d-grid span { color: var(--cn-ink); }
+.up-d-error {
+  margin-top: 12px; padding: 8px 10px;
+  border: 1px solid var(--cn-red); border-radius: 6px;
+  background: var(--cn-red-light);
+  color: var(--cn-red); font-size: 12px;
+  word-break: break-all;
+}
+
+/* task status colors */
+.s-uploading { color: var(--cn-gold); }
+.s-done { color: #2e7d32; }
+.s-error, .s-interrupted, .s-cancelled { color: var(--cn-red); }
+
+@media (max-width: 560px) {
+  .upload-panel-body { flex-direction: column; }
+  .upload-list { border-right: none; border-bottom: 1px solid var(--cn-wood); max-height: 40%; }
+}

@@ -34,6 +34,12 @@
   const sseStatus = document.getElementById('sseStatus');
   const serverUrl = document.getElementById('serverUrl');
   const toast = document.getElementById('toast');
+  const uploadPanel = document.getElementById('uploadPanel');
+  const uploadListEl = document.getElementById('uploadList');
+  const uploadDetailEl = document.getElementById('uploadDetail');
+  const btnUploadPanel = document.getElementById('btnUploadPanel');
+  const uploadBadge = document.getElementById('uploadBadge');
+  const btnUploadClose = document.getElementById('btnUploadClose');
 
   serverUrl.textContent = window.location.host;
 
@@ -323,26 +329,57 @@
   }
 
   async function sendFile(file) {
-    // Large single file -> chunked parallel path (resumable); no progress UI here
+    // Large single file -> chunked parallel path (resumable, tracked in panel)
     if (file.size > CHUNK_SIZE) {
+      const task = createTask(file);
       try {
-        const id = await uploadFileChunked(file, () => {});
-        await fetchJSON(UPLOAD_API + '/complete', {
+        const id = await uploadFileChunked(file, task);
+        const msg = await fetchJSON(UPLOAD_API + '/complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ upload_ids: [id], sender: '' })
         });
+        task.loaded = task.size;
+        finishTask(task, 'done');
+        return msg;
       } catch (e) {
+        finishTask(task, e.message === '上传已取消' ? 'cancelled' : 'error', e.message);
         showToast('上传失败(进度已保留, 重发将续传): ' + e.message);
       }
       return;
     }
+    // Small file: single multipart request, tracked with progress
+    const task = createTask(file);
     const fd = new FormData();
     fd.set('file', file);
     fd.set('sender', '');
     try {
-      await fetchJSON(MSG_API + '/file', { method: 'POST', body: fd });
+      const msg = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        task.xhrs.add(xhr);
+        xhr.open('POST', MSG_API + '/file');
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) { task.loaded = e.loaded; schedulePanelRender(); }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)); } catch (_) { resolve(xhr.responseText); }
+          } else {
+            let errMsg = 'HTTP ' + xhr.status;
+            try { errMsg = JSON.parse(xhr.responseText).detail || errMsg; } catch (_) {}
+            reject(new Error(errMsg));
+          }
+        };
+        xhr.onerror = () => reject(new Error('网络错误'));
+        xhr.onabort = () => reject(new Error('上传已取消'));
+        xhr.timeout = 300000;
+        xhr.send(fd);
+      });
+      task.loaded = task.size;
+      finishTask(task, 'done');
+      return msg;
     } catch (e) {
+      finishTask(task, e.message === '上传已取消' ? 'cancelled' : 'error', e.message);
       showToast('上传失败: ' + e.message);
     }
   }
@@ -355,40 +392,33 @@
   function resetProgress() {
     progressFill.style.width = '0%';
     progressInfo.textContent = '';
-    uploadSpeed = 0;
-    uploadLastBytes = 0;
-    uploadLastTime = 0;
-    uploadXHR = null;
+    modalOp = null;
   }
 
   function showProgress(show) {
     progressSection.style.display = show ? 'block' : 'none';
   }
 
-  function updateProgress(loaded, total) {
-    const now = Date.now();
-    if (uploadLastTime > 0) {
-      const dt = (now - uploadLastTime) / 1000;
-      if (dt > 0) {
-        const dBytes = loaded - uploadLastBytes;
-        const instantaneous = dBytes / dt;
-        if (instantaneous > 0) {
-          uploadSpeed = uploadSpeed > 0
-            ? (0.3 * instantaneous + 0.7 * uploadSpeed)
-            : instantaneous;
-        }
-      }
-    }
-    uploadLastBytes = loaded;
-    uploadLastTime = now;
+  // Modal progress op state: overall-average speed (stable - no EMA jitter
+  // from 4 parallel chunk streams each reporting its own instantaneous rate)
+  let modalOp = null;  // {start, base}  base = progress counted before this op
 
-    const pct = Math.min(100, Math.round((loaded / total) * 100));
+  // updateProgress(loaded, total, sent): loaded/total = absolute progress;
+  // sent = bytes actually transmitted in THIS op (excludes resume base).
+  // Displayed speed = sent / elapsed since op start - an honest overall average.
+  function updateProgress(loaded, total, sent) {
+    if (!modalOp) modalOp = { start: Date.now(), base: 0 };
+    if (sent !== undefined) modalOp.base = loaded - sent;  // resume-aware base
+    const elapsed = (Date.now() - modalOp.start) / 1000;
+    const speed = elapsed > 0.5 ? Math.max(0, loaded - modalOp.base) / elapsed : 0;
+
+    const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
     progressFill.style.width = pct + '%';
 
-    const speedStr = formatSize(Math.round(uploadSpeed));
+    const speedStr = speed > 1 ? formatSize(Math.round(speed)) : '';
     let remaining = '';
-    if (uploadSpeed > 0 && pct < 100) {
-      const secs = Math.ceil((total - loaded) / uploadSpeed);
+    if (speed > 1 && pct < 100) {
+      const secs = Math.ceil((total - loaded) / speed);
       remaining = secs < 60 ? ' · 剩余 ' + secs + '秒'
         : ' · 剩余 ' + Math.ceil(secs / 60) + '分钟';
     }
@@ -399,10 +429,206 @@
   }
 
   // ── Chunked parallel + resumable upload ────────────────────────────────
+  // ── Upload task registry (upload manager panel) ──────────────────────
+  // Every upload (multipart / chunked / zip) creates a task. Transfers keep
+  // running regardless of panel/modal visibility; history persists in
+  // localStorage capped at 100 entries.
+  const uploadTasks = [];
+  const UPLOAD_HISTORY_KEY = 'upload_history';
+  const UPLOAD_HISTORY_MAX = 100;
+  let uploadSeq = 1;
+  let selectedUploadId = null;
+  let uploadPanelOpen = false;
+
+  function createTask(file, nameOverride) {
+    const t = {
+      id: uploadSeq++,
+      name: nameOverride || file.name || 'unnamed',
+      size: file.size || 0,
+      loaded: 0,
+      sessionBase: 0,     // bytes already on server when this attempt began
+      startedAt: Date.now(),
+      endedAt: null,
+      status: 'uploading',  // uploading | done | error | interrupted | cancelled
+      error: '',
+      xhrs: new Set(),
+    };
+    uploadTasks.unshift(t);
+    while (uploadTasks.length > UPLOAD_HISTORY_MAX) uploadTasks.pop();
+    saveUploadHistory();
+    updateUploadBadge();
+    return t;
+  }
+
+  function finishTask(t, status, err) {
+    t.status = status;
+    t.endedAt = Date.now();
+    if (err) t.error = err;
+    saveUploadHistory();
+    updateUploadBadge();
+    schedulePanelRender();
+  }
+
+  function saveUploadHistory() {
+    try {
+      const hist = uploadTasks.map(t => ({
+        id: t.id, name: t.name, size: t.size, loaded: t.loaded,
+        status: t.status, startedAt: t.startedAt, endedAt: t.endedAt,
+      }));
+      localStorage.setItem(UPLOAD_HISTORY_KEY, JSON.stringify(hist));
+    } catch (_) {}
+  }
+
+  function loadUploadHistory() {
+    try {
+      const hist = JSON.parse(localStorage.getItem(UPLOAD_HISTORY_KEY) || '[]');
+      for (const h of hist) {
+        // An 'uploading' entry from a previous page died with that page
+        if (h.status === 'uploading') h.status = 'interrupted';
+        h.xhrs = new Set();
+        uploadTasks.push(h);
+      }
+      if (hist.length) uploadSeq = Math.max(...hist.map(h => h.id || 0)) + 1;
+    } catch (_) {}
+  }
+
+  function updateUploadBadge() {
+    const n = uploadTasks.filter(t => t.status === 'uploading').length;
+    uploadBadge.style.display = n > 0 ? '' : 'none';
+    uploadBadge.textContent = n > 99 ? '99+' : String(n);
+  }
+
+  function taskSpeed(t) {
+    const end = t.endedAt || Date.now();
+    const elapsed = (end - t.startedAt) / 1000;
+    if (elapsed <= 0.3) return 0;
+    return Math.max(0, t.loaded - t.sessionBase) / elapsed;
+  }
+
+  function taskStatusText(t) {
+    const pct = t.size > 0 ? Math.floor(t.loaded / t.size * 100) : 0;
+    switch (t.status) {
+      case 'uploading': return '上传中 ' + pct + '%';
+      case 'done': return '已完成';
+      case 'error': return '失败';
+      case 'interrupted': return '已中断';
+      case 'cancelled': return '已取消';
+    }
+    return t.status;
+  }
+
+  // Panel rendering (throttled to ~4Hz)
+  let panelRenderTimer = null;
+  let lastPanelRenderTs = 0;
+
+  function schedulePanelRender() {
+    if (!uploadPanelOpen || panelRenderTimer) return;
+    const wait = Math.max(0, 250 - (Date.now() - lastPanelRenderTs));
+    panelRenderTimer = setTimeout(() => {
+      panelRenderTimer = null;
+      lastPanelRenderTs = Date.now();
+      renderUploadPanel();
+    }, wait);
+  }
+
+  function renderUploadPanel() {
+    if (!uploadPanelOpen) return;
+    uploadListEl.innerHTML = '';
+    if (!uploadTasks.length) {
+      uploadListEl.innerHTML = '<div class="upload-empty">暂无上传记录</div>';
+    }
+    for (const t of uploadTasks) {
+      const pct = t.size > 0 ? Math.min(100, Math.floor(t.loaded / t.size * 100)) : 0;
+      const el = document.createElement('div');
+      el.className = 'upload-item' + (t.id === selectedUploadId ? ' active' : '');
+      el.innerHTML =
+        '<div class="upload-item-name">' + escapeHtml(t.name) + '</div>' +
+        '<div class="upload-item-meta"><span>' + formatSize(t.size) + '</span>' +
+        '<span class="s-' + t.status + '">' + taskStatusText(t) + '</span></div>' +
+        '<div class="upload-item-bar"><div style="width:' + pct + '%"></div></div>';
+      el.addEventListener('click', () => { selectedUploadId = t.id; renderUploadPanel(); });
+      uploadListEl.appendChild(el);
+    }
+    renderUploadDetail();
+  }
+
+  function fmtElapsed(sec) {
+    sec = Math.max(0, Math.round(sec));
+    if (sec < 60) return sec + ' 秒';
+    if (sec < 3600) return Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒';
+    return Math.floor(sec / 3600) + ' 时 ' + Math.floor((sec % 3600) / 60) + ' 分';
+  }
+
+  function renderUploadDetail() {
+    const t = uploadTasks.find(x => x.id === selectedUploadId) || uploadTasks[0];
+    if (!t) {
+      uploadDetailEl.innerHTML = '<div class="upload-empty">选择左侧文件查看详情</div>';
+      return;
+    }
+    selectedUploadId = t.id;
+    const pct = t.size > 0 ? Math.min(100, t.loaded / t.size * 100) : 0;
+    const speed = taskSpeed(t);
+    const elapsed = ((t.endedAt || Date.now()) - t.startedAt) / 1000;
+    let eta = '--';
+    if (t.status === 'uploading' && speed > 1) {
+      eta = fmtElapsed((t.size - t.loaded) / speed);
+    }
+
+    let html =
+      '<div class="up-d-name">' + escapeHtml(t.name) + '</div>' +
+      '<div class="up-d-status s-' + t.status + '">' + taskStatusText(t) + '</div>' +
+      '<div class="up-d-bar"><div style="width:' + pct + '%"></div></div>' +
+      '<div class="up-d-grid">' +
+      '<div><label>进度</label><span>' + Math.floor(pct) + '% · ' + formatSize(t.loaded) + ' / ' + formatSize(t.size) + '</span></div>' +
+      '<div><label>平均速度</label><span>' + (speed > 1 ? formatSize(Math.round(speed)) + '/s' : '--') + '</span></div>' +
+      '<div><label>已用时间</label><span>' + fmtElapsed(elapsed) + '</span></div>' +
+      '<div><label>预计剩余</label><span>' + (t.status === 'uploading' ? eta : '--') + '</span></div>' +
+      '<div><label>开始时间</label><span>' + (t.startedAt ? new Date(t.startedAt).toLocaleTimeString() : '--') + '</span></div>' +
+      '<div><label>结束时间</label><span>' + (t.endedAt ? new Date(t.endedAt).toLocaleTimeString() : '--') + '</span></div>' +
+      '</div>';
+    if (t.error) {
+      html += '<div class="up-d-error">' + escapeHtml(t.error) + '</div>';
+    }
+    if (t.status === 'uploading' && t.xhrs && t.xhrs.size > 0) {
+      html += '<div style="margin-top:14px"><button class="btn-cancel" id="btnTaskCancel">取消上传</button></div>';
+    }
+    uploadDetailEl.innerHTML = html;
+    const btnCancel = uploadDetailEl.querySelector('#btnTaskCancel');
+    if (btnCancel) btnCancel.addEventListener('click', () => cancelTask(t));
+  }
+
+  function cancelTask(t) {
+    t.status = 'cancelled';
+    t.endedAt = Date.now();
+    for (const x of t.xhrs) {
+      try { x.abort(); } catch (_) {}
+    }
+    t.xhrs.clear();
+    saveUploadHistory();
+    updateUploadBadge();
+    renderUploadPanel();
+    showToast('已取消: ' + t.name + ' (服务端进度保留, 重发可续传)');
+  }
+
+  function openUploadPanel(open) {
+    uploadPanelOpen = open;
+    uploadPanel.classList.toggle('open', open);
+    if (open) {
+      if (!selectedUploadId && uploadTasks.length) selectedUploadId = uploadTasks[0].id;
+      renderUploadPanel();
+    }
+  }
+
+  btnUploadPanel.addEventListener('click', () => openUploadPanel(!uploadPanelOpen));
+  btnUploadClose.addEventListener('click', () => openUploadPanel(false));
+
+  window.addEventListener('beforeunload', saveUploadHistory);
+  loadUploadHistory();
+  updateUploadBadge();
+
   const CHUNK_SIZE = 8 * 1024 * 1024;   // must match server UPLOAD_CHUNK_SIZE
   const CHUNK_CONCURRENCY = 4;          // parallel TCP streams
   const CHUNK_RETRY = 3;
-  let uploadXHRs = [];                  // in-flight chunk XHRs (for cancel)
 
   function fileFingerprint(file) {
     return file.name + '|' + file.size + '|' + file.lastModified;
@@ -431,10 +657,10 @@
     return ((c ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
   }
 
-  function uploadChunkXHR(uploadId, index, blob, crcHex, onLoaded) {
+  function uploadChunkXHR(task, uploadId, index, blob, crcHex, onLoaded) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      uploadXHRs.push(xhr);
+      task.xhrs.add(xhr);
       xhr.open('POST', UPLOAD_API + '/chunk?upload_id=' +
                encodeURIComponent(uploadId) + '&index=' + index);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
@@ -443,25 +669,25 @@
         if (e.lengthComputable) onLoaded(e.loaded);
       };
       xhr.onload = () => {
-        uploadXHRs = uploadXHRs.filter(x => x !== xhr);
+        task.xhrs.delete(xhr);
         if (xhr.status >= 200 && xhr.status < 300) resolve();
         else reject(new Error('分块 ' + index + ' HTTP ' + xhr.status));
       };
-      xhr.onerror = () => { uploadXHRs = uploadXHRs.filter(x => x !== xhr); reject(new Error('网络错误')); };
-      xhr.ontimeout = () => { uploadXHRs = uploadXHRs.filter(x => x !== xhr); reject(new Error('分块超时')); };
-      xhr.onabort = () => { uploadXHRs = uploadXHRs.filter(x => x !== xhr); reject(new Error('上传已取消')); };
+      xhr.onerror = () => { task.xhrs.delete(xhr); reject(new Error('网络错误')); };
+      xhr.ontimeout = () => { task.xhrs.delete(xhr); reject(new Error('分块超时')); };
+      xhr.onabort = () => { task.xhrs.delete(xhr); reject(new Error('上传已取消')); };
       xhr.timeout = 300000;
       xhr.send(blob);
     });
   }
 
-  async function uploadChunkWithRetry(uploadId, index, blob, onLoaded) {
+  async function uploadChunkWithRetry(task, uploadId, index, blob, onLoaded) {
     let lastErr = null;
     // CRC computed once per chunk; verified server-side on every attempt
     const crcHex = await crc32Hex(blob).catch(() => null);
     for (let attempt = 0; attempt <= CHUNK_RETRY; attempt++) {
       try {
-        await uploadChunkXHR(uploadId, index, blob, crcHex, onLoaded);
+        await uploadChunkXHR(task, uploadId, index, blob, crcHex, onLoaded);
         return;
       } catch (e) {
         lastErr = e;
@@ -471,7 +697,9 @@
     throw lastErr;
   }
 
-  async function uploadFileChunked(file, onProgress) {
+  // uploadFileChunked(file, task): updates task.loaded/sessionBase as it goes.
+  // Returns upload_id. The task's XHRs are tracked for panel-side cancel.
+  async function uploadFileChunked(file, task) {
     // init returns the session + already-received chunk bitmap (resume point)
     const init = await fetchJSON(UPLOAD_API + '/init', {
       method: 'POST',
@@ -491,11 +719,14 @@
     // progress bookkeeping: base = bytes already on server, live = in-flight chunk loads
     let base = 0;
     for (const i of doneSet) base += expectedLen(i);
+    task.sessionBase = base;
+    task.startedAt = Date.now();   // session speed counts only this attempt
     const live = {};
     const report = () => {
       let loaded = base;
       for (const k in live) loaded += live[k];
-      onProgress(Math.min(loaded, file.size), file.size);
+      task.loaded = Math.min(loaded, file.size);
+      schedulePanelRender();
     };
     report();
 
@@ -509,7 +740,7 @@
         const i = pending[cursor++];
         const blob = file.slice(i * chunkSize, Math.min((i + 1) * chunkSize, file.size));
         live[i] = 0;
-        await uploadChunkWithRetry(uploadId, i, blob, (l) => { live[i] = l; report(); });
+        await uploadChunkWithRetry(task, uploadId, i, blob, (l) => { live[i] = l; report(); });
         base += expectedLen(i);
         delete live[i];
         report();
@@ -530,21 +761,28 @@
       for (const f of files) {
         fd.append('files', f);
       }
+      // one task per file; the single request reports only aggregate progress,
+      // split proportionally by size (small files finish in seconds anyway)
+      const tasks = files.map(f => createTask(f));
 
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        uploadXHR = xhr;
+        for (const t of tasks) t.xhrs.add(xhr);
         xhr.open('POST', MSG_API + '/files');
 
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
+            for (const t of tasks) {
+              t.loaded = Math.min(t.size, Math.round(e.loaded * t.size / Math.max(1, e.total)));
+            }
+            schedulePanelRender();
             updateProgress(e.loaded, e.total);
           }
         };
 
         xhr.onload = () => {
-          uploadXHR = null;
           if (xhr.status >= 200 && xhr.status < 300) {
+            for (const t of tasks) { t.loaded = t.size; finishTask(t, 'done'); }
             try {
               resolve(JSON.parse(xhr.responseText));
             } catch (_) {
@@ -556,33 +794,60 @@
               const body = JSON.parse(xhr.responseText);
               errMsg = body.detail || errMsg;
             } catch (_) {}
+            for (const t of tasks) finishTask(t, 'error', errMsg);
             reject(new Error(errMsg));
           }
         };
 
-        xhr.onerror = () => { uploadXHR = null; reject(new Error('网络错误')); };
-        xhr.ontimeout = () => { uploadXHR = null; reject(new Error('上传超时')); };
-        xhr.onabort = () => { uploadXHR = null; reject(new Error('上传已取消')); };
+        xhr.onerror = () => { for (const t of tasks) finishTask(t, 'error', '网络错误'); reject(new Error('网络错误')); };
+        xhr.ontimeout = () => { for (const t of tasks) finishTask(t, 'error', '上传超时'); reject(new Error('上传超时')); };
+        xhr.onabort = () => {
+          for (const t of tasks) {
+            if (t.status === 'uploading') finishTask(t, 'cancelled');
+          }
+          reject(new Error('上传已取消'));
+        };
         xhr.timeout = 300000;
         xhr.send(fd);
       });
     }
 
-    // Large file(s): chunked parallel + resumable path
-    const ids = [];
-    let cumDone = 0;
-    for (const f of files) {
-      const id = await uploadFileChunked(f, (loaded) => {
-        updateProgress(cumDone + loaded, totalAll);
+    // Large file(s): chunked parallel + resumable path (one task per file)
+    const tasks = [];
+    // modal aggregate progress from tasks (average speed across the whole op);
+    // uploadFileChunked updates task.loaded, this interval mirrors it to the bar
+    const reportModal = () => {
+      const loaded = tasks.reduce((s, t) => s + t.loaded, 0);
+      const sent = tasks.reduce((s, t) => s + Math.max(0, t.loaded - t.sessionBase), 0);
+      updateProgress(loaded, totalAll, sent);
+    };
+    const modalTimer = setInterval(reportModal, 250);
+
+    try {
+      for (const f of files) {
+        const t = createTask(f);
+        tasks.push(t);
+        t._uploadId = await uploadFileChunked(f, t);
+      }
+
+      const ids = tasks.map(t => t._uploadId);
+      const msg = await fetchJSON(UPLOAD_API + '/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_ids: ids, sender: '' })
       });
-      cumDone += f.size;
-      ids.push(id);
+      for (const t of tasks) { t.loaded = t.size; finishTask(t, 'done'); }
+      return msg;
+    } catch (e) {
+      for (const t of tasks) {
+        if (t.status === 'uploading') {
+          finishTask(t, e.message === '上传已取消' ? 'cancelled' : 'error', e.message);
+        }
+      }
+      throw e;
+    } finally {
+      clearInterval(modalTimer);
     }
-    return await fetchJSON(UPLOAD_API + '/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ upload_ids: ids, sender: '' })
-    });
   }
 
   async function sendZip(files, name) {
@@ -592,10 +857,19 @@
     for (const f of files) {
       fd.append('files', f);
     }
+    // zip op = one task (single request; server-side deflate is not upload progress)
+    const task = createTask(
+      { name: (name || 'files') + '.zip', size: files.reduce((s, f) => s + f.size, 0) },
+      (files.length > 1 ? files[0].name + ' 等 ' + files.length + ' 个文件' : undefined)
+    );
     try {
+      // no per-request progress via fetch(); run XHR-less is fine for typical zips
       await fetchJSON(MSG_API + '/zip', { method: 'POST', body: fd });
+      task.loaded = task.size;
+      finishTask(task, 'done');
       showToast(`共 ${files.length} 个文件，打包发送成功`);
     } catch (e) {
+      finishTask(task, 'error', e.message);
       showToast('打包上传失败: ' + e.message);
     }
   }
@@ -690,12 +964,6 @@
   // ── ZIP modal ──────────────────────────────────────────────────────────
   let zipFiles = [];
 
-  // Upload progress state
-  let uploadSpeed = 0;
-  let uploadLastBytes = 0;
-  let uploadLastTime = 0;
-  let uploadXHR = null;
-
   btnZip.addEventListener('click', () => {
     zipFiles = [];
     zipName.value = '';
@@ -706,22 +974,18 @@
   });
 
   function closeZipModal() {
-    // Abort any in-flight upload (multipart single-stream + parallel chunks).
-    // Aborted chunk sessions stay 'active' server-side -> same file re-send resumes.
-    if (uploadXHR) {
-      try { uploadXHR.abort(); } catch (_) {}
-      uploadXHR = null;
-    }
-    for (const x of uploadXHRs) {
-      try { x.abort(); } catch (_) {}
-    }
-    uploadXHRs = [];
+    // Closing the modal does NOT abort uploads - they continue in background
+    // (see upload manager panel). Cancel per-task from the panel instead.
+    const active = uploadTasks.some(t => t.status === 'uploading');
     zipModal.classList.remove('open');
     zipFiles = [];
     resetProgress();
     showProgress(false);
     updateZipFileList();
     btnZipCancel.textContent = '取消';
+    if (active) {
+      showToast('上传仍在后台进行, 点击输入栏上传图标查看进度');
+    }
   }
 
   btnZipCancel.addEventListener('click', closeZipModal);
@@ -804,7 +1068,7 @@
     // Disable all controls
     btnDirectUpload.disabled = true;
     btnZipUpload.disabled = true;
-    btnZipCancel.textContent = '取消上传';
+    btnZipCancel.textContent = '转入后台';
 
     // Show progress
     resetProgress();
