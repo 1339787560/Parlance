@@ -1,15 +1,24 @@
 import logging
+import math
 import shutil
+import uuid
 from pathlib import Path
 from typing import Optional
 
 import yaml
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, Body
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
+from file_handler import UPLOAD_CHUNK_SIZE, TARGET_PARALLEL_CHUNKS, _guess_mime
 from state import state
 
 logger = logging.getLogger(__name__)
+
+
+# Quick speed-test payload cap. Keeps the measurement "one-shot" and light,
+# so it can never be mistaken for a bandwidth attack.
+MAX_SPEEDTEST_BYTES = 8 * 1024 * 1024
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -96,7 +105,7 @@ async def upload_zip(request: Request, sender: str = Form(""),
         data = await f.read()
         files_data.append((data, f.filename or "unnamed"))
 
-    rel_path, _, display_name = state.fh.create_zip(files_data, zip_name)
+    rel_path, _, display_name = await run_in_threadpool(state.fh.create_zip, files_data, zip_name)
     file_size = (Path(state.fh.upload_dir) / rel_path).stat().st_size
 
     msg = await state.chat.add_zip_message(
@@ -121,12 +130,193 @@ async def upload_files(request: Request, sender: str = Form(""),
         data = await f.read()
         files_data.append((data, f.filename or "unnamed"))
 
-    batch_path, display_name, total_size, file_names = state.fh.save_batch(files_data)
+    batch_path, display_name, total_size, file_names = await run_in_threadpool(
+        state.fh.save_batch, files_data)
     msg = await state.chat.add_batch_message(
         ip, sender, batch_path, display_name, total_size, file_names,
     )
     logger.info("Batch upload: %d files (%d bytes) from %s", len(files), total_size, ip)
     return msg
+
+
+# ── Chunked resumable upload ───────────────────────────────────────────────
+#
+# Flow: init (returns session + already-received bitmap for resume)
+#   -> chunk xN (parallel raw-body POSTs, idempotent)
+#   -> complete (verify + merge + create message) | DELETE (abort)
+# Sessions are persisted in SQLite keyed by (fingerprint, device_ip), so a
+# page refresh or WiFi drop resumes from the last received chunk.
+
+@router.post("/api/upload/init")
+async def upload_init(request: Request):
+    _check_origin(request)
+    assert state.db and state.fh
+    ip = _get_client_ip(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+
+    fingerprint = (data.get("fingerprint") or "").strip()
+    filename = (data.get("filename") or "unnamed").strip() or "unnamed"
+    try:
+        file_size = int(data.get("file_size") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Invalid file_size")
+
+    if not fingerprint:
+        raise HTTPException(400, "fingerprint required")
+    if file_size <= 0:
+        raise HTTPException(400, "file_size must be positive")
+
+    # Opportunistic GC: stale sessions (>24h) -> aborted, finished rows dropped
+    for sid in state.db.purge_stale_upload_sessions():
+        state.fh.cleanup_session_files(sid)
+
+    # Resume: same device + same file fingerprint + still active
+    sess = state.db.find_active_upload_session(fingerprint, ip)
+    if sess and sess["file_size"] == file_size:
+        return {
+            "upload_id": sess["id"],
+            "chunk_size": sess["chunk_size"],
+            "total_chunks": sess["total_chunks"],
+            "received": sess["received"],
+            "resumed": True,
+        }
+
+    upload_id = uuid.uuid4().hex[:16]
+    # Keep 32MB chunks for large files, but shrink chunk size for medium files
+    # so the browser's 6 parallel streams actually have multiple chunks to send.
+    chunk_size = UPLOAD_CHUNK_SIZE
+    if file_size < UPLOAD_CHUNK_SIZE * TARGET_PARALLEL_CHUNKS:
+        chunk_size = max(1, math.ceil(file_size / TARGET_PARALLEL_CHUNKS))
+    total_chunks = math.ceil(file_size / chunk_size)
+    state.db.create_upload_session(
+        upload_id, fingerprint, ip, filename, file_size,
+        chunk_size, total_chunks,
+    )
+    state.fh.tmp_dir(upload_id).mkdir(parents=True, exist_ok=True)
+    return {
+        "upload_id": upload_id,
+        "chunk_size": chunk_size,
+        "total_chunks": total_chunks,
+        "received": [],
+        "resumed": False,
+    }
+
+
+@router.post("/api/upload/chunk")
+async def upload_chunk(request: Request, upload_id: str, index: int):
+    _check_origin(request)
+    assert state.db and state.fh
+    sess = state.db.get_upload_session(upload_id)
+    if not sess:
+        raise HTTPException(404, "Unknown upload session")
+    if sess["status"] != "active":
+        raise HTTPException(409, f"Session is {sess['status']}")
+    if not 0 <= index < sess["total_chunks"]:
+        raise HTTPException(400, "Chunk index out of range")
+
+    # Stream raw body straight to disk - no multipart, no full buffering
+    written, crc = await state.fh.write_chunk(upload_id, index, request.stream())
+
+    # End-to-end integrity: client-computed CRC32 of the chunk payload.
+    # TCP's 16-bit checksum lets rare corruption through; this catches it.
+    client_crc = request.headers.get("x-chunk-crc32", "").strip().lower()
+    if client_crc and client_crc != crc:
+        state.fh.chunk_path(upload_id, index).unlink(missing_ok=True)
+        raise HTTPException(400, f"Chunk CRC mismatch: server={crc} client={client_crc}")
+
+    expected = state.fh.chunk_expected_size(
+        sess["file_size"], sess["chunk_size"], index, sess["total_chunks"])
+    if written != expected:
+        # Remove the bad chunk so a retry re-sends it cleanly
+        state.fh.chunk_path(upload_id, index).unlink(missing_ok=True)
+        raise HTTPException(400, f"Chunk size mismatch: got {written}, expected {expected}")
+
+    state.db.mark_chunk_received(upload_id, index)
+    return {"ok": True, "index": index, "size": written, "crc32": crc}
+
+
+@router.post("/api/upload/complete")
+async def upload_complete(request: Request):
+    _check_origin(request)
+    assert state.db and state.fh and state.chat
+    ip = _get_client_ip(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+
+    sender = (data.get("sender") or "")
+    upload_ids = data.get("upload_ids") or []
+    if not upload_ids:
+        raise HTTPException(400, "upload_ids required")
+
+    sessions = []
+    for uid in upload_ids:
+        sess = state.db.get_upload_session(uid)
+        if not sess:
+            raise HTTPException(404, f"Unknown upload session {uid}")
+        if sess["device_ip"] != ip:
+            raise HTTPException(403, "Session belongs to another device")
+        if sess["status"] != "active":
+            raise HTTPException(409, f"Session {uid} is {sess['status']}")
+        missing = [i for i in range(sess["total_chunks"])
+                   if i not in set(sess["received"])
+                   and not state.fh.chunk_path(uid, i).exists()]
+        if missing:
+            raise HTTPException(400, f"Session {uid} missing chunks: {missing[:10]}")
+        sessions.append(sess)
+
+    if len(sessions) == 1:
+        sess = sessions[0]
+        rel = state.fh.new_files_relative(sess["filename"])
+        await run_in_threadpool(
+            state.fh.merge_chunks, sess["id"], sess["total_chunks"], rel,
+            sess["file_size"], sess["chunk_size"])
+        state.db.set_upload_session_status(sess["id"], "done")
+        msg = await state.chat.add_file_message(
+            ip, sender, rel, sess["filename"], sess["file_size"],
+            _guess_mime(sess["filename"]),
+        )
+        return msg
+
+    # Multiple files -> batch folder, one message (same UX as /api/messages/files)
+    batch_rel = state.fh.new_batch_relative()
+    total_size = 0
+    names = []
+    for sess in sessions:
+        safe_name = state.fh.sanitize_name(sess["filename"] or "unnamed")
+        await run_in_threadpool(
+            state.fh.merge_chunks, sess["id"], sess["total_chunks"],
+            f"{batch_rel}/{safe_name}", sess["file_size"], sess["chunk_size"])
+        state.db.set_upload_session_status(sess["id"], "done")
+        total_size += sess["file_size"]
+        names.append(safe_name)
+
+    display_name = f"{names[0]} 等 {len(names)} 个文件"
+    msg = await state.chat.add_batch_message(
+        ip, sender, batch_rel, display_name, total_size, names,
+    )
+    logger.info("Chunked batch upload: %d files (%d bytes) from %s",
+                len(names), total_size, ip)
+    return msg
+
+
+@router.delete("/api/upload/{upload_id}")
+async def upload_abort(upload_id: str, request: Request):
+    _check_origin(request)
+    assert state.db and state.fh
+    ip = _get_client_ip(request)
+    sess = state.db.get_upload_session(upload_id)
+    if not sess:
+        raise HTTPException(404, "Unknown upload session")
+    if sess["device_ip"] != ip:
+        raise HTTPException(403, "Session belongs to another device")
+    state.fh.cleanup_session_files(upload_id)
+    state.db.set_upload_session_status(upload_id, "aborted")
+    return {"status": "ok", "upload_id": upload_id}
 
 
 @router.get("/api/download/{msg_id}")
@@ -175,6 +365,29 @@ async def sse_events(request: Request):
 @router.get("/api/whoami")
 async def whoami(request: Request):
     return {"ip": _get_client_ip(request)}
+
+
+@router.get("/api/speedtest")
+async def speedtest_download(bytes: int = 4 * 1024 * 1024):
+    """One-shot download speed probe (capped, no-store)."""
+    size = min(max(bytes, 1024), MAX_SPEEDTEST_BYTES)
+    return Response(
+        content=b"\0" * size,
+        media_type="application/octet-stream",
+        headers={"Content-Length": str(size), "Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/speedtest")
+async def speedtest_upload(request: Request):
+    """One-shot upload speed probe: read body and discard (capped)."""
+    _check_origin(request)
+    size = 0
+    async for data in request.stream():
+        size += len(data)
+        if size > MAX_SPEEDTEST_BYTES:
+            raise HTTPException(413, "Speedtest payload too large")
+    return {"ok": True, "bytes": size}
 
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"

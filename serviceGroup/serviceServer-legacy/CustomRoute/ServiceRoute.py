@@ -1264,6 +1264,26 @@ def api_save_template():
     except Exception as e:
         return jsonify({'success': False, 'message': f'保存模板失败: {str(e)}'}), 500
 
+@app.route('/api/templates/update', methods=['POST'])
+def api_update_template():
+    """更新已有模板（覆盖）"""
+    try:
+        data = request.json
+        template_id = data.get('id')
+        name = data.get('name')
+        template_type = data.get('type')
+        template_data = data.get('data')
+
+        if not all([template_id, name, template_type, template_data]):
+            return jsonify({'success': False, 'message': '参数不完整'}), 400
+
+        if TemplateDB.update_template(template_id, name, template_type, template_data):
+            return jsonify({'success': True, 'message': '模板更新成功'})
+        else:
+            return jsonify({'success': False, 'message': '模板不存在'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'更新模板失败: {str(e)}'}), 500
+
 @app.route('/api/templates/get', methods=['GET'])
 def api_get_templates():
     """获取所有模板"""

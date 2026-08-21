@@ -45,6 +45,8 @@
     .chair.active { outline: 2px solid #fc6; }
 
     .player-info { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; flex-wrap: wrap; }
+    /* 顺序: name(1) uid(2) que-chip(3) deposit(4) — deposit 始终占位(visibility 非 display:none), 结算时显隐无 reflow */
+    .player-info .name { order: 1; } .player-info .uid { order: 2; } .player-info .que-chip { order: 3; } .player-info .deposit { order: 4; margin-left: 4px; }
     .name { font-weight: bold; color: #ffe; }
     .uid { color: #6a8a7a; font-size: 10px; }
     .que-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px; background: #3a2a1a; color: #fc6; }
@@ -53,11 +55,11 @@
     .que-chip.D { background: #5a1a1a; color: #f99; }
     .que-chip.pulse { animation: pulse .6s ease-out 2; }
     @keyframes pulse { 0%{transform:scale(1)} 50%{transform:scale(1.25)} 100%{transform:scale(1)} }
-    .deposit { font-size: 20px; font-weight: bold; font-family: Consolas, monospace; display: none; }
-    .deposit.show { display: inline-block; }
+    .deposit { font-size: 20px; font-weight: bold; font-family: Consolas, monospace; display: inline-block; visibility: hidden; min-width: 50px; }
+    .deposit.show { visibility: visible; }
     .deposit.pos { color: #fc6; text-shadow: 0 0 8px rgba(252,192,80,.5); }
     .deposit.neg { color: #6cf; text-shadow: 0 0 8px rgba(108,192,255,.5); }
-    .deposit.zero { color: #6a8a7a; font-size: 14px; }
+    .deposit.zero { color: #6a8a7a; }
 
     /* 玩家牌区: 手牌区(固定宽/高, 居中) + 碰杠(左/上 绝对) + 抓牌(手牌右/下 绝对, 半张间隔); 胡牌另列前方左->右 */
     .play-area { display: flex; gap: 8px; flex: 1 1 auto; min-height: 0; }
@@ -73,10 +75,9 @@
     /* 下/上(横排): 手牌区固定宽 13 张位, 碰杠左 */
     .pos-bottom .hand-area, .pos-top .hand-area { min-width: 428px; }
     .pos-bottom .meld-area, .pos-top .meld-area { left: 2px; top: 50%; transform: translateY(-50%); }
-    /* 左/右(纵列): 手牌区固定高 13 张位 */
+    /* 左/右(纵列): 手牌区固定高 13 张位; meld 非绝对 (流内独立, 避与 hand 重合) */
     .pos-left .hand-area, .pos-right .hand-area { min-height: 440px; flex-direction: column; }
-    .pos-left .meld-area { top: 2px; left: 50%; transform: translateX(-50%); flex-direction: column; }
-    .pos-right .meld-area { bottom: 2px; left: 50%; transform: translateX(-50%); flex-direction: column; }
+    .pos-left .meld-area, .pos-right .meld-area { position: static; top: auto; bottom: auto; left: auto; transform: none; flex-direction: column; align-self: center; }
     /* 左(玩家面右): 抓牌在手牌下方; 右(玩家面左): 抓牌在手牌上方 */
     .pos-left .catch-area { left: 50%; top: 100%; transform: translateX(-50%); margin: 16px 0 0 0; }
     .pos-right .catch-area { left: 50%; top: auto; bottom: 100%; transform: translateX(-50%); margin: 0 0 16px 0; }
@@ -166,29 +167,31 @@
 
   <div class="svc-bar">
     <select id="src-sel" class="pill"></select>
-    <input type="date" id="src-date" class="pill">
+    <input type="date" id="src-date" class="pill" title="留空 = 全部日期">
     <select id="src-room" class="pill"><option value="">全部房间</option></select>
-    <input type="text" id="src-players" class="pill" placeholder="uid,逗号分隔筛" style="width:130px" title="玩家 uid 逗号分隔 (4 玩家完全包含输入集合)">
+    <input type="text" id="src-players" class="pill" placeholder="玩家ID (逗号分隔)" style="width:130px" title="玩家 uid, 逗号分隔 (单个不需要逗号)">
     <button id="btn-src-list" class="pill">查找</button>
     <span id="src-progress" class="pill" style="display:none;min-width:90px;background:#fc6;color:#000"></span>
     <span class="sep"></span>
     <button id="btn-rounds" class="pill">对局 -/-</button>
     <span class="sep"></span>
-    <button id="btn-reset">⏮</button>
+    <button id="btn-first" title="回到牌局最初">⏮</button>
     <button id="btn-prev">◀</button>
     <span class="pill" id="step-info">步 -/-</span>
     <button id="btn-next">▶</button>
+    <button id="btn-last" title="跳至牌局最后">⏭</button>
     <span class="sep"></span>
     <span class="persp-btns" id="persp-btns" title="视角 (底位玩家)">
       <button data-p="0">0</button><button data-p="1">1</button><button data-p="2">2</button><button data-p="3">3</button>
     </span>
     <span class="sep"></span>
+    <button id="btn-clear-cache" class="pill" title="清空所有缓存数据" style="background:#5a1a1a;border-color:#8a2a2a">🗑 重置</button>
     <label class="pill" style="cursor:pointer">加载 record<input type="file" accept=".log,.txt" id="file-input" style="display:none"></label>
   </div>
 
   <div class="app">
     <div class="meta" id="meta">未加载</div>
-    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v6</div>
+    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v8</div>
 
     <div class="table">
       <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
@@ -236,6 +239,9 @@
   const rec = { header: {}, rounds: [] };
   let curRound = 0, curStep = -1, listBuilt = false, perspective = 0, prevQue = ['','','',''];
   const STORE_KEY = 'recorder_state_v1';
+  const STORE_KEY_RECORD = 'recorder_record_v1';
+  const STORE_KEY_LIST = 'recorder_list_v2';  // 全状态持久化 (源/日期/房间/ID/列表)
+  let lastFetchKey = '';  // 追踪上次 API 拉取的 source+date, 避免重复请求
 
   const ROWS_Y = [8, 153, 301, 448, 590, 745];
   const ROWS_H = [133, 136, 131, 132, 137, 120];
@@ -332,31 +338,46 @@
 
   function parseRecord(txt) {
     const lines = txt.split(/\r?\n/);
-    const header = {}, events = [];
+    const header = {};
+    const rawEntries = [];  // header + event 交错保留 (供 splitRounds 提取每局 meta)
     for (const line of lines) {
       if (!line.trim()) continue;
       const m = line.match(/^(\d{2}:\d{2}:\d{2})\s+(\S+)\s*(.*)$/);
-      if (m) { events.push({ time: m[1], type: m[2], rest: m[3].trim() }); continue; }
+      if (m) { rawEntries.push({ kind: 'event', time: m[1], type: m[2], rest: m[3].trim() }); continue; }
       const hm = line.match(/^(\w+)\s+(.*)$/);
       if (!hm) continue;
       const k = hm[1], v = hm[2];
+      rawEntries.push({ kind: 'header', key: k, value: v });
+      // 全局 header 仍保留 (last round wins, 供 meta 栏显示)
       if (k === 'ChairNO' || k === 'Name' || k === 'Win_Loss_StandOff') {
         const ci = parseInt(v.split(/\s+/)[0], 10);
         if (!Number.isNaN(ci)) (header[k] = header[k] || [])[ci] = v;
       } else header[k] = v;
     }
     rec.header = header;
-    rec.rounds = splitRounds(events);
+    rec.rounds = splitRounds(rawEntries);
     curRound = 0;
   }
 
-  function splitRounds(events) {
+  function splitRounds(rawEntries) {
     const rounds = []; let cur = null;
-    for (const ev of events) {
-      if (ev.type === 'Cards') { cur = { events: [], startSec: parseTimeToSec(ev.time), snaps: [] }; rounds.push(cur); }
-      if (cur) cur.events.push(ev);
+    let meta = {};  // 累积 header, 在下一个 Cards 时赋给该局
+    for (const entry of rawEntries) {
+      if (entry.kind === 'header') {
+        const k = entry.key, v = entry.value;
+        if (k === 'ChairNO') { const p = v.split(/\s+/); const ci = parseInt(p[0], 10); if (ci >= 0 && ci < 4) { (meta.players = meta.players || ['','','',''])[ci] = p[1] || ''; } }
+        else if (k === 'Timestamp') { meta.timestamp = v.split(/\s+/)[0]; }
+        else if (k === 'TableNO') { meta.tableNo = v.split(/\s+/)[0]; }
+        else if (k === 'RoomID') { meta.roomId = v.split(/\s+/)[0]; }
+      } else {
+        if (entry.type === 'Cards') { cur = { events: [], snaps: [], meta, startSec: parseTimeToSec(entry.time) }; meta = {}; rounds.push(cur); }
+        if (cur) cur.events.push({ time: entry.time, type: entry.type, rest: entry.rest });
+      }
     }
-    if (!rounds.length && events.length) rounds.push({ events, startSec: 0, snaps: [] });
+    if (!rounds.length) {
+      const events = rawEntries.filter(e => e.kind === 'event').map(e => ({ time: e.time, type: e.type, rest: e.rest }));
+      if (events.length) rounds.push({ events, snaps: [], meta, startSec: 0 });
+    }
     for (const r of rounds) buildSnapshots(r);
     return rounds;
   }
@@ -373,7 +394,8 @@
     const deposit = [null,null,null,null], depositInit = [null,null,null,null];
     const TOTAL = 114;
     const evs = round.events, n = evs.length;
-    const wallNow = () => TOTAL - sumLen(hands) - sumLen(discards) - sumLen(melds) - sumLen(hu);
+    let wallOffset = 0;  // 杠后无显式 Catch 的隐式补摸 (杠牌堆减 1; 碰不变, 杠减一)
+    const wallNow = () => TOTAL - sumLen(hands) - sumLen(discards) - sumLen(melds) - sumLen(hu) + wallOffset;
     const S = (extra = {}) => snapOf(hands, que, discards, melds, hu, exchanges, wallNow(), deposit, depositInit, extra);
     round.snaps.length = 0;
     round.snaps.push(S());
@@ -438,6 +460,8 @@
           for (const x of gang) { const idx = hands[cc].indexOf(x); if (idx>=0) hands[cc].splice(idx,1); }
           melds[cc].push(gang);
         }
+        // 杠后补摸: 紧接 Catch 显式则按 catch, 无则隐式 wall 减 1
+        if (!evs[i+1] || evs[i+1].type !== 'Catch') wallOffset -= 1;
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
       // 补杠: 已有 peng meld(3 张同牌) +newTile 升级为 4 张; newTile 从手牌移除
@@ -448,12 +472,19 @@
           if (target) target.push(newTile); else melds[cc].push([newTile, newTile, newTile, newTile]);
           const idx = hands[cc].indexOf(newTile); if (idx>=0) hands[cc].splice(idx,1);
         }
+        // 补杠后补摸 (同暗杠): 紧接 Catch 则按 catch, 无则隐式 wall 减 1
+        if (!evs[i+1] || evs[i+1].type !== 'Catch') wallOffset -= 1;
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
-      // 胡: winning tile 入胡牌区(按胡牌顺序); 手牌不变(血战续打)
+      // 胡: winning tile 入胡牌区; 自摸 tile 在手牌移除, 点炮 tile 在某弃牌末位移除 (避 discard+hu 双计)
       if (t === 'Hu') {
         const pp = ev.rest.split(/\s+/), cc = +pp[0], tile = pp[1];
-        if (cc>=0&&cc<4) hu[cc].push(tile);
+        if (cc>=0&&cc<4) {
+          const idx = hands[cc].indexOf(tile);
+          if (idx>=0) hands[cc].splice(idx,1);
+          else { for (let k=0;k<4;k++) { if (discards[k].length && discards[k][discards[k].length-1]===tile) { discards[k].pop(); break; } } }
+          hu[cc].push(tile);
+        }
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
       const p = ev.rest.split(/\s+/);
@@ -484,8 +515,21 @@
 
   function renderMeta() {
     const h = rec.header;
-    (h.ChairNO || []).forEach((s, c) => { if (c>=4) return; const uid = s.split(/\s+/)[1]; const el = document.querySelector(`.chair[data-chair="${c}"] .uid`); if (el) el.textContent = uid ? `uid ${uid}` : ''; });
-    document.getElementById('btn-rounds').textContent = rec.rounds.length ? `对局 ${curRound+1}/${rec.rounds.length}` : '对局 -/-';
+    (h.ChairNO || []).forEach((s, c) => { if (c>=4) return; const uid = s.split(/\s+/)[1]; const el = document.querySelector(`.chair[data-chair="${c}"] .uid`); if (el) { el.textContent = uid ? `uid ${uid}` : ''; el.style.cursor = uid ? 'pointer' : ''; el.title = uid ? '点击复制 UID' : ''; el.onclick = uid ? () => { navigator.clipboard.writeText(uid).then(() => { const orig = el.textContent; el.textContent = `uid ${uid} ✓`; setTimeout(() => { el.textContent = orig; }, 1200); }).catch(() => {}); } : null; } });
+    updateRoundsButton();
+  }
+  // 对局按钮唯一设值入口: 显示记录文件列表的过滤计数 (非 round 计数, round 在 meta 栏)
+  // allRecords 空 → "对局 -/-"; 有过滤 → "对局 N/总"; 无过滤 → "对局 总"
+  function updateRoundsButton() {
+    const btn = document.getElementById('btn-rounds');
+    if (!allRecords.length) { btn.textContent = '对局 -/-'; return; }
+    const playersStr = document.getElementById('src-players').value.trim();
+    const need = playersStr ? playersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const room = document.getElementById('src-room').value;
+    let items = allRecords;
+    if (room) items = items.filter(x => x.room_id === room);
+    if (need.length) items = items.filter(x => need.every(n => (x.players || []).includes(n)));
+    btn.textContent = (need.length || room) ? `对局 ${items.length}/${allRecords.length}` : `对局 ${allRecords.length}`;
   }
 
   function renderCurrentTime() {
@@ -545,7 +589,7 @@
       const depEl = chair.querySelector('.deposit');
       if (isResult) {
         const init = s.depositInit[c], cur = s.deposit[c];
-        if (init !== null && cur !== null) { const delta = cur - init; depEl.textContent = (delta>0?'+':'')+convertMoneyFormat(delta); depEl.className = 'deposit show ' + (delta>0?'pos':delta<0?'neg':'zero'); }
+        if (init !== null && cur !== null) { const delta = init + cur; depEl.textContent = (delta>0?'+':'')+convertMoneyFormat(delta); depEl.className = 'deposit show ' + (delta>0?'pos':delta<0?'neg':'zero'); }
         else { depEl.textContent='0'; depEl.className='deposit show zero'; }
       } else depEl.className = 'deposit';
 
@@ -610,16 +654,21 @@
 
   function setRound(i) {
     if (i < 0 || i >= rec.rounds.length) return;
-    curRound = i; listBuilt = false; prevQue = ['','','',''];
+    curRound = i; curStep = 0; listBuilt = false; prevQue = ['','','',''];
     renderMeta(); renderRoundsList();
-    renderSnap(curSnaps().length - 1);
+    renderSnap(0);  // 从头展示
   }
 
   function renderRoundsList() {
     const list = document.getElementById('rounds-list');
     const ts = +rec.header.Timestamp || 0;
-    const rid = rec.header.RoomID || '-', tno = rec.header.TableNO || '-';
-    list.innerHTML = rec.rounds.map((r, i) => `<div class="round-item${i===curRound?' active':''}" data-round="${i}"><span class="ri-no">局 ${i+1}</span><span>${fmtTime(ts, r.startSec)}</span><span>房 ${rid}</span><span>桌 ${tno}</span></div>`).join('');
+    list.innerHTML = rec.rounds.map((r, i) => {
+      const m = r.meta || {};
+      const time = fmtTime(+(m.timestamp) || ts, r.startSec);
+      const table = m.tableNo || rec.header.TableNO || '-';
+      const players = (m.players || []).filter(Boolean).join(' · ') || '-';
+      return `<div class="round-item${i===curRound?' active':''}" data-round="${i}"><span class="ri-no">局 ${i+1}</span><span>${time}</span><span>桌 ${table}</span><span>${players}</span></div>`;
+    }).join('');
     list.querySelectorAll('.round-item').forEach(el => el.onclick = () => { document.getElementById('rounds-modal').classList.add('hidden'); setRound(+el.dataset.round); });
   }
 
@@ -640,16 +689,30 @@
     catch (e) { document.getElementById('meta').textContent = '加载失败: ' + e; }
   }
 
+  document.getElementById('btn-first').onclick = () => renderSnap(0);
   document.getElementById('btn-prev').onclick = () => { if (curStep > 0) renderSnap(curStep - 1); };
   document.getElementById('btn-next').onclick = () => { if (curStep < curSnaps().length - 1) renderSnap(curStep + 1); };
-  document.getElementById('btn-reset').onclick = () => renderSnap(0);
+  document.getElementById('btn-last').onclick = () => renderSnap(curSnaps().length - 1);
+  document.getElementById('btn-clear-cache').onclick = () => {
+    localStorage.clear();
+    allRecords = []; lastFetchKey = '';
+    document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>';
+    document.getElementById('src-players').value = '';
+    document.getElementById('records-list').innerHTML = '';
+    document.getElementById('meta').textContent = '未加载';
+    rec.header = {}; rec.rounds = []; curRound = 0; curStep = -1; listBuilt = false;
+    document.querySelectorAll('.hand-tiles').forEach(e => e.innerHTML = '');
+    document.getElementById('btn-rounds').textContent = '对局 -/-';
+    applyLayout();
+    location.reload();
+  };
   document.getElementById('file-input').onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
     try { const txt = await f.text(); parseRecord(txt); restoreState(); }
     catch (err) { document.getElementById('meta').textContent = '加载失败: ' + err; }
     e.target.value = '';
   };
-  document.getElementById('btn-rounds').onclick = () => { renderRoundsList(); document.getElementById('rounds-modal').classList.remove('hidden'); };
+  document.getElementById('btn-rounds').onclick = () => { renderFilteredRecords(document.getElementById('src-sel').value); document.getElementById('records-modal').classList.remove('hidden'); };
   document.getElementById('modal-close').onclick = () => document.getElementById('rounds-modal').classList.add('hidden');
   document.getElementById('rounds-modal').onclick = (e) => { if (e.target.id === 'rounds-modal') e.currentTarget.classList.add('hidden'); };
   document.querySelectorAll('#persp-btns button').forEach(b => b.onclick = () => { perspective = +b.dataset.p; applyLayout(); renderSnap(curStep); });
@@ -665,14 +728,17 @@
   let allRecords = []; // 当前 list 全量缓存 (房间/玩家筛走前端, 不重 fetch)
   function fmtDate(d) { return d.toISOString().slice(0,10); }
   function fmtHHMMSS(unix) { const d = new Date((unix||0)*1000); return [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':'); }
-  // oss 源 max=today-2 (滚动上传延迟 2 日); local/bastion 不限
+  // oss 源 max=today-2 (滚动上传延迟 2 日); local/bastion 不限。
+  // 不强制设值: 留空 = 全部日期 (跨日搜索), 用户可手动选日期缩小范围。
   function adjustDateMax(source) {
     const di = document.getElementById('src-date');
     if (source && source.startsWith('oss-')) {
       const today = new Date(); const maxD = new Date(today); maxD.setDate(today.getDate()-2);
       di.max = fmtDate(maxD);
       if (di.value && di.value > di.max) di.value = di.max;
-    } else { di.max = ''; }
+    } else {
+      di.max = '';
+    }
   }
   function showProgress(msg) { const p = document.getElementById('src-progress'); p.style.display=''; p.textContent = msg; }
   function hideProgress() { document.getElementById('src-progress').style.display='none'; }
@@ -691,43 +757,75 @@
         opt.textContent = s.region ? (s.region + (s.ver ? ('(' + s.ver + ')') : '')) : s.label;
         sel.appendChild(opt);
       });
-      // 日期默认前日; oss max today-2 (滚动延迟), local/bastion 不限 (adjustDateMax 按 source)
-      const di = document.getElementById('src-date');
+      // 日期/源 change 仅调 max 限制 (日期值由 restoreListState 恢复)
       adjustDateMax(sel.value);
-      const saved = localStorage.getItem('rec_date');
-      const today = new Date(); const prev = new Date(today); prev.setDate(today.getDate() - 2);
-      di.value = saved || fmtDate(prev);
-      di.onchange = () => localStorage.setItem('rec_date', di.value);
       sel.onchange = () => adjustDateMax(sel.value);
     } catch (e) { console.warn('loadSources 失败', e); }
+  }
+  // 全状态持久化: 源/日期/房间/玩家ID/allRecords → localStorage
+  function persistListState() {
+    try {
+      localStorage.setItem(STORE_KEY_LIST, JSON.stringify({
+        source: document.getElementById('src-sel').value,
+        date: document.getElementById('src-date').value,
+        room: document.getElementById('src-room').value,
+        players: document.getElementById('src-players').value,
+        allRecords,
+        lastFetchKey,
+      }));
+    } catch {}
+  }
+  // 从 localStorage 恢复全状态
+  function restoreListState() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE_KEY_LIST) || 'null');
+      if (!s || !s.allRecords) return false;
+      document.getElementById('src-sel').value = s.source || '';
+      document.getElementById('src-date').value = s.date || '';
+      document.getElementById('src-players').value = s.players || '';
+      allRecords = s.allRecords;
+      lastFetchKey = s.lastFetchKey || '';
+      // 恢复房间下拉
+      const rooms = [...new Set(allRecords.map(x => x.room_id).filter(Boolean))].sort((a,b)=>+a-+b);
+      document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>' + rooms.map(rm => `<option value="${rm}">${rm}</option>`).join('');
+      if (s.room) document.getElementById('src-room').value = s.room;
+      adjustDateMax(document.getElementById('src-sel').value);
+      return true;
+    } catch { return false; }
   }
   async function listRecords() {
     const source = document.getElementById('src-sel').value;
     const dateRaw = document.getElementById('src-date').value;
     const date = dateRaw ? dateRaw.replace(/-/g, '') : '';
+    const fetchKey = source + '|' + date;
+    // 源+日期未变 → 跳过 API, 仅重新过滤 (玩家ID/房间 筛选)
+    if (fetchKey === lastFetchKey && allRecords.length > 0) {
+      renderFilteredRecords(source);
+      updateRoundsButton();
+      persistListState();
+      return;
+    }
+    // 源+日期变了 → 局级扫描 (下载文件 + 扫每局 header)
     const q = new URLSearchParams({ source });
     if (date) q.set('date', date);
-    // 清旧 (避切源后残留上源 title/room 致跨源错觉)
-    allRecords = [];
     document.getElementById('records-title').textContent = source + ' · ' + (date || '全部');
     document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>';
     document.getElementById('records-list').innerHTML = '';
-    showProgress('下载中...');
-    document.getElementById('records-modal').classList.remove('hidden');
-    document.getElementById('records-list').textContent = '加载中...';
+    showProgress('扫描对局中...');
+    document.getElementById('records-list').textContent = '扫描中...';
     try {
-      const r = await fetch('/api/record/list?' + q).then(r => r.json());
+      const r = await fetch('/api/record/scan_rounds?' + q).then(r => r.json());
       hideProgress();
-      if (!r.success) { document.getElementById('records-list').textContent = '该源不可用（远端目录不存在或未达，如 185·六红中 = 185 机无 xzms Record 目录）'; console.warn('list fail:', r); return; }
-      allRecords = r.items || [];
-      // 填房间 select (unique room_id, 供大区内房间筛)
-      const roomSel = document.getElementById('src-room');
-      const curRoom = roomSel.value;
+      if (!r.success) { document.getElementById('records-list').textContent = '该源不可用'; return; }
+      allRecords = r.rounds || [];
+      lastFetchKey = fetchKey;
+      // 填房间下拉 (room_id = 文件 = 房间)
       const rooms = [...new Set(allRecords.map(x => x.room_id).filter(Boolean))].sort((a,b)=>+a-+b);
-      roomSel.innerHTML = '<option value="">全部房间</option>' + rooms.map(rm => `<option value="${rm}">${rm}</option>`).join('');
-      if (curRoom && rooms.includes(curRoom)) roomSel.value = curRoom;
+      document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>' + rooms.map(rm => `<option value="${rm}">${rm}</option>`).join('');
       renderFilteredRecords(source);
-    } catch (e) { hideProgress(); document.getElementById('records-list').textContent = '加载失败: ' + e; }
+      updateRoundsButton();
+      persistListState();
+    } catch (e) { hideProgress(); document.getElementById('records-list').textContent = '扫描失败: ' + e; }
   }
   // 前端筛 (缓存 allRecords, 房间/玩家变更即时, 不重 fetch)
   function renderFilteredRecords(source) {
@@ -741,21 +839,21 @@
     const title = document.getElementById('records-title');
     list.innerHTML = '';
     const total = allRecords.length;
-    title.textContent = `${source} · ${items.length} 局` + (items.length !== total ? ` / ${total}` : '') + (need.length ? ` (含 ${need.join(',')})` : '');
+    title.textContent = `${source} · ${items.length} 局` + (items.length !== total ? ` / ${total}` : '') + (need.length ? ` (含 ${need.join(',')})` : '') + (room ? ` 房${room}` : '');
     if (!items.length) { list.textContent = '无匹配'; return; }
     items.forEach(it => {
+      const globalIdx = allRecords.indexOf(it) + 1;
       const row = document.createElement('div');
       row.className = 'round-item';
       row.style.cssText = 'padding:6px 4px;cursor:pointer;border-bottom:1px solid #2a4a3a;';
-      const kb = (it.size / 1024).toFixed(0);
-      const ts = it.timestamp ? fmtHHMMSS(it.timestamp) : '';
+      const ts = it.timestamp ? fmtHHMMSS(it.timestamp) : '--:--:--';
       const uids = (it.players || []).filter(Boolean).join(',');
-      row.textContent = `${ts} · ${it.room_id || it.table_no} · ${kb}KB${uids ? ' · ' + uids : ''}`;
-      row.onclick = () => loadRecord(source, it.id);
+      row.textContent = `${globalIdx}/${total} · 房${it.room_id || '?'} · ${ts} · ${uids}`;
+      row.onclick = () => loadRecord(source, it.file_id, it.round_idx);
       list.appendChild(row);
     });
   }
-  async function loadRecord(source, id) {
+  async function loadRecord(source, id, roundIdx) {
     document.getElementById('records-modal').classList.add('hidden');
     const meta = document.getElementById('meta');
     meta.textContent = `加载中 ${id} ...`;
@@ -765,18 +863,49 @@
       hideProgress();
       if (!r.success) throw new Error(r.message || 'get 失败');
       parseRecord(r.content);
-      restoreState();
-      meta.textContent = `${source} · ${id}`;
+      // 从指定局从头展示 (roundIdx 来自 scan_rounds; 无则默认 0)
+      let sv = {}; try { sv = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
+      if (sv.perspective !== undefined) { perspective = sv.perspective; applyLayout(); }
+      const targetRound = (roundIdx !== undefined && roundIdx < rec.rounds.length) ? roundIdx : 0;
+      curRound = targetRound; curStep = 0; listBuilt = false; prevQue = ['','','',''];
+      renderMeta();
+      renderSnap(0);
+      meta.textContent = `${source} · ${id}` + (roundIdx !== undefined ? ` · 局${targetRound+1}` : '');
+      try { localStorage.setItem(STORE_KEY_RECORD, JSON.stringify({ source, id, roundIdx: targetRound })); } catch {}
     } catch (e) { hideProgress(); meta.textContent = '加载失败: ' + e; }
   }
   document.getElementById('btn-src-list').onclick = listRecords;
-  document.getElementById('src-room').onchange = () => renderFilteredRecords(document.getElementById('src-sel').value);
-  document.getElementById('src-players').oninput = () => renderFilteredRecords(document.getElementById('src-sel').value);
+  // 玩家ID/房间 变更不自动过滤, 仅点"查找"才过滤 (用户需求 2/3)
   document.getElementById('records-close').onclick = () => document.getElementById('records-modal').classList.add('hidden');
   document.getElementById('records-modal').onclick = (e) => { if (e.target.id === 'records-modal') e.currentTarget.classList.add('hidden'); };
 
   applyLayout();
-  loadSources();
+  loadSources().then(() => {
+    // 全状态恢复 (用户需求 4: 刷新不丢 源/日期/房间/ID/列表/牌局)
+    try {
+      const restored = restoreListState();
+      if (restored) {
+        renderFilteredRecords(document.getElementById('src-sel').value);
+        updateRoundsButton();
+      }
+      // 恢复牌局 (上次看的 record + round + step)
+      const rs = JSON.parse(localStorage.getItem(STORE_KEY_RECORD) || 'null');
+      if (rs && rs.source && rs.id) {
+        // loadRecord 会从头展示, 但 restoreState 会恢复保存的 step
+        loadRecord(rs.source, rs.id).then(() => {
+          // loadRecord 内已 renderSnap(0); 如有保存的 step/round 则覆盖
+          let sv = {}; try { sv = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
+          if (sv.curRound !== undefined && sv.curRound < rec.rounds.length) {
+            curRound = sv.curRound; listBuilt = false; prevQue = ['','','',''];
+            renderMeta();
+            const snaps = curSnaps();
+            const target = (sv.curStep !== undefined && sv.curStep >= 0 && sv.curStep < snaps.length) ? sv.curStep : 0;
+            renderSnap(target);
+          }
+        });
+      }
+    } catch {}
+  });
 </script>
 </body>
 </html>

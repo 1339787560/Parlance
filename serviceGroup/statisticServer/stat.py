@@ -33,8 +33,8 @@ HISTORY_FILE = CONFIG_DIR / "history.json"
 
 # Pricing (per 1M tokens, RMB) — DeepSeek V4 (2026-07 起), 高峰翻倍
 PRICING = {
-    "deepseek-v4-flash": {"cache_hit": 0.02, "cache_miss": 1, "completion": 2},
-    "deepseek-v4-pro":   {"cache_hit": 0.025, "cache_miss": 3, "completion": 6},
+    "deepseek-v4-flash": {"cache_hit": 0.05, "cache_miss": 1.5, "completion": 4.5},
+    "deepseek-v4-pro":   {"cache_hit": 0.15, "cache_miss": 4.5, "completion": 13.5},
 }
 PEAK_WINDOWS = [(9, 12), (14, 18)]  # 北京时间高峰时段 (含起始不含结束)
 PEAK_MULTIPLIER = 2.0

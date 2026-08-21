@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -45,6 +46,21 @@ class Database:
                 device_ip TEXT PRIMARY KEY,
                 display_name TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS upload_sessions (
+                id TEXT PRIMARY KEY,
+                fingerprint TEXT NOT NULL,
+                device_ip TEXT NOT NULL DEFAULT '',
+                filename TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                chunk_size INTEGER NOT NULL,
+                total_chunks INTEGER NOT NULL,
+                received TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
+                updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_upload_sessions_fp
+                ON upload_sessions(fingerprint, device_ip, status);
         """)
         conn.commit()
         conn.close()
@@ -147,6 +163,98 @@ class Database:
             ORDER BY MAX(m.id) DESC
         """)
         return [dict(r) for r in c.fetchall()]
+
+    # ── Upload sessions (chunked/resumable upload) ──────────────────
+
+    def create_upload_session(self, session_id: str, fingerprint: str, device_ip: str,
+                              filename: str, file_size: int, chunk_size: int,
+                              total_chunks: int):
+        c = self.conn.cursor()
+        c.execute("""
+            INSERT INTO upload_sessions
+                (id, fingerprint, device_ip, filename, file_size,
+                 chunk_size, total_chunks, received, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 'active')
+        """, (session_id, fingerprint, device_ip, filename,
+              file_size, chunk_size, total_chunks))
+        self.conn.commit()
+
+    def find_active_upload_session(self, fingerprint: str, device_ip: str) -> Optional[dict]:
+        c = self.conn.cursor()
+        c.execute("""
+            SELECT * FROM upload_sessions
+            WHERE fingerprint = ? AND device_ip = ? AND status = 'active'
+            ORDER BY created_at DESC LIMIT 1
+        """, (fingerprint, device_ip))
+        row = c.fetchone()
+        if row:
+            d = dict(row)
+            d["received"] = json.loads(d["received"] or "[]")
+            return d
+        return None
+
+    def get_upload_session(self, session_id: str) -> Optional[dict]:
+        c = self.conn.cursor()
+        c.execute("SELECT * FROM upload_sessions WHERE id = ?", (session_id,))
+        row = c.fetchone()
+        if row:
+            d = dict(row)
+            d["received"] = json.loads(d["received"] or "[]")
+            return d
+        return None
+
+    def mark_chunk_received(self, session_id: str, index: int):
+        sess = self.get_upload_session(session_id)
+        if not sess:
+            return
+        received = set(sess["received"])
+        if index in received:
+            return
+        received.add(index)
+        c = self.conn.cursor()
+        c.execute("""
+            UPDATE upload_sessions
+            SET received = ?, updated_at = datetime('now', 'localtime')
+            WHERE id = ?
+        """, (json.dumps(sorted(received)), session_id))
+        self.conn.commit()
+
+    def set_upload_session_status(self, session_id: str, status: str):
+        c = self.conn.cursor()
+        c.execute("""
+            UPDATE upload_sessions
+            SET status = ?, updated_at = datetime('now', 'localtime')
+            WHERE id = ?
+        """, (status, session_id))
+        self.conn.commit()
+
+    def purge_stale_upload_sessions(self, max_age_hours: int = 24) -> list[str]:
+        """Mark stale active sessions aborted; return ids whose tmp dirs need cleanup."""
+        c = self.conn.cursor()
+        c.execute("""
+            SELECT id FROM upload_sessions
+            WHERE status = 'active'
+              AND updated_at < datetime('now', 'localtime', ?)
+        """, (f'-{max_age_hours} hours',))
+        stale = [r["id"] for r in c.fetchall()]
+        c.execute("""
+            SELECT id FROM upload_sessions
+            WHERE status IN ('done', 'aborted')
+              AND updated_at < datetime('now', 'localtime', ?)
+        """, (f'-{max_age_hours} hours',))
+        cleanup = stale + [r["id"] for r in c.fetchall()]
+        if stale:
+            c.executemany(
+                "UPDATE upload_sessions SET status = 'aborted' WHERE id = ?",
+                [(i,) for i in stale])
+            self.conn.commit()
+        if cleanup:
+            # remove finished rows; tmp dir cleanup is caller's job
+            c.executemany(
+                "DELETE FROM upload_sessions WHERE id = ? AND status != 'active'",
+                [(i,) for i in cleanup])
+            self.conn.commit()
+        return cleanup
 
     # ── Message management ───────────────────────────────────────────
     def get_message(self, msg_id: int) -> Optional[dict]:

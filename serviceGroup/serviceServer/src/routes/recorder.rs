@@ -14,7 +14,7 @@ pub async fn page() -> Response {
     let mut resp = Response::new(Body::from(include_str!("recorder.html")));
     let h = resp.headers_mut();
     h.insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
-    h.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    h.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     resp
 }
 

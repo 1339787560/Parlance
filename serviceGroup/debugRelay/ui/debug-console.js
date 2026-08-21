@@ -315,6 +315,9 @@ function switchTab(tab) {
         if (tab === 'events' && typeof eventsLoadCategories === 'function') {
             eventsLoadCategories();
         }
+        if (tab === 'device' && typeof deviceOnTabShow === 'function') {
+            deviceOnTabShow();
+        }
         if (tab === 'scene' && window.sceneRefreshTree) {
             sceneRefreshTree();
         }

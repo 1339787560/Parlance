@@ -26,6 +26,52 @@
             text-align: center;
         }
         
+        /* 顶层分组 tab (creator / lua) */
+        .group-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .group-button {
+            padding: 10px 24px;
+            background: none;
+            border: 2px solid #ddd;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 17px;
+            font-weight: bold;
+            color: #666;
+        }
+
+        .group-button.active {
+            color: #fff;
+            background: #007bff;
+            border-color: #007bff;
+        }
+
+        .group-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        body.dark-theme .group-button {
+            color: #b0b0b0;
+            border-color: #444;
+        }
+
+        body.dark-theme .group-button.active {
+            color: #fff;
+        }
+
+        .tab-group {
+            display: none;
+        }
+
+        .tab-group.active {
+            display: block;
+        }
+
         .tabs {
             display: flex;
             border-bottom: 2px solid #ddd;
@@ -325,6 +371,83 @@
         body.dark-theme .template-name:hover {
             color: #3a98ff;
         }
+
+        /* 模板编辑模式: 绿色=已载入未改, 红色=已修改 */
+        .tab-content input.template-editing,
+        .tab-content textarea.template-editing {
+            border-color: #28a745 !important;
+            background-color: #f0fff4 !important;
+        }
+        .tab-content input.template-modified,
+        .tab-content textarea.template-modified {
+            border-color: #dc3545 !important;
+            background-color: #fff5f5 !important;
+        }
+        body.dark-theme .tab-content input.template-editing,
+        body.dark-theme .tab-content textarea.template-editing {
+            border-color: #28a745 !important;
+            background-color: #1a3a2a !important;
+        }
+        body.dark-theme .tab-content input.template-modified,
+        body.dark-theme .tab-content textarea.template-modified {
+            border-color: #dc3545 !important;
+            background-color: #3a1e1e !important;
+        }
+
+        /* CP 数据查询结果展示块 (夜间适配) */
+        .cp-json-block {
+            white-space: pre-wrap;
+            word-break: break-all;
+            background: #f8f9fa;
+            color: #24292f;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            margin: 6px 0 0 0;
+        }
+        body.dark-theme .cp-json-block {
+            background: #2d2d2d;
+            color: #e0e0e0;
+        }
+        .cp-section-title {
+            margin: 15px 0 10px;
+            color: #333;
+        }
+        body.dark-theme .cp-section-title {
+            color: #f0f0f0;
+        }
+        .cp-key-summary {
+            cursor: pointer;
+            color: #007bff;
+            word-break: break-all;
+            font-size: 13px;
+        }
+        body.dark-theme .cp-key-summary {
+            color: #6cb7ff;
+        }
+
+        /* 数据修改悬浮窗夜间适配 (新样式在 cp-editor-modal 段) */
+        body.dark-theme #cp-modal-dual-hint {
+            color: #ffc107;
+        }
+        body.dark-theme #cp-snapshot-list small {
+            color: #888;
+        }
+
+        .exit-template-btn {
+            background-color: #ffc107;
+            color: #333;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+            display: none;
+        }
+        .exit-template-btn:hover {
+            background-color: #e0a800;
+        }
     </style>
 </head>
 <body>
@@ -334,20 +457,324 @@
         </div>
         <h1>设置货币</h1>
         
-        <!-- 选项卡 -->
-        <div class="tabs">
-            <button class="tab-button active" onclick="switchTab('gold')">金币</button>
-            <button class="tab-button" onclick="switchTab('points')">积分</button>
-            <button class="tab-button" onclick="switchTab('silver')">银两</button>
-            <button class="tab-button" onclick="switchTab('tqvip')">荣耀特权</button>
-            <button class="tab-button" onclick="switchTab('weekcard')">周卡</button>
-            <button class="tab-button" onclick="switchTab('monthcard')">月卡</button>
-            <button class="tab-button" onclick="switchTab('costume')">装扮查询</button>
-            <button class="tab-button" onclick="switchTab('newplayergift')">迎新礼包</button>
+        <!-- 顶层分组: creator / lua -->
+        <div class="group-tabs">
+            <button class="group-button active" onclick="switchGroup('creator')">Creator</button>
+            <button class="group-button" onclick="switchGroup('lua')">Lua</button>
         </div>
-        
-        <!-- 金币选项卡内容 -->
-        <div id="gold" class="tab-content active">
+
+        <!-- Creator 组: 积分/银两/CP 测试(占位) -->
+        <div id="group-creator" class="tab-group active">
+            <div class="tabs">
+                <button class="tab-button active" onclick="switchTab('points')">积分</button>
+                <button class="tab-button" onclick="switchTab('silver')">银两</button>
+                <!-- CP 三 tab 暂隐藏 (CP_ENABLED=False 排查期), 恢复时去掉 hidden -->
+                <button class="tab-button" onclick="switchTab('cpdata')" hidden>CP 数据</button>
+                <button class="tab-button" onclick="switchTab('cpconfig')" hidden>CP 配置</button>
+                <button class="tab-button" onclick="switchTab('cprequest')" hidden>模拟请求</button>
+            </div>
+
+            <!-- 积分选项卡内容 -->
+            <div id="points" class="tab-content active">
+                <div class="option-group">
+                    <label>选择操作类型：</label>
+                    <div class="radio-option">
+                        <input type="radio" id="opidPoints0" name="opidPoints" value="0" checked>
+                        <label for="opidPoints0">设置相应的值</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="opidPoints1" name="opidPoints" value="1">
+                        <label for="opidPoints1">增加</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="opidPoints2" name="opidPoints" value="2">
+                        <label for="opidPoints2">减少</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="user-id-points">玩家ID列表（逗号分隔）：</label>
+                    <input type="text" id="user-id-points" value="440624,440625,440626" placeholder="请输入玩家ID列表，逗号分隔">
+                </div>
+                <div class="form-group">
+                    <label for="points-count">积分数量：</label>
+                    <input type="number" id="points-count" value="1000" placeholder="请输入积分数量">
+                </div>
+                <div class="form-group">
+                    <label for="game-id-points">游戏ID：</label>
+                    <input type="number" id="game-id-points" value="105" placeholder="请输入游戏ID">
+                </div>
+                <button class="submit-btn" onclick="submitPointsSetting()">提交设置</button>
+                <button class="submit-btn save-template-btn" onclick="saveTemplate('points')">存储模板</button>
+                <div id="resultPoints" class="result" style="display: none;"></div>
+            </div>
+
+            <!-- 银两选项卡内容 -->
+            <div id="silver" class="tab-content">
+                <div class="option-group">
+                    <label>选择操作类型：</label>
+                    <div class="radio-option">
+                        <input type="radio" id="opidSilver1" name="opidSilver" value="1" checked>
+                        <label for="opidSilver1">设置保险箱的银子</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="opidSilver2" name="opidSilver" value="2">
+                        <label for="opidSilver2">设置游戏里的银子</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="opidSilver3" name="opidSilver" value="3">
+                        <label for="opidSilver3">后备箱</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" id="opidSilver4" name="opidSilver" value="4">
+                        <label for="opidSilver4">保险柜</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="user-id-silver">玩家ID列表（逗号分隔）：</label>
+                    <input type="text" id="user-id-silver" value="440624" placeholder="请输入玩家ID列表，逗号分隔">
+                </div>
+                <div class="form-group">
+                    <label for="silver-count">银两数量：</label>
+                    <input type="number" id="silver-count" value="1000" placeholder="请输入银两数量">
+                </div>
+                <div class="form-group">
+                    <label for="game-id-silver">游戏ID：</label>
+                    <input type="number" id="game-id-silver" value="105" placeholder="请输入游戏ID">
+                </div>
+                <button class="submit-btn" onclick="submitSilverSetting()">提交设置</button>
+                <button class="submit-btn save-template-btn" onclick="saveTemplate('silver')">存储模板</button>
+                <div id="resultSilver" class="result" style="display: none;"></div>
+            </div>
+
+            <!-- CP 数据查询选项卡内容 (只读测试面 + 受控修改) -->
+            <div id="cpdata" class="tab-content">
+                <div class="form-group">
+                    <label for="cp-userid">玩家ID：</label>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input type="number" id="cp-userid" value="1040720" placeholder="请输入玩家ID" style="width:150px; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                        <select id="cp-appcode" style="width:110px; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                            <option value="xzmp">xzmp</option>
+                            <option value="xzmk">xzmk</option>
+                        </select>
+                    </div>
+                    <small style="color:#888;">切到此 tab 自动按玩家ID + appcode 查询</small>
+                </div>
+                <div id="cp-module-result"></div>
+
+                <!-- 数据修改悬浮窗 (参考 index.html config-editor 样式) -->
+                <style>
+                    .cp-overlay {
+                        display: none;
+                        position: fixed;
+                        inset: 0;
+                        background: rgba(0,0,0,0.55);
+                        z-index: 1500;
+                        justify-content: center;
+                        align-items: center;
+                    }
+                    .cp-overlay.open { display: flex; }
+                    .cp-editor-modal {
+                        width: 80vw;
+                        height: 80vh;
+                        display: flex;
+                        flex-direction: column;
+                        overflow: hidden;
+                        background: #fff;
+                        border-radius: 8px;
+                        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+                        padding: 16px;
+                        color: #333;
+                    }
+                    body.dark-theme .cp-editor-modal {
+                        background: #2b2b2b;
+                        color: #f0f0f0;
+                    }
+                    .cpe-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 10px;
+                        flex-shrink: 0;
+                        gap: 8px;
+                    }
+                    .cpe-header h2 { margin: 0; font-size: 18px; }
+                    .cpe-key-path {
+                        font-size: 12px;
+                        color: #888;
+                        word-break: break-all;
+                        margin-bottom: 10px;
+                        flex-shrink: 0;
+                        font-family: monospace;
+                    }
+                    .cpe-body {
+                        display: flex;
+                        flex: 1;
+                        min-height: 0;
+                        gap: 12px;
+                    }
+                    .cpe-sidebar {
+                        width: 260px;
+                        flex-shrink: 0;
+                        overflow-y: auto;
+                        border: 1px solid #ddd;
+                        border-radius: 6px;
+                        padding: 8px;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    body.dark-theme .cpe-sidebar { border-color: #444; }
+                    .cpe-sidebar h4 { margin: 0 0 8px 0; font-size: 14px; }
+                    .cpe-snap-item {
+                        padding: 6px 8px;
+                        cursor: pointer;
+                        border-radius: 4px;
+                        border: 1px solid #ddd;
+                        margin-bottom: 4px;
+                        font-size: 12px;
+                        word-break: break-all;
+                    }
+                    .cpe-snap-item:hover { background: #e9ecef; }
+                    body.dark-theme .cpe-snap-item:hover { background: #3a3a3a; }
+                    body.dark-theme .cpe-snap-item { border-color: #444; }
+                    .cpe-snap-item.selected { border-color: #007bff; background: #e7f1ff; }
+                    body.dark-theme .cpe-snap-item.selected { background: #1a3a5a; }
+                    .cpe-main {
+                        flex: 1;
+                        min-width: 0;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 8px;
+                    }
+                    .cpe-main textarea {
+                        flex: 1;
+                        width: 100%;
+                        max-width: 100%;
+                        min-height: 0;
+                        font-family: monospace;
+                        font-size: 13px;
+                        padding: 10px;
+                        border: 1px solid #ccc;
+                        border-radius: 4px;
+                        resize: none;
+                        overflow: auto;
+                        white-space: pre;
+                    }
+                    body.dark-theme .cpe-main textarea {
+                        background: #1e1e1e;
+                        color: #f0f0f0;
+                        border-color: #555;
+                    }
+                    .cpe-footer {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        flex-shrink: 0;
+                    }
+                    .cpe-dual-label {
+                        display: flex;
+                        align-items: center;
+                        gap: 6px;
+                        font-weight: normal;
+                        cursor: pointer;
+                        margin: 0;
+                    }
+                    .cpe-result {
+                        font-size: 12px;
+                        max-height: 100px;
+                        overflow: auto;
+                    }
+                </style>
+                <div class="cp-overlay" id="cp-modal-mask" onclick="cpCloseModal()">
+                    <div class="cp-editor-modal" onclick="event.stopPropagation()">
+                        <div class="cpe-header">
+                            <h2 id="cp-modal-title">数据修改</h2>
+                            <button class="submit-btn" style="background-color:#6c757d; padding:6px 14px;" onclick="cpCloseModal()">关闭</button>
+                        </div>
+                        <div class="cpe-key-path" id="cp-modal-info"></div>
+                        <div class="cpe-body">
+                            <!-- 左: 快照列表 -->
+                            <div class="cpe-sidebar">
+                                <h4>修改快照</h4>
+                                <small style="color:#888; margin-bottom:6px;">选中后「恢复此快照」走撤回</small>
+                                <div id="cp-snapshot-list" style="flex:1; overflow:auto;"></div>
+                                <button class="submit-btn" style="width:100%; margin-top:8px; background-color:#6c757d;" onclick="cpRestoreSnapshot()">恢复此快照</button>
+                            </div>
+                            <!-- 右: 编辑区 -->
+                            <div class="cpe-main">
+                                <div style="font-size:12px; color:#856404;" id="cp-modal-dual-hint"></div>
+                                <textarea id="cp-write-value" placeholder="点击左侧 key 后实时拉取数据..."></textarea>
+                                <div class="cpe-footer">
+                                    <label class="cpe-dual-label" id="cp-dual-write-label">
+                                        <input type="checkbox" id="cp-dual-write" onchange="cpDualToggled()">
+                                        <span>双写（redis+mysql）</span>
+                                    </label>
+                                    <button class="submit-btn" style="background-color:#dc3545;" onclick="cpCommitWrite()">确认写入</button>
+                                </div>
+                                <div class="cpe-result" id="cp-write-result"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- redis/mysql 自由查询面板: 隐藏保留接口 (/api/cp-data/redis, /api/cp-data/mysql), 前端不露出 -->
+            </div>
+
+            <!-- CP 配置获取选项卡内容 (parse_config 直读, 零副作用) -->
+            <div id="cpconfig" class="tab-content">
+                <div class="form-group">
+                    <label>模块配置（parse_config 直读，不走业务请求，零副作用）：</label>
+                    <div style="display:flex; gap:8px;">
+                        <select id="cp-config-module" style="width:200px; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                            <option value="">— 选择模块 —</option>
+                        </select>
+                        <select id="cp-config-appcode" style="width:110px; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                            <option value="xzmp" selected>xzmp</option>
+                            <option value="xzmk">xzmk</option>
+                        </select>
+                        <button class="submit-btn" onclick="cpQueryConfig()">查询配置</button>
+                    </div>
+                </div>
+                <div id="cp-config-result"></div>
+            </div>
+
+            <!-- 模拟请求选项卡内容 (client_request + db9 五元组) -->
+            <div id="cprequest" class="tab-content">
+                <div class="form-group">
+                    <label for="cp-req-userid">玩家ID（需该账号在客户端登录过，db9 取五元组）：</label>
+                    <input type="number" id="cp-req-userid" value="1040720" placeholder="请输入玩家ID">
+                </div>
+                <div class="form-group">
+                    <label>请求（模块 → 模块内请求；只读 query 类，写操作未开放）：</label>
+                    <div style="display:flex; gap:8px;">
+                        <select id="cp-req-module" onchange="cpReqModuleChanged()" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                            <option value="">— 选择模块 —</option>
+                        </select>
+                        <select id="cp-req-select" onchange="cpReqSelectChanged()" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;" disabled>
+                            <option value="">— 选择请求 —</option>
+                        </select>
+                        <button class="submit-btn" onclick="cpSendRequest()">发送</button>
+                    </div>
+                </div>
+                <div class="form-group" id="cp-req-params-group" style="display:none;">
+                    <label for="cp-req-params">参数（JSON，缺参会按模块源码行为处理）：</label>
+                    <textarea id="cp-req-params" rows="3" placeholder='{"roomID": 694, "channelkey": "tcyan"}'></textarea>
+                </div>
+                <div id="cp-req-result"></div>
+            </div>
+        </div>
+
+        <!-- Lua 组: 金币/荣耀特权/周卡/月卡/装扮查询/迎新礼包 -->
+        <div id="group-lua" class="tab-group">
+            <div class="tabs">
+                <button class="tab-button active" onclick="switchTab('gold')">金币</button>
+                <button class="tab-button" onclick="switchTab('tqvip')">荣耀特权</button>
+                <button class="tab-button" onclick="switchTab('weekcard')">周卡</button>
+                <button class="tab-button" onclick="switchTab('monthcard')">月卡</button>
+                <button class="tab-button" onclick="switchTab('costume')">装扮查询</button>
+                <button class="tab-button" onclick="switchTab('newplayergift')">迎新礼包</button>
+            </div>
+
+            <!-- 金币选项卡内容 -->
+            <div id="gold" class="tab-content">
             <div class="option-group">
                 <label>选择操作类型：</label>
                 <div class="radio-option">
@@ -383,78 +810,6 @@
             <button class="submit-btn save-template-btn" onclick="saveTemplate('gold')">存储模板</button>
             
             <div id="resultGold" class="result" style="display: none;"></div>
-        </div>
-
-        <!-- 积分选项卡内容 -->
-        <div id="points" class="tab-content">
-            <div class="option-group">
-                <label>选择操作类型：</label>
-                <div class="radio-option">
-                    <input type="radio" id="opidPoints0" name="opidPoints" value="0" checked>
-                    <label for="opidPoints0">设置相应的值</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" id="opidPoints1" name="opidPoints" value="1">
-                    <label for="opidPoints1">增加</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" id="opidPoints2" name="opidPoints" value="2">
-                    <label for="opidPoints2">减少</label>
-                </div>
-            </div>
-            <div class="form-group">
-                <label for="user-id-points">玩家ID列表（逗号分隔）：</label>
-                <input type="text" id="user-id-points" value="440624,440625,440626" placeholder="请输入玩家ID列表，逗号分隔">
-            </div>
-            <div class="form-group">
-                <label for="points-count">积分数量：</label>
-                <input type="number" id="points-count" value="1000" placeholder="请输入积分数量">
-            </div>
-            <div class="form-group">
-                <label for="game-id-points">游戏ID：</label>
-                <input type="number" id="game-id-points" value="105" placeholder="请输入游戏ID">
-            </div>
-            <button class="submit-btn" onclick="submitPointsSetting()">提交设置</button>
-            <button class="submit-btn save-template-btn" onclick="saveTemplate('points')">存储模板</button>
-            <div id="resultPoints" class="result" style="display: none;"></div>
-        </div>
-
-        <!-- 银两选项卡内容 -->
-        <div id="silver" class="tab-content">
-            <div class="option-group">
-                <label>选择操作类型：</label>
-                <div class="radio-option">
-                    <input type="radio" id="opidSilver1" name="opidSilver" value="1" checked>
-                    <label for="opidSilver1">设置保险箱的银子</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" id="opidSilver2" name="opidSilver" value="2">
-                    <label for="opidSilver2">设置游戏里的银子</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" id="opidSilver3" name="opidSilver" value="3">
-                    <label for="opidSilver3">后备箱</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" id="opidSilver4" name="opidSilver" value="4">
-                    <label for="opidSilver4">保险柜</label>
-                </div>
-            </div>
-            <div class="form-group">
-                <label for="user-id-silver">玩家ID列表（逗号分隔）：</label>
-                <input type="text" id="user-id-silver" value="440624" placeholder="请输入玩家ID列表，逗号分隔">
-            </div>
-            <div class="form-group">
-                <label for="silver-count">银两数量：</label>
-                <input type="number" id="silver-count" value="1000" placeholder="请输入银两数量">
-            </div>
-            <div class="form-group">
-                <label for="game-id-silver">游戏ID：</label>
-                <input type="number" id="game-id-silver" value="105" placeholder="请输入游戏ID">
-            </div>
-            <button class="submit-btn" onclick="submitSilverSetting()">提交设置</button>
-            <button class="submit-btn save-template-btn" onclick="saveTemplate('silver')">存储模板</button>
-            <div id="resultSilver" class="result" style="display: none;"></div>
         </div>
 
         <!-- 荣耀特权选项卡内容 -->
@@ -595,10 +950,11 @@
             <button class="submit-btn save-template-btn" onclick="saveTemplate('newplayergift')">存储模板</button>
             <div id="resultNewPlayerGift" class="result" style="display: none;"></div>
         </div>
+        </div><!-- /group-lua -->
     </div>
 
     <div class="template-container">
-        <h2>已保存的模板</h2>
+        <h2>已保存的模板 <button class="exit-template-btn" id="exit-template-btn" onclick="exitTemplateEditMode()">退出模板编辑</button></h2>
         <div id="template-list">
             <!-- 模板将在这里动态加载 -->
         </div>
@@ -611,14 +967,57 @@
             document.body.classList.add('dark-theme');
         }
         
-        // 切换选项卡
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            
-            document.getElementById(tabId).classList.add('active');
-            // 找到对应的tab-button并添加active类
-            document.querySelector(`.tab-button[onclick="switchTab('${tabId}')"]`).classList.add('active');
+        // tab -> 所属分组 (切 tab / 模板 apply 时自动切组)
+        const TAB_GROUP = {
+            points: 'creator', silver: 'creator', cpdata: 'creator', cpconfig: 'creator', cprequest: 'creator',
+            gold: 'lua', tqvip: 'lua', weekcard: 'lua', monthcard: 'lua',
+            costume: 'lua', newplayergift: 'lua'
+        };
+
+        // 切换顶层分组 (creator / lua); 已在目标组早退 (切 tab 不重复刷组)
+        function switchGroup(groupId) {
+            const groupEl = document.getElementById('group-' + groupId);
+            if (groupEl.classList.contains('active')) return;
+            document.querySelectorAll('.group-button').forEach(btn => btn.classList.toggle('active',
+                btn.getAttribute('onclick') === `switchGroup('${groupId}')`));
+            document.querySelectorAll('.tab-group').forEach(g => g.classList.toggle('active', g === groupEl));
+        }
+
+        // 切换组内选项卡 (作用域限定在 tab 所属 group, 避免两组互串)
+        // skipClear=true 时不清结果 (初始 DOMContentLoaded 还原缓存用)
+        function switchTab(tabId, skipClear) {
+            exitTemplateEditMode(); // 切 tab 退出模板编辑
+            if (!skipClear) cpClearResults(); // 切 tab 清空已查询内容
+            const groupId = TAB_GROUP[tabId];
+            if (groupId) switchGroup(groupId); // 模板 apply 跨组时自动带过去 (同组早退)
+            const group = document.getElementById('group-' + (groupId || 'lua'));
+            const target = document.getElementById(tabId);
+            group.querySelectorAll('.tab-button').forEach(btn => btn.classList.toggle('active',
+                btn.getAttribute('onclick') === `switchTab('${tabId}')`));
+            group.querySelectorAll('.tab-content').forEach(content => content.classList.toggle('active', content === target));
+            localStorage.setItem('depositActiveTab', tabId); // 缓存 tab 选择
+            // 进 CP 数据 tab 自动查询 (玩家ID + appcode 输入有效时)
+            if (tabId === 'cpdata' && !skipClear) {
+                const uid = document.getElementById('cp-userid').value;
+                if (uid && parseInt(uid) > 0) cpLoadModules();
+            }
+        }
+
+        // 清空 CP 各面板查询结果 (输入保留; 同步清缓存防刷新回显旧结果)
+        function cpClearResults() {
+            for (const id of ['cp-module-result', 'cp-config-result', 'cp-req-result']) {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = '';
+            }
+            try {
+                const state = JSON.parse(localStorage.getItem(CP_CACHE_KEY) || 'null');
+                if (state) {
+                    delete state.moduleResultHtml;
+                    delete state.configResultHtml;
+                    delete state.reqResultHtml;
+                    localStorage.setItem(CP_CACHE_KEY, JSON.stringify(state));
+                }
+            } catch (e) { /* 忽略 */ }
         }
         
         // 显示结果消息 (如果需要，可以重新启用)
@@ -1083,12 +1482,505 @@
                 input.placeholder = '请输入领取天数';
             }
         }
+        // ---- CP 数据查询 (只读测试面, 后端 /api/cp-data/* 代理 125 exec_script) ----
+
+        function cpRenderJson(elId, data, errMsg) {
+            const el = document.getElementById(elId);
+            if (errMsg) {
+                el.innerHTML = `<div class="result error" style="display:block;">${errMsg}</div>`;
+            } else {
+                el.innerHTML = '<pre class="cp-json-block">' +
+                    JSON.stringify(data, null, 2).replace(/</g, '&lt;') + '</pre>';
+            }
+        }
+
+        async function cpPost(url, body) {
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            return resp.json();
+        }
+
+        // 查询用户全部模块数据 (redis db10 双命名 + mysql 落盘联查, 一次全回)
+        async function cpLoadModules() {
+            const userid = parseInt(document.getElementById('cp-userid').value);
+            const appcode = document.getElementById('cp-appcode').value;
+            const out = document.getElementById('cp-module-result');
+            if (isNaN(userid) || userid <= 0) {
+                out.innerHTML = '<div class="result error" style="display:block;">玩家ID格式错误</div>';
+                return;
+            }
+            out.innerHTML = '<p>查询中... (redis 全模块 + mysql 落盘, 约 10-30s)</p>';
+            try {
+                const r = await cpPost('/api/cp-data/modules', { userid: userid, appcode: appcode });
+                if (!r.success) throw new Error(r.message);
+                const d = r.data;
+                let html = '';
+                // redis 部分 — key 标题点击实时拉数据弹修改悬浮窗 (data 属性 + 事件委托, 避免内联 onclick 解析炸)
+                const detailKeys = Object.keys(d.detail || {});
+                if (detailKeys.length === 0) {
+                    html += '<p>redis db10 无该用户模块 key</p>';
+                } else {
+                    html += `<h3 class="cp-section-title">Redis db10 (${detailKeys.length} key) <small style="font-weight:normal; color:#888;">点击 key 弹窗查看/修改（实时拉取）</small></h3>`;
+                    for (const key of detailKeys) {
+                        const mod = (key.split(':')[1] || '').replace('name(', '').replace(')', '');
+                        html += `<div class="cp-key-row" data-key="${encodeURIComponent(key)}" data-module="${encodeURIComponent(mod)}" style="padding:6px 8px; margin-bottom:6px; border:1px solid #ddd; border-radius:4px; cursor:pointer; font-size:13px; word-break:break-all;">✏ ${key}</div>`;
+                    }
+                }
+                // mysql 部分
+                const tables = Object.keys(d.mysql || {});
+                if (tables.length > 0) {
+                    html += `<h3 class="cp-section-title">MySQL 落盘 (${tables.length} 表)</h3>`;
+                    for (const t of tables) {
+                        html += `<details style="margin-bottom:8px;"><summary class="cp-key-summary">${t} (${d.mysql[t].length} 行)</summary>` +
+                            '<pre class="cp-json-block">' +
+                            JSON.stringify(d.mysql[t], null, 2).replace(/</g, '&lt;') + '</pre></details>';
+                    }
+                }
+                out.innerHTML = html || '<p>无数据</p>';
+                // 事件委托: 点击 key 行 -> 实时拉数据 -> 弹悬浮窗
+                out.querySelectorAll('.cp-key-row').forEach(row => {
+                    row.addEventListener('click', () => cpOpenModalLive(
+                        decodeURIComponent(row.dataset.key), decodeURIComponent(row.dataset.module)));
+                });
+                cpSaveState();
+            } catch (e) {
+                out.innerHTML = `<div class="result error" style="display:block;">查询失败: ${e.message}</div>`;
+                cpSaveState();
+            }
+        }
+
+        async function cpQueryRedis() { /* 自由查询面板已隐去, 保留函数供 console 调用 */
+            const key = document.getElementById('cp-redis-key')?.value.trim();
+            if (!key) return;
+            const db = document.getElementById('cp-redis-db')?.value || '10';
+            const op = document.getElementById('cp-redis-op')?.value || 'HGETALL';
+            try {
+                const r = await cpPost('/api/cp-data/redis', { db: db, key: key, op: op });
+                console.log('cp redis:', r);
+            } catch (e) { console.error(e); }
+        }
+
+        async function cpQueryMysql() { /* 自由查询面板已隐去, 保留函数供 console 调用 */
+            const sql = document.getElementById('cp-mysql-sql')?.value.trim();
+            if (!sql) return;
+            try {
+                const r = await cpPost('/api/cp-data/mysql', { sql: sql });
+                console.log('cp mysql:', r);
+            } catch (e) { console.error(e); }
+        }
+
+        // 模块配置下拉 (固定清单, 与后端 CP_MODULES 同步)
+        const CP_MODULES = ['award', 'cmdailyquestion', 'cmdecoration', 'cmmonthcard', 'cmnewplayerdailygift',
+            'cmquickrecharge', 'cmremoteconfig', 'convert', 'friendroom', 'goldbank',
+            'joyfulgift', 'leveldefine', 'luckyturntable', 'resurrect'];
+
+        function cpFillConfigOptions() {
+            const sel = document.getElementById('cp-config-module');
+            if (sel.options.length > 1) return; // 已填
+            sel.innerHTML = '<option value="">— 选择模块 —</option>' +
+                CP_MODULES.map(m => `<option value="${m}">${m}</option>`).join('');
+        }
+
+        async function cpQueryConfig() {
+            const module = document.getElementById('cp-config-module').value;
+            const appcode = document.getElementById('cp-config-appcode').value;
+            if (!module) {
+                cpRenderJson('cp-config-result', null, '请先选择模块');
+                return;
+            }
+            cpRenderJson('cp-config-result', '查询中...');
+            try {
+                const r = await cpPost('/api/cp-data/config', { module: module, appcode: appcode });
+                if (!r.success) throw new Error(r.message);
+                cpRenderJson('cp-config-result', r.data.content === null ? '(配置为空 — 运营未开?)' : r.data.content);
+                cpSaveState();
+            } catch (e) {
+                cpRenderJson('cp-config-result', null, '查询失败: ' + e.message);
+                cpSaveState();
+            }
+        }
+
+        // ---- 受控修改: 模块点击弹悬浮窗 + 左侧快照面板 + 双写开关 ----
+
+        // 双写能力模块 (镜像后端 CP_DUAL_WRITE_MODULES)
+        const CP_DUAL_WRITE_MODULES = new Set(['cmdailyquestion', 'cmdecoration', 'cmmonthcard',
+            'cmnewplayerdailygift', 'cmquickrecharge', 'leveldefine']);
+
+        function cpGetSnapshots() {
+            try { return JSON.parse(localStorage.getItem('cpWriteSnapshots') || '[]'); } catch (e) { return []; }
+        }
+        function cpSetSnapshots(list) {
+            try { localStorage.setItem('cpWriteSnapshots', JSON.stringify(list.slice(-50))); } catch (e) {}
+        }
+
+        // 模块点击 -> 弹修改悬浮窗
+        let cpModalKey = null, cpModalModule = null, cpSelectedSnapIdx = -1;
+        // 点击 key 行: 实时拉最新数据 -> 弹悬浮窗 (保证数据最新)
+        async function cpOpenModalLive(key, module) {
+            cpModalKey = key; cpModalModule = module;
+            document.getElementById('cp-modal-title').textContent = `修改 · ${module}`;
+            document.getElementById('cp-modal-info').textContent = key + '（拉取中...）';
+            document.getElementById('cp-write-value').value = '';
+            cpUpdateDualUI();
+            document.getElementById('cp-modal-mask').classList.add('open');
+            try {
+                // 先 TYPE 再按类型分派 (string 走 HGETALL 会拆成字符对垃圾数据)
+                const rt = await cpPost('/api/cp-data/redis', { db: 10, key: key, op: 'TYPE' });
+                if (!rt.success) throw new Error(rt.message);
+                const type = Array.isArray(rt.data) ? rt.data[0] : rt.data;
+                let v;
+                if (type === 'hash') {
+                    const r = await cpPost('/api/cp-data/redis', { db: 10, key: key, op: 'HGETALL' });
+                    if (!r.success) throw new Error(r.message);
+                    v = r.data;
+                } else {
+                    const r2 = await cpPost('/api/cp-data/redis', { db: 10, key: key, op: 'GET' });
+                    if (!r2.success) throw new Error(r2.message);
+                    v = r2.data;
+                    if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} }
+                }
+                window.__cpLastDetail = Object.assign(window.__cpLastDetail || {}, { [key]: v });
+                document.getElementById('cp-modal-info').textContent = key;
+                document.getElementById('cp-write-value').value = JSON.stringify(v, null, 2);
+            } catch (e) {
+                document.getElementById('cp-modal-info').textContent = key;
+                document.getElementById('cp-write-value').value = JSON.stringify((window.__cpLastDetail || {})[key] ?? null, null, 2);
+                cpRenderJson('cp-write-result', null, '实时拉取失败 (用缓存值): ' + e.message);
+            }
+        }
+
+        function cpOpenModal(key, module) {
+            cpModalKey = key; cpModalModule = module;
+            document.getElementById('cp-modal-title').textContent = `修改 · ${module}`;
+            document.getElementById('cp-modal-info').textContent = key;
+            const val = (window.__cpLastDetail || {})[key];
+            document.getElementById('cp-write-value').value = JSON.stringify(val, null, 2);
+            cpUpdateDualUI();
+            cpRenderSnapshots();
+            document.getElementById('cp-modal-mask').classList.add('open');
+        }
+        function cpCloseModal() {
+            document.getElementById('cp-modal-mask').classList.remove('open');
+        }
+
+        // 双写勾选项状态: 不支持的模块置灰; 提示文案同步 (勾选是全局记忆, 跨模块保留)
+        function cpUpdateDualUI() {
+            const cb = document.getElementById('cp-dual-write');
+            const supported = cpModalModule && CP_DUAL_WRITE_MODULES.has(cpModalModule);
+            cb.disabled = !supported;
+            document.getElementById('cp-dual-write-label').style.opacity = supported ? '1' : '0.45';
+            document.getElementById('cp-dual-write-label').title = supported ? '' : '此模块无 mysql 落盘，双写不适用';
+            const hint = document.getElementById('cp-modal-dual-hint');
+            if (!supported) {
+                hint.textContent = '⚠ 此模块无 mysql 落盘，仅 redis 单写';
+            } else {
+                hint.textContent = cb.checked ? '双写开启：redis + mysql 同步修改' : '仅 redis 单写（勾选双写同步 mysql）';
+            }
+        }
+        function cpDualToggled() {
+            cpUpdateDualUI();
+            cpSaveState();
+        }
+
+        function cpRenderSnapshots() {
+            const list = cpGetSnapshots();
+            const box = document.getElementById('cp-snapshot-list');
+            if (list.length === 0) { box.innerHTML = '<small style="color:#888;">暂无快照</small>'; return; }
+            box.innerHTML = list.map((s, i) => {
+                const t = new Date(s.ts).toLocaleString();
+                const sel = i === cpSelectedSnapIdx;
+                return `<div onclick="cpSelectSnapshot(${i})" style="padding:6px 8px; margin-bottom:4px; border:1px solid ${sel ? '#007bff' : '#ddd'}; border-radius:4px; cursor:pointer; font-size:12px; word-break:break-all; ${sel ? 'background:#e7f1ff;' : ''}">
+                    <div style="font-weight:bold;">${(s.snapshot.module || '') + ' · ' + t}</div>
+                    <div style="color:#888;">${s.snapshot.key.slice(0, 60)}...</div>
+                    ${s.snapshot.dualWrite ? '<span style="color:#856404;">双写</span>' : '<span style="color:#888;">单写</span>'}
+                </div>`;
+            }).join('');
+        }
+        function cpSelectSnapshot(i) { cpSelectedSnapIdx = i; cpRenderSnapshots(); }
+
+        async function cpCommitWrite() {
+            const userid = parseInt(document.getElementById('cp-userid').value);
+            const appcode = document.getElementById('cp-appcode').value;
+            if (!cpModalKey || !cpModalModule || isNaN(userid)) { cpRenderJson('cp-write-result', null, '参数无效'); return; }
+            let value;
+            try { value = JSON.parse(document.getElementById('cp-write-value').value); }
+            catch (e) { cpRenderJson('cp-write-result', null, '值 JSON 格式错误: ' + e.message); return; }
+            const dualOn = document.getElementById('cp-dual-write').checked;
+            const dual = dualOn && CP_DUAL_WRITE_MODULES.has(cpModalModule); // 不支持则降级单写
+            const valStr = JSON.stringify(value);
+            if (!confirm(`⚠ 即将修改玩家数据\n\n玩家ID: ${userid}\n模块: ${cpModalModule}\nkey: ${cpModalKey}\n写入方式: ${dual ? 'redis + mysql 双写' : '仅 redis'}\n新值: ${valStr.slice(0, 200)}${valStr.length > 200 ? '...' : ''}\n\n确认写入?`)) return;
+            cpRenderJson('cp-write-result', '写入中...');
+            try {
+                const r = await cpPost('/api/cp-data/write', {
+                    userid: userid, appcode: appcode, module: cpModalModule,
+                    key: cpModalKey, value: value, dualWrite: dual
+                });
+                if (!r.success) throw new Error(r.message);
+                // 追加快照 (保留最近 50)
+                const list = cpGetSnapshots();
+                list.push({ userid: userid, ts: Date.now(), snapshot: r.data.snapshot });
+                cpSetSnapshots(list);
+                cpSelectedSnapIdx = list.length - 1;
+                cpRenderSnapshots();
+                cpRenderJson('cp-write-result', {written: true, dualWrite: r.data.mysqlUpdated, snapshot: r.data.snapshot});
+            } catch (e) {
+                cpRenderJson('cp-write-result', null, '写入失败: ' + e.message);
+            }
+        }
+
+        async function cpRestoreSnapshot() {
+            const list = cpGetSnapshots();
+            if (cpSelectedSnapIdx < 0 || !list[cpSelectedSnapIdx]) {
+                cpRenderJson('cp-write-result', null, '请先在左侧选择快照'); return;
+            }
+            const snap = list[cpSelectedSnapIdx];
+            const s = snap.snapshot;
+            if (!confirm(`⚠ 恢复快照将把数据写回改前值\n\nkey: ${s.key}\n改前值: ${JSON.stringify(s.before).slice(0, 200)}\n\n确认恢复?`)) return;
+            cpRenderJson('cp-write-result', '恢复中...');
+            try {
+                const r = await cpPost('/api/cp-data/write', {
+                    userid: snap.userid, module: s.module, key: s.key,
+                    value: s.before, dualWrite: false // 恢复默认只回 redis; mysql 改前值见结果提示
+                });
+                if (!r.success) throw new Error(r.message);
+                cpRenderJson('cp-write-result', {restored: true,
+                    note: s.mysqlBefore !== null && s.mysqlBefore !== undefined
+                        ? '该快照含 mysql 改前值: ' + JSON.stringify(s.mysqlBefore).slice(0, 120) : undefined});
+            } catch (e) {
+                cpRenderJson('cp-write-result', null, '恢复失败: ' + e.message);
+            }
+        }
+
+        // 模拟请求 schema (镜像后端 CP_REQ_SCHEMA; write=true 写操作, 下拉标 [写])
+        const CP_REQ_SCHEMA = {
+            award: [
+                { req: 'queryAdVideoCfg', params: {}, desc: '看视频礼包配置' },
+                { req: 'queryReliefConfig', params: {}, desc: '低保配置' },
+                { req: 'queryReliefTakeCount', params: {}, desc: '低保已领次数' },
+                { req: 'queryDressGiftCfg', params: {}, desc: '装饰礼包配置' },
+                { req: 'queryNextDayConfig', params: {}, desc: '明日奖励配置' },
+                { req: 'queryPayGiftPackCfg', params: {}, desc: '礼包配置' },
+                { req: 'takeEvaluateReward', params: {}, desc: '领取评价奖励', write: true },
+                { req: 'takeAdVideoGift_v2', params: {}, desc: '领取看视频礼包', write: true },
+                { req: 'takeReliefReward_v2', params: {takeParam: '', registerTime: 0, subscribe: 0}, desc: '领取低保奖励', write: true },
+                { req: 'takeBackHallReward', params: {}, desc: '领取返回大厅礼包', write: true },
+                { req: 'takeDressGiftReward', params: {}, desc: '领取装饰礼包', write: true },
+                { req: 'takeOptionChooseReward', params: {optionKey: ''}, desc: '领取问卷选择礼包', write: true },
+                { req: 'takeNextDayReward', params: {dayKey: ''}, desc: '领取明日奖励', write: true },
+            ],
+            cmdailyquestion: [
+                { req: 'GR_TQDAILYQUESTION_REQINFO', params: {}, desc: '每日问答玩家信息' },
+                { req: 'GR_TQDAILYQUESTION_REQCONFIG', params: {}, desc: '每日问答配置' },
+                { req: 'GR_TQDAILYQUESTION_REQANSWER', params: {questionid: 1, answer: 0}, desc: '提交答题', write: true },
+                { req: 'GR_TQDAILYQUESTION_REQPRIZE', params: {}, desc: '领取答题奖励', write: true },
+            ],
+            cmdecoration: [
+                { req: 'queryCMDecorationConfig', params: {}, desc: '装扮配置' },
+                { req: 'queryChangeDecoration', params: {}, desc: '已使用装饰' },
+                { req: 'queryUserListsHeadFrameInfo', params: {userIDList: [1040720, 0, 0, 0]}, desc: '多玩家装扮信息' },
+                { req: 'queryChangeDecoration_use', params: {itemUUID: 0}, desc: '使用装饰', write: true },
+            ],
+            cmmonthcard: [
+                { req: 'queryCMMonthCardConfig', params: {}, desc: '周月卡配置' },
+            ],
+            cmnewplayerdailygift: [
+                { req: 'queryNewPlayerDailyGiftConfig', params: {}, desc: '迎新每日礼包配置' },
+                { req: 'claimDailyReward', params: {}, desc: '领取每日礼包奖励', write: true },
+            ],
+            cmquickrecharge: [
+                { req: 'queryCMQuickRechargeConfig', params: {}, desc: '补足金币配置' },
+                { req: 'buySpecialGift', params: {gametype: 1, roomlevel: 1, giftlevel: 1}, desc: '购买特惠礼包校验', write: true },
+                { req: 'markSpecialGiftPurchased', params: {gametype: 1, roomlevel: 1, giftlevel: 1}, desc: '标记已购买', write: true },
+            ],
+            cmremoteconfig: [
+                { req: 'queryRemoteConfig', params: {}, desc: '选房策略远端配置' },
+                { req: 'debugRemoteConfig', params: {}, desc: '调试远端配置', write: true },
+            ],
+            convert: [
+                { req: 'queryTutorialState', params: {}, desc: '新手引导迁移状态' },
+                { req: 'claimTutorialReward', params: {}, desc: '领取引导奖励', write: true },
+                { req: 'clearMigrationFlag', params: {}, desc: '清迁移标记 (仅125/888)', write: true },
+                { req: 'clearMigrationTargets', params: {}, desc: '清迁移模块数据 (仅125/888)', write: true },
+            ],
+            goldbank: [
+                { req: 'queryGoldBankInfo', params: {}, desc: '金库信息' },
+            ],
+            joyfulgift: [
+                { req: 'queryJoyFulGiftCfg', params: {gametype: 1, roomlevel: 1, giftlevel: 1}, desc: '欢乐礼包配置' },
+            ],
+            leveldefine: [
+                { req: 'queryLevelDefineConfig', params: {}, desc: '等级定义配置' },
+                { req: 'reqTakeOneOffReward', params: {getLevelID: 1}, desc: '领取等级一次性奖励', write: true },
+            ],
+            luckyturntable: [
+                { req: 'queryLuckyTurntableConfig', params: {}, desc: '幸运转盘配置+剩余次数' },
+                { req: 'queryRunTurntable', params: {useCount: 1}, desc: '转转盘 (消耗次数发奖)', write: true },
+            ],
+            resurrect: [
+                { req: 'queryConfig_resurrect', params: {roomID: 694, channelkey: 'tcyan'}, desc: '复活礼包配置' },
+                { req: 'queryLeftTakeCount_resurrect', params: {roomID: 694, channelkey: 'tcyan'}, desc: '免费复活剩余次数' },
+                { req: 'queryShowList_resurrect', params: {roomID: 694, channelkey: 'tcyan'}, desc: '复活展示列表' },
+                { req: 'takeReward_resurrect', params: {roomID: 694, channelkey: 'tcyan'}, desc: '使用免费复活', write: true },
+            ],
+        };
+
+        function cpFillReqOptions() {
+            const modSel = document.getElementById('cp-req-module');
+            if (modSel.options.length > 1) return;
+            modSel.innerHTML = '<option value="">— 选择模块 —</option>' +
+                Object.keys(CP_REQ_SCHEMA).map(m => `<option value="${m}">${m}</option>`).join('');
+        }
+
+        function cpReqModuleChanged() {
+            const mod = document.getElementById('cp-req-module').value;
+            const reqSel = document.getElementById('cp-req-select');
+            const group = document.getElementById('cp-req-params-group');
+            if (!mod) {
+                reqSel.innerHTML = '<option value="">— 选择请求 —</option>';
+                reqSel.disabled = true;
+                group.style.display = 'none';
+                cpSaveState();
+                return;
+            }
+            reqSel.disabled = false;
+            reqSel.innerHTML = '<option value="">— 选择请求 —</option>' +
+                CP_REQ_SCHEMA[mod].map(r => {
+                    const flag = r.write ? '⚠' : '';
+                    return `<option value="${r.req}">${flag}${r.req}（${r.desc}）</option>`;
+                }).join('');
+            group.style.display = 'none';
+            cpSaveState();
+        }
+
+        function cpReqSelectChanged() {
+            const mod = document.getElementById('cp-req-module').value;
+            const req = document.getElementById('cp-req-select').value;
+            const group = document.getElementById('cp-req-params-group');
+            if (!mod || !req) { group.style.display = 'none'; return; }
+            const entry = CP_REQ_SCHEMA[mod].find(r => r.req === req);
+            document.getElementById('cp-req-params').value = JSON.stringify(entry.params, null, 2);
+            group.style.display = 'block';
+            cpSaveState();
+        }
+
+        async function cpSendRequest() {
+            const mod = document.getElementById('cp-req-module').value;
+            const req = document.getElementById('cp-req-select').value;
+            const userid = parseInt(document.getElementById('cp-req-userid').value);
+            if (!mod || !req) { cpRenderJson('cp-req-result', null, '请先选择模块和请求'); return; }
+            if (isNaN(userid) || userid <= 0) { cpRenderJson('cp-req-result', null, '玩家ID格式错误'); return; }
+            let params = {};
+            try { params = JSON.parse(document.getElementById('cp-req-params').value || '{}'); }
+            catch (e) { cpRenderJson('cp-req-result', null, '参数 JSON 格式错误: ' + e.message); return; }
+            cpRenderJson('cp-req-result', '发送中...');
+            try {
+                const r = await cpPost('/api/cp-data/request', { module: mod, req: req, params: params, userid: userid });
+                if (!r.success) throw new Error(r.message);
+                cpRenderJson('cp-req-result', r.data);
+                cpSaveState();
+            } catch (e) {
+                cpRenderJson('cp-req-result', null, '请求失败: ' + e.message);
+                cpSaveState();
+            }
+        }
+
+        // ---- CP 面板状态缓存 (localStorage, 刷新还原) ----
+        const CP_CACHE_KEY = 'cpDataPanelState';
+
+        function cpSaveState() {
+            const state = {
+                userid: document.getElementById('cp-userid').value,
+                appcode: document.getElementById('cp-appcode').value,
+                dualWrite: document.getElementById('cp-dual-write').checked,
+                redisDb: document.getElementById('cp-redis-db')?.value,
+                redisKey: document.getElementById('cp-redis-key')?.value,
+                redisOp: document.getElementById('cp-redis-op')?.value,
+                mysqlSql: document.getElementById('cp-mysql-sql')?.value,
+                configModule: document.getElementById('cp-config-module').value,
+                configAppcode: document.getElementById('cp-config-appcode').value,
+                reqUserid: document.getElementById('cp-req-userid').value,
+                reqModule: document.getElementById('cp-req-module').value,
+                reqSelect: document.getElementById('cp-req-select').value,
+                reqParams: document.getElementById('cp-req-params-group').style.display === 'none' ? null : document.getElementById('cp-req-params').value,
+                reqResultHtml: document.getElementById('cp-req-result').innerHTML,
+                // 查询结果 (含 html 快照, 刷新直接回显)
+                moduleResultHtml: document.getElementById('cp-module-result').innerHTML,
+                redisResultHtml: document.getElementById('cp-redis-result')?.innerHTML,
+                mysqlResultHtml: document.getElementById('cp-mysql-result')?.innerHTML,
+                configResultHtml: document.getElementById('cp-config-result').innerHTML,
+                savedAt: Date.now()
+            };
+            try { localStorage.setItem(CP_CACHE_KEY, JSON.stringify(state)); } catch (e) { /* 超限忽略 */ }
+        }
+
+        function cpRestoreState() {
+            let state;
+            try { state = JSON.parse(localStorage.getItem(CP_CACHE_KEY) || 'null'); } catch (e) { return; }
+            if (!state) return;
+            cpFillConfigOptions();
+            if (state.userid) document.getElementById('cp-userid').value = state.userid;
+            if (state.appcode) document.getElementById('cp-appcode').value = state.appcode;
+            if (state.dualWrite !== undefined) document.getElementById('cp-dual-write').checked = !!state.dualWrite;
+            if (state.configModule) document.getElementById('cp-config-module').value = state.configModule;
+            if (state.configAppcode) document.getElementById('cp-config-appcode').value = state.configAppcode;
+            if (state.reqUserid) document.getElementById('cp-req-userid').value = state.reqUserid;
+            if (state.reqModule) {
+                document.getElementById('cp-req-module').value = state.reqModule;
+                cpReqModuleChanged(); // 联动填 req 下拉
+                if (state.reqSelect) {
+                    document.getElementById('cp-req-select').value = state.reqSelect;
+                    if (state.reqParams) {
+                        document.getElementById('cp-req-params-group').style.display = 'block';
+                        document.getElementById('cp-req-params').value = state.reqParams;
+                    }
+                }
+            }
+            if (state.reqResultHtml) document.getElementById('cp-req-result').innerHTML = state.reqResultHtml;
+            if (state.moduleResultHtml) document.getElementById('cp-module-result').innerHTML = state.moduleResultHtml;
+            if (state.configResultHtml) document.getElementById('cp-config-result').innerHTML = state.configResultHtml;
+        }
+
+        // 输入即存 (结果在查询完成时存); CP 数据 tab 内改玩家ID -> 防抖自动重查
+        document.addEventListener('input', (e) => {
+            if (e.target.id && e.target.id.startsWith('cp-')) cpSaveState();
+            if (e.target.id === 'cp-userid' &&
+                document.getElementById('cpdata').classList.contains('active')) cpScheduleReload();
+        });
+        document.getElementById('cp-appcode').addEventListener('change', () => {
+            cpSaveState();
+            // CP 数据 tab 激活时改 appcode/玩家ID -> 自动重查 (防抖)
+            if (document.getElementById('cpdata').classList.contains('active')) cpScheduleReload();
+        });
+        let __cpReloadTimer = null;
+        function cpScheduleReload() {
+            clearTimeout(__cpReloadTimer);
+            __cpReloadTimer = setTimeout(() => {
+                const uid = parseInt(document.getElementById('cp-userid').value);
+                if (uid > 0) cpLoadModules();
+            }, 800);
+        }
+        document.getElementById('cp-config-module').addEventListener('change', cpSaveState);
+        document.getElementById('cp-config-appcode').addEventListener('change', cpSaveState);
+        document.getElementById('cp-req-select').addEventListener('change', () => { cpReqSelectChanged(); });
+        document.getElementById('cp-req-module').addEventListener('change', () => { cpReqModuleChanged(); });
+
         // 保存模板函数
         async function saveTemplate(tabType) {
             let templateData = {};
-            let templateName = prompt("请输入模板名称:");
-            if (!templateName) {
-                return; // 用户取消输入
+
+            // 编辑已有模板 → 直接覆盖，不问名；否则新建 → 问名
+            const isUpdating = templateEditMode && currentEditingTemplate && templateEditTab === tabType;
+            let templateName;
+            if (isUpdating) {
+                templateName = currentEditingTemplate.name;
+            } else {
+                templateName = prompt("请输入模板名称:");
+                if (!templateName) {
+                    return; // 用户取消输入
+                }
             }
 
             if (tabType === 'gold') {
@@ -1151,27 +2043,64 @@
             }
 
             try {
-                const response = await fetch('/api/templates/save', {
+                const url = isUpdating ? '/api/templates/update' : '/api/templates/save';
+                const payload = { name: templateName, type: tabType, data: templateData };
+                if (isUpdating) payload.id = currentEditingTemplate.id;
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: templateName,
-                        type: tabType,
-                        data: templateData
-                    })
+                    body: JSON.stringify(payload)
                 });
                 const result = await response.json();
                 if (result.success) {
-                    alert('模板保存成功！');
+                    alert(isUpdating ? '模板已更新！' : '模板保存成功！');
                     loadTemplates(); // 刷新模板列表
+                    enterTemplateEditMode(tabType); // 模板已存 → 输入框回绿
                 } else {
-                    alert('模板保存失败: ' + result.message);
+                    alert((isUpdating ? '模板更新失败: ' : '模板保存失败: ') + result.message);
                 }
             } catch (error) {
                 console.error('保存模板时发生错误:', error);
                 alert('保存模板时发生网络错误。');
             }
         }
+
+        // ---- 模板编辑模式 ----
+        let templateEditMode = false;
+        let templateEditTab = null;
+        let currentEditingTemplate = null; // {id, name} 当前正在编辑的模板 (null=新建)
+
+        function enterTemplateEditMode(tabType) {
+            templateEditMode = true;
+            templateEditTab = tabType;
+            const tab = document.getElementById(tabType);
+            if (!tab) return;
+            // 绿色: 所有输入框/文本域标记为 editing
+            tab.querySelectorAll('input:not([type="radio"]):not([type="checkbox"]):not([readonly]), textarea').forEach(el => {
+                el.classList.remove('template-modified');
+                el.classList.add('template-editing');
+            });
+            document.getElementById('exit-template-btn').style.display = 'inline-block';
+        }
+
+        function exitTemplateEditMode() {
+            if (!templateEditMode) return;
+            templateEditMode = false;
+            templateEditTab = null;
+            currentEditingTemplate = null;
+            document.querySelectorAll('.template-editing, .template-modified').forEach(el => {
+                el.classList.remove('template-editing', 'template-modified');
+            });
+            document.getElementById('exit-template-btn').style.display = 'none';
+        }
+
+        // 监听编辑态下输入框修改 → 绿转红
+        document.addEventListener('input', (e) => {
+            if (templateEditMode && e.target.classList.contains('template-editing')) {
+                e.target.classList.remove('template-editing');
+                e.target.classList.add('template-modified');
+            }
+        });
 
         // 应用模板函数
         function applyTemplate(template) {
@@ -1236,6 +2165,8 @@
                 }
             }
             // alert(`模板 "${template.name}" 已应用！`); // 静默启用，移除提示
+            currentEditingTemplate = { id: template.id, name: template.name };
+            enterTemplateEditMode(template.type);
         }
 
         // 加载模板列表
@@ -1267,7 +2198,15 @@
 
         // 页面加载完成后执行
         document.addEventListener('DOMContentLoaded', () => {
-            switchTab('gold'); // 默认显示金币选项卡
+            const CP_TABS_HIDDEN = true; // CP tab 隐藏期: 缓存兜底跳 points (恢复 CP 时改 false)
+            const savedTab = localStorage.getItem('depositActiveTab');
+            const cpTabs = ['cpdata', 'cpconfig', 'cprequest'];
+            const safeTab = savedTab && TAB_GROUP[savedTab] && !(CP_TABS_HIDDEN && cpTabs.includes(savedTab))
+                ? savedTab : 'points';
+            switchTab(safeTab, true); // 还原上次 tab (skipClear 保留缓存结果回显)
+            cpFillConfigOptions(); // 模块配置下拉
+            cpFillReqOptions();    // 模拟请求下拉
+            cpRestoreState();    // CP 面板状态还原 (输入 + 上次查询结果)
             loadTemplates(); // 加载模板列表
             updateTQVIPGrade(); // 初始化荣耀特权等级显示
 

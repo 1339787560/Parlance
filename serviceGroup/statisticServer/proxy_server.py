@@ -42,11 +42,13 @@ DB_PATH = Path(os.environ.get("DB_PATH", "stats.db"))
 # 旧别名 deepseek-chat / deepseek-reasoner 已于 2026-07-24 23:59 北京时间退役,
 # 且两者均为 V4-Flash 档 (deepseek-reasoner = Flash 思考档, 绝非 Pro!)
 PRICING = {
-    "deepseek-v4-flash": {"miss": 1, "hit": 0.02, "out": 2, "label": "Flash"},
-    "deepseek-v4-pro":   {"miss": 3, "hit": 0.025, "out": 6, "label": "Pro"},
+    "deepseek-v4-flash": {"miss": 1.5, "hit": 0.05, "out": 4.5, "label": "Flash"},
+    "deepseek-v4-pro":   {"miss": 4.5, "hit": 0.15, "out": 13.5, "label": "Pro"},
 }
 PEAK_WINDOWS = [(9, 12), (14, 18)]  # 北京时间高峰时段 (含起始不含结束)
 PEAK_MULTIPLIER = 2.0
+# 定价版本: 修改 PRICING 后递增，启动时据此重算所有历史 cost
+PRICING_VERSION = "2026-08-20-v2"
 
 MODEL_MAP = [
     (re.compile(r"claude-.*(haiku|sonnet).*"), "deepseek-v4-flash"),
@@ -301,19 +303,30 @@ def extract_usage(usage: dict, fmt: str) -> dict:
 
 
 def build_headers(fmt: str, request_headers) -> dict:
-    """构造转发到上游的 headers - 优先透传客户端 key，回退到代理 key"""
-    auth = request_headers.get("authorization") or f"Bearer {DEEPSEEK_API_KEY}"
+    """构造转发到上游的 headers - 优先透传客户端 key（Authorization 或 x-api-key），回退到代理 key"""
+    auth = request_headers.get("authorization")
+    api_key = request_headers.get("x-api-key")
     if fmt == "openai":
-        return {
-            "Authorization": auth,
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if auth:
+            headers["Authorization"] = auth
+        elif api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        elif DEEPSEEK_API_KEY:
+            headers["Authorization"] = f"Bearer {DEEPSEEK_API_KEY}"
+        return headers
     else:
-        return {
-            "Authorization": auth,
+        headers = {
             "Content-Type": "application/json",
             "anthropic-version": request_headers.get("anthropic-version", "2023-06-01"),
         }
+        if auth:
+            headers["Authorization"] = auth
+        elif api_key:
+            headers["x-api-key"] = api_key
+        elif DEEPSEEK_API_KEY:
+            headers["Authorization"] = f"Bearer {DEEPSEEK_API_KEY}"
+        return headers
 
 
 # ---- DB ----
@@ -366,6 +379,19 @@ def init_db():
             if c:
                 conn.execute("UPDATE requests SET cost=? WHERE id=?", (c, rid))
         conn.commit()
+        # 定价版本迁移: 当 PRICING_VERSION 变化时，按当前价格表重算所有历史 cost
+        conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        ver = conn.execute("SELECT value FROM meta WHERE key='pricing_version'").fetchone()
+        if not ver or ver[0] != PRICING_VERSION:
+            rows = conn.execute(
+                "SELECT id, ts, model, prompt_tokens, cache_hit_tokens, completion_tokens "
+                "FROM requests WHERE (prompt_tokens > 0 OR completion_tokens > 0)"
+            ).fetchall()
+            for rid, ts, model, prompt, hit, out in rows:
+                c = calc_cost(model, prompt, hit, out, ts)
+                conn.execute("UPDATE requests SET cost=? WHERE id=?", (c, rid))
+            conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('pricing_version',?)", (PRICING_VERSION,))
+            conn.commit()
     except sqlite3.OperationalError:
         raise
     return conn
@@ -443,8 +469,8 @@ async def proxy(request: Request, path: str):
     if path.startswith("api/") and not path.startswith("api/events"):
         return await handle_api(request, path)
 
-    if not DEEPSEEK_API_KEY:
-        return JSONResponse(500, {"error": "DEEPSEEK_API_KEY not set"})
+    if not DEEPSEEK_API_KEY and not (request.headers.get("authorization") or request.headers.get("x-api-key")):
+        return JSONResponse(500, {"error": "no API key: set DEEPSEEK_API_KEY or provide Authorization/x-api-key header"})
 
     # Detect format from path
     fmt, target_base = detect_format(path)
@@ -775,12 +801,11 @@ if __name__ == "__main__":
         PORT = args.port
 
     if not DEEPSEEK_API_KEY:
-        print("ERROR: set DEEPSEEK_API_KEY env var")
-    else:
-        print(f"Proxy http://{args.host}:{PORT}")
-        print(f"  Anthropic → {ANTHROPIC_TARGET}")
-        print(f"  OpenAI    → {OPENAI_TARGET}")
-        print(f"Claude:    ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT}")
-        print(f"OpenAI SDK: base_url=http://127.0.0.1:{PORT}/v1")
-        get_db()  # init on startup
-        uvicorn.run(app, host=args.host, port=PORT, log_level="info")
+        print("WARNING: DEEPSEEK_API_KEY not set; requests must provide Authorization header")
+    print(f"Proxy http://{args.host}:{PORT}")
+    print(f"  Anthropic → {ANTHROPIC_TARGET}")
+    print(f"  OpenAI    → {OPENAI_TARGET}")
+    print(f"Claude:    ANTHROPIC_BASE_URL=http://127.0.0.1:{PORT}")
+    print(f"OpenAI SDK: base_url=http://127.0.0.1:{PORT}/v1")
+    get_db()  # init on startup
+    uvicorn.run(app, host=args.host, port=PORT, log_level="info")

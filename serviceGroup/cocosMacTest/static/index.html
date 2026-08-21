@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cocos-mac test</title>
+<style>
+  :root {
+    --bg: #1e1f24; --panel: #26272e; --panel2: #2d2e37; --border: #3a3b45;
+    --text: #d8d9de; --muted: #8b8d98; --accent: #4f8cff; --accent2: #6aa84f;
+    --err: #e06c75; --warn: #d19a66;
+    --mono: "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: 1fr 1.1fr; gap: 12px; padding: 14px 20px; height: calc(100vh - 50px); }
+  .col { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; }
+  .col h2 { font-size: 13px; font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex: none; }
+  .col h2 .tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--panel2); color: var(--muted); }
+  .col h2 .tag.on { background: #2c3a2c; color: var(--accent2); }
+  .col h2 .tag.off { background: #3a2c2c; color: var(--err); }
+  .col-body { padding: 10px 12px; overflow: auto; flex: 1; min-height: 0; }
+  select, button, input { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 12px; }
+  select:focus, button:focus, input:focus { outline: 1px solid var(--accent); }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type="number"] { width: 56px; }
+  .empty { color: var(--muted); font-size: 12px; padding: 8px 0; }
+  /* 项目选择 */
+  .proj-bar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .proj-bar .plat { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+  .proj-bar select { max-width: 220px; }
+  /* 树 */
+  ul.tree { list-style: none; }
+  ul.tree ul { list-style: none; margin-left: 14px; border-left: 1px solid var(--border); padding-left: 6px; }
+  .tree li { margin: 1px 0; }
+  .tree .row { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  .tree .row:hover { background: var(--panel2); }
+  .tree .row.sel { background: #2c3a55; }
+  .tree .tw { width: 14px; text-align: center; color: var(--muted); font-size: 10px; flex: none; }
+  .tree .ic { flex: none; }
+  .tree .nm { overflow: hidden; text-overflow: ellipsis; }
+  .tree .dir > .row .ic { color: var(--warn); }
+  .tree .file > .row .ic { color: var(--muted); }
+  .tree .sz { color: var(--muted); font-size: 10px; margin-left: auto; padding-left: 8px; }
+  /* 操作面板 */
+  .ops { display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 10px; }
+  .ops .group { display: flex; flex-direction: column; gap: 6px; }
+  .ops .group .gtitle { font-size: 11px; color: var(--muted); }
+  .ops .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ops label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .ops .item-path { font-family: var(--mono); font-size: 11px; color: var(--accent); word-break: break-all; background: var(--panel2); padding: 4px 6px; border-radius: 4px; }
+  .ops .op-btn { background: var(--accent); color: #fff; border: none; padding: 5px 10px; font-weight: 600; }
+  .ops .op-btn:hover { filter: brightness(1.1); }
+  .ops .op-btn:disabled { opacity: .45; }
+  /* 结果 */
+  .result pre { background: #17181c; border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 11px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  .result .meta { display: flex; gap: 10px; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .result .meta .ok { color: var(--accent2); }
+  .result .meta .fail { color: var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1>cocos-mac test</h1>
+  <span class="sub">cocos 项目资源树陈列 + 编辑态查询测试</span>
+</header>
+<main>
+  <section class="col" id="col-tree">
+    <h2>资源管理器 <span class="tag" id="tree-proj">未选项目</span></h2>
+    <div class="col-body" id="tree-body"><div class="empty">请先在右侧选择项目</div></div>
+  </section>
+  <section class="col" id="col-run">
+    <h2>编辑态查询</h2>
+    <div class="col-body">
+      <div class="proj-bar" id="proj-bar"></div>
+      <div class="ops" id="ops">
+        <div class="group">
+          <div class="gtitle">查找文件（项目级）</div>
+          <div class="row">
+            <input id="ff-pattern" placeholder="名称子串" style="flex:1">
+            <select id="ff-type">
+              <option value="">全部类型</option>
+              <option value="scene">scene</option>
+              <option value="prefab">prefab</option>
+              <option value="texture">texture</option>
+              <option value="material">material</option>
+              <option value="effect">effect</option>
+              <option value="audio-clip">audio-clip</option>
+              <option value="animation-clip">animation-clip</option>
+              <option value="typescript">typescript</option>
+            </select>
+            <button class="op-btn" id="ff-btn">查找</button>
+          </div>
+        </div>
+        <div class="group" id="op-asset" style="display:none">
+          <div class="gtitle">选中资源项</div>
+          <div class="item-path" id="op-item"></div>
+          <div class="row" id="op-scene" style="display:none">
+            <label>节点树 深度 <input id="tree-depth" type="number" value="2" min="0" max="10"></label>
+            <label><input id="tree-unlimited" type="checkbox"> 不限深度</label>
+            <button class="op-btn" id="tree-btn">节点树</button>
+            <input id="node-name" placeholder="节点名/路径" style="flex:1">
+            <label><input id="node-fuzzy" type="checkbox"> 模糊</label>
+            <label><input id="node-all" type="checkbox"> 跨嵌套</label>
+            <button class="op-btn" id="node-btn">节点查询</button>
+          </div>
+          <div class="row">
+            <input id="node-comp" placeholder="组件过滤(如 Camera)" style="flex:1">
+            <button class="op-btn" id="uuid-btn">uuid 信息</button>
+            <button class="op-btn" id="refs-btn">uuid 引用</button>
+          </div>
+        </div>
+      </div>
+      <div id="result-box"><div class="empty">选择操作后结果在此展示</div></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let selectedItem = null;   // {path, name, ext}
+let currentProject = null; // 当前选中项目绝对路径
+let expandedDirs = new Set(); // 已展开目录绝对路径(持久化, 刷新后文件树不变)
+
+// ── 状态持久化(localStorage, 刷新保留选项/展开状态/展示内容) ──
+const LS_KEY = 'cocosMacTestState:v1';
+
+function saveState() {
+  try {
+    const s = {
+      projSel: {},
+      currentProject: currentProject,
+      selectedItem: selectedItem,
+      expandedDirs: Array.from(expandedDirs),
+      form: {
+        treeDepth: $('#tree-depth').value,
+        treeUnlimited: $('#tree-unlimited').checked,
+        nodeName: $('#node-name').value,
+        nodeFuzzy: $('#node-fuzzy').checked,
+        nodeAll: $('#node-all').checked,
+        nodeComp: $('#node-comp').value,
+        ffPattern: $('#ff-pattern').value,
+        ffType: $('#ff-type').value,
+      },
+      resultHtml: $('#result-box').innerHTML,
+    };
+    document.querySelectorAll('#proj-bar select[data-plat]').forEach(sel => {
+      s.projSel[sel.dataset.plat] = sel.value;
+    });
+    localStorage.setItem(LS_KEY, JSON.stringify(s));
+  } catch (e) { /* localStorage 不可用时静默 */ }
+}
+
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); }
+  catch (e) { return null; }
+}
+
+// 表单输入变化即保存
+['tree-depth', 'tree-unlimited', 'node-name', 'node-fuzzy', 'node-all', 'node-comp', 'ff-pattern', 'ff-type'].forEach(id => {
+  const el = $('#' + id);
+  if (el) {
+    el.addEventListener('input', saveState);
+    if (el.type === 'checkbox' || el.tagName === 'SELECT') el.addEventListener('change', saveState);
+  }
+});
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    let d = 'HTTP ' + r.status;
+    try { d = (await r.json()).detail || d; } catch (e) {}
+    throw new Error(d);
+  }
+  return r.json();
+}
+
+// ── 项目选择 ───────────────────────────────────────────
+async function initProjects() {
+  const data = await api('/api/projects');
+  const saved = loadState();
+  const bar = $('#proj-bar');
+  bar.innerHTML = '';
+  for (const plat of ['win', 'mac']) {
+    const info = data[plat];
+    const wrap = document.createElement('div');
+    wrap.className = 'plat';
+    const tag = document.createElement('span');
+    tag.textContent = plat;
+    tag.style.color = info.accessible ? 'var(--accent2)' : 'var(--err)';
+    wrap.appendChild(tag);
+    if (!info.accessible) {
+      wrap.appendChild(Object.assign(document.createElement('span'), { textContent: '不可达' }));
+    } else if (!info.projects.length) {
+      wrap.appendChild(Object.assign(document.createElement('span'), { textContent: '无项目' }));
+    } else {
+      const sel = document.createElement('select');
+      sel.dataset.plat = plat;
+      sel.innerHTML = '<option value="">— 选择项目 —</option>' +
+        info.projects.map(p => '<option value="' + esc(p.path) + '">' + esc(p.name) + '</option>').join('');
+      sel.onchange = () => { saveState(); selectProject(sel.value); };
+      wrap.appendChild(sel);
+    }
+    bar.appendChild(wrap);
+  }
+
+  // ── 恢复持久化状态 ──
+  if (!saved) return;
+  // 表单选项
+  if (saved.form) {
+    $('#tree-depth').value = saved.form.treeDepth || 2;
+    $('#tree-unlimited').checked = !!saved.form.treeUnlimited;
+    $('#node-name').value = saved.form.nodeName || '';
+    $('#node-fuzzy').checked = !!saved.form.nodeFuzzy;
+    $('#node-all').checked = !!saved.form.nodeAll;
+    $('#node-comp').value = saved.form.nodeComp || '';
+    $('#ff-pattern').value = saved.form.ffPattern || '';
+    if (saved.form.ffType) $('#ff-type').value = saved.form.ffType;
+  }
+  // 项目选择(每平台)
+  if (saved.projSel) {
+    for (const plat of Object.keys(saved.projSel)) {
+      const sel = document.querySelector('#proj-bar select[data-plat="' + plat + '"]');
+      if (sel && Array.from(sel.options).some(o => o.value === saved.projSel[plat])) {
+        sel.value = saved.projSel[plat];
+      }
+    }
+  }
+  // 展示内容(上次查询结果)
+  if (saved.resultHtml && saved.resultHtml.indexOf('查询中') < 0) {
+    $('#result-box').innerHTML = saved.resultHtml;
+  }
+  // 活动项目 + 资源树 + 选中项
+  if (saved.currentProject) {
+    await selectProject(saved.currentProject);
+    selectedItem = saved.selectedItem || null;
+    renderOps();
+    // 重新展开上次展开的目录(内容实时拉取, 展开结构保留)
+    if (saved.expandedDirs && Array.isArray(saved.expandedDirs)) {
+      expandedDirs = new Set(saved.expandedDirs);
+      expandDirsFromCache(expandedDirs);
+    }
+    saveState(); // 树已重渲染, 刷新持久化(选中项/表单最新值)
+  }
+}
+
+// 展开缓存中的目录(深度优先逐层展开, 仅 fetch targets 内路径及其祖先)
+async function expandDirsFromCache(targets) {
+  const expandNode = async (li, dirPath) => {
+    // 该目录或其任一后代在 targets 中才需要展开(父缺失时祖先自动带上)
+    const needExpand = targets.has(dirPath) || Array.from(targets).some(t => t.startsWith(dirPath + '/'));
+    if (!needExpand) return;
+    const row = li.querySelector(':scope > .row');
+    const childUl = li.querySelector(':scope > ul');
+    if (!row || !childUl) return;
+    if (!row.dataset.loaded) {
+      row.querySelector('.tw').textContent = '…';
+      try {
+        const d2 = await api('/api/tree?project=' + encodeURIComponent(currentProject) + '&dir=' + encodeURIComponent(dirPath));
+        childUl.innerHTML = '';
+        for (const e of d2.entries) {
+          if (e.type === 'dir') childUl.appendChild(renderDir(e.name, e.path, false));
+          else childUl.appendChild(renderFile(e));
+        }
+        row.dataset.loaded = '1';
+      } catch (e) {
+        row.querySelector('.tw').textContent = '!';
+        childUl.innerHTML = '<li class="empty" style="color:var(--err)">' + esc(e.message) + '</li>';
+        targets.delete(dirPath); // 目录已删/不可达: 从缓存剔除, 避免每次刷新重复尝试
+        return;
+      }
+    }
+    row.querySelector('.tw').textContent = '▾';
+    childUl.style.display = 'block';
+    for (const child of childUl.querySelectorAll(':scope > li.dir')) {
+      const cr = child.querySelector(':scope > .row');
+      if (cr && cr.dataset.path) await expandNode(child, cr.dataset.path);
+    }
+  };
+  const rootLi = document.querySelector('#tree-body ul.tree > li.dir');
+  const rootRow = rootLi && rootLi.querySelector(':scope > .row');
+  if (rootLi && rootRow && rootRow.dataset.path) await expandNode(rootLi, rootRow.dataset.path);
+}
+
+// ── 资源树 ─────────────────────────────────────────────
+async function selectProject(projPath) {
+  if (projPath !== currentProject) expandedDirs = new Set(); // 切换项目: 展开状态清零(路径项目相关)
+  selectedItem = null;
+  currentProject = projPath;
+  $('#tree-proj').textContent = projPath ? projPath.split(/[\\/]/).pop() : '未选项目';
+  const body = $('#tree-body');
+  if (!projPath) { body.innerHTML = '<div class="empty">请选择项目</div>'; renderOps(); saveState(); return; }
+  body.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const root = await api('/api/tree?project=' + encodeURIComponent(projPath));
+    const ul = document.createElement('ul');
+    ul.className = 'tree';
+    ul.appendChild(renderDir('assets', root.dir, true));
+    body.innerHTML = '';
+    body.appendChild(ul);
+  } catch (e) {
+    body.innerHTML = '<div class="empty" style="color:var(--err)">' + esc(e.message) + '</div>';
+  }
+  saveState();
+}
+
+function renderDir(name, dirPath, isRoot) {
+  const li = document.createElement('li');
+  li.className = 'dir';
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.dataset.path = dirPath;
+  row.innerHTML = '<span class="tw">▸</span><span class="ic">📁</span><span class="nm">' + esc(name) + '</span>';
+  const childUl = document.createElement('ul');
+  childUl.style.display = 'none';
+  row.onclick = async (ev) => {
+    ev.stopPropagation();
+    if (!row.dataset.loaded) {
+      row.querySelector('.tw').textContent = '…';
+      try {
+        const d2 = await api('/api/tree?project=' + encodeURIComponent(currentProject) + '&dir=' + encodeURIComponent(dirPath));
+        childUl.innerHTML = '';
+        for (const e of d2.entries) {
+          if (e.type === 'dir') childUl.appendChild(renderDir(e.name, e.path, false));
+          else childUl.appendChild(renderFile(e));
+        }
+        row.dataset.loaded = '1';
+      } catch (e) {
+        row.querySelector('.tw').textContent = '!';
+        childUl.innerHTML = '<li class="empty" style="color:var(--err)">' + esc(e.message) + '</li>';
+      }
+    }
+    const open = childUl.style.display !== 'none';
+    childUl.style.display = open ? 'none' : 'block';
+    row.querySelector('.tw').textContent = open ? '▸' : '▾';
+    if (open) expandedDirs.delete(dirPath); else expandedDirs.add(dirPath);
+    saveState();
+  };
+  li.appendChild(row);
+  li.appendChild(childUl);
+  return li;
+}
+
+function renderFile(e) {
+  const li = document.createElement('li');
+  li.className = 'file';
+  const row = document.createElement('div');
+  row.className = 'row';
+  const icon = e.ext === 'json' ? '📄' : (e.ext === 'md' ? '📝' : (e.ext === 'png' || e.ext === 'jpg' ? '🖼' : '📄'));
+  row.innerHTML = '<span class="tw"></span><span class="ic">' + icon + '</span><span class="nm">' + esc(e.name) + '</span>' +
+    (e.size ? '<span class="sz">' + fmtSize(e.size) + '</span>' : '');
+  row.onclick = (ev) => {
+    ev.stopPropagation();
+    document.querySelectorAll('.tree .row.sel').forEach(r => r.classList.remove('sel'));
+    row.classList.add('sel');
+    selectedItem = { path: e.path, name: e.name, ext: e.ext };
+    renderOps();
+    saveState();
+  };
+  li.appendChild(row);
+  return li;
+}
+
+function fmtSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+
+// ── 操作面板 ───────────────────────────────────────────
+function renderOps() {
+  const opAsset = $('#op-asset');
+  if (!selectedItem) {
+    opAsset.style.display = 'none';
+    return;
+  }
+  opAsset.style.display = 'flex';
+  $('#op-item').textContent = selectedItem.path;
+  const isScene = selectedItem.ext === 'scene' || selectedItem.ext === 'prefab';
+  $('#op-scene').style.display = isScene ? 'flex' : 'none';
+}
+
+async function runQuery(op, extra) {
+  const box = $('#result-box');
+  box.innerHTML = '<div class="empty">查询中…</div>';
+  const payload = Object.assign({ op, project: currentProject }, extra || {});
+  try {
+    const r = await api('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    box.innerHTML = '<div class="result"><div class="meta">' +
+      '<span class="' + (r.ok ? 'ok' : 'fail') + '">' + (r.ok ? '✓' : '✗') + ' ' + esc(r.op) + '</span>' +
+      '<span>字符 <b>' + (r.chars || 0) + '</b></span>' +
+      '<span>~<b>' + (r.tokens || 0) + '</b> tokens</span>' +
+      (r.truncated ? '<span style="color:var(--warn)">结果超限已截断</span>' : '') +
+      '</div><pre>' + esc(r.text) + '</pre></div>';
+    saveState(); // 结果渲染后持久化(刷新保留展示内容)
+  } catch (e) {
+    box.innerHTML = '<div class="empty" style="color:var(--err)">' + esc(e.message) + '</div>';
+  }
+}
+
+// ── 事件绑定 ───────────────────────────────────────────
+$('#ff-btn').onclick = () => {
+  if (!currentProject) return;
+  runQuery('find-file', { pattern: $('#ff-pattern').value, type: $('#ff-type').value });
+};
+$('#ff-pattern').addEventListener('keydown', e => { if (e.key === 'Enter') $('#ff-btn').click(); });
+
+$('#tree-btn').onclick = () => {
+  if (!selectedItem) return;
+  const depth = $('#tree-unlimited').checked ? 0 : (parseInt($('#tree-depth').value) || 2);
+  runQuery('tree', { asset: selectedItem.path, depth });
+};
+$('#node-btn').onclick = () => {
+  if (!selectedItem) return;
+  runQuery('node', {
+    asset: selectedItem.path,
+    node: $('#node-name').value,
+    fuzzy: $('#node-fuzzy').checked,
+    all: $('#node-all').checked,
+    component: $('#node-comp').value,
+  });
+};
+$('#node-name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#node-btn').click(); });
+
+$('#uuid-btn').onclick = () => {
+  if (!selectedItem) return;
+  runQuery('uuid', { asset: selectedItem.path });
+};
+$('#refs-btn').onclick = () => {
+  if (!selectedItem) return;
+  runQuery('refs', { asset: selectedItem.path });
+};
+
+// ── 启动 ───────────────────────────────────────────────
+(async () => {
+  try {
+    await initProjects();
+  } catch (e) {
+    document.body.insertAdjacentHTML('beforeend', '<div style="color:var(--err);padding:12px">初始化失败: ' + esc(e.message) + '</div>');
+  }
+})();
+</script>
+</body>
+</html>

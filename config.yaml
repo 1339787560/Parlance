@@ -32,6 +32,17 @@ services:
     tags: [chat, parlance]
     enabled: true
 
+  # Caddy reverse proxy for parlance HTTPS/HTTP2 + HTTP fallback.
+  # Managed by InfoServer: auto-restart, port cleanup, same lifecycle as other services.
+  - name: caddy-parlance
+    command: C:/Users/admin/AppData/Local/Microsoft/WinGet/Links/caddy.exe
+    args: ["run", "--config", "C:/Users/admin/parlance-certs/Caddyfile", "--adapter", "caddyfile"]
+    cwd: C:/Users/admin/parlance-certs
+    port: 8443
+    auto_restart: true
+    tags: [parlance, https, proxy]
+    enabled: true
+
   - name: serviceServer-rust
     command: ./serviceGroup/serviceServer/service-server.exe
     cwd: ./serviceGroup/serviceServer
@@ -68,6 +79,9 @@ services:
     auto_restart: true
     tags: [statistics, proxy]
     enabled: true
+    env:
+      ANTHROPIC_TARGET: "http://aiapi.tcy365.net:82"
+      OPENAI_TARGET: "http://aiapi.tcy365.net:82/v1"
 
   - name: debug-relay
     command_mac: ./.venv/bin/python
@@ -92,6 +106,16 @@ services:
     tags: [reader, novel, web]
     enabled: true
 
+  # dsh web — DeepSeek Harness Web UI。不直接用 dsh.cmd (Popen 无 shell 拉不起批处理),
+  # 等价展开 = node <npm全局>/node_modules/@deepseek-ai/dsh/lib/bin.js web (dsh.cmd 原样转发)
+  - name: dsh-web
+    command: node
+    args: ["C:\\Users\\admin\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js", "web"]
+    port: 3080
+    auto_restart: true
+    tags: [dsh, deepseek, agent, web]
+    enabled: true
+
   - name: hair-sim
     command_mac: /Users/liz/codlib/python/hair-sim/.venv/bin/python
     command_win: python
@@ -100,6 +124,16 @@ services:
     port: 8765
     auto_restart: true
     tags: [hair, appearance, web, 3d]
+    enabled: true
+
+  - name: cocos-mac-test
+    command_mac: ./.venv/bin/python
+    command_win: python
+    args: ["main.py", "--port", "5010"]
+    cwd: ./serviceGroup/cocosMacTest
+    port: 5010
+    auto_restart: true
+    tags: [cocos, test, web]
     enabled: true
 
   - name: cocos-creator

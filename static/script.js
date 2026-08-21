@@ -3,8 +3,10 @@
 
   // ── State ──────────────────────────────────────────────────────────────
   const MSG_API = '/api/messages';
+  const UPLOAD_API = '/api/upload';
   const EVT_API = '/api/events';
   const DL_API = '/api/download';
+  const NEW_UPLOAD_ID = 'new';
   let selectedFiles = [];
   let loadingHistory = false;
   let allLoaded = false;
@@ -13,7 +15,6 @@
   const msgArea = document.getElementById('msgArea');
   const msgInput = document.getElementById('msgInput');
   const btnSend = document.getElementById('btnSend');
-  const btnZip = document.getElementById('btnZip');
   const themeSelect = document.getElementById('themeSelect');
   const pageTitle = document.getElementById('pageTitle');
   const nameInput = document.getElementById('nameInput');
@@ -22,7 +23,6 @@
   const filterSelect = document.getElementById('filterSelect');
   let currentFilter = '';
   const messageCache = {};  // id -> original msg data for rerender
-  const zipModal = document.getElementById('zipModal');
   const zipName = document.getElementById('zipName');
   const dropZone = document.getElementById('dropZone');
   const fileList = document.getElementById('fileList');
@@ -33,6 +33,17 @@
   const sseStatus = document.getElementById('sseStatus');
   const serverUrl = document.getElementById('serverUrl');
   const toast = document.getElementById('toast');
+  const uploadPanel = document.getElementById('uploadPanel');
+  const uploadListEl = document.getElementById('uploadList');
+  const uploadDetailEl = document.getElementById('uploadDetail');
+  const btnUploadPanel = document.getElementById('btnUploadPanel');
+  const uploadBadge = document.getElementById('uploadBadge');
+  const btnUploadClose = document.getElementById('btnUploadClose');
+  const btnSpeedTest = document.getElementById('btnSpeedTest');
+  const speedTestResult = document.getElementById('speedTestResult');
+  const stressTestResult = document.getElementById('stressTestResult');
+  const uploadActionPanel = document.getElementById('uploadActionPanel');
+  const resumeFileInput = document.getElementById('resumeFileInput');
 
   serverUrl.textContent = window.location.host;
 
@@ -88,6 +99,10 @@
   function getSelfIp() {
     // Best-effort: use the IP the server sees
     return localStorage.getItem('self_ip') || '';
+  }
+
+  function isMobile() {
+    return window.matchMedia ? window.matchMedia('(max-width: 600px)').matches : window.innerWidth <= 600;
   }
 
   function formatDate(t) {
@@ -322,14 +337,95 @@
   }
 
   async function sendFile(file) {
-    const fd = new FormData();
-    fd.set('file', file);
-    fd.set('sender', '');
+    // Large single file -> chunked parallel path (resumable, tracked in panel)
+    if (file.size > CHUNKED_UPLOAD_THRESHOLD) {
+      const task = createTask(file);
+      if (uploadPanelOpen && selectedUploadId === NEW_UPLOAD_ID) {
+        selectedUploadId = task.id;
+        renderUploadPanel();
+      }
+      try {
+        const id = await uploadFileChunked(file, task);
+        const msg = await fetchJSON(UPLOAD_API + '/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ upload_ids: [id], sender: '' })
+        });
+        task.loaded = task.size;
+        finishTask(task, 'done');
+        return msg;
+      } catch (e) {
+        if (task._paused) {
+          saveUploadHistory();
+          updateUploadBadge();
+          renderUploadPanel();
+          return;
+        }
+        if (task.status === 'cancelled') {
+          saveUploadHistory();
+          updateUploadBadge();
+          renderUploadPanel();
+          return;
+        }
+        finishTask(task, e.message === '上传已取消' ? 'cancelled' : 'error', e.message);
+        showToast('上传失败(进度已保留, 重发将续传): ' + e.message);
+      }
+      return;
+    }
+    // Small file: single multipart request, tracked with progress
+    const task = createTask(file);
+    if (uploadPanelOpen && selectedUploadId === NEW_UPLOAD_ID) {
+      selectedUploadId = task.id;
+      renderUploadPanel();
+    }
     try {
-      await fetchJSON(MSG_API + '/file', { method: 'POST', body: fd });
+      const msg = await uploadSmallFileXHR(task, file);
+      task.loaded = task.size;
+      finishTask(task, 'done');
+      return msg;
     } catch (e) {
+      if (task._paused) {
+        saveUploadHistory();
+        updateUploadBadge();
+        renderUploadPanel();
+        return;
+      }
+      if (task.status === 'cancelled') {
+        saveUploadHistory();
+        updateUploadBadge();
+        renderUploadPanel();
+        return;
+      }
+      finishTask(task, e.message === '上传已取消' ? 'cancelled' : 'error', e.message);
       showToast('上传失败: ' + e.message);
     }
+  }
+
+  function uploadSmallFileXHR(t, file) {
+    return new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.set('file', file);
+      fd.set('sender', '');
+      const xhr = new XMLHttpRequest();
+      t.xhrs.add(xhr);
+      xhr.open('POST', MSG_API + '/file');
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) { t.loaded = e.loaded; schedulePanelRender(); }
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); } catch (_) { resolve(xhr.responseText); }
+        } else {
+          let errMsg = 'HTTP ' + xhr.status;
+          try { errMsg = JSON.parse(xhr.responseText).detail || errMsg; } catch (_) {}
+          reject(new Error(errMsg));
+        }
+      };
+      xhr.onerror = () => reject(new Error('网络错误'));
+      xhr.onabort = () => reject(new Error('上传已取消'));
+      xhr.timeout = 300000;
+      xhr.send(fd);
+    });
   }
 
   // ── Upload progress helpers ──────────────────────────────────────────
@@ -340,40 +436,33 @@
   function resetProgress() {
     progressFill.style.width = '0%';
     progressInfo.textContent = '';
-    uploadSpeed = 0;
-    uploadLastBytes = 0;
-    uploadLastTime = 0;
-    uploadXHR = null;
+    modalOp = null;
   }
 
   function showProgress(show) {
     progressSection.style.display = show ? 'block' : 'none';
   }
 
-  function updateProgress(loaded, total) {
-    const now = Date.now();
-    if (uploadLastTime > 0) {
-      const dt = (now - uploadLastTime) / 1000;
-      if (dt > 0) {
-        const dBytes = loaded - uploadLastBytes;
-        const instantaneous = dBytes / dt;
-        if (instantaneous > 0) {
-          uploadSpeed = uploadSpeed > 0
-            ? (0.3 * instantaneous + 0.7 * uploadSpeed)
-            : instantaneous;
-        }
-      }
-    }
-    uploadLastBytes = loaded;
-    uploadLastTime = now;
+  // Modal progress op state: overall-average speed (stable - no EMA jitter
+  // from 4 parallel chunk streams each reporting its own instantaneous rate)
+  let modalOp = null;  // {start, base}  base = progress counted before this op
 
-    const pct = Math.min(100, Math.round((loaded / total) * 100));
+  // updateProgress(loaded, total, sent): loaded/total = absolute progress;
+  // sent = bytes actually transmitted in THIS op (excludes resume base).
+  // Displayed speed = sent / elapsed since op start - an honest overall average.
+  function updateProgress(loaded, total, sent) {
+    if (!modalOp) modalOp = { start: Date.now(), base: 0 };
+    if (sent !== undefined) modalOp.base = loaded - sent;  // resume-aware base
+    const elapsed = (Date.now() - modalOp.start) / 1000;
+    const speed = elapsed > 0.5 ? Math.max(0, loaded - modalOp.base) / elapsed : 0;
+
+    const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
     progressFill.style.width = pct + '%';
 
-    const speedStr = formatSize(Math.round(uploadSpeed));
+    const speedStr = speed > 1 ? formatSize(Math.round(speed)) : '';
     let remaining = '';
-    if (uploadSpeed > 0 && pct < 100) {
-      const secs = Math.ceil((total - loaded) / uploadSpeed);
+    if (speed > 1 && pct < 100) {
+      const secs = Math.ceil((total - loaded) / speed);
       remaining = secs < 60 ? ' · 剩余 ' + secs + '秒'
         : ' · 剩余 ' + Math.ceil(secs / 60) + '分钟';
     }
@@ -383,48 +472,730 @@
       + remaining;
   }
 
-  function sendDirectUpload(files) {
-    const fd = new FormData();
-    fd.set('sender', '');
-    for (const f of files) {
-      fd.append('files', f);
+  // ── Chunked parallel + resumable upload ────────────────────────────────
+  // ── Upload task registry (upload manager panel) ──────────────────────
+  // Every upload (multipart / chunked / zip) creates a task. Transfers keep
+  // running regardless of panel/modal visibility; history persists in
+  // localStorage capped at 100 entries.
+  const uploadTasks = [];
+  const UPLOAD_HISTORY_KEY = 'upload_history';
+  const UPLOAD_HISTORY_MAX = 100;
+  let uploadSeq = 1;
+  let selectedUploadId = null;
+  let uploadPanelOpen = false;
+
+  function createTask(file, nameOverride) {
+    const t = {
+      id: uploadSeq++,
+      name: nameOverride || file.name || 'unnamed',
+      size: file.size || 0,
+      loaded: 0,
+      sessionBase: 0,     // bytes already on server when this attempt began
+      startedAt: Date.now(),
+      endedAt: null,
+      status: 'uploading',  // uploading | done | error | interrupted | cancelled
+      error: '',
+      xhrs: new Set(),
+      _paused: false,
+      _stoppedByUser: false,
+      file: file instanceof File ? file : null,
+      fingerprint: file instanceof File ? fileFingerprint(file) : null,
+      lastModified: (file instanceof File && file.lastModified) || 0,
+      resumable: file instanceof File,
+    };
+    uploadTasks.unshift(t);
+    while (uploadTasks.length > UPLOAD_HISTORY_MAX) uploadTasks.pop();
+    saveUploadHistory();
+    updateUploadBadge();
+    updateRealtimeState();
+    return t;
+  }
+
+  function finishTask(t, status, err) {
+    t.status = status;
+    t.endedAt = Date.now();
+    if (err) t.error = err;
+    saveUploadHistory();
+    updateUploadBadge();
+    renderUploadPanel();
+    updateRealtimeState();
+  }
+
+  function saveUploadHistory() {
+    try {
+      const hist = uploadTasks.map(t => ({
+        id: t.id, name: t.name, size: t.size, loaded: t.loaded,
+        status: t.status, startedAt: t.startedAt, endedAt: t.endedAt,
+        fingerprint: t.fingerprint || null, lastModified: t.lastModified || 0,
+        resumable: !!t.resumable, uploadId: t.uploadId || null,
+      }));
+      localStorage.setItem(UPLOAD_HISTORY_KEY, JSON.stringify(hist));
+    } catch (_) {}
+  }
+
+  function loadUploadHistory() {
+    try {
+      const hist = JSON.parse(localStorage.getItem(UPLOAD_HISTORY_KEY) || '[]');
+      for (const h of hist) {
+        // An 'uploading' entry from a previous page died with that page
+        if (h.status === 'uploading') h.status = 'interrupted';
+        h.xhrs = new Set();
+        h.fingerprint = h.fingerprint || null;
+        h.lastModified = h.lastModified || 0;
+        h.resumable = !!h.resumable;
+        h.uploadId = h.uploadId || null;
+        uploadTasks.push(h);
+      }
+      if (hist.length) uploadSeq = Math.max(...hist.map(h => h.id || 0)) + 1;
+    } catch (_) {}
+  }
+
+  function updateUploadBadge() {
+    const n = uploadTasks.filter(t => t.status === 'uploading').length;
+    uploadBadge.style.display = n > 0 ? '' : 'none';
+    uploadBadge.textContent = n > 99 ? '99+' : String(n);
+  }
+
+  function taskSpeed(t) {
+    const end = t.endedAt || Date.now();
+    const elapsed = (end - t.startedAt) / 1000;
+    if (elapsed <= 0.3) return 0;
+    return Math.max(0, t.loaded - t.sessionBase) / elapsed;
+  }
+
+  function taskStatusText(t) {
+    const pct = t.size > 0 ? Math.floor(t.loaded / t.size * 100) : 0;
+    switch (t.status) {
+      case 'uploading': return '上传中 ' + pct + '%';
+      case 'done': return '已完成';
+      case 'error': return '失败';
+      case 'interrupted': return '已停止';
+      case 'cancelled': return '已取消';
+    }
+    return t.status;
+  }
+
+  // Panel rendering (throttled to ~4Hz)
+  let panelRenderTimer = null;
+  let lastPanelRenderTs = 0;
+
+  function schedulePanelRender() {
+    if (!uploadPanelOpen || panelRenderTimer) return;
+    const wait = Math.max(0, 250 - (Date.now() - lastPanelRenderTs));
+    panelRenderTimer = setTimeout(() => {
+      panelRenderTimer = null;
+      lastPanelRenderTs = Date.now();
+      updateUploadProgress();
+    }, wait);
+  }
+
+  function renderUploadPanel() {
+    if (!uploadPanelOpen) return;
+    uploadListEl.innerHTML = '';
+
+    // Top action item: start a new upload (single files or packaged zip).
+    const newEl = document.createElement('div');
+    newEl.className = 'upload-item upload-item-new' + (selectedUploadId === NEW_UPLOAD_ID ? ' active' : '');
+    newEl.innerHTML =
+      '<div class="upload-item-name">＋ 上传文件</div>' +
+      '<div class="upload-item-meta"><span>单文件 / 打包上传</span></div>';
+    newEl.addEventListener('click', () => {
+      selectedUploadId = NEW_UPLOAD_ID;
+      resetProgress();
+      showProgress(false);
+      updateZipFileList();
+      renderUploadPanel();
+    });
+    uploadListEl.appendChild(newEl);
+
+    if (!uploadTasks.length) {
+      const empty = document.createElement('div');
+      empty.className = 'upload-empty';
+      empty.textContent = '暂无上传记录';
+      uploadListEl.appendChild(empty);
+    }
+    for (const t of uploadTasks) {
+      const pct = t.size > 0 ? Math.min(100, Math.floor(t.loaded / t.size * 100)) : 0;
+      const el = document.createElement('div');
+      el.className = 'upload-item' + (t.id === selectedUploadId ? ' active' : '');
+      el.dataset.id = t.id;
+      el.innerHTML =
+        '<div class="upload-item-name">' + escapeHtml(t.name) + '</div>' +
+        '<div class="upload-item-meta"><span>' + formatSize(t.size) + '</span>' +
+        '<span class="s-' + t.status + '">' + taskStatusText(t) + '</span></div>' +
+        '<div class="upload-item-bar"><div style="width:' + pct + '%"></div></div>';
+      el.addEventListener('click', () => { selectedUploadId = t.id; renderUploadPanel(); });
+      uploadListEl.appendChild(el);
+    }
+    renderUploadDetail();
+  }
+
+  function fmtElapsed(sec) {
+    sec = Math.max(0, Math.round(sec));
+    if (sec < 60) return sec + ' 秒';
+    if (sec < 3600) return Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒';
+    return Math.floor(sec / 3600) + ' 时 ' + Math.floor((sec % 3600) / 60) + ' 分';
+  }
+
+  function renderUploadDetail() {
+    if (selectedUploadId === NEW_UPLOAD_ID) {
+      uploadDetailEl.style.display = 'none';
+      uploadActionPanel.style.display = 'block';
+      btnZipCancel.textContent = '清空';
+      updateZipFileList();
+      updateButtonState();
+      return;
     }
 
+    uploadDetailEl.style.display = 'block';
+    uploadActionPanel.style.display = 'none';
+
+    const t = uploadTasks.find(x => x.id === selectedUploadId) || uploadTasks[0];
+    if (!t) {
+      uploadDetailEl.innerHTML = '<div class="upload-empty">选择左侧文件查看详情</div>';
+      return;
+    }
+    selectedUploadId = t.id;
+    const pct = t.size > 0 ? Math.min(100, t.loaded / t.size * 100) : 0;
+    const speed = taskSpeed(t);
+    const elapsed = ((t.endedAt || Date.now()) - t.startedAt) / 1000;
+    let eta = '--';
+    if (t.status === 'uploading' && speed > 1) {
+      eta = fmtElapsed((t.size - t.loaded) / speed);
+    }
+
+    let html =
+      '<div class="up-d-name">' + escapeHtml(t.name) + '</div>' +
+      '<div class="up-d-status s-' + t.status + '" data-field="status">' + taskStatusText(t) + '</div>' +
+      '<div class="up-d-bar"><div data-field="bar" style="width:' + pct + '%"></div></div>' +
+      '<div class="up-d-grid">' +
+      '<div><label>进度</label><span data-field="progress">' + Math.floor(pct) + '% · ' + formatSize(t.loaded) + ' / ' + formatSize(t.size) + '</span></div>' +
+      '<div><label>平均速度</label><span data-field="speed">' + (speed > 1 ? formatSize(Math.round(speed)) + '/s' : '--') + '</span></div>' +
+      '<div><label>已用时间</label><span data-field="elapsed">' + fmtElapsed(elapsed) + '</span></div>' +
+      '<div><label>预计剩余</label><span data-field="eta">' + (t.status === 'uploading' ? eta : '--') + '</span></div>' +
+      '<div><label>开始时间</label><span data-field="started">' + (t.startedAt ? new Date(t.startedAt).toLocaleTimeString() : '--') + '</span></div>' +
+      '<div><label>结束时间</label><span data-field="ended">' + (t.endedAt ? new Date(t.endedAt).toLocaleTimeString() : '--') + '</span></div>' +
+      '</div>';
+    if (t.error) {
+      html += '<div class="up-d-error">' + escapeHtml(t.error) + '</div>';
+    }
+    if (t.status === 'uploading') {
+      html += '<div class="up-d-actions">' +
+        '<button class="btn-cancel" id="btnTaskPause">停止</button>' +
+        '<button class="btn-cancel" id="btnTaskCancel">取消上传</button></div>';
+    } else if (['interrupted', 'error', 'cancelled'].includes(t.status) && t.resumable && t.size > 0) {
+      html += '<div class="up-d-actions">' +
+        '<button class="btn-upload" id="btnTaskResume">' + (t.status === 'cancelled' ? '重新上传' : '恢复上传') + '</button>';
+      if (t.status !== 'cancelled') {
+        html += '<button class="btn-cancel" id="btnTaskCancel">取消上传</button>';
+      }
+      html += '</div>';
+    }
+    html += '<div class="up-d-delete"><button class="btn-cancel" id="btnTaskDelete">删除记录</button></div>';
+    uploadDetailEl.innerHTML = html;
+    const btnPause = uploadDetailEl.querySelector('#btnTaskPause');
+    if (btnPause) btnPause.addEventListener('click', () => pauseTask(t));
+    const btnCancel = uploadDetailEl.querySelector('#btnTaskCancel');
+    if (btnCancel) btnCancel.addEventListener('click', () => cancelTask(t));
+    const btnResume = uploadDetailEl.querySelector('#btnTaskResume');
+    if (btnResume) btnResume.addEventListener('click', () => resumeTask(t));
+    const btnDelete = uploadDetailEl.querySelector('#btnTaskDelete');
+    if (btnDelete) btnDelete.addEventListener('click', () => deleteTask(t));
+  }
+
+  function updateUploadProgress() {
+    if (!uploadPanelOpen) return;
+
+    // Update only progress-related DOM; never rebuild buttons/list.
+    for (const t of uploadTasks) {
+      const item = uploadListEl.querySelector('[data-id="' + t.id + '"]');
+      if (!item) continue;
+      const pct = t.size > 0 ? Math.min(100, Math.floor(t.loaded / t.size * 100)) : 0;
+      const bar = item.querySelector('.upload-item-bar > div');
+      if (bar) bar.style.width = pct + '%';
+      const statusEl = item.querySelector('.upload-item-meta .s-' + t.status);
+      if (statusEl) statusEl.textContent = taskStatusText(t);
+    }
+
+    if (selectedUploadId === NEW_UPLOAD_ID) return;
+    const t = uploadTasks.find(x => x.id === selectedUploadId);
+    if (!t) return;
+
+    const pct = t.size > 0 ? Math.min(100, t.loaded / t.size * 100) : 0;
+    const speed = taskSpeed(t);
+    const elapsed = ((t.endedAt || Date.now()) - t.startedAt) / 1000;
+    let eta = '--';
+    if (t.status === 'uploading' && speed > 1) {
+      eta = fmtElapsed((t.size - t.loaded) / speed);
+    }
+    const set = (field, text) => {
+      const el = uploadDetailEl.querySelector('[data-field="' + field + '"]');
+      if (el) el.textContent = text;
+    };
+    const bar = uploadDetailEl.querySelector('[data-field="bar"]');
+    if (bar) bar.style.width = pct + '%';
+    set('status', taskStatusText(t));
+    set('progress', Math.floor(pct) + '% · ' + formatSize(t.loaded) + ' / ' + formatSize(t.size));
+    set('speed', speed > 1 ? formatSize(Math.round(speed)) + '/s' : '--');
+    set('elapsed', fmtElapsed(elapsed));
+    set('eta', t.status === 'uploading' ? eta : '--');
+  }
+
+  async function cancelTask(t) {
+    if (t.status === 'done') return;
+    t._paused = false;
+    t._stoppedByUser = true;
+    t.status = 'cancelled';
+    t.endedAt = Date.now();
+    for (const x of t.xhrs) {
+      try { x.abort(); } catch (_) {}
+    }
+    t.xhrs.clear();
+    // True cancel: tell the server to discard the active resumable session.
+    if (t.uploadId) {
+      try { await fetch(UPLOAD_API + '/' + t.uploadId, { method: 'DELETE' }); } catch (_) {}
+      t.uploadId = null;
+    }
+    saveUploadHistory();
+    updateUploadBadge();
+    renderUploadPanel();
+    updateRealtimeState();
+    showToast('已取消: ' + t.name);
+  }
+
+  function pauseTask(t) {
+    if (t.status !== 'uploading') return;
+    t._paused = true;
+    t._stoppedByUser = true;
+    t.status = 'interrupted';
+    t.endedAt = Date.now();
+    for (const x of t.xhrs) {
+      try { x.abort(); } catch (_) {}
+    }
+    t.xhrs.clear();
+    saveUploadHistory();
+    updateUploadBadge();
+    renderUploadPanel();
+    updateRealtimeState();
+    showToast('已停止: ' + t.name + ' (服务端进度保留，可随时恢复)');
+  }
+
+  function deleteTask(t) {
+    // Cancel first if the task is still uploading, then remove the history entry.
+    if (t.status === 'uploading') {
+      t._paused = false;
+      t._stoppedByUser = true;
+      t.status = 'cancelled';
+      t.endedAt = Date.now();
+      for (const x of t.xhrs) {
+        try { x.abort(); } catch (_) {}
+      }
+      t.xhrs.clear();
+    }
+    // Discard any active server-side resumable session.
+    if (t.uploadId) {
+      fetch(UPLOAD_API + '/' + t.uploadId, { method: 'DELETE' }).catch(() => {});
+      t.uploadId = null;
+    }
+    const idx = uploadTasks.indexOf(t);
+    if (idx >= 0) uploadTasks.splice(idx, 1);
+    if (selectedUploadId === t.id) {
+      selectedUploadId = uploadTasks.length ? uploadTasks[0].id : NEW_UPLOAD_ID;
+    }
+    saveUploadHistory();
+    updateUploadBadge();
+    renderUploadPanel();
+    updateRealtimeState();
+    showToast('已删除上传记录: ' + t.name);
+  }
+
+  async function resumeTask(t) {
+    if (!t || t.status === 'uploading') return;
+    if (t.file && t.file.name === t.name && t.file.size === t.size) {
+      await uploadTaskWithFile(t, t.file);
+      return;
+    }
+    resumeFileInput._taskId = t.id;
+    showToast('请重新选择同名文件以续传: ' + t.name);
+    resumeFileInput.click();
+  }
+
+  async function uploadTaskWithFile(t, file) {
+    t.status = 'uploading';
+    t.error = '';
+    t.startedAt = Date.now();
+    t.endedAt = null;
+    t.sessionBase = 0;
+    t.xhrs = new Set();
+    t._paused = false;
+    t._stoppedByUser = false;
+    t.file = file;
+    t.fingerprint = fileFingerprint(file);
+    t.lastModified = file.lastModified || 0;
+    t.resumable = true;
+    saveUploadHistory();
+    updateUploadBadge();
+    renderUploadPanel();
+    updateRealtimeState();
+    try {
+      let msg;
+      if (file.size > CHUNKED_UPLOAD_THRESHOLD) {
+        const id = await uploadFileChunked(file, t);
+        msg = await fetchJSON(UPLOAD_API + '/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ upload_ids: [id], sender: '' })
+        });
+      } else {
+        msg = await uploadSmallFileXHR(t, file);
+      }
+      t.loaded = t.size;
+      finishTask(t, 'done');
+      return msg;
+    } catch (e) {
+      if (t._paused) {
+        saveUploadHistory();
+        updateUploadBadge();
+        renderUploadPanel();
+        updateRealtimeState();
+        return null;
+      }
+      if (t.status === 'cancelled') {
+        saveUploadHistory();
+        updateUploadBadge();
+        renderUploadPanel();
+        updateRealtimeState();
+        return null;
+      }
+      finishTask(t, e.message === '上传已取消' ? 'cancelled' : 'error', e.message);
+      showToast('续传失败(进度已保留): ' + e.message);
+      return null;
+    }
+  }
+
+  resumeFileInput.addEventListener('change', async () => {
+    const file = resumeFileInput.files[0];
+    const t = uploadTasks.find(x => x.id === resumeFileInput._taskId);
+    resumeFileInput.value = '';
+    if (!file || !t) return;
+    const fingerprintOk = !t.fingerprint || fileFingerprint(file) === t.fingerprint;
+    if (file.name !== t.name || file.size !== t.size || !fingerprintOk) {
+      showToast('文件不匹配，无法续传: ' + t.name);
+      return;
+    }
+    await uploadTaskWithFile(t, file);
+  });
+
+  function openUploadPanel(open, focusNew) {
+    uploadPanelOpen = open;
+    uploadPanel.classList.toggle('open', open);
+    if (open) {
+      if (focusNew || !uploadTasks.length) {
+        selectedUploadId = NEW_UPLOAD_ID;
+      } else if (!selectedUploadId || selectedUploadId === NEW_UPLOAD_ID) {
+        selectedUploadId = uploadTasks[0].id;
+      }
+      renderUploadPanel();
+    }
+    updateRealtimeState();
+  }
+
+  btnUploadPanel.addEventListener('click', () => {
+    if (uploadPanelOpen) closeUploadModal();
+    else openUploadPanel(true, false);
+  });
+  btnUploadClose.addEventListener('click', closeUploadModal);
+
+  window.addEventListener('beforeunload', saveUploadHistory);
+  loadUploadHistory();
+  updateUploadBadge();
+
+  // Files larger than this use the chunked parallel/resumable path.
+  // Actual transfer chunk size comes from server init.chunk_size (32MB).
+  const CHUNKED_UPLOAD_THRESHOLD = 8 * 1024 * 1024;
+  const CHUNK_CONCURRENCY = 6;          // parallel TCP streams (browser ~6 conns/origin)
+  const CHUNK_RETRY = 3;
+
+  function fileFingerprint(file) {
+    return file.name + '|' + file.size + '|' + file.lastModified;
+  }
+
+  // CRC32 of a chunk - end-to-end integrity check.
+  // 'full'   = every chunk (max reliability)
+  // 'sample' = first/middle/last + every 16th chunk
+  // 'fast'   = skip client CRC on trusted LAN (server still checks chunk size)
+  const CRC_MODE = localStorage.getItem('upload_crc_mode') || 'fast';
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  async function crc32HexFallback(blob) {
+    const view = new Uint8Array(await blob.arrayBuffer());
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < view.length; i++) {
+      c = CRC_TABLE[(c ^ view[i]) & 0xFF] ^ (c >>> 8);
+    }
+    return ((c ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
+  }
+
+  let crcWorker = null;
+  let crcWorkerSeq = 1;
+  const crcWorkerPending = new Map();
+
+  async function crc32Hex(blob) {
+    if (window.Worker) {
+      try {
+        if (!crcWorker) {
+          crcWorker = new Worker('/static/crc32-worker.js');
+          crcWorker.onmessage = (e) => {
+            const p = crcWorkerPending.get(e.data.id);
+            if (p) {
+              crcWorkerPending.delete(e.data.id);
+              p.resolve(e.data.crc);
+            }
+          };
+          crcWorker.onerror = () => {
+            for (const [, p] of crcWorkerPending) p.reject(new Error('CRC worker error'));
+            crcWorkerPending.clear();
+            if (crcWorker) { crcWorker.terminate(); crcWorker = null; }
+          };
+        }
+        const id = crcWorkerSeq++;
+        const promise = new Promise((resolve, reject) => crcWorkerPending.set(id, { resolve, reject }));
+        const buf = await blob.arrayBuffer();
+        crcWorker.postMessage({ id, buffer: buf }, [buf]);
+        return promise;
+      } catch (_) { /* fall through to inline fallback */ }
+    }
+    return crc32HexFallback(blob);
+  }
+
+  function shouldCrcChunk(index, totalChunks) {
+    if (CRC_MODE === 'full') return true;
+    if (CRC_MODE === 'fast') return false;
+    // sample mode
+    if (index === 0 || index === totalChunks - 1 || index === Math.floor(totalChunks / 2)) return true;
+    return index % 16 === 0;
+  }
+
+  function uploadChunkXHR(task, uploadId, index, blob, crcHex, onLoaded) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      uploadXHR = xhr;
-      xhr.open('POST', MSG_API + '/files');
-
+      task.xhrs.add(xhr);
+      xhr.open('POST', UPLOAD_API + '/chunk?upload_id=' +
+               encodeURIComponent(uploadId) + '&index=' + index);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      if (crcHex) xhr.setRequestHeader('X-Chunk-Crc32', crcHex);
       xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          updateProgress(e.loaded, e.total);
-        }
+        if (e.lengthComputable) onLoaded(e.loaded);
       };
-
       xhr.onload = () => {
-        uploadXHR = null;
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch (_) {
-            resolve(xhr.responseText);
-          }
-        } else {
-          let errMsg = 'HTTP ' + xhr.status;
-          try {
-            const body = JSON.parse(xhr.responseText);
-            errMsg = body.detail || errMsg;
-          } catch (_) {}
-          reject(new Error(errMsg));
-        }
+        task.xhrs.delete(xhr);
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error('分块 ' + index + ' HTTP ' + xhr.status));
       };
-
-      xhr.onerror = () => { uploadXHR = null; reject(new Error('网络错误')); };
-      xhr.ontimeout = () => { uploadXHR = null; reject(new Error('上传超时')); };
-      xhr.onabort = () => { uploadXHR = null; reject(new Error('上传已取消')); };
+      xhr.onerror = () => { task.xhrs.delete(xhr); reject(new Error('网络错误')); };
+      xhr.ontimeout = () => { task.xhrs.delete(xhr); reject(new Error('分块超时')); };
+      xhr.onabort = () => { task.xhrs.delete(xhr); reject(new Error('上传已取消')); };
       xhr.timeout = 300000;
-      xhr.send(fd);
+      xhr.send(blob);
     });
+  }
+
+  async function uploadChunkWithRetry(task, uploadId, index, blob, onLoaded, totalChunks) {
+    let lastErr = null;
+    // CRC computed once per chunk; verified server-side on every attempt.
+    // In fast/sample modes some chunks omit the header and server skips check.
+    const crcHex = shouldCrcChunk(index, totalChunks)
+      ? await crc32Hex(blob).catch(() => null)
+      : null;
+    for (let attempt = 0; attempt <= CHUNK_RETRY; attempt++) {
+      if (task.status !== 'uploading') throw new Error('上传已取消');
+      try {
+        await uploadChunkXHR(task, uploadId, index, blob, crcHex, onLoaded);
+        return;
+      } catch (e) {
+        lastErr = e;
+        if (e.message === '上传已取消') throw e;  // user cancel: no retry
+      }
+    }
+    throw lastErr;
+  }
+
+  // uploadFileChunked(file, task): updates task.loaded/sessionBase as it goes.
+  // Returns upload_id. The task's XHRs are tracked for panel-side cancel.
+  async function uploadFileChunked(file, task) {
+    // init returns the session + already-received chunk bitmap (resume point)
+    const init = await fetchJSON(UPLOAD_API + '/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fingerprint: fileFingerprint(file),
+        filename: file.name,
+        file_size: file.size
+      })
+    });
+    const uploadId = init.upload_id;
+    task.uploadId = uploadId;   // allow cancel/abort server-side before complete
+    task._uploadId = uploadId;
+    const chunkSize = init.chunk_size;
+    const totalChunks = init.total_chunks;
+    const doneSet = new Set(init.received);
+    const expectedLen = (i) => Math.min(chunkSize, file.size - i * chunkSize);
+
+    // progress bookkeeping: base = bytes already on server, live = in-flight chunk loads
+    let base = 0;
+    for (const i of doneSet) base += expectedLen(i);
+    task.sessionBase = base;
+    task.startedAt = Date.now();   // session speed counts only this attempt
+    const live = {};
+    const report = () => {
+      let loaded = base;
+      for (const k in live) loaded += live[k];
+      task.loaded = Math.min(loaded, file.size);
+      schedulePanelRender();
+    };
+    report();
+
+    const pending = [];
+    for (let i = 0; i < totalChunks; i++) {
+      if (!doneSet.has(i)) pending.push(i);
+    }
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < pending.length && task.status === 'uploading') {
+        const i = pending[cursor++];
+        const blob = file.slice(i * chunkSize, Math.min((i + 1) * chunkSize, file.size));
+        live[i] = 0;
+        await uploadChunkWithRetry(task, uploadId, i, blob, (l) => { live[i] = l; report(); }, totalChunks);
+        base += expectedLen(i);
+        delete live[i];
+        report();
+      }
+    };
+    const n = Math.min(CHUNK_CONCURRENCY, Math.max(1, pending.length));
+    await Promise.all(Array.from({ length: n }, worker));
+    if (task.status !== 'uploading') throw new Error('上传已取消');
+    return uploadId;
+  }
+
+  async function sendDirectUpload(files) {
+    const totalAll = files.reduce((s, f) => s + f.size, 0);
+
+    // All small files: single multipart request (lowest latency)
+    if (files.length && files.every(f => f.size <= CHUNKED_UPLOAD_THRESHOLD)) {
+      const fd = new FormData();
+      fd.set('sender', '');
+      for (const f of files) {
+        fd.append('files', f);
+      }
+      // one task per file; the single request reports only aggregate progress,
+      // split proportionally by size (small files finish in seconds anyway)
+      const tasks = files.map(f => createTask(f));
+      if (uploadPanelOpen && selectedUploadId === NEW_UPLOAD_ID) {
+        selectedUploadId = tasks[0].id;
+        renderUploadPanel();
+      }
+
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        for (const t of tasks) t.xhrs.add(xhr);
+        xhr.open('POST', MSG_API + '/files');
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            for (const t of tasks) {
+              t.loaded = Math.min(t.size, Math.round(e.loaded * t.size / Math.max(1, e.total)));
+            }
+            schedulePanelRender();
+            updateProgress(e.loaded, e.total);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            for (const t of tasks) { t.loaded = t.size; finishTask(t, 'done'); }
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch (_) {
+              resolve(xhr.responseText);
+            }
+          } else {
+            let errMsg = 'HTTP ' + xhr.status;
+            try {
+              const body = JSON.parse(xhr.responseText);
+              errMsg = body.detail || errMsg;
+            } catch (_) {}
+            for (const t of tasks) finishTask(t, 'error', errMsg);
+            reject(new Error(errMsg));
+          }
+        };
+
+        xhr.onerror = () => { for (const t of tasks) finishTask(t, 'error', '网络错误'); reject(new Error('网络错误')); };
+        xhr.ontimeout = () => { for (const t of tasks) finishTask(t, 'error', '上传超时'); reject(new Error('上传超时')); };
+        xhr.onabort = () => {
+          for (const t of tasks) {
+            if (t.status === 'uploading') finishTask(t, 'cancelled');
+          }
+          reject(new Error('上传已取消'));
+        };
+        xhr.timeout = 300000;
+        xhr.send(fd);
+      });
+    }
+
+    // Large file(s): chunked parallel + resumable path (one task per file)
+    const tasks = [];
+    // modal aggregate progress from tasks (average speed across the whole op);
+    // uploadFileChunked updates task.loaded, this interval mirrors it to the bar
+    const reportModal = () => {
+      const loaded = tasks.reduce((s, t) => s + t.loaded, 0);
+      const sent = tasks.reduce((s, t) => s + Math.max(0, t.loaded - t.sessionBase), 0);
+      updateProgress(loaded, totalAll, sent);
+    };
+    const modalTimer = setInterval(reportModal, 250);
+
+    try {
+      for (const f of files) {
+        const t = createTask(f);
+        tasks.push(t);
+        if (uploadPanelOpen && selectedUploadId === NEW_UPLOAD_ID) {
+          selectedUploadId = t.id;
+          renderUploadPanel();
+        }
+        t._uploadId = await uploadFileChunked(f, t);
+      }
+
+      const ids = tasks.map(t => t._uploadId);
+      const msg = await fetchJSON(UPLOAD_API + '/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_ids: ids, sender: '' })
+      });
+      for (const t of tasks) { t.loaded = t.size; finishTask(t, 'done'); }
+      return msg;
+    } catch (e) {
+      for (const t of tasks) {
+        if (t.status === 'uploading') {
+          if (t._paused) {
+            saveUploadHistory();
+            updateUploadBadge();
+            renderUploadPanel();
+          } else {
+            finishTask(t, e.message === '上传已取消' ? 'cancelled' : 'error', e.message);
+          }
+        }
+      }
+      throw e;
+    } finally {
+      clearInterval(modalTimer);
+    }
   }
 
   async function sendZip(files, name) {
@@ -434,10 +1205,23 @@
     for (const f of files) {
       fd.append('files', f);
     }
+    // zip op = one task (single request; server-side deflate is not upload progress)
+    const task = createTask(
+      { name: (name || 'files') + '.zip', size: files.reduce((s, f) => s + f.size, 0) },
+      (files.length > 1 ? files[0].name + ' 等 ' + files.length + ' 个文件' : undefined)
+    );
+    if (uploadPanelOpen && selectedUploadId === NEW_UPLOAD_ID) {
+      selectedUploadId = task.id;
+      renderUploadPanel();
+    }
     try {
+      // no per-request progress via fetch(); run XHR-less is fine for typical zips
       await fetchJSON(MSG_API + '/zip', { method: 'POST', body: fd });
+      task.loaded = task.size;
+      finishTask(task, 'done');
       showToast(`共 ${files.length} 个文件，打包发送成功`);
     } catch (e) {
+      finishTask(task, 'error', e.message);
       showToast('打包上传失败: ' + e.message);
     }
   }
@@ -529,39 +1313,163 @@
     }
   });
 
-  // ── ZIP modal ──────────────────────────────────────────────────────────
+  // ── Upload action panel (inside upload manager modal) ─────────────────
   let zipFiles = [];
 
-  // Upload progress state
-  let uploadSpeed = 0;
-  let uploadLastBytes = 0;
-  let uploadLastTime = 0;
-  let uploadXHR = null;
-
-  btnZip.addEventListener('click', () => {
+  function clearZipFiles() {
     zipFiles = [];
     zipName.value = '';
     resetProgress();
     showProgress(false);
     updateZipFileList();
-    zipModal.classList.add('open');
-  });
-
-  function closeZipModal() {
-    // Abort any in-flight upload
-    if (uploadXHR) {
-      try { uploadXHR.abort(); } catch (_) {}
-      uploadXHR = null;
-    }
-    zipModal.classList.remove('open');
-    zipFiles = [];
-    resetProgress();
-    showProgress(false);
-    updateZipFileList();
-    btnZipCancel.textContent = '取消';
   }
 
-  btnZipCancel.addEventListener('click', closeZipModal);
+  function closeUploadModal() {
+    // Closing the modal does NOT abort uploads - they continue in background
+    // (see upload manager panel). Stop/cancel per-task from the detail panel.
+    const active = uploadTasks.some(t => t.status === 'uploading');
+    uploadPanelOpen = false;
+    uploadPanel.classList.remove('open');
+    clearZipFiles();
+    btnZipCancel.textContent = '清空';
+    updateRealtimeState();
+    if (active) {
+      showToast('上传仍在后台进行, 点击输入栏上传图标查看进度');
+    }
+  }
+
+  function formatSpeed(bps) {
+    return formatSize(Math.round(bps)) + '/s';
+  }
+
+  let realtimeTimer = null;
+  let realtimeBusy = false;
+  let stressRunning = false;
+
+  function stopRealtimeSpeedTest() {
+    if (realtimeTimer) {
+      clearInterval(realtimeTimer);
+      realtimeTimer = null;
+    }
+  }
+
+  function updateRealtimeState() {
+    const hasActive = uploadTasks.some(t => t.status === 'uploading');
+    if (uploadPanelOpen && !stressRunning && !hasActive) {
+      if (!realtimeTimer) {
+        realtimeTimer = setInterval(runRealtimeProbe, 3000);
+        runRealtimeProbe();
+      }
+    } else {
+      stopRealtimeSpeedTest();
+    }
+  }
+
+  async function runRealtimeProbe() {
+    if (realtimeBusy || stressRunning || !uploadPanelOpen) return;
+    realtimeBusy = true;
+    try {
+      const DL_SIZE = 512 * 1024;
+      const UL_SIZE = 256 * 1024;
+      const t0 = performance.now();
+      await Promise.all([
+        fetch(`/api/speedtest?bytes=${DL_SIZE}`).then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer();
+        }),
+        fetch('/api/speedtest', {
+          method: 'POST',
+          body: new Uint8Array(UL_SIZE)
+        }).then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+      ]);
+      const secs = (performance.now() - t0) / 1000;
+      if (!stressRunning && uploadPanelOpen && !uploadTasks.some(t => t.status === 'uploading')) {
+        speedTestResult.style.display = 'block';
+        speedTestResult.textContent = `实时 下载 ${formatSpeed(DL_SIZE / secs)} · 上传 ${formatSpeed(UL_SIZE / secs)}`;
+      }
+    } catch (_) {
+      // Transient realtime probe failures are ignored.
+    } finally {
+      realtimeBusy = false;
+    }
+  }
+
+  async function runSpeedTest() {
+    if (btnSpeedTest.disabled) return;
+    btnSpeedTest.disabled = true;
+    stressRunning = true;
+    stopRealtimeSpeedTest();
+    speedTestResult.style.display = 'none';
+    stressTestResult.style.display = 'block';
+    stressTestResult.textContent = '压测中... 约 15 秒';
+
+    const fetchTimeout = (url, opts, ms = 10000) => {
+      if (typeof AbortController === 'undefined') return fetch(url, opts);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), ms);
+      return fetch(url, Object.assign({}, opts, { signal: ctrl.signal }))
+        .finally(() => clearTimeout(timer));
+    };
+
+    const PHASE_MS = 7500;               // download + upload ≈ 15s total
+    const DL_SIZE = 4 * 1024 * 1024;     // 4MB per download request
+    const UL_SIZE = 1 * 1024 * 1024;     // 1MB per upload request
+    const PARALLEL = 4;
+
+    try {
+      // Download phase.
+      const dlStart = performance.now();
+      let dlBytes = 0;
+      while (performance.now() - dlStart < PHASE_MS) {
+        const bufs = await Promise.all(Array.from({ length: PARALLEL }, () =>
+          fetchTimeout(`/api/speedtest?bytes=${DL_SIZE}`).then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+          })
+        ));
+        for (const b of bufs) dlBytes += b.byteLength;
+        const elapsed = (performance.now() - dlStart) / 1000;
+        stressTestResult.textContent = `压测中... 下载 ${formatSpeed(dlBytes / elapsed)}`;
+      }
+      const dlSecs = (performance.now() - dlStart) / 1000;
+      const dlBps = dlBytes / dlSecs;
+
+      // Upload phase.
+      const ulStart = performance.now();
+      let ulBytes = 0;
+      while (performance.now() - ulStart < PHASE_MS) {
+        await Promise.all(Array.from({ length: PARALLEL }, () =>
+          fetchTimeout('/api/speedtest', {
+            method: 'POST',
+            body: new Uint8Array(UL_SIZE)
+          }).then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.text();
+          })
+        ));
+        ulBytes += UL_SIZE * PARALLEL;
+        const elapsed = (performance.now() - ulStart) / 1000;
+        stressTestResult.textContent = `压测中... 上传 ${formatSpeed(ulBytes / elapsed)}`;
+      }
+      const ulSecs = (performance.now() - ulStart) / 1000;
+      const ulBps = ulBytes / ulSecs;
+
+      stressTestResult.textContent = `压测结果 下载 ${formatSpeed(dlBps)} · 上传 ${formatSpeed(ulBps)}`;
+    } catch (e) {
+      stressTestResult.textContent = '压测失败: ' + (e.name === 'AbortError' ? '超时' : e.message);
+    } finally {
+      btnSpeedTest.disabled = false;
+      stressRunning = false;
+      updateRealtimeState();
+    }
+  }
+
+  btnSpeedTest.addEventListener('click', runSpeedTest);
+
+  btnZipCancel.addEventListener('click', clearZipFiles);
 
   // Drop zone — drag & drop
   dropZone.addEventListener('click', () => zipFileInput.click());
@@ -585,7 +1493,7 @@
     }
   });
 
-  // File input for zip modal
+  // File input for upload action
   zipFileInput.addEventListener('change', (e) => {
     const files = (e.target || zipFileInput).files;
     if (files && files.length > 0) {
@@ -616,9 +1524,23 @@
   }
 
   function updateButtonState() {
-    btnZipUpload.disabled = zipFiles.length === 0;
-    btnDirectUpload.disabled = zipFiles.length === 0;
+    const count = zipFiles.length;
+    btnZipUpload.disabled = count === 0;
+    btnDirectUpload.disabled = count === 0;
+
+    if (isMobile() && count > 0) {
+      // 手机端不展示两个上传方式，按文件数量自动选择：
+      // <=10 直接上传，>10 打包上传。
+      const useZip = count > 10;
+      btnDirectUpload.style.display = useZip ? 'none' : '';
+      btnZipUpload.style.display = useZip ? '' : 'none';
+    } else {
+      btnDirectUpload.style.display = '';
+      btnZipUpload.style.display = '';
+    }
   }
+
+  window.addEventListener('resize', updateButtonState);
 
   btnZipUpload.addEventListener('click', async () => {
     if (zipFiles.length === 0) return;
@@ -627,7 +1549,9 @@
     try {
       const name = zipName.value.trim() || 'files';
       await sendZip(zipFiles, name);
-      closeZipModal();
+      // stay open: sendZip already switched to the new task detail
+      zipFiles = [];
+      updateZipFileList();
     } finally {
       btnZipUpload.disabled = false;
       btnZipUpload.textContent = '上传打包';
@@ -641,7 +1565,7 @@
     // Disable all controls
     btnDirectUpload.disabled = true;
     btnZipUpload.disabled = true;
-    btnZipCancel.textContent = '取消上传';
+    btnZipCancel.textContent = '转入后台';
 
     // Show progress
     resetProgress();
@@ -651,18 +1575,20 @@
     try {
       await sendDirectUpload(zipFiles);
       showToast('共 ' + zipFiles.length + ' 个文件，直接发送成功');
-      closeZipModal();
+      zipFiles = [];
+      updateZipFileList();
     } catch (e) {
       showProgress(false);
-      showToast('上传失败: ' + e.message);
+      const userStopped = uploadTasks.some(t => t._stoppedByUser) || e.message === '上传已取消';
+      if (!userStopped) showToast('上传失败: ' + e.message);
       updateButtonState();
-      btnZipCancel.textContent = '取消';
+      btnZipCancel.textContent = '清空';
     }
   });
 
   // Close modal on overlay click
-  zipModal.addEventListener('click', (e) => {
-    if (e.target === zipModal) closeZipModal();
+  uploadPanel.addEventListener('click', (e) => {
+    if (e.target === uploadPanel) closeUploadModal();
   });
 
   // ── Also drag-drop files onto page for single file upload ──────────────
@@ -674,10 +1600,10 @@
     if (files.length === 1) {
       sendFile(files[0]);
     } else {
-      // Multiple files → open ZIP modal
+      // Multiple files → open upload panel with "上传文件" action selected
       zipFiles = Array.from(files);
       zipName.value = 'files';
-      zipModal.classList.add('open');
+      openUploadPanel(true, true);
       updateZipFileList();
     }
   });

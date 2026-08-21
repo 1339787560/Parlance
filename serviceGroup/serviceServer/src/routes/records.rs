@@ -70,9 +70,9 @@ const SOURCES: &[RecordSource] = &[
     // bastion (堡垒机 53/185 近 2 日 record, OSS 未上传; reqwest 代理远端 servicesvr)
     // proxy_url 走 env SERVICESVR_BASTION_<host>_URL (部署时配, 避硬编 IP)
     RecordSource { id: "bastion-53-xzms",  label: "53·六红中",   kind: "bastion", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzms") },
-    RecordSource { id: "bastion-53-xzmo2", label: "53·血血流战", kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzmo2") },
+    RecordSource { id: "bastion-53-xzmo2", label: "53·血流血战", kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzmo2") },
     RecordSource { id: "bastion-185-xzms",  label: "185·六红中",  kind: "bastion", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzms") },
-    RecordSource { id: "bastion-185-xzmo2", label: "185·血血流战",kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzmo2") },
+    RecordSource { id: "bastion-185-xzmo2", label: "185·血流血战",kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzmo2") },
 ];
 
 fn find_source(id: &str) -> Option<&'static RecordSource> {
@@ -343,6 +343,10 @@ async fn list_oss(src: &RecordSource, date: &str) -> Result<Vec<RecordMeta>> {
         // 传两同参 = start=end=date 单日 (zip 实际 ~4 对局 .log)
         args.push(&date_arg);
         args.push(&date_arg);
+    } else {
+        // 无日期: spideOnlineLog 无 date 参数返空 []; 传早期 start 单参 → start..today 全范围扫描
+        // (首次慢 ~200s+3000项, 进程缓存后续秒返)
+        args.push("2020-01-01");
     }
     let cwd = spide_cwd().map_err(|e| { write_dbg_log("spide_cwd_err", &[], &format!("{:?}", e)); e })?;
     let out = run_spide(&cwd, &args).await?;
@@ -520,6 +524,110 @@ async fn get_bastion(src: &RecordSource, id: &str) -> Result<String> {
         .and_then(|c| c.as_str())
         .map(|s| s.to_string())
         .ok_or(AppError::ServiceUnavailable)
+}
+
+// ── 局级扫描 (scan_rounds) ──────────────────────────────────────────────────
+//
+// GET /api/record/scan_rounds?source=&date=
+// 下载每个 .log 文件, 扫描每局 header (Version/Timestamp/ChairNO), 返回扁平局列表.
+// 每个文件 = 1 个房间, 内含 N 局. 不选房间 = 全部文件的局拼接.
+
+#[derive(Serialize, Clone)]
+struct RoundScanMeta {
+    file_id: String,
+    round_idx: usize,
+    room_id: String,
+    timestamp: u64,
+    players: Vec<String>,
+}
+
+/// 局扫描缓存: (source, date) → Vec<RoundScanMeta>
+static ROUND_CACHE: LazyLock<RwLock<HashMap<CacheKey, Vec<RoundScanMeta>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+#[derive(Deserialize)]
+pub struct ScanParams {
+    pub source: String,
+    pub date: Option<String>,
+}
+
+/// `GET /api/record/scan_rounds?source=&date=` — 局级扫描 (下载文件 + 扫 header).
+pub async fn scan_rounds(Query(p): Query<ScanParams>) -> Result<Json<Value>> {
+    if p.source.is_empty() { return Err(AppError::MissingParam("source")); }
+    find_source(&p.source).ok_or(AppError::MissingParam("source"))?;
+    let date = p.date.clone().unwrap_or_default();
+    let key = (p.source.clone(), date.clone());
+
+    // 缓存命中
+    {
+        let cache = ROUND_CACHE.read().await;
+        if let Some(rounds) = cache.get(&key) {
+            return Ok(Json(json!({ "success": true, "source": key.0, "date": key.1, "rounds": rounds, "cached": true })));
+        }
+    }
+
+    // 拉文件列表
+    let items = dispatch_list(&p.source, &date).await?;
+    tracing::info!("scan_rounds: {} files to scan for source={}", items.len(), p.source);
+
+    // 逐文件下载 + 扫描
+    let mut all_rounds = Vec::new();
+    for item in &items {
+        let text = match dispatch_get(&p.source, &item.id).await {
+            Ok(t) => t,
+            Err(e) => { tracing::warn!("scan_rounds: skip {} (get failed: {})", item.id, e); continue; }
+        };
+        let rounds = scan_rounds_in_text(&text, &item.id);
+        tracing::info!("scan_rounds: {} → {} rounds", item.id, rounds.len());
+        all_rounds.extend(rounds);
+    }
+    tracing::info!("scan_rounds: total {} rounds", all_rounds.len());
+
+    ROUND_CACHE.write().await.insert(key.clone(), all_rounds.clone());
+    Ok(Json(json!({ "success": true, "source": key.0, "date": key.1, "rounds": all_rounds, "cached": false })))
+}
+
+/// 从 record 文本扫描每局 header → 扁平局列表.
+/// 每个 `Version` 行标记新一局, 收集后续 Timestamp/RoomID/ChairNO.
+fn scan_rounds_in_text(text: &str, file_id: &str) -> Vec<RoundScanMeta> {
+    let mut rounds = Vec::new();
+    let mut idx = 0usize;
+    let mut ts: u64 = 0;
+    let mut room = String::new();
+    let mut players = vec![String::new(); 4];
+    let mut chairno_count = 0u8;
+
+    for line in text.lines() {
+        if line.starts_with("Version ") {
+            if chairno_count > 0 {
+                rounds.push(RoundScanMeta {
+                    file_id: file_id.to_string(), round_idx: idx,
+                    room_id: room.clone(), timestamp: ts, players: players.clone(),
+                });
+                idx += 1;
+            }
+            players = vec![String::new(); 4];
+            chairno_count = 0;
+        } else if let Some(v) = line.strip_prefix("Timestamp ") {
+            ts = v.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        } else if let Some(v) = line.strip_prefix("RoomID ") {
+            room = v.split_whitespace().next().unwrap_or("").to_string();
+        } else if let Some(rest) = line.strip_prefix("ChairNO ") {
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(i) = parts[0].parse::<usize>() {
+                    if i < 4 { players[i] = parts[1].to_string(); chairno_count += 1; }
+                }
+            }
+        }
+    }
+    if chairno_count > 0 {
+        rounds.push(RoundScanMeta {
+            file_id: file_id.to_string(), round_idx: idx,
+            room_id: room, timestamp: ts, players,
+        });
+    }
+    rounds
 }
 
 #[cfg(test)]

@@ -44,6 +44,7 @@
         <button id="tab-scene" class="tab" onclick="switchTab('scene')">Scene</button>
         <button id="tab-launcher" class="tab" onclick="switchTab('launcher')">Launcher</button>
         <button id="tab-autotest" class="tab" onclick="switchTab('autotest')">AutoTest</button>
+        <button id="tab-device" class="tab" onclick="switchTab('device')">Device</button>
     </div>
 
     <div id="panel-console" class="panel active">
@@ -281,6 +282,46 @@
         </div>
     </div>
 
+    <!-- Device Panel - 模拟真机（数值配置 + notch 形状 + 模板管理, 驱动游戏端 __xzmp_simDevice）-->
+    <div id="panel-device" class="panel">
+        <div id="device-toolbar">
+            <button class="toolbar-btn" onclick="deviceApply()" title="应用当前编辑器配置">▶ 应用</button>
+            <button class="toolbar-btn" onclick="deviceRestore()" title="还原真实 windowSize + 安全区">↩ 还原</button>
+            <button class="toolbar-btn" onclick="deviceSnapshot()" title="拉取当前分辨率/安全区快照（__testResolution）">🔍 快照</button>
+            <button class="toolbar-btn" onclick="deviceCapture()" title="从选中客户端（真机/小程序/preview）抓取分辨率+安全区参数, 存为模板">📱 从真机抓取</button>
+            <button class="toolbar-btn" onclick="deviceDiag()" title="打包彻查诊断: Init.ts是否执行/拦截器/DRS/safeArea/Canvas布局">🧭 诊断</button>
+            <span id="device-status" class="events-status"></span>
+        </div>
+        <div id="device-body">
+            <div class="device-section">
+                <div class="device-section-title">数值配置（改动即应用）</div>
+                <div class="device-config-grid">
+                    <label>宽 (frame w)</label><input id="device-w" type="number" value="1558" oninput="deviceOnEditorInput()">
+                    <label>高 (frame h)</label><input id="device-h" type="number" value="720" oninput="deviceOnEditorInput()">
+                    <label>侧 inset</label><input id="device-inset" type="number" value="91" oninput="deviceOnEditorInput()">
+                    <label>顶 inset</label><input id="device-top" type="number" value="0" oninput="deviceOnEditorInput()">
+                    <label>异形形状</label><select id="device-notch" onchange="deviceOnEditorInput()"></select>
+                </div>
+                <div class="device-btn-row">
+                    <button class="toolbar-btn" onclick="deviceSaveTemplate()" title="保存当前配置为模板">💾 存为模板</button>
+                </div>
+            </div>
+            <div class="device-section">
+                <div class="device-section-title">模板（点击应用 + 进入编辑）</div>
+                <div id="device-templates"></div>
+            </div>
+            <div class="device-section">
+                <div class="device-section-title">当前快照</div>
+                <div id="device-snapshot">未拉取</div>
+            </div>
+            <div class="device-legend">
+                📱 从真机抓取：对选中 relay 客户端（真机/小程序/preview）调 __xzmp_captureDevice() 读实时分辨率+安全区+insets，自动存为 real_<platform> 模板并应用 → 在 preview 复现真机问题。
+                配置经 /api/eval 调 __xzmp_simDevice({w,h,inset,top,notch})。分辨率走 screen.windowSize + updatetDesignResolutionSize；安全区 mock sys.getSafeAreaRect + canvas-resize 重对齐；红条+形状 overlay 标 inset 区。
+                内置档案只读；带 * 为用户模板（localStorage 持久化，本浏览器）。窗口比例异步收敛 ~1s，快照以二次为准。
+            </div>
+        </div>
+    </div>
+
     <!-- BTree Panel - 行为树可视化（四层 + 节点跳 TS）-->
     <div id="panel-btree" class="panel">
         <div id="btree-toolbar">
@@ -421,7 +462,7 @@
         <div id="search-results"></div>
     </div>
 
-    <script src="debug-console.js?v=11"></script>
+    <script src="debug-console.js?v=12"></script>
     <script src="debug-sources.js?v=5"></script>
     <script src="debug-perf.js?v=6"></script>
     <script src="debug-leak.js?v=1"></script>
@@ -432,6 +473,7 @@
     <script src="debug-curl.js?v=2"></script>
     <script src="debug-launcher.js?v=17"></script>
     <script src="debug-autotest.js?v=2"></script>
+<script src="debug-device.js?v=5"></script>
     <script src="debug-theme.js?v=1"></script>
 </body>
 </html>

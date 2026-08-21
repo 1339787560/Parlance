@@ -97,13 +97,40 @@ class ServiceControlServer:
         try:
             self._listener = Listener(self._address, family=self._family)
         except Exception as e:
-            logger.warning("ServiceControlServer bind failed (%s): %s", self._address, e)
+            # 控制管道被占 = 另有 host 持有。不退出 (host 可能刚被 run.py 拉起,
+            # 旧 host 尚未释放管道), 转后台每 10s 重试接管, 让最后存活的 host
+            # 自动成为控制面所有者 (2026-08-19 双实例事故根因修复的接管侧)。
+            logger.warning(
+                "ServiceControlServer bind failed (%s): %s — retrying every 10s "
+                "to take over the control pipe when the old host exits.",
+                self._address, e,
+            )
+            retry = threading.Thread(
+                target=self._retry_bind, name="svc-ctl-retry", daemon=True
+            )
+            retry.start()
             return
+        self._bind_serve()
+
+    def _bind_serve(self):
+        """正式启动 accept loop (绑定成功后调用)。"""
         self._thread = threading.Thread(
             target=self._accept_loop, name="svc-ctl-accept", daemon=True
         )
         self._thread.start()
         logger.info("ServiceControlServer listening on %s", self._address)
+
+    def _retry_bind(self):
+        """绑定失败后的接管重试: 每 10s 重绑控制管道, 成功后启动 accept loop。"""
+        while not self._stop.is_set():
+            time.sleep(10)
+            try:
+                self._listener = Listener(self._address, family=self._family)
+            except Exception:
+                continue
+            logger.info("ServiceControlServer acquired %s", self._address)
+            self._bind_serve()
+            return
 
     def stop(self):
         self._stop.set()
