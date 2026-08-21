@@ -19,6 +19,10 @@ _CHUNK_SIZE = 262144
 # Resumable upload chunk size (32MB) - parallel TCP streams over WiFi/LAN
 UPLOAD_CHUNK_SIZE = 32 * 1024 * 1024
 
+# Target number of parallel chunks for medium files. Large files still use
+# UPLOAD_CHUNK_SIZE; smaller files use a smaller chunk so 6 streams stay busy.
+TARGET_PARALLEL_CHUNKS = 6
+
 
 class FileHandler:
     def __init__(self, upload_dir: str, tmp_dir: str = ""):

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
-from file_handler import UPLOAD_CHUNK_SIZE, _guess_mime
+from file_handler import UPLOAD_CHUNK_SIZE, TARGET_PARALLEL_CHUNKS, _guess_mime
 from state import state
 
 logger = logging.getLogger(__name__)
@@ -185,15 +185,20 @@ async def upload_init(request: Request):
         }
 
     upload_id = uuid.uuid4().hex[:16]
-    total_chunks = math.ceil(file_size / UPLOAD_CHUNK_SIZE)
+    # Keep 32MB chunks for large files, but shrink chunk size for medium files
+    # so the browser's 6 parallel streams actually have multiple chunks to send.
+    chunk_size = UPLOAD_CHUNK_SIZE
+    if file_size < UPLOAD_CHUNK_SIZE * TARGET_PARALLEL_CHUNKS:
+        chunk_size = max(1, math.ceil(file_size / TARGET_PARALLEL_CHUNKS))
+    total_chunks = math.ceil(file_size / chunk_size)
     state.db.create_upload_session(
         upload_id, fingerprint, ip, filename, file_size,
-        UPLOAD_CHUNK_SIZE, total_chunks,
+        chunk_size, total_chunks,
     )
     state.fh.tmp_dir(upload_id).mkdir(parents=True, exist_ok=True)
     return {
         "upload_id": upload_id,
-        "chunk_size": UPLOAD_CHUNK_SIZE,
+        "chunk_size": chunk_size,
         "total_chunks": total_chunks,
         "received": [],
         "resumed": False,
