@@ -337,7 +337,7 @@
 
   async function sendFile(file) {
     // Large single file -> chunked parallel path (resumable, tracked in panel)
-    if (file.size > CHUNK_SIZE) {
+    if (file.size > CHUNKED_UPLOAD_THRESHOLD) {
       const task = createTask(file);
       if (uploadPanelOpen && selectedUploadId === NEW_UPLOAD_ID) {
         selectedUploadId = task.id;
@@ -832,7 +832,7 @@
     renderUploadPanel();
     try {
       let msg;
-      if (file.size > CHUNK_SIZE) {
+      if (file.size > CHUNKED_UPLOAD_THRESHOLD) {
         const id = await uploadFileChunked(file, t);
         msg = await fetchJSON(UPLOAD_API + '/complete', {
           method: 'POST',
@@ -900,7 +900,9 @@
   loadUploadHistory();
   updateUploadBadge();
 
-  const CHUNK_SIZE = 32 * 1024 * 1024;  // must match server UPLOAD_CHUNK_SIZE
+  // Files larger than this use the chunked parallel/resumable path.
+  // Actual transfer chunk size comes from server init.chunk_size (32MB).
+  const CHUNKED_UPLOAD_THRESHOLD = 8 * 1024 * 1024;
   const CHUNK_CONCURRENCY = 6;          // parallel TCP streams (browser ~6 conns/origin)
   const CHUNK_RETRY = 3;
 
@@ -1077,7 +1079,7 @@
     const totalAll = files.reduce((s, f) => s + f.size, 0);
 
     // All small files: single multipart request (lowest latency)
-    if (files.length && files.every(f => f.size <= CHUNK_SIZE)) {
+    if (files.length && files.every(f => f.size <= CHUNKED_UPLOAD_THRESHOLD)) {
       const fd = new FormData();
       fd.set('sender', '');
       for (const f of files) {
