@@ -16,17 +16,20 @@ from fastapi.responses import StreamingResponse
 # 256KB chunk — sweet spot between syscall overhead and memory pressure
 _CHUNK_SIZE = 262144
 
-# Resumable upload chunk size (8MB) - parallel TCP streams over WiFi/LAN
-UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
+# Resumable upload chunk size (32MB) - parallel TCP streams over WiFi/LAN
+UPLOAD_CHUNK_SIZE = 32 * 1024 * 1024
 
 
 class FileHandler:
-    def __init__(self, upload_dir: str):
+    def __init__(self, upload_dir: str, tmp_dir: str = ""):
         self.upload_dir = Path(upload_dir).resolve()
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         (self.upload_dir / "files").mkdir(exist_ok=True)
         (self.upload_dir / "zips").mkdir(exist_ok=True)
         (self.upload_dir / "batch").mkdir(exist_ok=True)
+        # tmp_dir can point to a fast disk (SSD/RAM disk) for chunk staging.
+        self.tmp_dir_base = Path(tmp_dir).resolve() if tmp_dir else self.upload_dir / "tmp"
+        self.tmp_dir_base.mkdir(parents=True, exist_ok=True)
 
     def save_file(self, data: bytes, filename: str) -> Tuple[str, Path]:
         """Save single file. Returns (relative_path, absolute_path)."""
@@ -75,7 +78,7 @@ class FileHandler:
     # ── Chunked resumable upload ─────────────────────────────────────────────
 
     def tmp_dir(self, upload_id: str) -> Path:
-        return self.upload_dir / "tmp" / upload_id
+        return self.tmp_dir_base / upload_id
 
     def chunk_path(self, upload_id: str, index: int) -> Path:
         return self.tmp_dir(upload_id) / f"{index:06d}"

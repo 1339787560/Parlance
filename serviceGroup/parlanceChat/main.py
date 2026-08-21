@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -30,7 +31,7 @@ async def lifespan(app: FastAPI):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
     state.db = Database(db_path)
-    state.fh = FileHandler(upload_dir)
+    state.fh = FileHandler(upload_dir, tmp_dir=os.environ.get("PARLANCE_TMP_DIR", ""))
     # config 仅传给 ChatManager 占位; parlanceChat 自包含, 无外部 config 依赖
     state.chat = ChatManager(state.db, {})
 

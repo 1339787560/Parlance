@@ -8,12 +8,17 @@ from typing import Optional
 import yaml
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, Body
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from file_handler import UPLOAD_CHUNK_SIZE, _guess_mime
 from state import state
 
 logger = logging.getLogger(__name__)
+
+
+# Quick speed-test payload cap. Keeps the measurement "one-shot" and light,
+# so it can never be mistaken for a bandwidth attack.
+MAX_SPEEDTEST_BYTES = 8 * 1024 * 1024
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -355,6 +360,29 @@ async def sse_events(request: Request):
 @router.get("/api/whoami")
 async def whoami(request: Request):
     return {"ip": _get_client_ip(request)}
+
+
+@router.get("/api/speedtest")
+async def speedtest_download(bytes: int = 4 * 1024 * 1024):
+    """One-shot download speed probe (capped, no-store)."""
+    size = min(max(bytes, 1024), MAX_SPEEDTEST_BYTES)
+    return Response(
+        content=b"\0" * size,
+        media_type="application/octet-stream",
+        headers={"Content-Length": str(size), "Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/speedtest")
+async def speedtest_upload(request: Request):
+    """One-shot upload speed probe: read body and discard (capped)."""
+    _check_origin(request)
+    size = 0
+    async for data in request.stream():
+        size += len(data)
+        if size > MAX_SPEEDTEST_BYTES:
+            raise HTTPException(413, "Speedtest payload too large")
+    return {"ok": True, "bytes": size}
 
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"

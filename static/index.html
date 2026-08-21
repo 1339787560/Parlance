@@ -52,14 +52,6 @@
 
 <div class="input-area">
   <div class="input-actions">
-    <button class="btn-icon" id="btnZip" title="打包上传">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="7" width="18" height="14" rx="1"/>
-        <path d="M3 7 L5 4 L19 4 L21 7"/>
-        <line x1="12" y1="4" x2="12" y2="7"/>
-        <circle cx="12" cy="14" r="2"/>
-      </svg>
-    </button>
     <button class="btn-icon" id="btnUploadPanel" title="上传管理">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -86,48 +78,52 @@
   </div>
 </div>
 
-<!-- ZIP upload modal -->
-<div class="modal-overlay" id="zipModal">
-  <div class="modal">
-    <h2>上传文件</h2>
-    <input type="text" id="zipName" placeholder="压缩包名称（仅上传打包有效，默认：files）" value="">
-    <div class="drop-zone" id="dropZone">
-      <p>拖拽文件至此处，或点击选择</p>
-    </div>
-    <div class="file-list" id="fileList"></div>
-    <!-- Progress section -->
-    <div class="progress-section" id="progressSection" style="display:none">
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
+<!-- Upload manager modal: left history + right detail/action panel.
+     Closing the modal never stops background uploads. -->
+<div class="modal-overlay upload-panel-overlay" id="uploadPanel">
+  <div class="upload-modal" onclick="event.stopPropagation()">
+    <div class="upload-panel-header">
+      <h3>上传管理</h3>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn-speed-test" id="btnSpeedTest" title="快速测速">测速</button>
+        <button class="upload-panel-close" id="btnUploadClose" title="关闭">&#10005;</button>
       </div>
-      <div class="progress-info" id="progressInfo">准备上传...</div>
     </div>
-    <div class="modal-actions">
-      <button class="btn-cancel" id="btnZipCancel">取消</button>
-      <button class="btn-upload" id="btnDirectUpload">直接上传</button>
-      <button class="btn-upload" id="btnZipUpload">上传打包</button>
+    <div class="speed-test-result" id="speedTestResult" style="display:none"></div>
+    <div class="upload-panel-body">
+      <div class="upload-list" id="uploadList"></div>
+      <div class="upload-detail" id="uploadDetail"></div>
+      <div class="upload-detail upload-action-panel" id="uploadActionPanel" style="display:none">
+        <h3>上传文件</h3>
+        <input type="text" id="zipName" placeholder="压缩包名称（仅上传打包有效，默认：files）" value="">
+        <div class="drop-zone" id="dropZone">
+          <p>拖拽文件至此处，或点击选择</p>
+        </div>
+        <div class="file-list" id="fileList"></div>
+        <!-- Progress section -->
+        <div class="progress-section" id="progressSection" style="display:none">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <div class="progress-info" id="progressInfo">准备上传...</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" id="btnZipCancel">清空</button>
+          <button class="btn-upload" id="btnDirectUpload">直接上传</button>
+          <button class="btn-upload" id="btnZipUpload">上传打包</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Hidden file input (zip modal) -->
+<!-- Hidden file inputs (upload action + resume picker) -->
 <input type="file" id="zipFileInput" style="display:none" multiple>
-
-<!-- Upload manager drawer (background transfers keep running while closed) -->
-<div class="upload-panel" id="uploadPanel">
-  <div class="upload-panel-header">
-    <h3>上传管理</h3>
-    <button class="upload-panel-close" id="btnUploadClose" title="收起面板">&#10005;</button>
-  </div>
-  <div class="upload-panel-body">
-    <div class="upload-list" id="uploadList"></div>
-    <div class="upload-detail" id="uploadDetail"></div>
-  </div>
-</div>
+<input type="file" id="resumeFileInput" style="display:none">
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 <script src="/static/shader-runner.js"></script>
-<script src="/static/script.js?v=5"></script>
+<script src="/static/script.js?v=13"></script>
 </body>
 </html>
