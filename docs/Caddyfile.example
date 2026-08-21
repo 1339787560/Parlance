@@ -1,17 +1,24 @@
 # Caddy reverse proxy example for parlanceChat HTTPS/HTTP2 + fallback.
 #
-# - 443: HTTPS with automatic HTTP/2 (Caddy negotiates h2 and http/1.1 via ALPN,
+# - 8443: HTTPS with automatic HTTP/2 (Caddy negotiates h2 and http/1.1 via ALPN,
 #   so devices that do not support HTTP/2 automatically fall back to HTTP/1.1).
-# - 80 : optional plain HTTP fallback for old devices that cannot use TLS at all.
+# - 8080: HTTP entry that redirects to HTTPS.
 # - Backend parlanceChat keeps running as plain HTTP on 127.0.0.1:5001.
+#
+# If you can bind standard ports (admin), replace 8443/8080 with 443/80 and
+# remove `auto_https disable_redirects` so Caddy handles the redirect itself.
 #
 # Replace 192.168.1.10 and certificate paths with your actual values.
 
-https://192.168.1.10 {
+{
+    auto_https disable_redirects
+}
+
+https://192.168.1.10:8443, https://localhost:8443 {
     tls /path/to/parlance.pem /path/to/parlance-key.pem
     reverse_proxy 127.0.0.1:5001
 }
 
-http://192.168.1.10 {
-    reverse_proxy 127.0.0.1:5001
+http://192.168.1.10:8080, http://localhost:8080 {
+    redir https://{host}:8443{uri} permanent
 }
