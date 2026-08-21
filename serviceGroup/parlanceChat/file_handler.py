@@ -1,10 +1,11 @@
 import os
+import shutil
 import uuid
 import urllib.parse
 import zipfile
 import io
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import AsyncIterator, List, Tuple, Optional
 
 import aiofiles
 from fastapi import HTTPException, Request
@@ -13,6 +14,9 @@ from fastapi.responses import StreamingResponse
 
 # 256KB chunk — sweet spot between syscall overhead and memory pressure
 _CHUNK_SIZE = 262144
+
+# Resumable upload chunk size (8MB) - parallel TCP streams over WiFi/LAN
+UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 
 
 class FileHandler:
@@ -66,6 +70,72 @@ class FileHandler:
         display_name = f"{names[0]} 等 {len(names)} 个文件"
         relative = f"batch/{batch_id}"
         return relative, display_name, total_size, names
+
+    # ── Chunked resumable upload ─────────────────────────────────────────────
+
+    def tmp_dir(self, upload_id: str) -> Path:
+        return self.upload_dir / "tmp" / upload_id
+
+    def chunk_path(self, upload_id: str, index: int) -> Path:
+        return self.tmp_dir(upload_id) / f"{index:06d}"
+
+    async def write_chunk(self, upload_id: str, index: int,
+                          stream: AsyncIterator[bytes]) -> int:
+        """Stream a raw request body chunk to tmp/{upload_id}/{index}. Returns bytes written."""
+        d = self.tmp_dir(upload_id)
+        d.mkdir(parents=True, exist_ok=True)
+        dest = self.chunk_path(upload_id, index)
+        size = 0
+        # write via temp name + rename so a partial (interrupted) chunk never
+        # masquerades as a complete one on disk
+        tmp = dest.with_suffix(".part")
+        async with aiofiles.open(tmp, "wb") as f:
+            async for data in stream:
+                size += len(data)
+                await f.write(data)
+        if size == 0:
+            tmp.unlink(missing_ok=True)
+            raise HTTPException(400, "Empty chunk body")
+        tmp.replace(dest)
+        return size
+
+    def chunk_expected_size(self, file_size: int, chunk_size: int, index: int,
+                            total_chunks: int) -> int:
+        if index == total_chunks - 1:
+            return file_size - chunk_size * (total_chunks - 1)
+        return chunk_size
+
+    def merge_chunks(self, upload_id: str, total_chunks: int,
+                     dest_relative: str) -> Path:
+        """Concatenate chunk files into final destination (blocking - run in threadpool)."""
+        dest = self.upload_dir / dest_relative
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "wb") as out:
+            for i in range(total_chunks):
+                cp = self.chunk_path(upload_id, i)
+                if not cp.exists():
+                    raise HTTPException(400, f"Missing chunk {i}")
+                with open(cp, "rb") as f:
+                    shutil.copyfileobj(f, out, _CHUNK_SIZE)
+        self.cleanup_session_files(upload_id)
+        return dest
+
+    def cleanup_session_files(self, upload_id: str):
+        d = self.tmp_dir(upload_id)
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+
+    def sanitize_name(self, name: str) -> str:
+        return _sanitize(name)
+
+    def new_files_relative(self, filename: str) -> str:
+        """Generate a fresh relative path under files/ for a merged upload."""
+        file_id = uuid.uuid4().hex[:16]
+        return f"files/{file_id}-{_sanitize(filename)}"
+
+    def new_batch_relative(self) -> str:
+        """Generate a fresh batch folder path."""
+        return f"batch/{uuid.uuid4().hex[:12]}"
 
     async def stream_batch_as_zip(self, batch_path: Path, request: Request):
         """Dynamically pack a batch folder into ZIP and stream it."""

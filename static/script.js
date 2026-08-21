@@ -3,6 +3,7 @@
 
   // ── State ──────────────────────────────────────────────────────────────
   const MSG_API = '/api/messages';
+  const UPLOAD_API = '/api/upload';
   const EVT_API = '/api/events';
   const DL_API = '/api/download';
   let selectedFiles = [];
@@ -322,6 +323,20 @@
   }
 
   async function sendFile(file) {
+    // Large single file -> chunked parallel path (resumable); no progress UI here
+    if (file.size > CHUNK_SIZE) {
+      try {
+        const id = await uploadFileChunked(file, () => {});
+        await fetchJSON(UPLOAD_API + '/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ upload_ids: [id], sender: '' })
+        });
+      } catch (e) {
+        showToast('上传失败(进度已保留, 重发将续传): ' + e.message);
+      }
+      return;
+    }
     const fd = new FormData();
     fd.set('file', file);
     fd.set('sender', '');
@@ -383,47 +398,164 @@
       + remaining;
   }
 
-  function sendDirectUpload(files) {
-    const fd = new FormData();
-    fd.set('sender', '');
-    for (const f of files) {
-      fd.append('files', f);
-    }
+  // ── Chunked parallel + resumable upload ────────────────────────────────
+  const CHUNK_SIZE = 8 * 1024 * 1024;   // must match server UPLOAD_CHUNK_SIZE
+  const CHUNK_CONCURRENCY = 4;          // parallel TCP streams
+  const CHUNK_RETRY = 3;
+  let uploadXHRs = [];                  // in-flight chunk XHRs (for cancel)
 
+  function fileFingerprint(file) {
+    return file.name + '|' + file.size + '|' + file.lastModified;
+  }
+
+  function uploadChunkXHR(uploadId, index, blob, onLoaded) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      uploadXHR = xhr;
-      xhr.open('POST', MSG_API + '/files');
-
+      uploadXHRs.push(xhr);
+      xhr.open('POST', UPLOAD_API + '/chunk?upload_id=' +
+               encodeURIComponent(uploadId) + '&index=' + index);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
       xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          updateProgress(e.loaded, e.total);
-        }
+        if (e.lengthComputable) onLoaded(e.loaded);
       };
-
       xhr.onload = () => {
-        uploadXHR = null;
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch (_) {
-            resolve(xhr.responseText);
-          }
-        } else {
-          let errMsg = 'HTTP ' + xhr.status;
-          try {
-            const body = JSON.parse(xhr.responseText);
-            errMsg = body.detail || errMsg;
-          } catch (_) {}
-          reject(new Error(errMsg));
-        }
+        uploadXHRs = uploadXHRs.filter(x => x !== xhr);
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error('分块 ' + index + ' HTTP ' + xhr.status));
       };
-
-      xhr.onerror = () => { uploadXHR = null; reject(new Error('网络错误')); };
-      xhr.ontimeout = () => { uploadXHR = null; reject(new Error('上传超时')); };
-      xhr.onabort = () => { uploadXHR = null; reject(new Error('上传已取消')); };
+      xhr.onerror = () => { uploadXHRs = uploadXHRs.filter(x => x !== xhr); reject(new Error('网络错误')); };
+      xhr.ontimeout = () => { uploadXHRs = uploadXHRs.filter(x => x !== xhr); reject(new Error('分块超时')); };
+      xhr.onabort = () => { uploadXHRs = uploadXHRs.filter(x => x !== xhr); reject(new Error('上传已取消')); };
       xhr.timeout = 300000;
-      xhr.send(fd);
+      xhr.send(blob);
+    });
+  }
+
+  async function uploadChunkWithRetry(uploadId, index, blob, onLoaded) {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= CHUNK_RETRY; attempt++) {
+      try {
+        await uploadChunkXHR(uploadId, index, blob, onLoaded);
+        return;
+      } catch (e) {
+        lastErr = e;
+        if (e.message === '上传已取消') throw e;  // user cancel: no retry
+      }
+    }
+    throw lastErr;
+  }
+
+  async function uploadFileChunked(file, onProgress) {
+    // init returns the session + already-received chunk bitmap (resume point)
+    const init = await fetchJSON(UPLOAD_API + '/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fingerprint: fileFingerprint(file),
+        filename: file.name,
+        file_size: file.size
+      })
+    });
+    const uploadId = init.upload_id;
+    const chunkSize = init.chunk_size;
+    const totalChunks = init.total_chunks;
+    const doneSet = new Set(init.received);
+    const expectedLen = (i) => Math.min(chunkSize, file.size - i * chunkSize);
+
+    // progress bookkeeping: base = bytes already on server, live = in-flight chunk loads
+    let base = 0;
+    for (const i of doneSet) base += expectedLen(i);
+    const live = {};
+    const report = () => {
+      let loaded = base;
+      for (const k in live) loaded += live[k];
+      onProgress(Math.min(loaded, file.size), file.size);
+    };
+    report();
+
+    const pending = [];
+    for (let i = 0; i < totalChunks; i++) {
+      if (!doneSet.has(i)) pending.push(i);
+    }
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < pending.length) {
+        const i = pending[cursor++];
+        const blob = file.slice(i * chunkSize, Math.min((i + 1) * chunkSize, file.size));
+        live[i] = 0;
+        await uploadChunkWithRetry(uploadId, i, blob, (l) => { live[i] = l; report(); });
+        base += expectedLen(i);
+        delete live[i];
+        report();
+      }
+    };
+    const n = Math.min(CHUNK_CONCURRENCY, Math.max(1, pending.length));
+    await Promise.all(Array.from({ length: n }, worker));
+    return uploadId;
+  }
+
+  async function sendDirectUpload(files) {
+    const totalAll = files.reduce((s, f) => s + f.size, 0);
+
+    // All small files: single multipart request (lowest latency)
+    if (files.length && files.every(f => f.size <= CHUNK_SIZE)) {
+      const fd = new FormData();
+      fd.set('sender', '');
+      for (const f of files) {
+        fd.append('files', f);
+      }
+
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        uploadXHR = xhr;
+        xhr.open('POST', MSG_API + '/files');
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            updateProgress(e.loaded, e.total);
+          }
+        };
+
+        xhr.onload = () => {
+          uploadXHR = null;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch (_) {
+              resolve(xhr.responseText);
+            }
+          } else {
+            let errMsg = 'HTTP ' + xhr.status;
+            try {
+              const body = JSON.parse(xhr.responseText);
+              errMsg = body.detail || errMsg;
+            } catch (_) {}
+            reject(new Error(errMsg));
+          }
+        };
+
+        xhr.onerror = () => { uploadXHR = null; reject(new Error('网络错误')); };
+        xhr.ontimeout = () => { uploadXHR = null; reject(new Error('上传超时')); };
+        xhr.onabort = () => { uploadXHR = null; reject(new Error('上传已取消')); };
+        xhr.timeout = 300000;
+        xhr.send(fd);
+      });
+    }
+
+    // Large file(s): chunked parallel + resumable path
+    const ids = [];
+    let cumDone = 0;
+    for (const f of files) {
+      const id = await uploadFileChunked(f, (loaded) => {
+        updateProgress(cumDone + loaded, totalAll);
+      });
+      cumDone += f.size;
+      ids.push(id);
+    }
+    return await fetchJSON(UPLOAD_API + '/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upload_ids: ids, sender: '' })
     });
   }
 
@@ -548,11 +680,16 @@
   });
 
   function closeZipModal() {
-    // Abort any in-flight upload
+    // Abort any in-flight upload (multipart single-stream + parallel chunks).
+    // Aborted chunk sessions stay 'active' server-side -> same file re-send resumes.
     if (uploadXHR) {
       try { uploadXHR.abort(); } catch (_) {}
       uploadXHR = null;
     }
+    for (const x of uploadXHRs) {
+      try { x.abort(); } catch (_) {}
+    }
+    uploadXHRs = [];
     zipModal.classList.remove('open');
     zipFiles = [];
     resetProgress();
