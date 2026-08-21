@@ -96,6 +96,13 @@ def main():
     # NOTE: 端口清理由 host ServiceGroupManager 的 config `port` 字段托管
     # (ManagedService.start 自动 _free_port)。独立直跑时若端口占用, uvicorn 会报错。
 
+    # HTTPS support: set these env vars to run parlance over TLS.
+    # Devices without HTTP/2 automatically fall back to HTTP/1.1 over TLS;
+    # for plain-HTTP fallback use a reverse proxy (see deploy/Caddyfile.example).
+    ssl_certfile = os.environ.get("PARLANCE_SSL_CERTFILE") or None
+    ssl_keyfile = os.environ.get("PARLANCE_SSL_KEYFILE") or None
+    ssl_keyfile_password = os.environ.get("PARLANCE_SSL_KEYFILE_PASSWORD") or None
+
     uvicorn.run(
         app,
         host=args.host,
@@ -105,6 +112,9 @@ def main():
         limit_concurrency=64,
         limit_max_requests=None,
         timeout_graceful_shutdown=1,
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
+        ssl_keyfile_password=ssl_keyfile_password,
     )
 
 
