@@ -1336,13 +1336,22 @@
     btnSpeedTest.disabled = true;
     speedTestResult.style.display = 'block';
     speedTestResult.textContent = '测速中...';
+
+    const fetchTimeout = (url, opts, ms = 10000) => {
+      if (typeof AbortController === 'undefined') return fetch(url, opts);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), ms);
+      return fetch(url, Object.assign({}, opts, { signal: ctrl.signal }))
+        .finally(() => clearTimeout(timer));
+    };
+
     try {
       // Download: 4 x 2MB in parallel = 8MB total, one-shot.
       const DL_SIZE = 2 * 1024 * 1024;
       const DL_PARALLEL = 4;
       const t0 = performance.now();
       await Promise.all(Array.from({ length: DL_PARALLEL }, () =>
-        fetch(`/api/speedtest?bytes=${DL_SIZE}`).then(r => {
+        fetchTimeout(`/api/speedtest?bytes=${DL_SIZE}`).then(r => {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.arrayBuffer();
         })
@@ -1355,7 +1364,7 @@
       const UL_PARALLEL = 4;
       const t1 = performance.now();
       await Promise.all(Array.from({ length: UL_PARALLEL }, () =>
-        fetch('/api/speedtest', {
+        fetchTimeout('/api/speedtest', {
           method: 'POST',
           body: new Uint8Array(UL_SIZE)
         }).then(r => {
@@ -1368,7 +1377,7 @@
 
       speedTestResult.textContent = `下载 ${formatSpeed(dlBps)} · 上传 ${formatSpeed(ulBps)}`;
     } catch (e) {
-      speedTestResult.textContent = '测速失败: ' + e.message;
+      speedTestResult.textContent = '测速失败: ' + (e.name === 'AbortError' ? '超时' : e.message);
     } finally {
       btnSpeedTest.disabled = false;
     }
