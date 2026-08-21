@@ -408,13 +408,37 @@
     return file.name + '|' + file.size + '|' + file.lastModified;
   }
 
-  function uploadChunkXHR(uploadId, index, blob, onLoaded) {
+  // CRC32 of a chunk - end-to-end integrity check sent with every chunk.
+  // Pure-JS table impl: crypto.subtle is unavailable on plain-HTTP LAN origins
+  // (not a secure context). Catches accidental corruption that slips past
+  // TCP's weak 16-bit checksum.
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  async function crc32Hex(blob) {
+    const view = new Uint8Array(await blob.arrayBuffer());
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < view.length; i++) {
+      c = CRC_TABLE[(c ^ view[i]) & 0xFF] ^ (c >>> 8);
+    }
+    return ((c ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
+  }
+
+  function uploadChunkXHR(uploadId, index, blob, crcHex, onLoaded) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       uploadXHRs.push(xhr);
       xhr.open('POST', UPLOAD_API + '/chunk?upload_id=' +
                encodeURIComponent(uploadId) + '&index=' + index);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      if (crcHex) xhr.setRequestHeader('X-Chunk-Crc32', crcHex);
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onLoaded(e.loaded);
       };
@@ -433,9 +457,11 @@
 
   async function uploadChunkWithRetry(uploadId, index, blob, onLoaded) {
     let lastErr = null;
+    // CRC computed once per chunk; verified server-side on every attempt
+    const crcHex = await crc32Hex(blob).catch(() => null);
     for (let attempt = 0; attempt <= CHUNK_RETRY; attempt++) {
       try {
-        await uploadChunkXHR(uploadId, index, blob, onLoaded);
+        await uploadChunkXHR(uploadId, index, blob, crcHex, onLoaded);
         return;
       } catch (e) {
         lastErr = e;

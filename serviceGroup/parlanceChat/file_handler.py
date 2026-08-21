@@ -3,6 +3,7 @@ import shutil
 import uuid
 import urllib.parse
 import zipfile
+import zlib
 import io
 from pathlib import Path
 from typing import AsyncIterator, List, Tuple, Optional
@@ -80,24 +81,28 @@ class FileHandler:
         return self.tmp_dir(upload_id) / f"{index:06d}"
 
     async def write_chunk(self, upload_id: str, index: int,
-                          stream: AsyncIterator[bytes]) -> int:
-        """Stream a raw request body chunk to tmp/{upload_id}/{index}. Returns bytes written."""
+                          stream: AsyncIterator[bytes]) -> Tuple[int, str]:
+        """Stream a raw request body chunk to tmp/{upload_id}/{index}.
+        Returns (bytes_written, crc32_hex) - CRC is the end-to-end integrity
+        check (TCP checksums are too weak to catch rare corruption)."""
         d = self.tmp_dir(upload_id)
         d.mkdir(parents=True, exist_ok=True)
         dest = self.chunk_path(upload_id, index)
         size = 0
+        crc = 0
         # write via temp name + rename so a partial (interrupted) chunk never
         # masquerades as a complete one on disk
         tmp = dest.with_suffix(".part")
         async with aiofiles.open(tmp, "wb") as f:
             async for data in stream:
                 size += len(data)
+                crc = zlib.crc32(data, crc)
                 await f.write(data)
         if size == 0:
             tmp.unlink(missing_ok=True)
             raise HTTPException(400, "Empty chunk body")
         tmp.replace(dest)
-        return size
+        return size, f"{crc & 0xFFFFFFFF:08x}"
 
     def chunk_expected_size(self, file_size: int, chunk_size: int, index: int,
                             total_chunks: int) -> int:
@@ -106,8 +111,11 @@ class FileHandler:
         return chunk_size
 
     def merge_chunks(self, upload_id: str, total_chunks: int,
-                     dest_relative: str) -> Path:
-        """Concatenate chunk files into final destination (blocking - run in threadpool)."""
+                     dest_relative: str, file_size: int = 0,
+                     chunk_size: int = 0) -> Path:
+        """Concatenate chunk files into final destination (blocking - run in threadpool).
+        If file_size/chunk_size given, each chunk's on-disk size is re-verified
+        (catches disk-level tampering/truncation since the upload)."""
         dest = self.upload_dir / dest_relative
         dest.parent.mkdir(parents=True, exist_ok=True)
         with open(dest, "wb") as out:
@@ -115,6 +123,13 @@ class FileHandler:
                 cp = self.chunk_path(upload_id, i)
                 if not cp.exists():
                     raise HTTPException(400, f"Missing chunk {i}")
+                if file_size and chunk_size:
+                    expected = self.chunk_expected_size(
+                        file_size, chunk_size, i, total_chunks)
+                    actual = cp.stat().st_size
+                    if actual != expected:
+                        raise HTTPException(
+                            400, f"Chunk {i} size drift: {actual} != {expected}")
                 with open(cp, "rb") as f:
                     shutil.copyfileobj(f, out, _CHUNK_SIZE)
         self.cleanup_session_files(upload_id)

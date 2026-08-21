@@ -208,7 +208,14 @@ async def upload_chunk(request: Request, upload_id: str, index: int):
         raise HTTPException(400, "Chunk index out of range")
 
     # Stream raw body straight to disk - no multipart, no full buffering
-    written = await state.fh.write_chunk(upload_id, index, request.stream())
+    written, crc = await state.fh.write_chunk(upload_id, index, request.stream())
+
+    # End-to-end integrity: client-computed CRC32 of the chunk payload.
+    # TCP's 16-bit checksum lets rare corruption through; this catches it.
+    client_crc = request.headers.get("x-chunk-crc32", "").strip().lower()
+    if client_crc and client_crc != crc:
+        state.fh.chunk_path(upload_id, index).unlink(missing_ok=True)
+        raise HTTPException(400, f"Chunk CRC mismatch: server={crc} client={client_crc}")
 
     expected = state.fh.chunk_expected_size(
         sess["file_size"], sess["chunk_size"], index, sess["total_chunks"])
@@ -218,7 +225,7 @@ async def upload_chunk(request: Request, upload_id: str, index: int):
         raise HTTPException(400, f"Chunk size mismatch: got {written}, expected {expected}")
 
     state.db.mark_chunk_received(upload_id, index)
-    return {"ok": True, "index": index, "size": written}
+    return {"ok": True, "index": index, "size": written, "crc32": crc}
 
 
 @router.post("/api/upload/complete")
@@ -256,7 +263,8 @@ async def upload_complete(request: Request):
         sess = sessions[0]
         rel = state.fh.new_files_relative(sess["filename"])
         await run_in_threadpool(
-            state.fh.merge_chunks, sess["id"], sess["total_chunks"], rel)
+            state.fh.merge_chunks, sess["id"], sess["total_chunks"], rel,
+            sess["file_size"], sess["chunk_size"])
         state.db.set_upload_session_status(sess["id"], "done")
         msg = await state.chat.add_file_message(
             ip, sender, rel, sess["filename"], sess["file_size"],
@@ -272,7 +280,7 @@ async def upload_complete(request: Request):
         safe_name = state.fh.sanitize_name(sess["filename"] or "unnamed")
         await run_in_threadpool(
             state.fh.merge_chunks, sess["id"], sess["total_chunks"],
-            f"{batch_rel}/{safe_name}")
+            f"{batch_rel}/{safe_name}", sess["file_size"], sess["chunk_size"])
         state.db.set_upload_session_status(sess["id"], "done")
         total_size += sess["file_size"]
         names.append(safe_name)
