@@ -32,6 +32,17 @@ services:
     tags: [chat, parlance]
     enabled: true
 
+  # Caddy reverse proxy for parlance HTTPS/HTTP2 + HTTP fallback.
+  # Managed by InfoServer: auto-restart, port cleanup, same lifecycle as other services.
+  - name: caddy-parlance
+    command: C:/Users/admin/AppData/Local/Microsoft/WinGet/Links/caddy.exe
+    args: ["run", "--config", "C:/Users/admin/parlance-certs/Caddyfile", "--adapter", "caddyfile"]
+    cwd: C:/Users/admin/parlance-certs
+    port: 8443
+    auto_restart: true
+    tags: [parlance, https, proxy]
+    enabled: true
+
   - name: serviceServer-rust
     command: ./serviceGroup/serviceServer/service-server.exe
     cwd: ./serviceGroup/serviceServer
