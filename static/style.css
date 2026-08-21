@@ -1901,6 +1901,11 @@
   font-size: 13px;
   text-align: center;
 }
+.stress-test-result {
+  border-color: var(--cn-gold);
+  background: color-mix(in srgb, var(--cn-gold) 8%, var(--cn-paper));
+  font-weight: 600;
+}
 
 .upload-panel-body { flex: 1; display: flex; min-height: 0; }
 

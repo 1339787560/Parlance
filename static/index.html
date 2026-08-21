@@ -85,11 +85,12 @@
     <div class="upload-panel-header">
       <h3>上传管理</h3>
       <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn-speed-test" id="btnSpeedTest" title="快速测速">测速</button>
+        <button class="btn-speed-test" id="btnSpeedTest" title="15 秒压测">压测</button>
         <button class="upload-panel-close" id="btnUploadClose" title="关闭">&#10005;</button>
       </div>
     </div>
     <div class="speed-test-result" id="speedTestResult" style="display:none"></div>
+    <div class="speed-test-result stress-test-result" id="stressTestResult" style="display:none"></div>
     <div class="upload-panel-body">
       <div class="upload-list" id="uploadList"></div>
       <div class="upload-detail" id="uploadDetail"></div>
@@ -124,6 +125,6 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 <script src="/static/shader-runner.js"></script>
-<script src="/static/script.js?v=15"></script>
+<script src="/static/script.js?v=16"></script>
 </body>
 </html>

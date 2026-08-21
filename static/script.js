@@ -41,6 +41,7 @@
   const btnUploadClose = document.getElementById('btnUploadClose');
   const btnSpeedTest = document.getElementById('btnSpeedTest');
   const speedTestResult = document.getElementById('speedTestResult');
+  const stressTestResult = document.getElementById('stressTestResult');
   const uploadActionPanel = document.getElementById('uploadActionPanel');
   const resumeFileInput = document.getElementById('resumeFileInput');
 
@@ -506,6 +507,7 @@
     while (uploadTasks.length > UPLOAD_HISTORY_MAX) uploadTasks.pop();
     saveUploadHistory();
     updateUploadBadge();
+    updateRealtimeState();
     return t;
   }
 
@@ -516,6 +518,7 @@
     saveUploadHistory();
     updateUploadBadge();
     renderUploadPanel();
+    updateRealtimeState();
   }
 
   function saveUploadHistory() {
@@ -756,6 +759,7 @@
     saveUploadHistory();
     updateUploadBadge();
     renderUploadPanel();
+    updateRealtimeState();
     showToast('已取消: ' + t.name);
   }
 
@@ -772,6 +776,7 @@
     saveUploadHistory();
     updateUploadBadge();
     renderUploadPanel();
+    updateRealtimeState();
     showToast('已停止: ' + t.name + ' (服务端进度保留，可随时恢复)');
   }
 
@@ -800,6 +805,7 @@
     saveUploadHistory();
     updateUploadBadge();
     renderUploadPanel();
+    updateRealtimeState();
     showToast('已删除上传记录: ' + t.name);
   }
 
@@ -830,6 +836,7 @@
     saveUploadHistory();
     updateUploadBadge();
     renderUploadPanel();
+    updateRealtimeState();
     try {
       let msg;
       if (file.size > CHUNKED_UPLOAD_THRESHOLD) {
@@ -850,12 +857,14 @@
         saveUploadHistory();
         updateUploadBadge();
         renderUploadPanel();
+        updateRealtimeState();
         return null;
       }
       if (t.status === 'cancelled') {
         saveUploadHistory();
         updateUploadBadge();
         renderUploadPanel();
+        updateRealtimeState();
         return null;
       }
       finishTask(t, e.message === '上传已取消' ? 'cancelled' : 'error', e.message);
@@ -888,6 +897,7 @@
       }
       renderUploadPanel();
     }
+    updateRealtimeState();
   }
 
   btnUploadPanel.addEventListener('click', () => {
@@ -1322,6 +1332,7 @@
     uploadPanel.classList.remove('open');
     clearZipFiles();
     btnZipCancel.textContent = '清空';
+    updateRealtimeState();
     if (active) {
       showToast('上传仍在后台进行, 点击输入栏上传图标查看进度');
     }
@@ -1331,11 +1342,69 @@
     return formatSize(Math.round(bps)) + '/s';
   }
 
+  let realtimeTimer = null;
+  let realtimeBusy = false;
+  let stressRunning = false;
+
+  function stopRealtimeSpeedTest() {
+    if (realtimeTimer) {
+      clearInterval(realtimeTimer);
+      realtimeTimer = null;
+    }
+  }
+
+  function updateRealtimeState() {
+    const hasActive = uploadTasks.some(t => t.status === 'uploading');
+    if (uploadPanelOpen && !stressRunning && !hasActive) {
+      if (!realtimeTimer) {
+        realtimeTimer = setInterval(runRealtimeProbe, 3000);
+        runRealtimeProbe();
+      }
+    } else {
+      stopRealtimeSpeedTest();
+    }
+  }
+
+  async function runRealtimeProbe() {
+    if (realtimeBusy || stressRunning || !uploadPanelOpen) return;
+    realtimeBusy = true;
+    try {
+      const DL_SIZE = 512 * 1024;
+      const UL_SIZE = 256 * 1024;
+      const t0 = performance.now();
+      await Promise.all([
+        fetch(`/api/speedtest?bytes=${DL_SIZE}`).then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer();
+        }),
+        fetch('/api/speedtest', {
+          method: 'POST',
+          body: new Uint8Array(UL_SIZE)
+        }).then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+      ]);
+      const secs = (performance.now() - t0) / 1000;
+      if (!stressRunning && uploadPanelOpen && !uploadTasks.some(t => t.status === 'uploading')) {
+        speedTestResult.style.display = 'block';
+        speedTestResult.textContent = `实时 下载 ${formatSpeed(DL_SIZE / secs)} · 上传 ${formatSpeed(UL_SIZE / secs)}`;
+      }
+    } catch (_) {
+      // Transient realtime probe failures are ignored.
+    } finally {
+      realtimeBusy = false;
+    }
+  }
+
   async function runSpeedTest() {
     if (btnSpeedTest.disabled) return;
     btnSpeedTest.disabled = true;
-    speedTestResult.style.display = 'block';
-    speedTestResult.textContent = '测速中...';
+    stressRunning = true;
+    stopRealtimeSpeedTest();
+    speedTestResult.style.display = 'none';
+    stressTestResult.style.display = 'block';
+    stressTestResult.textContent = '压测中... 约 15 秒';
 
     const fetchTimeout = (url, opts, ms = 10000) => {
       if (typeof AbortController === 'undefined') return fetch(url, opts);
@@ -1345,41 +1414,56 @@
         .finally(() => clearTimeout(timer));
     };
 
+    const PHASE_MS = 7500;               // download + upload ≈ 15s total
+    const DL_SIZE = 4 * 1024 * 1024;     // 4MB per download request
+    const UL_SIZE = 1 * 1024 * 1024;     // 1MB per upload request
+    const PARALLEL = 4;
+
     try {
-      // Download: 4 x 2MB in parallel = 8MB total, one-shot.
-      const DL_SIZE = 2 * 1024 * 1024;
-      const DL_PARALLEL = 4;
-      const t0 = performance.now();
-      await Promise.all(Array.from({ length: DL_PARALLEL }, () =>
-        fetchTimeout(`/api/speedtest?bytes=${DL_SIZE}`).then(r => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.arrayBuffer();
-        })
-      ));
-      const dlSecs = (performance.now() - t0) / 1000;
-      const dlBps = DL_SIZE * DL_PARALLEL / dlSecs;
+      // Download phase.
+      const dlStart = performance.now();
+      let dlBytes = 0;
+      while (performance.now() - dlStart < PHASE_MS) {
+        const bufs = await Promise.all(Array.from({ length: PARALLEL }, () =>
+          fetchTimeout(`/api/speedtest?bytes=${DL_SIZE}`).then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+          })
+        ));
+        for (const b of bufs) dlBytes += b.byteLength;
+        const elapsed = (performance.now() - dlStart) / 1000;
+        stressTestResult.textContent = `压测中... 下载 ${formatSpeed(dlBytes / elapsed)}`;
+      }
+      const dlSecs = (performance.now() - dlStart) / 1000;
+      const dlBps = dlBytes / dlSecs;
 
-      // Upload: 4 x 1MB in parallel = 4MB total, one-shot.
-      const UL_SIZE = 1 * 1024 * 1024;
-      const UL_PARALLEL = 4;
-      const t1 = performance.now();
-      await Promise.all(Array.from({ length: UL_PARALLEL }, () =>
-        fetchTimeout('/api/speedtest', {
-          method: 'POST',
-          body: new Uint8Array(UL_SIZE)
-        }).then(r => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.text();
-        })
-      ));
-      const ulSecs = (performance.now() - t1) / 1000;
-      const ulBps = UL_SIZE * UL_PARALLEL / ulSecs;
+      // Upload phase.
+      const ulStart = performance.now();
+      let ulBytes = 0;
+      while (performance.now() - ulStart < PHASE_MS) {
+        await Promise.all(Array.from({ length: PARALLEL }, () =>
+          fetchTimeout('/api/speedtest', {
+            method: 'POST',
+            body: new Uint8Array(UL_SIZE)
+          }).then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.text();
+          })
+        ));
+        ulBytes += UL_SIZE * PARALLEL;
+        const elapsed = (performance.now() - ulStart) / 1000;
+        stressTestResult.textContent = `压测中... 上传 ${formatSpeed(ulBytes / elapsed)}`;
+      }
+      const ulSecs = (performance.now() - ulStart) / 1000;
+      const ulBps = ulBytes / ulSecs;
 
-      speedTestResult.textContent = `下载 ${formatSpeed(dlBps)} · 上传 ${formatSpeed(ulBps)}`;
+      stressTestResult.textContent = `压测结果 下载 ${formatSpeed(dlBps)} · 上传 ${formatSpeed(ulBps)}`;
     } catch (e) {
-      speedTestResult.textContent = '测速失败: ' + (e.name === 'AbortError' ? '超时' : e.message);
+      stressTestResult.textContent = '压测失败: ' + (e.name === 'AbortError' ? '超时' : e.message);
     } finally {
       btnSpeedTest.disabled = false;
+      stressRunning = false;
+      updateRealtimeState();
     }
   }
 
