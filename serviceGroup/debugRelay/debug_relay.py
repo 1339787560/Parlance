@@ -115,7 +115,10 @@ class MsgType:
 
 # ---- State ----
 
-CONSOLE_BUFFER_MAX = 50000
+CONSOLE_BUFFER_MAX = 2000   # 每客户端内存保留最近 2000 条 console（UI 订阅只 replay 尾部 500）
+CONSOLE_REPLAY_TAIL = 500   # 浏览器订阅/重连时一次性 replay 的 console 条数上限
+CONSOLE_API_LIMIT_MAX = 200   # REST /api/console 单次返回条数上限（agent 接口精简）
+CONSOLE_API_CONTENT_MAX = 500 # REST /api/console 单条 content 截断长度
 PERF_BUFFER_MAX = 1800  # ~30min @ 1Hz, 覆盖完整 3 局趋势分析
 MAX_SCENE_NODES = 50    # POST /api/scene_nodes 单批上限
 
@@ -1837,7 +1840,7 @@ async def _replay_to_browser(bctx: BrowserCtx):
         await _send_ws(bctx.ws, {
             "type": MsgType.CONSOLE_BATCH,
             "client_id": cid,
-            "messages": ctx.console_buffer,
+            "messages": ctx.console_buffer[-CONSOLE_REPLAY_TAIL:],
         })
 
     # Perf 历史
@@ -2317,9 +2320,25 @@ async def api_perf(limit: int = 20, agg: str = None, client: str = None):
     }
 
 
+def _compact_console_entry(m: dict) -> dict:
+    """REST 返回给 agent 的精简 console 条目：去冗余 client_id，content 截断。"""
+    out = {
+        "seq": m.get("seq", 0),
+        "type": m.get("type", ""),
+        "content": str(m.get("content", ""))[:CONSOLE_API_CONTENT_MAX],
+    }
+    ts = m.get("ts")
+    if ts:
+        out["ts"] = ts
+    tag = m.get("tag")
+    if tag is not None:
+        out["tag"] = tag
+    return out
+
+
 @app.get("/api/console")
 async def api_console(limit: int = 100, level: str = None, since_seq: int = 0, client: str = None):
-    """读指定客户端 console_buffer（从内存切片）。limit/since_seq/level 过滤。"""
+    """读指定客户端 console_buffer（从内存切片）。limit/since_seq/level 过滤，返回给 agent 的精简条目。"""
     ctx, err = _resolve_client(client)
     if err:
         return err
@@ -2329,10 +2348,10 @@ async def api_console(limit: int = 100, level: str = None, since_seq: int = 0, c
     if level:
         lv = level.lower()
         msgs = [m for m in msgs if str(m.get("type", "")).endswith(lv)]
-    n = max(1, min(int(limit), len(msgs)))
+    n = max(1, min(int(limit), CONSOLE_API_LIMIT_MAX, len(msgs)))
     return {
         "client_id": ctx.id,
-        "messages": msgs[-n:] if n else [],
+        "messages": [_compact_console_entry(m) for m in msgs[-n:]] if n else [],
         "count": n,
         "buffer_total": len(ctx.console_buffer),
     }
