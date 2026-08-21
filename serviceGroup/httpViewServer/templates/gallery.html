@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ folder }} 图片库</title>
+    <style>
+    /* 核心布局样式 */
+    .comic-viewer {
+        max-width: 100%;
+        margin: 0 auto;
+        padding: 20px 0;
+    }
+    .comic-viewer img {
+        width: 100%;
+        margin: 10px 0;  /* 修改为动态计算 */
+        opacity: 0;
+        transform-origin: top center;
+        transition: transform 0.3s ease, margin 0.3s ease; /* 添加margin过渡 */
+    }
+    .comic-viewer img.loaded {
+        opacity: 1;
+    }
+
+    /* 侧边导航面板 */
+    .side-panel {
+        position: fixed;
+        right: -35vw;
+        top: 0;
+        height: 100vh;
+        width: 35vw;
+        background: rgba(255,255,255,0.97);
+        box-shadow: -2px 0 15px rgba(0,0,0,0.1);
+        transition: right 0.3s;
+        z-index: 1000;
+    }
+    .side-panel.active {
+        right: 0;
+    }
+    .toggle-btn {
+        position: absolute;
+        left: -40px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 30px;
+        height: 60px;
+        background: rgba(255,255,255,0.9);
+        border: none;
+        border-radius: 5px 0 0 5px;
+        font-size: 1.2em;
+        cursor: pointer;
+    }
+    .panel-content {
+        padding: 20px;
+        height: calc(100% - 40px);
+    }
+    .jump-box {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        margin-top: 20px;
+    }
+    #jump-input {
+        padding: 12px;
+        width: 100%;
+        font-size: 16px;
+    }
+    /* 新增进度条样式 */
+    .position-info {
+        margin-bottom: 20px;
+        font-size: 16px;
+    }
+    .progress-bar {
+        height: 4px;
+        background: #eee;
+        border-radius: 2px;
+        margin-top: 10px;
+    }
+    .progress {
+        height: 100%;
+        background: #2196F3;
+        transition: width 0.3s;
+    }
+
+    /* 新增收藏按钮样式 */
+    #bookmark-btn {
+        padding: 10px 20px;
+        background: #FF9800 !important;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 18px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    #bookmark-btn:hover {
+        background: rgba(255,152,0,0.95) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+    
+    #bookmark-btn.recording {
+        background: #2196F3 !important;
+        animation: pulse 1.5s infinite;
+    }
+    #bookmark-btn.long-pressing {
+        animation: pressFeedback 0.8s forwards;
+    }
+    
+    @keyframes pulse {
+        0% {
+            box-shadow: 0 2px 5px rgba(33,150,243,0.4);
+        }
+        50% {
+            box-shadow: 0 4px 12px rgba(33,150,243,0.7);
+        }
+        100% {
+            box-shadow: 0 2px 5px rgba(33,150,243,0.4);
+        }
+    }
+    @keyframes pressFeedback {
+        0% {
+            background: #FF9800 !important;
+            transform: scale(1);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        30% {
+            background: #FFB74D !important;
+            transform: scale(1.05);
+            box-shadow: 0 4px 10px rgba(255,152,0,0.5);
+        }
+        60% {
+            background: #FFA726 !important;
+            transform: scale(1.1);
+            box-shadow: 0 6px 15px rgba(255,152,0,0.7);
+        }
+        100% {
+            background: #FF9800 !important;
+            transform: scale(1);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+    }
+    @keyframes successGlow {
+        0% {
+            box-shadow: 0 2px 5px rgba(76,175,80,0.4);
+            background: #4CAF50 !important;
+        }
+        50% {
+            box-shadow: 0 4px 15px rgba(76,175,80,0.8);
+            background: #4CAF50 !important;
+        }
+        100% {
+            box-shadow: 0 2px 5px rgba(76,175,80,0.4);
+            background: #4CAF50 !important;
+        }
+    }
+    
+    /* 收藏记录样式 */
+    .bookmark-item {
+        padding: 8px 12px;
+        margin: 5px 0;
+        background: #fff3e0;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .bookmark-item:hover {
+        background: #ffe0b2;
+        transform: translateX(5px);
+    }
+    /* 范围书签样式 */
+    .bookmark-item.range {
+        background: #e3f2fd;
+        border-left: 4px solid #2196F3;
+    }
+    .bookmark-item.range:hover {
+        background: #bbdefb;
+    }
+
+    </style>
+</head>
+<!-- 在 body 开始后添加返回按钮 -->
+<body>
+    <div style="position: fixed;
+               top: 20px;
+               left: 20px;
+               z-index: 9999;
+               display: flex;
+               gap: 10px;">
+                
+        <a href="javascript:void(0);" 
+           onclick="saveAndReturn()" 
+           style="padding: 10px 20px;
+                          background: rgba(255,255,255,0.9);
+                          border-radius: 5px;
+                          text-decoration: none;
+                          box-shadow: 0 2px 5px rgba(177, 45, 45, 0.562);
+                          ">← 返回图库</a>
+        <button id="bookmark-btn" 
+onmousedown="startLongPress()" 
+                onmouseup="cancelLongPress()" 
+                onmouseleave="cancelLongPress()" 
+                ontouchstart="startLongPress()" 
+                ontouchend="cancelLongPress()">☆</button>
+    </div>
+
+    <div style="position: fixed;
+           bottom: 20px;
+           left: 20px;
+           z-index: 9999;
+           display: flex;
+           gap: 10px;
+           flex-direction: column;
+           background: rgba(255,255,255,0.9);
+           padding: 10px;
+           border-radius: 8px;
+           box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+    <div style="display: flex; gap: 8px;">
+        <button id="scroll-up-btn" 
+                style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                onclick="controlAutoScroll(-1)">↑ 加速向上</button>
+        <button id="scroll-down-btn" 
+                style="padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                onclick="controlAutoScroll(1)">↓ 加速向下</button>
+    </div>
+    <div id="speed-indicator" style="display: flex; gap: 4px; justify-content: center;">
+        <div style="width: 6px; height: 6px; background: #ddd; border-radius: 50%;"></div>
+        <!-- 重复5个圆点 -->
+    </div>
+        <button onclick="stopAutoScroll()" 
+                style="padding: 6px 12px; background: #ff5722; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            停止滚动
+        </button>
+    </div>
+
+    <!-- 原有标题保持不变 -->
+    <h1>{{ folder }}</h1>
+
+    <!-- 侧边导航面板 -->
+    <div class="side-panel">
+        <button class="toggle-btn" onclick="togglePanel()">▶</button>
+        <div class="panel-content">
+             
+            <!-- 右侧工具栏 -->
+            <div class="position-info">
+
+                <div>当前位置: <span id="current-position">{{ current }}</span>/{{ total }}
+                    {% if total_original and total_original != total %}<span style="color: #666; font-size: 0.8em;"> (原始共{{ total_original }}张)</span>{% endif %}
+                </div>
+
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ ((current|float / total * 100) if total > 0 else 0) }}%" data-total-original="{{ total_original }}" data-interval="{{ interval }}"></div>
+                </div>
+
+                <!-- 漫画模式下显示当前加载章节标题 -->
+                <div id="current-chapter-title" class="current-chapter-title" style="margin-top: 10px; padding: 8px; background-color: #f0f0f0; border-radius: 4px; text-align: center; font-weight: bold; display: none;">
+                    章节: <span id="chapter-name">加载中...</span>
+                </div>
+            </div>
+            
+            <!-- 在JavaScript部分更新updatePosition函数 -->
+            <script>
+            // 更新后的updatePosition函数
+            function updatePosition() {
+                const images = document.querySelectorAll('.comic-viewer img');
+                const viewportCenter = window.innerHeight / 2;
+                
+                let closestImage = null;
+                let minDistance = Infinity;
+                
+                images.forEach(img => {
+                    const rect = img.getBoundingClientRect();
+                    const distance = Math.abs(rect.top + rect.height/2 - viewportCenter);
+                    
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestImage = img;
+                    }
+                });
+                
+                if (closestImage) {
+                    const currentPage = parseInt(closestImage.dataset.page); // 确保转换为数字
+                    document.getElementById('current-position').textContent = currentPage;
+                    
+                    // 获取原始总数量和间隔参数
+                    const progressBar = document.querySelector('.progress');
+                    const totalOriginal = progressBar.dataset.totalOriginal ? parseInt(progressBar.dataset.totalOriginal) : {{ total }};
+                    const interval = progressBar.dataset.interval ? parseInt(progressBar.dataset.interval) : 0;
+                    
+                    // 如果有原始总数量并且间隔大于0，显示基于原始数量的进度
+                    if (interval > 0 && totalOriginal > 0) {
+                        // 计算在原始序列中的等效位置
+                        const originalPosition = currentPage * (interval + 1);
+                        const progressPercentage = Math.min((originalPosition / totalOriginal) * 100, 100);
+                        progressBar.style.width = `${progressPercentage}%`;
+                    } else {
+                        // 否则使用当前总数计算进度
+                        progressBar.style.width = `${(currentPage / {{ total }}) * 100}%`;
+                    }
+                }
+            }
+            </script>
+            
+            <!-- 更新跳转逻辑，确保间隔参数被保留 -->
+            <script>
+            // 修改jumpToPage函数以支持间隔后的页面跳转
+            function jumpToPage() 
+            {
+                const page = parseInt(document.getElementById('jump-input').value);
+                const target = document.querySelector(`img[data-page="${page}"]`);
+
+                if (target) {
+                    // 强制初始化图片资源时添加回退逻辑
+                    target.src = target.dataset.src || `/file/${encodeURIComponent('{{ folder }}')}/${target.dataset.page}`;
+                    
+                    // 改进的加载检测机制
+                    const ensureLoad = () => {
+                        if (!target.complete || target.naturalWidth === 0) {
+                            requestAnimationFrame(ensureLoad);
+                        } else {
+                            // 添加滚动位置补偿
+                            setTimeout(() => {
+                                target.scrollIntoView({behavior: 'smooth', block: 'center'});
+                                observer.unobserve(target);
+                            }, 100);
+                        }
+                    };
+                    
+                    // 启动加载检测
+                    if (target.complete) {
+                        target.scrollIntoView({behavior: 'smooth', block: 'center'});
+                    } else {
+                        target.onload = ensureLoad;
+                        ensureLoad();
+                    }
+                    togglePanel();
+                }
+            }
+            </script>
+            
+            <div class="zoom-controls" style="margin: 20px 0; display: flex; align-items: center; gap: 10px;">
+                <button onclick="adjustZoom(0.1)" style="padding: 8px 12px;">+</button>
+                <button onclick="adjustZoom(-0.1)" style="padding: 8px 12px;">-</button>
+                <span id="zoom-level" style="font-size: 14px;">100%</span>
+            </div>
+
+            <div class="jump-box">
+                <input type="number" id="jump-input" 
+                      placeholder="输入页码 (1-{{ total }})"
+                      min="1" 
+                      max="{{ total }}">
+                <button onclick="jumpToPage()" style="padding: 12px 20px;">跳转</button>
+            </div>
+            
+            <div class="bookmark-list" id="bookmark-list" style="margin-top: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <span>
+                            收藏记录
+                    </span>
+                    <button onclick="clearBookmarks()" 
+                            style="position: static;
+                                   display: inline-block;
+                                   background: #ffebee;
+                                   border: none;
+                                   border-radius: 15px;
+                                   padding: 4px 12px;
+                                   cursor: pointer;
+                                   font-size: 12px;
+                                   color: #c62828;
+                                   white-space: nowrap;">清除全部</button>
+                </div>
+            </div>
+
+            <script src="/static/settings.js"></script>
+
+            <script>
+
+            let zoomLevel = 1;  // Initialize zoom level
+            // 修改后的缩放函数
+            function adjustZoom(step) {
+                zoomLevel = Math.min(Math.max(0.5, zoomLevel + step), 3);
+                document.getElementById('zoom-level').textContent = `${Math.round(zoomLevel * 100)}%`;
+                
+                // 添加 !important 覆盖内联样式
+                document.querySelectorAll('.comic-viewer img').forEach(img => {
+                    img.style.setProperty('margin', `${10 * zoomLevel}px 0`, 'important');
+                    img.style.transform = `scale(${zoomLevel})`;
+                });
+            }
+
+
+            </script>
+
+        </div>
+    </div>
+
+    <!-- 图片展示区域 -->
+    <div class="comic-viewer">
+        {% for img in images %}
+        
+        <img class="lazy" 
+             data-src="/file/{{ folder|urlencode }}/{{ img|urlencode }}" 
+             data-page="{{ loop.index }}">
+        {% endfor %}
+    </div>
+
+    <script>
+    // 范围书签相关变量
+    let bookmarkStartPage = null;
+    let longPressTimer = null;
+    const LONG_PRESS_DURATION = 500; // 长按判定时间（毫秒）
+
+    // 面板控制
+    function togglePanel() {
+        document.querySelector('.side-panel').classList.toggle('active');
+    }
+
+    // 页面跳转
+    // 修改书签点击处理逻辑
+    function createBookmarkElement(page) {
+        const element = document.createElement('div');
+        element.className = 'bookmark-item';
+        element.textContent = `第 ${page} 页`;
+        element.dataset.bookmarkPage = page;  // 修改属性名
+        // 修改事件绑定方式
+        element.addEventListener('click', () => {
+            document.getElementById('jump-input').value = page;
+            jumpToPage();
+        });
+        return element;
+    }
+
+    function loadBookmarks() {
+        const list = document.getElementById('bookmark-list');
+        list.innerHTML = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span>收藏记录</span>
+            <button onclick="clearBookmarks()" 
+                    style="position: static;
+                            display: inline-block;
+                            background: #ffebee;
+                            border: none;
+                            border-radius: 15px;
+                            padding: 4px 12px;
+                            cursor: pointer;
+                            font-size: 12px;
+                            color: #c62828;
+                            white-space: nowrap;">清除全部</button>
+        </div>`;
+        
+        const folderKey = `bookmarks_${encodeURIComponent('{{ folder }}')}`;
+        const saved = sessionStorage.getItem(folderKey);
+        
+        if (saved) {
+            JSON.parse(saved).forEach(bookmark => {
+                if (bookmark.type === 'range') {
+                    // 范围书签 - 标记为使用绝对页码
+                    list.appendChild(createRangeBookmarkElement(bookmark.startPage, bookmark.endPage, true));
+                } else {
+                    // 单页书签
+                    const element = document.createElement('div');
+                    element.className = 'bookmark-item';
+                    element.textContent = `绝对页码 ${bookmark.page}`;
+                    element.dataset.bookmarkPage = bookmark.page;
+                    element.dataset.type = 'single';
+                    
+                    element.addEventListener('click', () => {
+                        const absolutePage = parseInt(element.dataset.bookmarkPage);
+                        
+                        // 构造URL参数实现基于绝对页码的查看
+                        const currentFolder = '{{ folder }}';
+                        let url = `/gallery/${encodeURIComponent(currentFolder)}`;
+                        
+                        // 查找这个绝对页码在当前视图中的位置
+                        let params = new URLSearchParams();
+                        params.append('start_pos', absolutePage);
+                        params.append('count', {{ total }}); // 使用当前页面总数作为count
+                        
+                        url += '?' + params.toString();
+                        window.location.href = url;
+                    });
+                    
+                    list.appendChild(element);
+                }
+            });
+        }
+    }
+    // 创建范围书签元素
+    function createRangeBookmarkElement(startPage, endPage, isAbsolute = false) {
+        const element = document.createElement('div');
+        let absoluteStartPage, absoluteEndPage;
+        
+        if (isAbsolute) {
+            // 如果传入的就是绝对页码，则直接使用
+            absoluteStartPage = startPage;
+            absoluteEndPage = endPage;
+        } else {
+            // 否则计算绝对页码范围
+            const progressBar = document.querySelector('.progress');
+            const currentStartPos = new URLSearchParams(window.location.search).get('start_pos') || 1;
+            const interval = progressBar.dataset.interval ? parseInt(progressBar.dataset.interval) : 0;
+            
+            absoluteStartPage = (startPage - 1) * (interval + 1) + parseInt(currentStartPos);
+            absoluteEndPage = (endPage - 1) * (interval + 1) + parseInt(currentStartPos);
+        }
+        
+        // 显示绝对页码范围
+        element.textContent = `绝对页码 ${absoluteStartPage}-${absoluteEndPage}`;
+        element.className = 'bookmark-item range';
+        element.dataset.absoluteStartPage = absoluteStartPage;
+        element.dataset.absoluteEndPage = absoluteEndPage;
+        element.dataset.type = 'range';
+        
+        element.addEventListener('click', () => {
+            // 构造URL参数实现基于绝对页码范围的查看
+            const absoluteStart = parseInt(element.dataset.absoluteStartPage);
+            const absoluteEnd = parseInt(element.dataset.absoluteEndPage);
+            const count = absoluteEnd - absoluteStart + 1;
+            
+            // 构造基础URL
+            const currentFolder = '{{ folder }}';
+            let url = `/gallery/${encodeURIComponent(currentFolder)}`;
+            
+            // 添加查询参数 - 使用绝对页码作为start_pos
+            let params = new URLSearchParams();
+            params.append('start_pos', absoluteStart);
+            params.append('count', count);
+            
+            // 构建完整URL并跳转
+            url += '?' + params.toString();
+            window.location.href = url;
+        });
+        
+        return element;
+    }
+
+    // 长按开始
+    function startLongPress() {
+        const btn = document.getElementById('bookmark-btn');
+        // 添加长按进行中样式，提供即时反馈
+        btn.classList.add('long-pressing');
+        
+        longPressTimer = setTimeout(() => {
+            // 执行单页书签添加
+            addSingleBookmark();
+        }, LONG_PRESS_DURATION);
+    }
+
+    // 取消长按
+    function cancelLongPress() {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+        
+        // 移除长按进行中样式
+        const btn = document.getElementById('bookmark-btn');
+        btn.classList.remove('long-pressing');
+    }
+
+    function addSingleBookmark() {
+        const currentPage = parseInt(document.getElementById('current-position').textContent);
+        const bookmarkList = document.getElementById('bookmark-list');
+        const folderKey = `bookmarks_${encodeURIComponent('{{ folder }}')}`;
+        const btn = document.getElementById('bookmark-btn');
+        
+        // 检查是否已经存在此单页书签
+        let hasExisting = false;
+        const saved = sessionStorage.getItem(folderKey);
+        if (saved) {
+            const bookmarks = JSON.parse(saved);
+            hasExisting = bookmarks.some(bookmark => 
+                (bookmark.type === 'single' && bookmark.page === currentPage) ||
+                (bookmark.type === 'range' && bookmark.startPage === currentPage && bookmark.endPage === currentPage)
+            );
+        }
+        
+        if (!hasExisting) {
+            // 添加新的单页书签
+            bookmarkList.appendChild(createBookmarkElement(currentPage));
+            saveBookmarks();
+            
+            // 移除长按样式
+            btn.classList.remove('long-pressing');
+            
+            // 显示收藏成功反馈动效
+            btn.style.backgroundColor = '#4CAF50'; // 变为绿色表示成功
+            btn.style.animation = 'successGlow 1s ease-in-out';
+            
+            // 恢复原始样式
+            setTimeout(() => {
+                btn.style.backgroundColor = '';
+                btn.style.animation = '';
+            }, 1000);
+        } else {
+            // 移除长按样式
+            btn.classList.remove('long-pressing');
+            
+            // 显示已存在反馈
+            btn.style.backgroundColor = '#FF5722'; // 变为橙色表示已存在
+            setTimeout(() => {
+                btn.style.backgroundColor = '';
+            }, 300);
+        }
+    }
+    // 修改后的添加书签函数（点击触发，支持范围书签）
+    document.getElementById('bookmark-btn').addEventListener('click', function() {
+        // 如果有长按计时器，说明不是真正的点击而是长按被取消了
+        if (longPressTimer) {
+            cancelLongPress();
+            return;
+        }
+        
+        const currentPage = parseInt(document.getElementById('current-position').textContent);
+        const bookmarkBtn = document.getElementById('bookmark-btn');
+        
+        // 如果没有开始记录范围书签
+        if (bookmarkStartPage === null) {
+            // 开始记录范围书签的起点
+            bookmarkStartPage = currentPage;
+            bookmarkBtn.classList.add('recording');
+            // 始终使用空心五星，不改变文本
+        } else {
+            // 完成范围书签的记录
+            const bookmarkEndPage = currentPage;
+            
+            // 如果起点和终点相同，视为单页书签
+            if (bookmarkStartPage === bookmarkEndPage) {
+                addSingleBookmark();
+            } else {
+                // 保存范围书签
+                const bookmarkList = document.getElementById('bookmark-list');
+                bookmarkList.appendChild(createRangeBookmarkElement(bookmarkStartPage, bookmarkEndPage));
+                saveBookmarks();
+            }
+            
+            // 重置状态
+            bookmarkStartPage = null;
+            bookmarkBtn.classList.remove('recording');
+            // 始终使用空心五星，不改变文本
+        }
+    });
+
+    // 统一跳转入口
+    function jumpToPage() {
+        const page = parseInt(document.getElementById('jump-input').value);
+        const target = document.querySelector(`img[data-page="${page}"]`);
+        if (target) {
+            // 添加数据源校验
+            if (!target.dataset.src) {
+                console.error('Data source missing for page:', page);
+                return;
+            }
+            
+            // 强制初始化图片资源时添加回退逻辑
+            target.src = target.dataset.src || `/file/${encodeURIComponent('{{ folder }}')}/${target.dataset.page}`;
+            
+            // 改进的加载检测机制
+            const ensureLoad = () => {
+                if (!target.complete || target.naturalWidth === 0) {
+                    requestAnimationFrame(ensureLoad);
+                } else {
+                    // 添加滚动位置补偿
+                    setTimeout(() => {
+                        target.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        observer.unobserve(target);
+                    }, 100);
+                }
+            };
+            
+            // 启动加载检测
+            if (target.complete) {
+                target.scrollIntoView({behavior: 'smooth', block: 'center'});
+            } else {
+                target.onload = ensureLoad;
+                ensureLoad();
+            }
+            togglePanel();
+        }
+    }
+    // 在addBookmark函数中添加类型转换
+    function addBookmark() {
+        const currentPage = parseInt(document.getElementById('current-position').textContent);
+        const bookmarkList = document.getElementById('bookmark-list');
+        
+        if (!document.querySelector(`.bookmark-item[data-page="${currentPage}"]`)) {
+            const bookmark = document.createElement('div');
+            bookmark.className = 'bookmark-item';
+            bookmark.textContent = `第 ${currentPage} 页`;
+            bookmark.dataset.page = currentPage;
+            
+            // 修改书签点击事件处理
+            bookmark.addEventListener('click', () => {
+                document.getElementById('jump-input').value = currentPage;
+                // 强制指定跳转到图片元素
+                const target = document.querySelector(`img[data-page="${currentPage}"]`);
+                if (target) jumpToPage();
+            });
+            
+            bookmarkList.insertBefore(bookmark, bookmarkList.firstChild);
+            saveBookmarks();
+        }
+    }
+
+    // 懒加载实现
+    let loadingNextEpisode = false;
+    let loadedEpisodes = 1; // 当前已加载的话数
+    let maxComicEpisodes = parseInt(localStorage.getItem('maxComicEpisodes')) || 100; // 最大拼接话数
+    let lastLoadedFolder = '{{ folder }}';
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const img = entry.target;
+                if (!img.src) {
+                    img.src = img.dataset.src;
+                    img.classList.add('loaded');
+                }
+                // 强制应用样式
+                img.style.setProperty('margin', `${10 * zoomLevel}px 0`, 'important');
+                img.style.transform = `scale(${zoomLevel})`;
+            }
+        });
+    });
+
+    // 检查是否启用了漫画模式
+    const isEnableComicMode = localStorage.getItem('enableComicMode') === 'true';
+    function decodeUnicode(str) {
+        try {
+            // 替换Unicode转义序列
+            return str.replace(/\\u([a-fA-F0-9]{4})/g, function(match, hex) {
+                return String.fromCharCode(parseInt(hex, 16));
+            });
+        } catch(e) {
+            console.warn('Failed to decode unicode string:', str, e);
+            return str;
+        }
+    }
+    function decodeJsonString(str) {
+        try {
+            // 如果字符串是JSON格式（带引号），则解析它
+            return JSON.parse(str);
+        } catch(e) {
+            // 如果解析失败，返回原字符串
+            return str;
+        }
+    }
+    function updateChapterTitleDisplay() {
+        if (!isEnableComicMode) return; // 只在漫画模式下显示
+        
+        const chapterTitleElement = document.getElementById('current-chapter-title');
+        const chapterNameElement = document.getElementById('chapter-name');
+        
+        if (chapterTitleElement && chapterNameElement) {
+            // 显示最后加载的文件夹名称作为当前章节标题
+            const folderName = lastLoadedFolder.split('/').pop() || '未知章节';
+            
+            chapterNameElement.textContent = folderName;
+            chapterTitleElement.style.display = 'block'; // 显示章节标题区域
+            chapterTitleElement.title = `当前加载章节: ${lastLoadedFolder}`;
+        }
+    }
+    // 加载下一话的主要函数
+    async function loadNextEpisode() { 
+        if (loadingNextEpisode) return; 
+         
+        loadingNextEpisode = true; 
+         
+        try { 
+            // 获取当前文件夹列表，找到当前文件夹的下一个文件夹 
+            const currentFolder = lastLoadedFolder; // 使用最后加载的文件夹作为当前文件夹
+            const parentPath = currentFolder.substring(0, currentFolder.lastIndexOf('/')) || '/'; 
+            const currentFolderName = currentFolder.split('/').pop(); 
+            
+            // 对当前文件夹名称进行解码，因为它可能也是通过tojson传入的
+            const decodedCurrentFolderName = decodeJsonString(currentFolderName);
+             
+            // 请求父目录的文件夹列表，传递comic_mode参数以确保正确的排序
+            const response = await fetch(`/browse/${encodeURIComponent(parentPath)}?comic_mode=${isEnableComicMode}`);
+            const htmlText = await response.text(); 
+             
+            // 解析HTML以获取文件夹列表 
+            const parser = new DOMParser(); 
+            const doc = parser.parseFromString(htmlText, 'text/html'); 
+            const folderItems = doc.querySelectorAll('.folder-item'); 
+             
+            // 提取所有文件夹名称及其排序信息 
+            let foldersWithNumbers = []; 
+            folderItems.forEach(item => { 
+                let folderName = item.getAttribute('data-name'); 
+                let folderType = item.getAttribute('data-type'); 
+                
+                // 解码JSON字符串（处理引号和Unicode转义序列）
+                folderName = decodeJsonString(folderName);
+                folderType = decodeJsonString(folderType);
+                 
+                if (folderType === 'folder' || folderType === 'gallery') { 
+                    // 提取文件夹名称中的第一个数字 
+                    const numberMatch = folderName.match(/\d+/); 
+                    const firstNumber = numberMatch ? parseInt(numberMatch[0]) : Infinity; 
+                     
+                    foldersWithNumbers.push({ 
+                        name: folderName, 
+                        number: firstNumber, 
+                        element: item 
+                    }); 
+                } 
+            }); 
+             
+            // 按数字排序（漫画模式） 
+            if (isEnableComicMode) { 
+                foldersWithNumbers.sort((a, b) => { 
+                    if (a.number !== b.number) { 
+                        return a.number - b.number; 
+                    } 
+                    return a.name.localeCompare(b.name); 
+                }); 
+            } else { 
+                // 按名称排序 
+                foldersWithNumbers.sort((a, b) => a.name.localeCompare(b.name)); 
+            } 
+             
+            // 找到当前文件夹的索引 
+            const currentIndex = foldersWithNumbers.findIndex(item => item.name === decodedCurrentFolderName); 
+             
+            // 检查是否存在下一话 
+            if (currentIndex === -1 || currentIndex >= foldersWithNumbers.length - 1) { 
+                console.log("没有更多话数可加载"); 
+                loadingNextEpisode = false; 
+                return; 
+            } 
+             
+            const nextFolder = foldersWithNumbers[currentIndex + 1]; 
+            const nextFolderPath = parentPath === '/' ? `/${nextFolder.name}` : `${parentPath}/${nextFolder.name}`; 
+             
+            // 获取下一话的图片列表，同样传递comic_mode参数
+            const galleryResponse = await fetch(`/gallery/${encodeURIComponent(nextFolderPath)}?comic_mode=${isEnableComicMode}`);
+            const galleryHtml = await galleryResponse.text(); 
+             
+            // 解析下一话的图片 
+            const galleryDoc = parser.parseFromString(galleryHtml, 'text/html'); 
+            const nextImages = galleryDoc.querySelectorAll('.comic-viewer img'); 
+             
+            if (nextImages.length === 0) { 
+                console.log("下一话没有图片内容"); 
+                loadingNextEpisode = false; 
+                return; 
+            } 
+             
+            // 将下一话的图片添加到当前页面 
+            const comicViewer = document.querySelector('.comic-viewer'); 
+            const currentImageCount = comicViewer.querySelectorAll('img').length; 
+             
+            nextImages.forEach((img, index) => { 
+                const newImg = document.createElement('img'); 
+                newImg.className = img.className || 'lazy'; 
+                newImg.setAttribute('data-src', img.getAttribute('data-src')); 
+                newImg.setAttribute('data-page', (currentImageCount + index + 1).toString()); // 更新页码 
+                newImg.setAttribute('data-original-folder', nextFolder.name); // 标记来自哪个文件夹 
+                // 复制其他重要属性
+                const alt = img.getAttribute('alt');
+                if (alt) newImg.setAttribute('alt', alt);
+                const title = img.getAttribute('title');
+                if (title) newImg.setAttribute('title', title);
+                
+                comicViewer.appendChild(newImg); 
+                 
+                // 重新观察新添加的图片以便懒加载 
+                if (observer) {
+                    observer.observe(newImg); 
+                }
+            }); 
+             
+            // 更新最后加载的文件夹为当前加载的下一话
+            lastLoadedFolder = nextFolderPath;
+            
+            // 更新已加载话数 
+            loadedEpisodes++; 
+            
+            // 更新章节标题显示
+            updateChapterTitleDisplay();
+             
+            // 更新进度信息 
+            updateTotalCount(); 
+             
+            console.log(`已加载第${loadedEpisodes}话: ${nextFolder.name}`); 
+        } catch (error) { 
+            console.error("加载下一话时出错:", error); 
+        } finally { 
+            loadingNextEpisode = false; 
+        } 
+    }
+
+    // 检测页面滚动到底部
+    function checkBottomReached() {
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const windowHeight = window.innerHeight;
+        const documentHeight = document.documentElement.scrollHeight;
+        
+        // 如果距离底部100像素内，则认为到达底部
+        return scrollTop + windowHeight >= documentHeight - 100;
+    }
+    
+    // 监听滚动事件，检测是否到达底部
+    window.addEventListener('scroll', async function() {
+        if (!isEnableComicMode || loadingNextEpisode || loadedEpisodes >= maxComicEpisodes) {
+            return; // 如果未启用漫画模式、正在加载下一部分或已达到最大话数限制，则返回
+        }
+        
+        if (checkBottomReached()) {
+            await loadNextEpisode();
+        }
+    });
+    
+    // 更新总页数显示
+    function updateTotalCount() {
+        const totalImages = document.querySelectorAll('.comic-viewer img').length;
+        const totalElement = document.querySelector('#total-count'); // 假设有个元素显示总数
+        
+        if (totalElement) {
+            totalElement.textContent = totalImages;
+        }
+        
+        // 更新进度条的最大值（如果有的话）
+        const jumpInput = document.getElementById('jump-input');
+        if (jumpInput) {
+            jumpInput.max = totalImages;
+            jumpInput.placeholder = `输入页码 (1-${totalImages})`;
+        }
+        
+        // 更新位置信息
+        updatePosition();
+    }
+
+    // 在页面加载完成后初始化章节标题显示
+    document.addEventListener('DOMContentLoaded', function() {
+        // 如果是漫画模式，显示章节标题
+        if (isEnableComicMode) {
+            updateChapterTitleDisplay();
+        }
+    });
+    
+    // 如果漫画模式被启用/禁用，相应地显示/隐藏章节标题
+    // 监听设置变化
+    setInterval(function() {
+        const newIsEnableComicMode = localStorage.getItem('enableComicMode') === 'true';
+        const chapterTitleElement = document.getElementById('current-chapter-title');
+        
+        if (chapterTitleElement) {
+            if (newIsEnableComicMode) {
+                chapterTitleElement.style.display = 'block';
+                updateChapterTitleDisplay();
+            } else {
+                chapterTitleElement.style.display = 'none';
+            }
+        }
+    }, 1000); // 每秒检查一次设置变化
+    
+    // 初始化时检查是否需要预加载下一话
+    setTimeout(() => {
+        if (isEnableComicMode && loadedEpisodes < maxComicEpisodes) {
+            // 可以考虑在页面内容较少时提前加载
+            const documentHeight = document.documentElement.scrollHeight;
+            const windowHeight = window.innerHeight;
+            
+            if (documentHeight < windowHeight * 2) { // 如果页面内容少于两屏，自动加载下一话
+                loadNextEpisode();
+            }
+        }
+    }, 2000); // 延迟2秒执行，等待初始内容加载完成
+
+    document.querySelectorAll('.lazy').forEach(img => {
+      observer.observe(img);
+    });
+
+    document.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+    // 清理书签函数
+    function clearBookmarks() {
+        const list = document.getElementById('bookmark-list');
+        // 只移除收藏项（保留标题和清除按钮）
+        const items = list.querySelectorAll('.bookmark-item');
+        items.forEach(item => item.remove());
+        
+        // 保持存储清理逻辑
+        const folderKey = `bookmarks_${encodeURIComponent('{{ folder }}')}`;
+        sessionStorage.removeItem(folderKey);
+        
+        // 重置书签记录状态
+        bookmarkStartPage = null;
+        const bookmarkBtn = document.getElementById('bookmark-btn');
+        bookmarkBtn.classList.remove('recording');
+        bookmarkBtn.textContent = '☆';
+    }
+    // 保存书签函数
+    function saveBookmarks() {
+        const folderKey = `bookmarks_${encodeURIComponent('{{ folder }}')}`;
+        const items = document.querySelectorAll('.bookmark-item');
+        const bookmarks = [];
+        
+        items.forEach(item => {
+            if (item.dataset.type === 'range') {
+                // 保存绝对页码范围
+                bookmarks.push({
+                    type: 'range',
+                    startPage: parseInt(item.dataset.absoluteStartPage),
+                    endPage: parseInt(item.dataset.absoluteEndPage)
+                });
+            } else {
+                // 对于单页书签，也需要计算绝对页码
+                const progressBar = document.querySelector('.progress');
+                const currentStartPos = new URLSearchParams(window.location.search).get('start_pos') || 1;
+                const interval = progressBar.dataset.interval ? parseInt(progressBar.dataset.interval) : 0;
+                const page = parseInt(item.dataset.bookmarkPage || item.dataset.page);
+                const absolutePage = (page - 1) * (interval + 1) + parseInt(currentStartPos);
+                
+                bookmarks.push({
+                    type: 'single',
+                    page: absolutePage
+                });
+            }
+        });
+        
+        sessionStorage.setItem(folderKey, JSON.stringify(bookmarks));
+    }
+        // 修复updatePosition中的类型问题
+        function updatePosition() {
+        const images = document.querySelectorAll('.comic-viewer img');
+        const viewportCenter = window.innerHeight / 2;
+        
+        let closestImage = null;
+        let minDistance = Infinity;
+        
+        images.forEach(img => {
+            const rect = img.getBoundingClientRect();
+            const distance = Math.abs(rect.top + rect.height/2 - viewportCenter);
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestImage = img;
+            }
+        });
+        
+        if (closestImage) {
+            const currentPage = parseInt(closestImage.dataset.page); // 确保转换为数字
+            document.getElementById('current-position').textContent = currentPage;
+            
+            // 获取原始总数量和间隔参数
+            const progressBar = document.querySelector('.progress');
+            const totalOriginal = progressBar.dataset.totalOriginal ? parseInt(progressBar.dataset.totalOriginal) : {{ total }};
+            const interval = progressBar.dataset.interval ? parseInt(progressBar.dataset.interval) : 0;
+            
+            // 从URL获取起始位置参数
+            const urlParams = new URLSearchParams(window.location.search);
+            const startPos = urlParams.get('start_pos') ? parseInt(urlParams.get('start_pos')) : 0;
+            
+            // 如果有原始总数量并且间隔大于0，显示基于原始数量的进度
+            if (interval > 0 && totalOriginal > 0) {
+                // 计算在原始序列中的等效位置（考虑起始位置和间隔）
+                const originalPosition = startPos + (currentPage - 1) * (interval + 1);
+                const progressPercentage = Math.min((originalPosition / totalOriginal) * 100, 100);
+                progressBar.style.width = `${progressPercentage}%`;
+            } 
+            else {
+                    // 否则使用当前总数计算进度
+                    progressBar.style.width = `${(currentPage / {{ total }}) * 100}%`;
+            }
+        }
+    }
+
+    // 初始化滚动监听
+    window.addEventListener('scroll', updatePosition);
+    window.addEventListener('resize', updatePosition);
+    updatePosition(); // 初始调用
+
+    // 初始化时加载书签
+    window.addEventListener('load', loadBookmarks);
+
+    function saveAndReturn() {
+        // 解码当前路径（处理URL编码）
+        const currentPath = decodeURIComponent('{{ folder }}');
+        // 分割路径并过滤空段
+        const pathSegments = currentPath.split('/').filter(Boolean);
+        // 获取父级路径
+        const parentPath = pathSegments.slice(0, -1).join('/');
+        
+        // 重新编码路径并跳转
+        const encodedPath = parentPath ? encodeURIComponent(parentPath) : '';
+        const comicModeParam = isEnableComicMode ? '?comic_mode=true' : '?comic_mode=false';
+        window.location.href = encodedPath 
+            ? `/browse/${encodedPath}${comicModeParam}`
+            : `/?comic_mode=${isEnableComicMode}`;
+    }
+    
+    // 修改初始化跳转逻辑
+    window.addEventListener('load', () => {
+        const folderKey = `bookmark_${encodeURIComponent('{{ folder }}')}`;
+        const savedPage = localStorage.getItem(folderKey);
+        
+        if (savedPage && !window.location.href.includes('pos=')) {
+            setTimeout(() => {
+                const tempPage = parseInt(savedPage);
+                if (tempPage >= 1 && tempPage <= {{ total }}) {
+                    document.getElementById('jump-input').value = tempPage;
+                    jumpToPage();
+                }
+            }, 300);
+        }
+    });
+
+    // 重写saveSettings函数，添加页面特定的逻辑 - 在保存后重新构造URL并请求
+    window.saveSettings = function() {
+        // 保存设置
+        localStorage.setItem('enableImageInterval', enableImageInterval.checked);
+        localStorage.setItem('imageInterval', imageInterval.value);
+        
+        // 保存位置类型设置
+        localStorage.setItem('positionType', 
+            enableFixedPosition.checked ? 'fixed' : 
+            enablePercentagePosition.checked ? 'percentage' : 'none');
+        
+        // 保存固定位置设置
+        localStorage.setItem('startPosition', startPosition.value);
+        localStorage.setItem('loadCount', loadCount.value);
+        
+        // 保存百分比位置设置
+        localStorage.setItem('startPercentage', startPercentage.value);
+        localStorage.setItem('percentageLoadCount', percentageLoadCount.value);
+        
+        // 更新当前显示值
+        currentIntervalValue.textContent = imageInterval.value;
+        
+        // 关闭弹窗
+        closeModal();
+        
+        // 重新构造URL并请求，而不是简单刷新
+        setTimeout(() => {
+            // 获取当前文件夹路径
+            const currentFolder = '{{ folder }}';
+            
+            // 构造基础URL
+            let url = `/gallery/${encodeURIComponent(currentFolder)}`;
+            
+            // 添加查询参数
+            let params = new URLSearchParams();
+            
+            // 检查是否启用了间隔设置
+            const enableInterval = localStorage.getItem('enableImageInterval') === 'true';
+            const interval = enableInterval ? localStorage.getItem('imageInterval') || '0' : '0';
+            
+            if (interval && interval !== '0') {
+                params.append('interval', interval);
+            }
+            
+            // 根据positionType决定使用哪种位置类型
+            const positionType = localStorage.getItem('positionType') || 'none';
+            
+            if (positionType === 'fixed') {
+                // 使用固定位置设置
+                const startPos = localStorage.getItem('startPosition') || '0';
+                const count = localStorage.getItem('loadCount') || '10';
+                params.append('start_pos', startPos);
+                params.append('count', count);
+            } else if (positionType === 'percentage') {
+                // 使用百分比位置设置
+                const percent = localStorage.getItem('startPercentage') || '0';
+                const percentCount = localStorage.getItem('percentageLoadCount') || '10';
+                params.append('start_percent', percent);
+                params.append('percent_count', percentCount);
+            }
+            
+            // 构建完整URL
+            if (params.toString()) {
+                url += '?' + params.toString();
+            }
+            
+            // 重定向到新的URL
+            window.location.href = url;
+        }, 100);
+    }
+    </script>
+
+    <script>
+        // 新增自动滚动控制相关代码
+        let scrollSpeed = 0;
+        let currentSteps = 0;
+        const maxSteps = 5;
+        let animationFrameId = null;
+        let currentDirection = 0; // 新增方向状态 0:停止 1:向下 -1:向上
+        
+        function updateSpeedIndicator() {
+            const indicator = document.getElementById('speed-indicator');
+            indicator.innerHTML = Array.from({length: maxSteps}, (_, i) => 
+                `<div style="width: 6px; height: 6px; background: ${i < currentSteps ? currentDirection === 1 ? '#2196F3' : '#4CAF50' : '#ddd'}; border-radius: 50%;"></div>`
+            ).join('');
+        }
+        
+        let lastTime = 0;
+        const FPS = 60; // 设置目标帧率
+        const interval = 1000 / FPS; // 计算间隔时间
+        function autoScroll() {
+            if (scrollSpeed !== 0) {
+                let timestamp = performance.now();
+                // 添加帧率控制
+                if (timestamp - lastTime >= interval) {
+                    const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+                    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+                    
+                    if ((scrollSpeed > 0 && currentScroll >= maxScroll) || 
+                        (scrollSpeed < 0 && currentScroll <= 0)) {
+                        stopAutoScroll();
+                        return;
+                    }
+                    
+                    window.scrollBy({ top: scrollSpeed, behavior: 'instant' });
+                    lastTime = timestamp; // 更新最后执行时间
+                }
+                animationFrameId = requestAnimationFrame(autoScroll);
+            }
+        }
+        
+        
+        // 修改后的控制函数
+        function controlAutoScroll(direction) {
+            if (currentDirection === direction) {
+                // 同方向加速
+                currentSteps = Math.min(currentSteps + 1, maxSteps);
+            } 
+            else {
+                // 本身速度为零，就换方向。否则，朝这个方向改变速度。
+                if(currentSteps == 0){
+                    currentDirection = direction;
+                }
+                currentSteps = Math.max(Math.abs(currentSteps - 1), 0);
+            }
+            
+            // 计算最终速度
+            scrollSpeed = currentDirection * (12 + (currentSteps - 1) * 6);
+            if(currentSteps == 0)   scrollSpeed = 0;
+
+            updateSpeedIndicator();
+
+            // if (scrollSpeed !== 0 && !animationFrameId) {
+                lastTime = performance.now(); // 初始化时间戳
+                animationFrameId = requestAnimationFrame(autoScroll);
+            // }
+        }
+
+        // 修改停止函数
+        function stopAutoScroll() {
+            scrollSpeed = 0;
+            currentSteps = 0;
+            currentDirection = 0;
+            updateSpeedIndicator();
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+        
+        // 监听手动滚动停止自动滚动
+        let isManualScrolling = false;
+        window.addEventListener('wheel', () => {
+            if (!isManualScrolling) {
+                stopAutoScroll();
+            }
+        });
+        window.addEventListener('touchmove', () => {
+            if (!isManualScrolling) {
+                stopAutoScroll();
+            }
+        });
+        
+        // 添加键盘控制（空格键停止）
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                stopAutoScroll();
+            }
+        });
+    </script>
+
+</body>
+</html>

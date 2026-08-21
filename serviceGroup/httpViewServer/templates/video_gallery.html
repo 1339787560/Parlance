@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>{{ folder }} 视频库</title>
+    <link rel="icon" href="data:,"> <!-- 添加这行禁用图标请求 -->
+    <style>
+        /* 新增暂停状态指示器 */
+        .pause-indicator {
+            z-index: 5;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            /* 确保在视频上方 */
+            width: 80px;
+            height: 80px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 50%;
+            cursor: pointer;
+            display: none;
+            /* 默认隐藏 */
+            transition: opacity 0.3s;
+        }
+
+        .pause-indicator::after {
+            content: '⏸';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 40px;
+        }
+
+        .controls {
+            z-index: 4;
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .progress-bar {
+            flex: 1;
+            height: 4px;
+        }
+
+        .time {
+            color: white;
+            font-size: 0.9em;
+        }
+
+        .video-viewer {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 20px 0;
+        }
+
+        .video-container {
+            position: relative;
+            margin: 20px 0;
+            height: 70vh;
+            background: #1a1a1a;
+            transform: translateZ(0);
+            will-change: transform;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            position: relative;
+            /* 确保z-index生效 */
+            z-index: 0;
+        }
+
+        .video-title {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+
+        /* 在原有样式基础上添加 */
+        .controls {
+            /* ... 原有样式保持不变 ... */
+            justify-content: space-between;
+            /* 使元素两端对齐 */
+        }
+
+        .time-display {
+            color: white;
+            font-size: 0.9em;
+            margin-right: 10px;
+            flex-shrink: 0;
+            /* 防止被压缩 */
+        }
+
+        .time-popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2em;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            display: none;
+            z-index: 999;
+            color: white;
+        }
+
+        /* 新增右侧导航栏样式 */
+        .video-nav {
+            position: fixed;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 9998;
+            max-height: 80vh;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            width: 250px;
+            /* 加宽目录 */
+            transition: all 0.3s ease;
+            /* 添加过渡动画 */
+        }
+
+        .nav-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+            margin-bottom: 10px;
+        }
+
+        /* 折叠按钮样式 - 提高层级 */
+        .toggle-nav-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+
+        /* 折叠状态下的样式 */
+        .video-nav.collapsed {
+            width: 30px;
+            /* 只保留折叠按钮的宽度 */
+            padding: 10px 0;
+            overflow: hidden;
+        }
+
+        .video-nav.collapsed .nav-content {
+            display: none;
+        }
+
+        .video-nav.collapsed .nav-header {
+            justify-content: center;
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .video-nav.collapsed .nav-title {
+            display: none;
+        }
+
+
+
+        .toggle-nav-btn.expanded::before {
+            content: '«';
+        }
+
+        .toggle-nav-btn.collapsed::before {
+            content: '»';
+        }
+
+        .toggle-nav-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .nav-title {
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            flex-grow: 1;
+            text-align: center;
+        }
+
+
+        .video-nav-item {
+            color: white;
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        /* 调整主内容区宽度 */
+        .video-viewer {
+            margin-left: 270px;
+            /* 调整为适应加宽的目录 */
+            max-width: calc(100% - 270px);
+        }
+
+        .video-nav.collapsed~.video-viewer {
+            margin-left: 50px;
+            /* 当目录折叠时，调整主内容区左边距 */
+            max-width: calc(100% - 50px);
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 共用导航栏 -->
+    <div style="position: fixed; top: 20px; left: 20px; z-index: 9999;">
+        <a href="javascript:void(0);" onclick="saveAndReturn()" style="
+           padding: 10px 20px; 
+           background: white; 
+           border-radius: 5px;
+           box-shadow: 0 2px 5px rgba(177, 45, 45, 0.562);
+           ">← 返回图库</a>
+    </div>
+
+    <div class="video-nav" id="videoNav">
+        <div class="nav-header">
+            <button class="toggle-nav-btn" id="toggleNavBtn">«</button>
+            <div class="nav-title">视频列表</div>
+        </div>
+        <div class="nav-content">
+            <!-- 导航项将通过JS动态添加到这里 -->
+        </div>
+    </div>
+
+    <script>
+        // 在视频初始化后添加导航生成逻辑
+        document.querySelectorAll('.video-container').forEach((container, index) => {
+            const nav = document.getElementById('videoNav');
+            const item = document.createElement('div');
+            item.className = 'video-nav-item';
+            item.textContent = `▶ ${index + 1}. ${container.querySelector('.video-title').textContent}`;
+            item.onclick = () => {
+                container.scrollIntoView({ behavior: 'smooth' });
+            };
+            nav.appendChild(item);
+        });
+
+        // 添加滚动监听高亮当前视频
+        let lastHighlight = null;
+        window.addEventListener('scroll', () => {
+            const containers = document.querySelectorAll('.video-container');
+            containers.forEach((container, index) => {
+                const rect = container.getBoundingClientRect();
+                if (rect.top <= window.innerHeight / 2 && rect.bottom >= window.innerHeight / 2) {
+                    if (lastHighlight !== index) {
+                        document.querySelectorAll('.video-nav-item').forEach(item => {
+                            item.style.background = 'rgba(255,255,255,0.1)';
+                        });
+                        document.querySelectorAll('.video-nav-item')[index].style.background = '#2196F3';
+                        lastHighlight = index;
+                    }
+                }
+            });
+        });
+    </script>
+
+    <script>
+        // 生成导航项
+        const containers = document.querySelectorAll('.video-container');
+        const nav = document.getElementById('videoNav');
+        const navContent = nav.querySelector('.nav-content');
+
+        containers.forEach((container, index) => {
+            const item = document.createElement('div');
+            item.className = 'video-nav-item';
+            item.textContent = `▶ ${index + 1}. ${container.querySelector('.video-title').textContent}`;
+            item.onclick = () => {
+                // 添加精确滚动定位
+                container.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'  // 新增定位参数
+                });
+            };
+            navContent.appendChild(item);
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const toggleBtn = document.getElementById('toggleNavBtn');
+            const videoNav = document.getElementById('videoNav');
+
+            // 初始化状态
+            let isExpanded = true;
+
+            toggleBtn.addEventListener('click', function () {
+                if (isExpanded) {
+                    // 折叠目录
+                    videoNav.classList.add('collapsed');
+                    toggleBtn.textContent = '»'; // 改为向右箭头
+                    isExpanded = false;
+                } else {
+                    // 展开目录
+                    videoNav.classList.remove('collapsed');
+                    toggleBtn.textContent = '«'; // 改为向左箭头
+                    isExpanded = true;
+                }
+            });
+
+
+            // 生成导航项
+            const containers = document.querySelectorAll('.video-container');
+            const navContent = videoNav.querySelector('.nav-content');
+
+            containers.forEach((container, index) => {
+                const item = document.createElement('div');
+                item.className = 'video-nav-item';
+                // 使用完整的视频文件名作为标题
+                item.textContent = `▶ ${index + 1}. ${container.querySelector('.video-title').textContent}`;
+                item.onclick = () => {
+                    // 添加精确滚动定位
+                    container.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center'  // 新增定位参数
+                    });
+                };
+                navContent.appendChild(item);
+            });
+
+            // 优化滚动监听
+            let lastHighlight = null;
+            function checkScroll() {
+            containers.forEach((container, index) => {
+                const rect = container.getBoundingClientRect();
+                if (rect.top <= window.innerHeight * 0.4 && rect.bottom >= window.innerHeight * 0.6) {
+                    if (lastHighlight !== index) {
+                        document.querySelectorAll('.video-nav-item').forEach(item => {
+                            item.style.background = 'rgba(255,255,255,0.1)';
+                        });
+                        document.querySelectorAll('.video-nav-item')[index].style.background = '#2196F3';
+                        lastHighlight = index;
+                    }
+                }
+            });
+        }
+
+            // 添加节流优化
+            let isScrolling;
+            window.addEventListener('scroll', () => {
+                window.clearTimeout(isScrolling);
+                isScrolling = setTimeout(checkScroll, 100);
+            });
+            checkScroll(); // 初始化检查
+        });
+
+    </script>
+
+
+    <div class="video-viewer">
+        {% for file in files %}
+        <div class="video-container" data-page="{{ loop.index }}">
+            <!-- 暂停指示器 -->
+            <div class="pause-indicator" onclick="handlePauseClick(this)"></div>
+        
+            <!-- 视频元素 -->
+            <video class="lazy-video" preload="none" data-src="{% if full_path_mode %}{{ file|urlencode }}{% else %}{{ folder|urlencode }}/{{ file|urlencode }}{% endif %}"
+                onclick="togglePlay(this)">
+                <source src="" type="video/{{ file.split('.')[-1] }}">
+            </video>
+
+            <!-- 统一控制容器（唯一） -->
+            <div class="controls">
+                <button class="play-btn">▶</button>
+                <input type="range" class="progress-bar" value="0">
+                <span class="time-display">00:00 / 00:00</span>
+                <button class="fullscreen-btn">⤢</button>
+            </div>
+
+            <!-- 视频标题 -->
+            <div class="video-title">{% if full_path_mode %}{{ file.split('/')[-1] }}{% else %}{{ file }}{% endif %}</div>
+        </div>
+
+        {% endfor %}
+    </div>
+
+    <script>
+        // 视频控制逻辑
+        let isDragging = false;
+        let startX, startY;
+
+        function togglePlay(video) {
+            video.paused ? video.play() : video.pause();
+        }
+
+        // 修复视频播放逻辑
+        document.querySelectorAll('.lazy-video').forEach(video => {
+            // 正确初始化视频源
+            const videoSrc = `/file/${video.dataset.src}`;
+            video.src = videoSrc;
+            video.load();
+
+            // 正确获取元素的方式
+            const container = video.parentElement;
+            const controls = container.querySelector('.controls'); // 现在能正确找到唯一容器
+            const playBtn = controls.querySelector('.play-btn');
+            const progressBar = controls.querySelector('.progress-bar');
+            const title = container.querySelector('.video-title'); // 添加这行
+
+            video.addEventListener('timeupdate', () => {
+                const progress = (video.currentTime / video.duration) * 100;
+                progressBar.value = progress;  // 现在可以正确获取进度条
+            });
+
+            // 暂停按钮相关
+            playBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                togglePlay(video);
+            });
+
+            playBtn.addEventListener('play', () => {
+                video.parentElement.querySelector('.pause-indicator').style.display = 'none';
+            });
+            playBtn.addEventListener('pause', () => {
+                video.parentElement.querySelector('.pause-indicator').style.display = 'block';
+            });
+
+            // 全屏按钮相关
+            const fullscreenBtn = controls.querySelector('.fullscreen-btn');
+            let preFullscreenScroll = { x: 0, y: 0 }; // 存储滚动位置
+
+            fullscreenBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const container = video.parentElement;
+
+                if (!document.fullscreenElement) {
+                    // 记录当前滚动位置
+                    preFullscreenScroll = { x: window.scrollX, y: window.scrollY };
+                    container.requestFullscreen()
+                        .then(() => {
+                            // 添加全屏状态监听
+                            document.addEventListener('fullscreenchange', handleFullscreenChange);
+                        });
+                } else {
+                    document.exitFullscreen();
+                }
+            });
+
+            // 进度条相关
+            progressBar.value = 0;
+            // 添加进度条拖动事件
+            progressBar.addEventListener('input', function (e) {
+                const percent = e.target.value;
+                video.currentTime = (percent / 100) * video.duration;
+            });
+
+            // 阻止进度条操作触发视频点击
+            progressBar.addEventListener('mousedown', e => e.stopPropagation());
+            progressBar.addEventListener('touchstart', e => e.stopPropagation());
+
+            // 确保视频加载后更新进度
+            video.addEventListener('loadedmetadata', () => {
+                progressBar.value = (video.currentTime / video.duration) * 100;
+            });
+
+            const timeDisplay = controls.querySelector('.time-display');
+            const timePopup = document.createElement('div');
+            timePopup.className = 'time-popup';
+            document.body.appendChild(timePopup);
+
+            // 时间进度相关
+            function formatTime(seconds) {
+                const minutes = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            }
+
+            // 更新时间的统一函数
+            function updateTimeDisplay() {
+                timeDisplay.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+            }
+
+            // 进度条拖动事件增强
+            progressBar.addEventListener('input', function (e) {
+                const percent = e.target.value;
+                const currentTime = (percent / 100) * video.duration;
+
+                // 显示弹出时间
+                timePopup.style.display = 'block';
+                timePopup.textContent = `${formatTime(currentTime)} / ${formatTime(video.duration)}`;
+
+                video.currentTime = currentTime;
+            });
+
+            // 进度条拖动相关
+            progressBar.addEventListener('mousedown', () => timePopup.style.display = 'block');
+            progressBar.addEventListener('mouseup', () => timePopup.style.display = 'none');
+            progressBar.addEventListener('touchstart', () => timePopup.style.display = 'block');
+            progressBar.addEventListener('touchend', () => timePopup.style.display = 'none');
+
+            video.addEventListener('timeupdate', () => {
+                updateTimeDisplay();
+                // 如果弹出层可见则实时更新
+                if (timePopup.style.display === 'block') {
+                    timePopup.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+                }
+            });
+
+            video.addEventListener('loadedmetadata', () => {
+                updateTimeDisplay();
+            });
+
+            // 双击切换播放状态
+            video.addEventListener('dblclick', () => togglePlay(video));
+
+            // 手势控制变量
+            let lastTouch = { x: 0, y: 0, time: 0 };
+            let pinchStartDistance = 0;
+            let isPinching = false;
+
+            // 触摸事件处理
+            video.addEventListener('touchstart', e => {
+                if (e.touches.length === 1) {
+                    lastTouch = {
+                        x: e.touches[0].clientX,
+                        y: e.touches[0].clientY,
+                        time: video.currentTime,
+                        startPercent: (video.currentTime / video.duration) * 100 // 新增初始百分比
+                    };
+                }
+            });
+
+            video.addEventListener('touchmove', e => {
+                e.preventDefault(); // 阻止默认滚动
+                if (video.paused && !document.fullscreenElement) return;
+
+                if (isPinching && e.touches.length === 2) {
+                    // 双指缩放处理
+                    const currentDistance = getTouchDistance(e.touches);
+                    if (currentDistance / pinchStartDistance > 1.2) {
+                        // 双指外扩-进入全屏
+                        if (!document.fullscreenElement) {
+                            video.parentElement.requestFullscreen();
+                        }
+                        isPinching = false;
+                    } else if (currentDistance / pinchStartDistance < 0.8) {
+                        // 双指内缩-退出全屏
+                        if (document.fullscreenElement) {
+                            document.exitFullscreen();
+                        }
+                        isPinching = false;
+                    }
+                }
+                else if (e.touches.length === 1 && !isPinching) {
+                    const deltaX = e.touches[0].clientX - lastTouch.x;
+                    const screenWidth = window.innerWidth;
+
+                    // 计算进度百分比变化（每像素对应进度条的0.3%）
+                    const percentDelta = (deltaX / screenWidth) * 0.3 * 100;
+                    const newPercent = Math.max(0, Math.min(100,
+                        (lastTouch.time / video.duration * 100) + percentDelta
+                    ));
+
+                    // 同时更新进度条和视频时间
+                    progressBar.value = newPercent;
+                    video.currentTime = (newPercent / 100) * video.duration;
+
+                    // 触发进度条input事件以更新时间显示
+                    progressBar.dispatchEvent(new Event('input')); // 新增此行
+                }
+            });
+
+            video.addEventListener('touchend', () => {
+                isPinching = false;
+            });
+
+            // 辅助函数：计算两点距离
+            function getTouchDistance(touches) {
+                const [t1, t2] = touches;
+                return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            }
+
+            // 全屏状态控制变量
+            let hideTimeout;
+            // 全屏状态变化处理
+            function handleFullscreenChange() {
+                if (!document.fullscreenElement) {
+                    // 恢复滚动位置
+                    window.scrollTo(preFullscreenScroll.x, preFullscreenScroll.y);
+                    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+
+                    // 退出全屏时显示元素
+                    controls.style.opacity = '1';
+                    title.style.opacity = '1';
+                    clearTimeout(hideTimeout);
+
+                    // 退出时移除事件监听
+                    container.removeEventListener('mousemove', resetHideTimer);
+                    container.removeEventListener('touchstart', resetHideTimer);
+                } else {
+                    // 进入全屏后2秒渐隐
+                    hideTimeout = setTimeout(() => {
+                        controls.style.transition = 'opacity 0.5s';
+                        title.style.transition = 'opacity 0.5s';
+                        controls.style.opacity = '0';
+                        title.style.opacity = '0';
+                    }, 2000);
+
+                    // 添加全屏操作检测
+                    container.addEventListener('mousemove', resetHideTimer);
+                    container.addEventListener('touchend', resetHideTimer);
+                }
+
+                // 调用重置计时器统一处理显示逻辑
+                resetHideTimer();
+            }
+
+            // 修改重置计时器函数
+            function resetHideTimer() {
+                controls.style.opacity = '1';
+                title.style.opacity = '1';
+                clearTimeout(hideTimeout);
+                // 添加条件：仅在全屏状态下启动自动隐藏
+                if (document.fullscreenElement) {
+                    hideTimeout = setTimeout(() => {
+                        controls.style.opacity = '0';
+                        title.style.opacity = '0';
+                    }, 2000);
+                }
+            }
+
+            // 暂停时显示控件
+            video.addEventListener('pause', () => {
+                controls.style.opacity = '1';
+                title.style.opacity = '1';
+                clearTimeout(hideTimeout);
+            });
+
+            // 播放时重新启动隐藏计时
+            video.addEventListener('play', resetHideTimer);
+
+            // 添加预加载元数据
+            video.preload = 'metadata';
+
+            // 添加节流的时间更新监听
+            let lastUpdate = 0;
+            video.addEventListener('timeupdate', () => {
+                const now = Date.now();
+                if (now - lastUpdate > 500) { // 500ms节流
+                    const progress = (video.currentTime / video.duration) * 100;
+                    progressBar.value = progress;
+                    lastUpdate = now;
+                }
+            });
+
+            // 在进度条事件中添加标志位
+            let isSeeking = false;
+            progressBar.addEventListener('input', function (e) {
+                isSeeking = true;
+                // 添加请求动画帧优化
+                requestAnimationFrame(() => {
+                    const percent = e.target.value;
+                    const currentTime = (percent / 100) * video.duration;
+                    video.currentTime = currentTime;
+                    isSeeking = false;
+                });
+            });
+        });
+
+        
+        // 新增暂停按钮点击处理
+        function handlePauseClick(button) {
+            const video = button.nextElementSibling;
+            video.play();
+            button.style.display = 'none';
+            event.stopPropagation(); // 阻止事件冒泡到视频元素
+        }
+        document.querySelectorAll('video').forEach(video => {
+            video.addEventListener('play', () => {
+                // 从父容器获取播放按钮
+                video.parentElement.querySelector('.play-btn').textContent = '⏸';
+            });
+            video.addEventListener('pause', () => {
+                video.parentElement.querySelector('.play-btn').textContent = '▶';
+            });
+        });
+
+        function saveAndReturn() {
+            // 添加URI解码处理
+            const currentPath = decodeURIComponent('{{ folder }}');
+            const pathSegments = currentPath.split('/').filter(Boolean);
+            const parentPath = pathSegments.slice(0, -1).join('/');
+
+            // 处理根目录情况
+            const encodedPath = parentPath
+                ? encodeURIComponent(parentPath)
+                : '';
+
+            window.location.href = encodedPath
+                ? `/browse/${encodedPath}`
+                : '/';
+        }
+
+        // 修改视频初始化逻辑
+        function initVideo(video) {
+            // 显示缩略图
+            const thumb = `/video_thumb/${video.dataset.src}`;
+            video.style.background = `url(${thumb}) center/cover`;
+
+            // 进度记忆 - 使用完整路径确保唯一性
+            const storageKey = `videoPos_${window.location.pathname}_${video.dataset.src}`;
+            
+            video.addEventListener('loadedmetadata', () => {
+                const savedTime = localStorage.getItem(storageKey);
+                if (savedTime) {
+                    video.currentTime = Math.max(0, parseFloat(savedTime) - 30); // 提前30秒加载
+                }
+            });
+
+            // 更新进度
+            video.addEventListener('timeupdate', () => {
+                const progress = (video.currentTime / video.duration) * 100;
+                const container = video.closest('.video-container');
+                if(container) {
+                    const progressBar = container.querySelector('.progress-bar');
+                    if(progressBar) {
+                        progressBar.value = progress;
+                    }
+                }
+                localStorage.setItem(storageKey, video.currentTime.toString());
+            });
+            // 增强触摸控制
+            video.addEventListener('touchmove', e => {
+                // 修改为更灵敏的滑动检测
+                if (Math.abs(deltaX) > 20) {
+                    video.currentTime += (deltaX / window.innerWidth) * 10; // 调整进度步长
+                }
+                if (Math.abs(deltaY) > 20) {
+                    video.volume = Math.min(1, Math.max(0, video.volume - (deltaY / 80)));
+                }
+            });
+        }
+
+        // 新增全屏控制
+        document.querySelector('.fullscreen-btn').addEventListener('click', () => {
+            const video = document.querySelector('.video-container:target video') ||
+                document.querySelector('.video-container video');
+            if (video) {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                } else {
+                    video.parentElement.requestFullscreen();
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

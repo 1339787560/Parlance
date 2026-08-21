@@ -1,0 +1,42 @@
+# 漫画下载器配置文件
+
+# 目标网站基础URL
+base_url: "https://www.baozimh.com"
+
+# laimanhua网站基础URL
+laimanhua_base_url: "https://www.laimanhua.org"
+
+# 并发下载线程数
+max_threads: 3  # 减少线程数以降低服务器压力
+
+# 请求头设置
+headers:
+  User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+  Accept-Language: "zh-CN,zh;q=0.9,en;q=0.8"
+  Accept-Encoding: "gzip, deflate, br"
+  Connection: "keep-alive"
+  Upgrade-Insecure-Requests: "1"
+
+# 请求超时设置（秒）
+request_timeout: 15
+
+# 下载延迟设置（秒）
+download_delay:
+  between_images: 1  # 增加图片间延迟
+  between_chapters: 2  # 增加章节间延迟
+
+# 文件命名规则
+file_naming:
+  chapter_prefix_digits: 3  # 章节前缀位数，如001, 002等
+
+# 待爬取的漫画URL列表
+comic_urls:
+  - "https://cn.bzmgcn.com/comic/nuzixueyuandenansheng-hongdaomanhua"
+  
+# laimanhua待爬取的漫画URL列表
+laimanhua_comic_urls:
+  - "https://www.laimanhua.org/kanmanhua/418438"
+  
+# 输出目录设置
+output_dir: "../share/漫画库"  # 漫画将保存在当前目录下的share文件夹中

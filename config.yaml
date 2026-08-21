@@ -136,6 +136,20 @@ services:
     tags: [cocos, test, web]
     enabled: true
 
+  # HttpViewServer — Flask 图片/视频/文本库浏览 (自用存档展示)
+  # 依赖: serviceGroup/httpViewServer/.venv (flask), 库根 = 服务 cwd 下 share/
+  # ⚠ command 必须指向服务自身 venv (绝对路径): 相对 command 会相对 host 根解析
+  #   (service_manager 设计如此), 相对写 ./.venv 会落到 host venv 导致缺 flask
+  - name: http-view-server
+    command_mac: /Users/liz/codlib/python/infoServer/serviceGroup/httpViewServer/.venv/bin/python
+    command_win: python
+    args: ["main.py", "--port", "5020"]
+    cwd: ./serviceGroup/httpViewServer
+    port: 5020
+    auto_restart: true
+    tags: [http, view, gallery, file]
+    enabled: true
+
   - name: cocos-creator
     command: "D:\\IDE\\Cocos Download\\Creator\\Creator\\3.8.1\\CocosCreator.exe"
     command_mac: "/Applications/Cocos/Creator/3.8.1/CocosCreator.app/Contents/MacOS/CocosCreator"

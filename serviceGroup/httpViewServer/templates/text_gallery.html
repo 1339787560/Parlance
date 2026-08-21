@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ folder }} 文本文件库</title>
+    <style>
+    /* 基本样式 */
+    body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+        background-color: #f5f5f5;
+    }
+    
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding: 10px;
+        background: white;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .file-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+    }
+    
+    .file-item {
+        background: white;
+        border-radius: 5px;
+        padding: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+        cursor: pointer;
+    }
+    
+    .file-item:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    }
+    
+    .file-name {
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #333;
+    }
+    
+    .pagination {
+        display: flex;
+        justify-content: center;
+        margin-top: 30px;
+        gap: 10px;
+    }
+    
+    .pagination a {
+        padding: 10px 15px;
+        background: white;
+        text-decoration: none;
+        color: #333;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .pagination a.active {
+        background: #2196F3;
+        color: white;
+    }
+    
+    .back-button {
+        padding: 10px 20px;
+        background: #2196F3;
+        color: white;
+        text-decoration: none;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{{ folder }} 文本文件库</h1>
+        <a href="javascript:void(0);" onclick="saveAndReturn()" class="back-button">← 返回上级</a>
+    </div>
+    
+    <div class="file-list">
+        {% for file in files %}
+        <div class="file-item" onclick="viewFile('{{ file|urlencode }}')">
+            <div class="file-name">{{ file }}</div>
+            <div class="file-preview">点击查看详情</div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="pagination">
+        {% if current > 1 %}
+            <a href="?pos={{ current - 1 }}">上一页</a>
+        {% endif %}
+        
+        {% for i in range(1, total + 1) %}
+            {% if i == current %}
+                <a href="?pos={{ i }}" class="active">{{ i }}</a>
+            {% else %}
+                <a href="?pos={{ i }}">{{ i }}</a>
+            {% endif %}
+        {% endfor %}
+        
+        {% if current < total %}
+            <a href="?pos={{ current + 1 }}">下一页</a>
+        {% endif %}
+    </div>
+
+    <script>
+        // 返回上级目录
+        function saveAndReturn() {
+            // 解码当前路径（处理URL编码）
+            const currentPath = decodeURIComponent('{{ folder }}');
+            // 分割路径并过滤空段
+            const pathSegments = currentPath.split('/').filter(Boolean);
+            // 获取父级路径
+            const parentPath = pathSegments.slice(0, -1).join('/');
+            
+            // 重新编码路径并跳转
+            const encodedPath = parentPath ? encodeURIComponent(parentPath) : '';
+            window.location.href = encodedPath 
+                ? `/browse/${encodedPath}`
+                : '/';
+        }
+        
+        // 查看文件
+        function viewFile(filename) {
+            const folder = encodeURIComponent('{{ folder }}');
+            // 修改为跳转到文本查看器页面而不是直接打开文件
+            window.location.href = `/text/${folder}/${filename}`;
+        }
+    </script>
+</body>
+</html>

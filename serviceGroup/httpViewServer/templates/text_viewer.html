@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ filename }} - 文本查看器</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .content {
+            background: white;
+            padding: 20px;
+            height: 100vh;
+            overflow-y: auto;
+            position: relative;
+            box-sizing: border-box;
+        }
+        
+        /* 添加格式化文本的样式 */
+        .formatted-content {
+            line-height: 1.6;
+            font-size: 16px;
+        }
+        
+        .formatted-content h1, 
+        .formatted-content h2, 
+        .formatted-content h3, 
+        .formatted-content h4, 
+        .formatted-content h5, 
+        .formatted-content h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        .formatted-content h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        
+        .formatted-content h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        
+        .formatted-content h3 {
+            font-size: 1.25em;
+        }
+        
+        .formatted-content h4 {
+            font-size: 1.1em;
+        }
+        
+        .formatted-content h5 {
+            font-size: 1em;
+        }
+        
+        .formatted-content h6 {
+            font-size: 0.9em;
+        }
+        
+        .formatted-content p {
+            margin-top: 0;
+            margin-bottom: 16px;
+            text-indent: 2em;       /* 首行缩进2个字符 */
+            margin: 8px 0;          /* 保持原有段落间距 */
+        }
+        
+        .formatted-content p:first-line {
+            text-indent: 2em; /* 首行缩进 */
+        }
+        
+        .formatted-content ul, 
+        .formatted-content ol {
+            padding-left: 2em;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        .formatted-content li {
+            margin-bottom: 8px;
+        }
+        
+        .formatted-content pre {
+            background-color: #f6f8fa;
+            border-radius: 6px;
+            padding: 16px;
+            overflow: auto;
+            font-size: 85%;
+            line-height: 1.45;
+        }
+        
+        .formatted-content blockquote {
+            margin: 0;
+            padding: 0 1em;
+            color: #6a737d;
+            border-left: 0.25em solid #dfe2e5;
+        }
+        
+        /* 按钮样式 */
+        .button-group {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000; /* 确保按钮在顶层 */
+            display: flex;
+            gap: 10px;
+        }
+        
+        .action-button {
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.9);
+            color: #333;
+            text-decoration: none;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .action-button:hover {
+            background: rgba(240,240,240,0.95);
+        }
+        
+        /* 目录面板样式 */
+        .toc-panel {
+            position: fixed;
+            right: -35vw;
+            top: 0;
+            height: 100vh;
+            width: 35vw;
+            background: rgba(255,255,255,0.97);
+            box-shadow: -2px 0 15px rgba(0,0,0,0.1);
+            transition: right 0.3s;
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        
+        .toc-panel.active {
+            right: 0;
+        }
+        
+        .toc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 20px 10px 20px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .toc-content {
+            padding: 10px 20px 20px 20px;
+            height: calc(100% - 80px);
+        }
+        
+        .toc-item {
+            cursor: pointer;
+            padding: 4px 0;
+            color: #333;
+        }
+        /* 添加不同标题级别的缩进样式 */
+        .toc-item.h1 { margin-left: 0px; }
+        .toc-item.h2 { margin-left: 20px; }
+        .toc-item.h3 { margin-left: 40px; }
+        .toc-item.h4 { margin-left: 60px; }
+        .toc-item.h5 { margin-left: 80px; }
+        .toc-item.h6 { margin-left: 100px; }
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <!-- 按钮组固定在屏幕右上角 -->
+        <div class="button-group">
+            <button class="action-button" onclick="history.back()">← 返回</button>
+            <button class="action-button" onclick="toggleTOC()">目录</button>
+            <a href="/file/{{ filepath|urlencode }}" class="action-button" download>下载文件</a>
+        </div>
+        
+        <!-- 移除了原来的标题显示 -->
+        <div class="formatted-content">{{ content|safe }}</div>
+    </div>
+    
+    <!-- 目录面板 -->
+    <div class="toc-panel" id="tocPanel">
+        <div class="toc-header">
+            <h2>目录</h2>
+            <button class="close-btn" onclick="toggleTOC()">×</button>
+        </div>
+        <div class="toc-content">
+            <div id="tocList"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 如果内容为空或出错，显示提示信息
+        document.addEventListener('DOMContentLoaded', function() {
+            const contentElement = document.querySelector('.formatted-content');
+            if (!contentElement.textContent.trim()) {
+                contentElement.innerHTML = '<p>无法显示文件内容，可能是文件格式不支持或文件为空。</p>';
+            }
+            
+            // 生成目录
+            generateTOC();
+        });
+        
+        // 生成目录函数
+        function generateTOC() {
+            const contentElement = document.querySelector('.formatted-content');
+            const tocList = document.getElementById('tocList');
+            
+            // 清空现有目录
+            tocList.innerHTML = '';
+            
+            // 查找所有标题元素
+            const headings = contentElement.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            
+            // 为每个标题添加ID并生成目录项
+            headings.forEach((heading, index) => {
+                // 为标题添加ID
+                const id = 'heading-' + index;
+                heading.id = id;
+                
+                // 创建目录项
+                const tocItem = document.createElement('div');
+                tocItem.className = 'toc-item ' + heading.tagName.toLowerCase();
+                tocItem.textContent = heading.textContent;
+                tocItem.onclick = function() {
+                    document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+                    toggleTOC(); // 点击后关闭目录面板
+                };
+                
+                tocList.appendChild(tocItem);
+            });
+            
+            // 如果没有标题，显示提示信息
+            if (headings.length === 0) {
+                tocList.innerHTML = '<p>该文档没有目录结构</p>';
+            }
+        }
+        
+        // 切换目录面板显示
+        function toggleTOC() {
+            const tocPanel = document.getElementById('tocPanel');
+            tocPanel.classList.toggle('active');
+        }
+    </script>
+</body>
+</html>
