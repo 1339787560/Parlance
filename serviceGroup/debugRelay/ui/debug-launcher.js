@@ -111,7 +111,7 @@ function launcherStartLabelTicker() {
             if (x.userId === null && x.started && x.startedAt) {
                 anyLoading = true;
                 const secs = Math.floor((performance.now() - x.startedAt) / 1000);
-                x.labelEl.textContent = `#${x.idx} ⏱${secs}s 加载中…`;
+                x.labelEl.textContent = `?${x.idx} ⏱${secs}s 加载中…`;
             }
         }
         if (!anyLoading) {
@@ -190,7 +190,7 @@ function launcherStart() {
         const label = document.createElement('div');
         label.className = 'launcher-iframe-label';
         // 多源并行模式: 全部立即起, 都显示"加载中"; 单源链模式: 后续显示"排队中"
-        label.textContent = (i === 0 || useMultiOrigin) ? `#${i} 加载中...` : `#${i} 排队中`;
+        label.textContent = (i === 0 || useMultiOrigin) ? `?${i} 加载中...` : `?${i} 排队中`;
         wrap.appendChild(label);
 
         const iframe = document.createElement('iframe');
@@ -201,7 +201,7 @@ function launcherStart() {
         const closeBtn = document.createElement('button');
         closeBtn.className = 'launcher-iframe-close';
         closeBtn.textContent = '✕';
-        closeBtn.title = `关闭 #${i}`;
+        closeBtn.title = `关闭 ?${i}`;
         closeBtn.onclick = () => launcherCloseOne(i);
         wrap.appendChild(closeBtn);
 
@@ -219,7 +219,7 @@ function launcherStart() {
         const poolUsed = LAUNCHER_MULTI_ORIGIN_POOL.slice(0, n).join(' / ');
         for (const e of launcherIframes) {
             e.started = true; e.startedAt = performance.now();
-            e.iframeEl.onload = () => { e.labelEl.textContent = `#${e.idx} uid: ...`; };
+            e.iframeEl.onload = () => { e.labelEl.textContent = `?${e.idx} uid: ...`; };
             e.iframeEl.src = e.url;
         }
         launcherSetStatus(`已并行启动 ${n} 窗口 (多源: ${poolUsed}), 等待 userId 上报 (HallReady 后 DebugPlugin postMessage)`);
@@ -235,21 +235,21 @@ function launcherStart() {
             const e = launcherIframes[k];
             if (e.started) return;  // 防重复触发 (close 早返时)
             e.started = true; e.startedAt = performance.now();
-            e.labelEl.textContent = `#${e.idx} 加载中...`;
-            launcherSetStatus(`#${e.idx}/${launcherIframes.length} 加载中 (bundle ${k === 0 ? '冷下载' : '走缓存'})...`);
+            e.labelEl.textContent = `?${e.idx} 加载中...`;
+            launcherSetStatus(`?${e.idx}/${launcherIframes.length} 加载中 (bundle ${k === 0 ? '冷下载' : '走缓存'})...`);
 
             // onload: cross-origin iframe 的 load 事件仍可触发 (浏览器少数允许的跨域信号)
             e.iframeEl.onload = () => {
                 if (e.loadTimer) { clearTimeout(e.loadTimer); e.loadTimer = null; }
-                e.labelEl.textContent = `#${e.idx} uid: ...`;
+                e.labelEl.textContent = `?${e.idx} uid: ...`;
                 // bundle 已完整下载并进缓存, 启动下一个 (缓存命中瞬载)
                 startChain(k + 1);
             };
             // Fallback: onload 超时未触发 → 不阻塞链, 强制下一个
             e.loadTimer = setTimeout(() => {
-                console.warn(`[launcher] #${e.idx} onload 超时 ${LAUNCHER_ONLOAD_TIMEOUT_MS}ms, 强制链下一步`);
+                console.warn(`[launcher] ?${e.idx} onload 超时 ${LAUNCHER_ONLOAD_TIMEOUT_MS}ms, 强制链下一步`);
                 e.iframeEl.onload = null;
-                e.labelEl.textContent = `#${e.idx} uid: ...`;
+                e.labelEl.textContent = `?${e.idx} uid: ...`;
                 startChain(k + 1);
             }, LAUNCHER_ONLOAD_TIMEOUT_MS);
 
@@ -313,7 +313,7 @@ function launcherReloadAll() {
         count++;
         // 重置 userId, 等待重新上报
         x.userId = null;
-        x.labelEl.textContent = `#${x.idx} uid: ...`;
+        x.labelEl.textContent = `?${x.idx} uid: ...`;
     }
     renderAccounts();
     launcherSetStatus(`🔄 同时刷新 ${count} 窗口 (并行 src 重写, 等待 userId 重新上报...)`);
@@ -343,7 +343,7 @@ function launcherBindMessage() {
         }
         if (!target) return;
         target.userId = data.userId;
-        target.labelEl.textContent = `#${target.idx} uid: ${data.userId}`;
+        target.labelEl.textContent = `?${target.idx} uid: ${data.userId}`;
         renderAccounts();
     });
 }
@@ -358,7 +358,7 @@ function renderAccounts() {
     }
     const items = launcherIframes.map(x => {
         const uid = x.userId !== null ? String(x.userId) : '<span class="launcher-pending">等待...</span>';
-        return `<div class="launcher-account-item">#${x.idx}: ${uid}</div>`;
+        return `<div class="launcher-account-item">?${x.idx}: ${uid}</div>`;
     }).join('');
     const collected = launcherIframes.filter(x => x.userId !== null).length;
     el.innerHTML = `<div class="launcher-account-count">${collected}/${launcherIframes.length} 已收集</div>${items}`;

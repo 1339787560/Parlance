@@ -91,8 +91,8 @@ def test_two_games_connect_independent(relay):
             summary = _wait_clients(client, 2)
             assert {c["id"] for c in summary} == {"c1", "c2"}
             # 标签含序号 + IP
-            assert summary[0]["label"].startswith("#1 ·")
-            assert summary[1]["label"].startswith("#2 ·")
+            assert summary[0]["label"].startswith("#0 ·")
+            assert summary[1]["label"].startswith("#1 ·")
             # 两条 WS 仍开（未抛异常即代表未被踢）
 
 
@@ -239,6 +239,9 @@ def test_client_info_aggregation(relay):
             assert by_id[ids[0]]["user_id"] == 1040720
             assert by_id[ids[1]]["preview_index"] == 1
             assert by_id[ids[1]]["user_id"] == 1040721
+            # 下拉栏标签应改为 ?index 形式（而不是 #连接计数）
+            assert by_id[ids[0]]["label"].startswith("?0 ·")
+            assert by_id[ids[1]]["label"].startswith("?1 ·")
             # 可操作编号仍为 client_id，供 REST ?client= 使用
             assert by_id[ids[0]]["id"] == ids[0]
 

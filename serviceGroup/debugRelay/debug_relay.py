@@ -27,6 +27,8 @@ import re
 import asyncio
 import argparse
 import subprocess
+import socket
+import time
 from math import isfinite
 from pathlib import Path
 from datetime import datetime, date
@@ -172,6 +174,9 @@ class ClientCtx:
     label: str
     ip: str
     ws: WebSocket
+    # 连接时间 / 最近活动时间（用于清理断线未感知的僵尸连接）
+    connected_at: float = field(default_factory=time.time)
+    last_seen: float = field(default_factory=time.time)
     # 客户端上报的业务身份（DebugPlugin 发送 client_info 聚合；未上报为 None）
     preview_index: Optional[int] = None
     user_id: Optional[Any] = None
@@ -257,13 +262,49 @@ def _next_client_id(ip: str):
     global _client_counter
     _client_counter += 1
     n = _client_counter
-    return f"c{n}", f"#{n} · {ip}"
+    return f"c{n}", f"?{n-1} · {ip}"
 
 
-def _client_summary(c: ClientCtx) -> dict:
+
+
+STALE_CLIENT_TIMEOUT = 15.0  # 秒; 超过该时长无任何游戏消息视为僵尸连接
+
+
+def _prune_stale_clients():
+    """清理断线未感知/不再活跃的僵尸游戏连接，避免下拉栏无限累积。"""
+    now = time.time()
+    stale = [cid for cid, c in clients.items() if now - c.last_seen > STALE_CLIENT_TIMEOUT]
+    for cid in stale:
+        clients.pop(cid, None)
+    if stale:
+        print(f"[debug-relay] pruned {len(stale)} stale clients: {stale}", flush=True)
+
+
+def _is_local_ip(ip: str) -> bool:
+    """判断来源是否本机（preview 通常从开发机本机 IP/回环连入；真机是远端 IP）。"""
+    if ip in ("127.0.0.1", "::1", "localhost"):
+        return True
+    try:
+        _, _, ips = socket.gethostbyname_ex(socket.gethostname())
+        return ip in ips
+    except Exception:
+        try:
+            return ip == socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return False
+
+
+def _client_summary(c: ClientCtx, display_index: int) -> dict:
+    # preview（本机/上报 preview_index）用 ?N；真机用 #N
+    if c.preview_index is not None:
+        label = f"?{c.preview_index} · {c.ip}"
+    elif _is_local_ip(c.ip):
+        label = f"?{display_index} · {c.ip}"
+    else:
+        label = f"#{display_index} · {c.ip}"
     return {
         "id": c.id,
-        "label": c.label,
+        "label": label,
         "ip": c.ip,
         "preview_index": c.preview_index,
         "user_id": c.user_id,
@@ -271,7 +312,9 @@ def _client_summary(c: ClientCtx) -> dict:
 
 
 def _client_summaries() -> list:
-    return [_client_summary(c) for c in clients.values()]
+    _prune_stale_clients()
+    ordered = sorted(clients.values(), key=lambda c: (c.connected_at, c.id))
+    return [_client_summary(c, i) for i, c in enumerate(ordered)]
 
 
 async def _send_ws(ws: WebSocket, msg: dict) -> bool:
@@ -1831,6 +1874,7 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
     """处理来自游戏端的消息：per-client 缓冲 + 按订阅转发。"""
     cid = ctx.id
     msg_type = msg.get("type")
+    ctx.last_seen = time.time()
 
     if msg_type in (MsgType.CONSOLE_LOG, MsgType.CONSOLE_WARN,
                     MsgType.CONSOLE_ERROR, MsgType.CONSOLE_INFO):

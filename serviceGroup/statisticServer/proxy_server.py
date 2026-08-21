@@ -42,11 +42,13 @@ DB_PATH = Path(os.environ.get("DB_PATH", "stats.db"))
 # 旧别名 deepseek-chat / deepseek-reasoner 已于 2026-07-24 23:59 北京时间退役,
 # 且两者均为 V4-Flash 档 (deepseek-reasoner = Flash 思考档, 绝非 Pro!)
 PRICING = {
-    "deepseek-v4-flash": {"miss": 1, "hit": 0.02, "out": 2, "label": "Flash"},
-    "deepseek-v4-pro":   {"miss": 3, "hit": 0.025, "out": 6, "label": "Pro"},
+    "deepseek-v4-flash": {"miss": 1.5, "hit": 0.05, "out": 4.5, "label": "Flash"},
+    "deepseek-v4-pro":   {"miss": 4.5, "hit": 0.15, "out": 13.5, "label": "Pro"},
 }
 PEAK_WINDOWS = [(9, 12), (14, 18)]  # 北京时间高峰时段 (含起始不含结束)
 PEAK_MULTIPLIER = 2.0
+# 定价版本: 修改 PRICING 后递增，启动时据此重算所有历史 cost
+PRICING_VERSION = "2026-08-20-v2"
 
 MODEL_MAP = [
     (re.compile(r"claude-.*(haiku|sonnet).*"), "deepseek-v4-flash"),
@@ -377,6 +379,19 @@ def init_db():
             if c:
                 conn.execute("UPDATE requests SET cost=? WHERE id=?", (c, rid))
         conn.commit()
+        # 定价版本迁移: 当 PRICING_VERSION 变化时，按当前价格表重算所有历史 cost
+        conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        ver = conn.execute("SELECT value FROM meta WHERE key='pricing_version'").fetchone()
+        if not ver or ver[0] != PRICING_VERSION:
+            rows = conn.execute(
+                "SELECT id, ts, model, prompt_tokens, cache_hit_tokens, completion_tokens "
+                "FROM requests WHERE (prompt_tokens > 0 OR completion_tokens > 0)"
+            ).fetchall()
+            for rid, ts, model, prompt, hit, out in rows:
+                c = calc_cost(model, prompt, hit, out, ts)
+                conn.execute("UPDATE requests SET cost=? WHERE id=?", (c, rid))
+            conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('pricing_version',?)", (PRICING_VERSION,))
+            conn.commit()
     except sqlite3.OperationalError:
         raise
     return conn

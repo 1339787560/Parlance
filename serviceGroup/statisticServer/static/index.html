@@ -440,8 +440,8 @@ function fmtTime(ts){if(!ts)return'-';try{return new Date(ts).toLocaleTimeString
 // deepseek-reasoner / deepseek-chat 旧别名均为 Flash 档, 只有 ...pro 才走 Pro
 function tierInfo(m){
   return ((m||'').toLowerCase().includes('pro'))
-    ? {miss:3, hit:.025, out:6, label:'Pro'}
-    : {miss:1, hit:.02, out:2, label:'Flash'};
+    ? {miss:4.5, hit:.15, out:13.5, label:'Pro'}
+    : {miss:1.5, hit:.05, out:4.5, label:'Flash'};
 }
 function bjHour(){
   try{ return parseInt(new Date().toLocaleString('en-US',{hour:'2-digit',hour12:false,timeZone:'Asia/Shanghai'}),10); }

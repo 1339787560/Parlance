@@ -100,8 +100,15 @@ class ControlServer:
         try:
             self._listener = Listener(self._address, family=self._family)
         except Exception as e:
-            logger.warning("ControlServer bind failed (%s): %s", self._address, e)
-            return
+            # 单实例锁: 控制管道被占 = 已有 launcher 在跑。直接退出, 让已有实例
+            # 独占服务 (2026-08-19 双实例事故根因: 第二套实例静默降级继续跑,
+            # 导致 cwd-mcp 状态视图失真 + 端口互相抢占)。
+            logger.error(
+                "Control pipe %s already in use (%s) — another infoServer launcher "
+                "is running; exiting to keep single instance.",
+                self._address, e,
+            )
+            raise SystemExit(1)
         self._thread = threading.Thread(
             target=self._accept_loop, name="ctl-accept", daemon=True
         )
@@ -429,11 +436,15 @@ Hotkeys:
 
     def run(self):
         no_input = "--no-input" in sys.argv
-        if not self.start():
-            sys.exit(1)
 
+        # 单实例锁: 先绑定 launcher 控制管道再启动 host。管道已被占 =
+        # 已有 launcher 在跑, ControlServer.start() 内部 raise SystemExit(1),
+        # 不会启动第二套 host/子服务 (2026-08-19 双实例事故根因修复)。
         self._ctl_server = ControlServer(self)
         self._ctl_server.start()
+
+        if not self.start():
+            sys.exit(1)
 
         if _is_interactive() and not no_input:
             t = threading.Thread(target=self._input_loop, daemon=True)
