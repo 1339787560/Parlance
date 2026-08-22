@@ -7,7 +7,7 @@
 use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
 
-use crate::model::{calc_cost, Usage, PRICING_VERSION};
+use crate::model::{calc_cost, calc_credits, Usage, PRICING_VERSION};
 
 /// 一条请求记录（cost 由落库时按请求时刻计算）。
 #[derive(Debug, Clone)]
@@ -38,7 +38,9 @@ pub fn init_db(path: &Path) -> rusqlite::Result<Connection> {
             cache_miss_tokens INTEGER DEFAULT 0,
             latency_ms INTEGER DEFAULT 0,
             status TEXT DEFAULT 'ok',
-            format TEXT DEFAULT 'anthropic'
+            format TEXT DEFAULT 'anthropic',
+            cost REAL DEFAULT 0,
+            credits REAL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_ts ON requests(ts);
         CREATE INDEX IF NOT EXISTS idx_session ON requests(session_id);
@@ -51,8 +53,11 @@ pub fn init_db(path: &Path) -> rusqlite::Result<Connection> {
     migrate_add_column(&conn, "cache_miss_tokens", "INTEGER DEFAULT 0")?;
     migrate_add_column(&conn, "format", "TEXT DEFAULT 'anthropic'")?;
     migrate_add_column(&conn, "cost", "REAL DEFAULT 0")?;
+    migrate_add_column(&conn, "credits", "REAL DEFAULT 0")?;
     // cost 回填：旧行补算
     backfill_cost(&conn)?;
+    // credits 回填：旧行按公式补算（超算平台表，无峰谷）
+    backfill_credits(&conn)?;
     // 定价版本迁移：变化时按当前价格表重算所有历史 cost
     migrate_pricing_version(&conn)?;
     Ok(conn)
@@ -96,6 +101,35 @@ fn backfill_cost(conn: &Connection) -> rusqlite::Result<()> {
         let c = calc_cost(&model, prompt, hit, out, Some(&ts));
         if c > 0.0 {
             conn.execute("UPDATE requests SET cost=?1 WHERE id=?2", rusqlite::params![c, rid])?;
+        }
+    }
+    Ok(())
+}
+
+/// 回填 credits：旧行按超算平台表补算（无峰谷）。
+fn backfill_credits(conn: &Connection) -> rusqlite::Result<()> {
+    let rows: Vec<(String, String, i64, i64, i64)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, model, prompt_tokens, cache_hit_tokens, completion_tokens
+             FROM requests WHERE (credits IS NULL OR credits = 0) AND (prompt_tokens > 0 OR completion_tokens > 0)",
+        )?;
+        let mut out = Vec::new();
+        let mut it = stmt.query([])?;
+        while let Some(r) = it.next()? {
+            out.push((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+            ));
+        }
+        out
+    };
+    for (rid, model, prompt, hit, out) in rows {
+        let c = calc_credits(&model, prompt, hit, out);
+        if c > 0.0 {
+            conn.execute("UPDATE requests SET credits=?1 WHERE id=?2", rusqlite::params![c, rid])?;
         }
     }
     Ok(())
@@ -147,11 +181,17 @@ pub fn record(conn: &Connection, r: &RequestRecord) -> rusqlite::Result<()> {
         r.usage.completion_tokens,
         Some(&r.ts),
     );
+    let credits = calc_credits(
+        &r.model,
+        r.usage.prompt_tokens,
+        r.usage.cache_hit_tokens,
+        r.usage.completion_tokens,
+    );
     conn.execute(
         "INSERT OR REPLACE INTO requests
          (id, ts, session_id, model, prompt_tokens, completion_tokens,
-          total_tokens, cache_hit_tokens, cache_miss_tokens, latency_ms, status, format, cost)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+          total_tokens, cache_hit_tokens, cache_miss_tokens, latency_ms, status, format, cost, credits)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
         rusqlite::params![
             r.id,
             r.ts,
@@ -166,6 +206,7 @@ pub fn record(conn: &Connection, r: &RequestRecord) -> rusqlite::Result<()> {
             r.status,
             r.format,
             cost,
+            credits,
         ],
     )?;
     Ok(())

@@ -264,6 +264,7 @@ html[data-theme="silverwolf"] {
       <div class="card-sub">未命中 / 缓存命中 / 输出 token</div>
     </div>
     <div class="card"><div class="card-label">总费用 (RMB)</div><div class="card-value purple" id="s-cost">-</div></div>
+    <div class="card"><div class="card-label">总 Credits</div><div class="card-value" id="s-credits" style="color:#f0c674">-</div></div>
     <div class="card"><div class="card-label">平均用时</div><div class="card-value cyan" id="s-lat">-</div></div>
   </div>
   <div class="section">
@@ -656,6 +657,7 @@ function fillCards(data){
   document.getElementById('s-hit').textContent = fmt(totalHit);
   document.getElementById('s-comp').textContent = fmt(data.total_completion_tokens);
   document.getElementById('s-cost').textContent=fmtCost(data.total_cost);
+  document.getElementById('s-credits').textContent=(data.total_credits!=null)?fmt(Math.round(data.total_credits)):'-';
   document.getElementById('s-lat').textContent=data.avg_latency_ms?Math.round(data.avg_latency_ms)+'ms':'-';
 
   const mc=document.getElementById('modelCosts');
@@ -664,9 +666,11 @@ function fillCards(data){
       const p=m.includes('reason')||m.includes('pro')?
         {miss:3, hit:.025, out:6, label:'Pro'}:
         {miss:1, hit:.02, out:2, label:'Flash'};
+      const cr = (data.model_credits&&data.model_credits[m]!=null)?data.model_credits[m]:null;
+      const crHtml = (cr!=null)?` · <span style="color:#f0c674">${fmt(Math.round(cr))} credits</span>`:'';
       return `<div style="margin-bottom:4px"><strong>${p.label}</strong> ${m}: `+
         `输入命中 ¥${p.hit}/M · 输入未命中 ¥${p.miss}/M · 输出 ¥${p.out}/M → `+
-        `<span style="color:var(--purple)">${fmtCost(c)}</span></div>`;
+        `<span style="color:var(--purple)">${fmtCost(c)}</span>${crHtml}</div>`;
     }).join('');
   } else { mc.innerHTML='<span style="color:var(--dim)">暂无数据</span>'; }
 }

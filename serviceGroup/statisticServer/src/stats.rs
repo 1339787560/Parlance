@@ -255,7 +255,8 @@ pub async fn aggregate(
             "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0),
              COALESCE(SUM(total_tokens),0), COALESCE(SUM(cache_hit_tokens),0),
              COALESCE(AVG(latency_ms),0), COALESCE(SUM(latency_ms),0),
-             COALESCE(SUM(cache_miss_tokens),0), COALESCE(SUM(cost),0) FROM requests{where_clause}"
+             COALESCE(SUM(cache_miss_tokens),0), COALESCE(SUM(cost),0), COALESCE(SUM(credits),0)
+             FROM requests{where_clause}"
         ))
         .unwrap();
     let row = stmt
@@ -270,6 +271,7 @@ pub async fn aggregate(
                 r.get::<_, i64>(6)?,
                 r.get::<_, i64>(7)?,
                 r.get::<_, f64>(8)?,
+                r.get::<_, f64>(9)?,
             ))
         })
         .unwrap();
@@ -295,6 +297,23 @@ pub async fn aggregate(
         .iter()
         .map(|(k, v)| (k.clone(), round6(*v)))
         .collect::<std::collections::HashMap<_, _>>();
+
+    // 各模型 credits（落库 credits，SUM）
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT model, SUM(credits) FROM requests{where_clause} GROUP BY model"
+        ))
+        .unwrap();
+    let model_credits_rounded: std::collections::HashMap<String, f64> = stmt
+        .query_map(rusqlite::params_from_iter(params.iter()), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+        .into_iter()
+        .map(|(k, v)| (k, round6(v)))
+        .collect();
 
     // 会话列表（未指定 session 时，应用 range 过滤）
     let mut sessions: Vec<Value> = Vec::new();
@@ -362,7 +381,9 @@ pub async fn aggregate(
         "avg_latency_ms": row.5.round() as i64,
         "total_time_ms": row.6,
         "total_cost": round6(row.8),
+        "total_credits": round6(row.9),
         "model_costs": model_costs_rounded,
+        "model_credits": model_credits_rounded,
         "sessions": sessions,
     }))
 }

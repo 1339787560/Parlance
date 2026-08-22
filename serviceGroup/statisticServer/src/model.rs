@@ -38,6 +38,35 @@ pub struct Pricing {
 pub const PRICING_FLASH: Pricing = Pricing { miss: 1.5, hit: 0.05, out: 4.5 };
 pub const PRICING_PRO: Pricing = Pricing { miss: 4.5, hit: 0.15, out: 13.5 };
 
+/// 超算平台 credits 定价（每 1M token，用户提供，折扣已含）。
+///
+/// 三个方向：输入 / 输出 / 命中缓存。无峰谷翻倍。
+pub struct Credits {
+    pub input: f64,
+    pub output: f64,
+    pub hit: f64,
+}
+
+/// 超算平台 credits 表：按模型名匹配。
+pub const CREDITS_PRO: Credits = Credits { input: 10286.0, output: 20571.0, hit: 86.0 };
+pub const CREDITS_FLASH: Credits = Credits { input: 1200.0, output: 2400.0, hit: 24.0 };
+pub const CREDITS_FLASH_0731: Credits = Credits { input: 1543.0, output: 3086.0, hit: 31.0 };
+
+/// 取模型 credits 档。
+/// - DeepSeek-V4-Pro / 含 pro → Pro 档
+/// - DeepSeek-V4-Flash-0731 → 0731 档（更早版本单独定价）
+/// - 其余 flash → Flash 档
+pub fn get_credits(model: &str) -> &'static Credits {
+    let m = model.to_lowercase();
+    if m.contains("deepseek-v4-pro") || m.ends_with("pro") {
+        &CREDITS_PRO
+    } else if m.contains("0731") {
+        &CREDITS_FLASH_0731
+    } else {
+        &CREDITS_FLASH
+    }
+}
+
 /// 北京时间高峰时段（含起始不含结束）。
 pub const PEAK_WINDOWS: [(u32, u32); 2] = [(9, 12), (14, 18)];
 /// 高峰翻倍。
@@ -94,6 +123,15 @@ pub fn calc_cost(model: &str, prompt: i64, hit: i64, out: i64, ts: Option<&str>)
         }
     }
     cost
+}
+
+/// 超算平台 credits 消耗（每 1M token，无峰谷）。
+///
+/// 输入未命中 × 输入价 + 命中 × 命中价 + 输出 × 输出价，除以 1M。
+pub fn calc_credits(model: &str, prompt: i64, hit: i64, out: i64) -> f64 {
+    let c = get_credits(model);
+    let miss = (prompt - hit).max(0);
+    (miss as f64 * c.input + hit as f64 * c.hit + out as f64 * c.output) / 1_000_000.0
 }
 
 /// 根据请求路径推断格式与目标 base 前缀。
@@ -294,8 +332,7 @@ mod tests {
     #[test]
     fn usage_anthropic() {
         let v = serde_json::json!({
-            "input_tokens": 10,
-            "output_tokens": 20,
+            "input_tokens": 10,            "output_tokens": 20,
             "cache_read_input_tokens": 30,
             "cache_creation_input_tokens": 5,
         });
@@ -304,5 +341,41 @@ mod tests {
         assert_eq!(u.completion_tokens, 20);
         assert_eq!(u.cache_hit_tokens, 30);
         assert_eq!(u.cache_miss_tokens, 15);
+    }
+
+    #[test]
+    fn credits_flash_1m() {
+        // 100万输入未命中，无命中无输出 → 1200 credits
+        let c = calc_credits("deepseek-v4-flash", 1_000_000, 0, 0);
+        assert!((c - 1200.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn credits_pro() {
+        // 100万输入未命中 → 10286 credits
+        let c = calc_credits("deepseek-v4-pro", 1_000_000, 0, 0);
+        assert!((c - 10286.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn credits_flash_0731() {
+        let c = calc_credits("deepseek-v4-flash-0731", 1_000_000, 0, 0);
+        assert!((c - 1543.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn credits_mixed_usage() {
+        // prompt=100, hit=40, out=5 → miss=60
+        // flash: (60*1200 + 40*24 + 5*2400)/1e6 = (72000+960+12000)/1e6 = 0.08496
+        let c = calc_credits("deepseek-v4-flash", 100, 40, 5);
+        let expect = (60.0 * 1200.0 + 40.0 * 24.0 + 5.0 * 2400.0) / 1_000_000.0;
+        assert!((c - expect).abs() < 1e-9);
+    }
+
+    #[test]
+    fn credits_no_peak() {
+        // credits 不受峰谷影响：高峰与平时一致
+        let c1 = calc_credits("deepseek-v4-flash", 100, 0, 0);
+        assert!((c1 - 100.0 * 1200.0 / 1_000_000.0).abs() < 1e-9);
     }
 }

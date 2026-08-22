@@ -124,11 +124,6 @@ pub async fn proxy(
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .unwrap();
-    let auth = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("Bearer {api_key}"));
 
     let mut req = client.request(method.clone(), &target_url);
     req = req.header(header::CONTENT_TYPE, "application/json");
