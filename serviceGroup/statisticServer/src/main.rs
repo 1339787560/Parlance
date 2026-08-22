@@ -2,8 +2,10 @@
 //!
 //! 透明代理（Anthropic / OpenAI 双格式）+ Token 统计看板 + SSE 实时推送。
 
+mod api_sources;
 mod model;
 mod proxy;
+mod sources;
 mod sse;
 mod state;
 mod stats;
@@ -16,25 +18,34 @@ use std::sync::{Arc, Mutex};
 use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, get};
+use axum::routing::{any, get, post, put};
 use axum::{Json, Router};
 use serde_json::json;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
-use state::{AppState, Targets};
+use sources::{ApiSource, SourceManager, SourcesHandle};
+use state::AppState;
 
 /// 当前 ISO 时间戳。
 fn now_iso() -> String {
     chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f").to_string()
 }
 
-/// 健康检查（对齐旧 /health）。
+/// 健康检查（对齐旧 /health，报告当前激活来源的 target）。
 async fn health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let mgr = state.sources.read().await;
+    let active = mgr.active.clone();
+    let (anthropic, openai) = match mgr.active_source() {
+        Some(s) => (s.anthropic.clone(), s.openai.clone()),
+        None => (String::new(), String::new()),
+    };
     Json(json!({
         "status": "ok",
-        "anthropic_target": state.targets.anthropic,
-        "openai_target": state.targets.openai,
+        "active_source": active,
+        "anthropic_target": anthropic,
+        "openai_target": openai,
+        "sources_count": mgr.sources.len(),
     }))
 }
 
@@ -56,6 +67,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/stats/daily", get(stats::daily))
         .route("/api/stats/tasks", get(stats::tasks))
         .route("/api/stats/session/advice", get(stats::session_advice))
+        .route("/api/sources", get(api_sources::list).post(api_sources::create))
+        .route("/api/sources/{name}", put(api_sources::update).delete(api_sources::delete))
+        .route("/api/sources/{name}/activate", post(api_sources::activate))
         .route("/", get(index))
         .nest_service("/static", ServeDir::new(static_dir))
         .route("/{*path}", any(proxy::proxy))
@@ -101,19 +115,41 @@ async fn main() {
 
     // ---- 初始化 ----
     let conn = store::init_db(&db_path).expect("init db");
+
+    // 来源管理：优先从 DB 恢复；首次启动（空库）用环境变量种子一个默认来源
+    let (sources, active) = sources::load(&conn).expect("load sources");
+    let sources: SourcesHandle = Arc::new(tokio::sync::RwLock::new(if sources.is_empty() {
+        tracing::info!("sources 表为空 — 从环境变量种子默认来源");
+        let default = ApiSource {
+            name: "env".into(),
+            api_key,
+            anthropic: anthropic_target.clone(),
+            openai: openai_target.clone(),
+        };
+        SourceManager::new(vec![default], "env".into())
+    } else {
+        let active = if active.is_empty() {
+            sources.first().map(|s| s.name.clone()).unwrap_or_default()
+        } else {
+            active
+        };
+        SourceManager::new(sources, active)
+    }));
+
     let (sse_tx, _) = sse::new_channel();
     let state = Arc::new(AppState::new(
         Arc::new(Mutex::new(conn)),
         sse_tx,
-        Targets {
-            anthropic: anthropic_target.clone(),
-            openai: openai_target.clone(),
-        },
+        sources,
         static_dir,
     ));
 
-    if api_key.is_empty() {
-        tracing::warn!("DEEPSEEK_API_KEY not set — proxy will 500 until configured");
+    {
+        let mgr = state.sources.read().await;
+        if mgr.active_api_key().is_empty() {
+            tracing::warn!("激活来源未配置 api_key — 客户端未透传 key 时代理将 500");
+        }
+        tracing::info!("API 来源 {} 个, 激活: {}", mgr.sources.len(), mgr.active);
     }
 
     let app = build_router(state);
@@ -121,8 +157,6 @@ async fn main() {
         .await
         .expect("bind port");
     tracing::info!("statistic-server listening on :{}", port);
-    tracing::info!("  Anthropic → {}", anthropic_target);
-    tracing::info!("  OpenAI    → {}", openai_target);
     axum::serve(listener, app).await.expect("serve");
 }
 

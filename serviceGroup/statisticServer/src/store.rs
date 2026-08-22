@@ -45,6 +45,8 @@ pub fn init_db(path: &Path) -> rusqlite::Result<Connection> {
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
         ",
     )?;
+    // API 来源表（多上游切换）
+    crate::sources::init_schema(&conn)?;
     // 旧列缺失自动迁移
     migrate_add_column(&conn, "cache_miss_tokens", "INTEGER DEFAULT 0")?;
     migrate_add_column(&conn, "format", "TEXT DEFAULT 'anthropic'")?;

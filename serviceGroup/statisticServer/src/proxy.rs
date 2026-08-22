@@ -42,8 +42,8 @@ pub async fn proxy(
             .unwrap();
     }
 
-    // 读上游 key：客户端透传（Authorization/x-api-key）或回退代理 key
-    let api_key = std::env::var("DEEPSEEK_API_KEY").unwrap_or_default();
+    // 读激活来源的代理 key（客户端透传 Authorization/x-api-key 优先）
+    let api_key = state.sources.read().await.active_api_key();
     let client_auth = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -61,11 +61,18 @@ pub async fn proxy(
             .into_response();
     }
 
-    // 格式检测 + 目标
+    // 格式检测 + 目标（取激活来源的 target）
     let (fmt, target_name) = crate::model::detect_format(&path);
+    let (anthropic, openai) = {
+        let mgr = state.sources.read().await;
+        match mgr.active_source() {
+            Some(s) => (s.anthropic.clone(), s.openai.clone()),
+            None => (String::new(), String::new()),
+        }
+    };
     let target_base = match target_name {
-        "openai" => state.targets.openai.clone(),
-        _ => state.targets.anthropic.clone(),
+        "openai" => openai,
+        _ => anthropic,
     };
     let target_path = crate::model::normalize_path(&path, fmt);
     let target_url = format!("{}/{}", target_base.trim_end_matches('/'), target_path);
@@ -117,6 +124,11 @@ pub async fn proxy(
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .unwrap();
+    let auth = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("Bearer {api_key}"));
 
     let mut req = client.request(method.clone(), &target_url);
     req = req.header(header::CONTENT_TYPE, "application/json");
@@ -307,14 +319,24 @@ async fn handle_stream(
                 let mut usage: Value = json!({});
                 let mut err = false;
                 let mut byte_stream = resp.bytes_stream();
+                // ponytail: 跨 chunk 缓冲不完整 SSE 行（TCP 分块会切断行首/行尾，
+                // 逐行解析丢 usage → message_delta 的 usage 丢失）。行内缓冲即可，
+                // 不上完整事件解析器。
+                let mut pending: Vec<u8> = Vec::new();
                 while let Some(chunk) = byte_stream.next().await {
                     match chunk {
                         Ok(bytes) => {
-                            // 解析 usage（流式逐行）
-                            let text = String::from_utf8_lossy(&bytes);
-                            for line in text.lines() {
-                                parse_usage_line(&mut usage, line, fmt);
+                            pending.extend_from_slice(&bytes);
+                            // 按 \n 切行；末尾不完整段留在 pending 等下一 chunk
+                            let mut start = 0usize;
+                            while let Some(rel) = pending[start..].iter().position(|&b| b == b'\n') {
+                                let end = start + rel;
+                                let line = &pending[start..end];
+                                let text = String::from_utf8_lossy(line);
+                                parse_usage_line(&mut usage, &text, fmt);
+                                start = end + 1;
                             }
+                            pending.drain(..start);
                             yield Ok::<_, std::io::Error>(bytes);
                         }
                         Err(e) => {
@@ -324,6 +346,11 @@ async fn handle_stream(
                             break;
                         }
                     }
+                }
+                // 流结束：处理残留未换行的最后一段
+                if !pending.is_empty() {
+                    let text = String::from_utf8_lossy(&pending);
+                    parse_usage_line(&mut usage, &text, fmt);
                 }
                 let latency = start.elapsed().as_millis() as i64;
                 if !err && !usage.is_null() && !usage.as_object().map(|o| o.is_empty()).unwrap_or(true) {
@@ -397,7 +424,12 @@ async fn handle_stream(
 
 /// 从一行 SSE 中提取 usage（Anthropic message_start/message_delta + OpenAI data 块）。
 fn parse_usage_line(usage: &mut Value, line: &str, fmt: ApiFormat) {
-    if let Some(data) = line.strip_prefix("data: ") {
+    // 兼容两种 data 前缀：标准 `data: `（带空格）与紧凑 `data:`（如超算平台发送）
+    let data = line
+        .strip_prefix("data: ")
+        .or_else(|| line.strip_prefix("data:"))
+        .or_else(|| line.strip_prefix("data : "));
+    if let Some(data) = data {
         if let Ok(v) = serde_json::from_str::<Value>(data) {
             match fmt {
                 ApiFormat::Anthropic => {
@@ -496,5 +528,52 @@ mod tests {
             ApiFormat::OpenAI,
         );
         assert_eq!(u["prompt_tokens"], 7);
+    }
+
+    #[test]
+    fn parse_usage_anthropic_message_delta() {
+        // message_delta 顶层 usage 是真实 token 数（message_start 全 0）
+        let mut u = json!({});
+        parse_usage_line(
+            &mut u,
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":84,"output_tokens":33}}"#,
+            ApiFormat::Anthropic,
+        );
+        assert_eq!(u["input_tokens"], 84);
+        assert_eq!(u["output_tokens"], 33);
+    }
+
+    #[test]
+    fn parse_usage_anthropic_no_space_prefix() {
+        // 超算平台实际发送 `data:{...}`（冒号后无空格）——此前 strip_prefix("data: ") 全漏
+        let mut u = json!({});
+        parse_usage_line(
+            &mut u,
+            r#"data:{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":84,"output_tokens":33}}"#,
+            ApiFormat::Anthropic,
+        );
+        assert_eq!(u["input_tokens"], 84);
+        assert_eq!(u["output_tokens"], 33);
+
+        let mut u2 = json!({});
+        parse_usage_line(
+            &mut u2,
+            r#"data:{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0,"cache_read_input_tokens":5,"cache_creation_input_tokens":0}}}"#,
+            ApiFormat::Anthropic,
+        );
+        assert_eq!(u2["input_tokens"], 10);
+        assert_eq!(u2["cache_read_input_tokens"], 5);
+    }
+
+    #[test]
+    fn parse_usage_line_split_across_chunks() {
+        // 模拟 TCP 分块把 message_delta 行切成两半：前半（缺右括号）解析失败、
+        // 后半（无 data: 前缀）跳过——单块各自解析都丢；这里验证完整行可解析
+        // （跨块缓冲在流式循环内，parse_usage_line 只处理单行）。
+        let mut u = json!({});
+        let line = r#"data: {"type":"message_delta","usage":{"input_tokens":7}}"#;
+        assert!(line.starts_with("data: "));
+        parse_usage_line(&mut u, line, ApiFormat::Anthropic);
+        assert_eq!(u["input_tokens"], 7);
     }
 }
