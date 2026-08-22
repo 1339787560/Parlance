@@ -24,3 +24,5 @@ logs/
 */target
 **/target
 *.rs.bk
+
+.DS_Store
