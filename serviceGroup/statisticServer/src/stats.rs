@@ -4,6 +4,7 @@
 
 use axum::extract::{Query, State};
 use axum::Json;
+use chrono::Datelike;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -245,12 +246,9 @@ pub async fn aggregate(
 ) -> Json<Value> {
     let conn = state.db.lock().unwrap();
     let session = q.session.unwrap_or_default();
+    let range = q.range.unwrap_or_else(|| "all".to_string());
 
-    let (where_clause, params) = if session.is_empty() {
-        ("", vec![])
-    } else {
-        (" WHERE session_id=?1", vec![session.clone()])
-    };
+    let (where_clause, params) = combine_where(&range, &session);
 
     let mut stmt = conn
         .prepare(&format!(
@@ -298,17 +296,24 @@ pub async fn aggregate(
         .map(|(k, v)| (k.clone(), round6(*v)))
         .collect::<std::collections::HashMap<_, _>>();
 
-    // 会话列表（未指定 session 时）
+    // 会话列表（未指定 session 时，应用 range 过滤）
     let mut sessions: Vec<Value> = Vec::new();
     if session.is_empty() {
+        // 会话查询的 where：range 过滤 + session_id != ''
+        let (range_frag, range_params) = time_range_filter(&range);
+        let sess_where = if range_frag.is_empty() {
+            " WHERE session_id != ''".to_string()
+        } else {
+            format!("{} AND session_id != ''", range_frag)
+        };
         let mut stmt = conn
-            .prepare(
+            .prepare(&format!(
                 "SELECT session_id, MIN(ts), MAX(ts), COUNT(*), COALESCE(SUM(total_tokens),0)
-                 FROM requests WHERE session_id != '' GROUP BY session_id ORDER BY MAX(ts) DESC LIMIT 50",
-            )
+                 FROM requests{sess_where} GROUP BY session_id ORDER BY MAX(ts) DESC LIMIT 50"
+            ))
             .unwrap();
         let sess_rows = stmt
-            .query_map([], |r| {
+            .query_map(rusqlite::params_from_iter(range_params.iter()), |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
@@ -320,13 +325,21 @@ pub async fn aggregate(
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
+        let (cost_frag, cost_params) = time_range_filter(&range);
+        let cost_where = if cost_frag.is_empty() {
+            " WHERE session_id != ''".to_string()
+        } else {
+            format!("{} AND session_id != ''", cost_frag)
+        };
         let mut stmt = conn
-            .prepare(
-                "SELECT session_id, SUM(cost) FROM requests WHERE session_id != '' GROUP BY session_id",
-            )
+            .prepare(&format!(
+                "SELECT session_id, SUM(cost) FROM requests{cost_where} GROUP BY session_id"
+            ))
             .unwrap();
         let sess_costs: std::collections::HashMap<String, f64> = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)))
+            .query_map(rusqlite::params_from_iter(cost_params.iter()), |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+            })
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
@@ -357,6 +370,56 @@ pub async fn aggregate(
 #[derive(Deserialize)]
 pub struct AggQuery {
     pub session: Option<String>,
+    /// 时间范围快捷选择：today | week | month | all（缺省 all）
+    pub range: Option<String>,
+}
+
+/// 时间范围 → SQL WHERE 片段 + 参数（基于 ts 字符串比较，ISO 格式可字典序比较）。
+///
+/// - today：今天 00:00 起
+/// - week：本周一 00:00 起（周一起始）
+/// - month：本月 1 号 00:00 起
+/// - 其它/空：所有（无条件）
+fn time_range_filter(range: &str) -> (String, Vec<String>) {
+    let now = chrono::Local::now();
+    let start = match range {
+        "today" => now.date_naive().and_hms_opt(0, 0, 0),
+        "week" => {
+            // 周一为一周起始：num_days_from_monday()
+            let wd = now.weekday().num_days_from_monday();
+            let monday = now.date_naive() - chrono::Duration::days(wd as i64);
+            monday.and_hms_opt(0, 0, 0)
+        }
+        "month" => {
+            let first = now.date_naive().with_day(1).unwrap_or(now.date_naive());
+            first.and_hms_opt(0, 0, 0)
+        }
+        _ => None,
+    };
+    match start {
+        Some(dt) => {
+            let start_iso = dt.format("%Y-%m-%dT%H:%M:%S").to_string();
+            (" WHERE ts >= ?".to_string(), vec![start_iso])
+        }
+        None => ("".to_string(), vec![]),
+    }
+}
+
+/// 组合 where 条件：range 过滤 + session 过滤。
+/// 返回 (sql_where_fragment, params)
+fn combine_where(range: &str, session: &str) -> (String, Vec<String>) {
+    let (r_where, r_params) = time_range_filter(range);
+    if session.is_empty() {
+        return (r_where, r_params);
+    }
+    if r_params.is_empty() {
+        return (" WHERE session_id=?1".to_string(), vec![session.to_string()]);
+    }
+    // 两者都有：range 条件在前，session 用 ?2
+    (
+        format!("{} AND session_id=?2", r_where),
+        vec![r_params.into_iter().next().unwrap(), session.to_string()],
+    )
 }
 
 /// 会话缓存策略建议查询参数。

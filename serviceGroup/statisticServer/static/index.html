@@ -29,13 +29,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .tab.active{background:var(--bg);color:var(--text);border-bottom-color:var(--bg)}
 .btn{background:var(--btn-bg,#238636);border:1px solid var(--btn-border,rgba(46,164,79,.4));color:var(--text);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap}
 .btn:hover{background:var(--btn-hover-bg,#2ea043)}
+.range-btn{background:var(--card);border:1px solid var(--border);color:var(--dim);padding:4px 14px;border-radius:999px;cursor:pointer;font-size:12px;white-space:nowrap;line-height:1.6}
+.range-btn:hover{border-color:var(--blue);color:var(--blue)}
+.range-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:16px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px}
 .card-label{font-size:11px;color:var(--dim);margin-bottom:4px}
 .card-value{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
 .card-sub{font-size:11px;color:var(--dim);margin-top:2px}
 .green{color:var(--green)}.yellow{color:var(--yellow)}.red{color:var(--red)}.blue{color:var(--blue)}.purple{color:var(--purple)}.cyan{color:var(--cyan)}
-.peak-badge{display:inline-block;background:var(--red);color:#fff;border-radius:3px;padding:0 4px;font-size:11px;line-height:15px;margin-left:4px;vertical-align:1px;cursor:help}
 .section{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden}
 .section-title{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--dim);display:flex;justify-content:space-between}
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -189,6 +191,25 @@ html[data-theme="silverwolf"] {
   background: var(--card);
   color: var(--text);
 }
+
+/* ── Sources manager modal ─────────────────────────────── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:flex-start;justify-content:center;overflow:auto;padding:40px 16px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:10px;max-width:860px;width:100%;padding:20px}
+.modal h3{margin-bottom:14px;font-size:16px}
+.modal .close{float:right;background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer}
+.modal table{font-size:12.5px}
+.modal td,.modal th{white-space:normal;vertical-align:top}
+.modal .src-form{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px}
+.modal .src-form label{display:flex;flex-direction:column;font-size:11px;color:var(--dim);gap:4px}
+.modal .src-form input{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:7px 9px;font-size:13px;font-family:monospace}
+.modal .src-form .full{grid-column:1 / -1}
+.modal .row-actions{display:flex;gap:6px;white-space:nowrap}
+.btn.small{padding:3px 9px;font-size:12px}
+.btn.danger{--btn-bg:#b62324;--btn-border:rgba(246,86,86,.4);--btn-hover-bg:#8f1c1d}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--btn-bg,#238636);color:#fff}
+.badge.off{background:var(--dim);color:var(--bg)}
+.hint{font-size:11px;color:var(--dim);margin-top:6px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -196,6 +217,10 @@ html[data-theme="silverwolf"] {
 <div class="header">
   <h1>DeepSeek <span>统计</span></h1>
   <div class="header-controls">
+    <select class="theme-select" id="sourceSelect" title="切换 DeepSeek API 来源">
+      <option value="">加载来源…</option>
+    </select>
+    <button class="btn" onclick="openSources()" title="配置 API Key / Base URL / 来源管理">来源管理</button>
     <select class="theme-select" id="themeSelect">
       <option value="red">朱砂红</option>
       <option value="default">简约配色</option>
@@ -220,6 +245,13 @@ html[data-theme="silverwolf"] {
 </div>
 
 <div id="tab-total">
+  <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--dim);line-height:28px">时间范围：</span>
+    <button class="range-btn active" data-range="today" onclick="setRange('today',this)">本日</button>
+    <button class="range-btn" data-range="week" onclick="setRange('week',this)">本周</button>
+    <button class="range-btn" data-range="month" onclick="setRange('month',this)">本月</button>
+    <button class="range-btn" data-range="all" onclick="setRange('all',this)">所有</button>
+  </div>
   <div class="cards" id="totalCards">
     <div class="card"><div class="card-label">请求次数</div><div class="card-value blue" id="s-req">-</div></div>
     <div class="card"><div class="card-label">总 Token 用量</div><div class="card-value" id="s-total">-</div></div>
@@ -242,11 +274,6 @@ html[data-theme="silverwolf"] {
 
 <div id="tab-sessions" style="display:none">
   <div id="sessionCards" class="cards" style="display:none">
-    <div class="card" id="sessionAdviceCard" style="display:none;grid-column:span 2;min-width:340px">
-      <div class="card-label">Token 缓存策略（重置 vs 继续） <span id="sessionAdviceBadge"></span></div>
-      <div class="card-value" id="sessionAdviceVerdict" style="font-size:14px;white-space:normal;line-height:1.5">加载中...</div>
-      <div class="card-sub" id="sessionAdviceSub" style="white-space:normal;line-height:1.5">-</div>
-    </div>
     <div class="card"><div class="card-label">请求次数</div><div class="card-value blue" id="ss-req">-</div></div>
     <div class="card"><div class="card-label">总 Token</div><div class="card-value" id="ss-total">-</div></div>
     <div class="card"><div class="card-label">输入未命中 / 缓存命中 / 输出</div>
@@ -336,6 +363,43 @@ html[data-theme="silverwolf"] {
   </div>
 </div>
 
+<div class="modal-overlay" id="sourcesModal">
+  <div class="modal">
+    <h3>API 来源管理
+      <button class="close" onclick="closeSources()" title="关闭">×</button>
+    </h3>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>名称</th><th>API Key</th><th>Base URL (Anthropic)</th><th>Base URL (OpenAI)</th><th>状态</th><th>操作</th>
+        </tr></thead>
+        <tbody id="sourceTable"></tbody>
+      </table>
+    </div>
+
+    <div class="src-form">
+      <input type="hidden" id="srcNameOrig">
+      <label>名称（唯一标识，新增后不可改名）
+        <input id="srcName" placeholder="如 ctwl / deepseek-official">
+      </label>
+      <label>API Key
+        <input id="srcApiKey" placeholder="sk-...（客户端透传 key 时可留空）">
+      </label>
+      <label>Base URL — Anthropic 格式
+        <input id="srcAnthropic" placeholder="http://aiapi.tcy365.net:82">
+      </label>
+      <label>Base URL — OpenAI 格式
+        <input id="srcOpenai" placeholder="http://aiapi.tcy365.net:82/v1">
+      </label>
+      <div class="full">
+        <button class="btn" id="srcSaveBtn" onclick="saveSource()">新增来源</button>
+        <button class="btn" onclick="resetForm()" style="--btn-bg:#6e7681;--btn-border:rgba(139,148,158,.4)">清空</button>
+        <span class="hint">每来源 = 一个 DeepSeek API 提供商。下拉栏切换即切当前来源，即时生效无需重启；API Key 在列表中打码显示。</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 // Theme switching
 const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
@@ -370,20 +434,6 @@ function applyTheme(theme) {
   }
 }
 
-const SERVICE_NAME = 'statistic';
-let _sharedMode = null;
-
-async function getSharedMode() {
-  // 查 infoServer 共享开关; enabled=false 或本服务在 exclude → 纯本地主题 (localStorage)
-  if (_sharedMode !== null) return _sharedMode;
-  try {
-    const r = await fetch(getInfoServerUrl() + '/api/theme/config');
-    const cfg = await r.json();
-    _sharedMode = cfg.enabled !== false && !(cfg.exclude || []).includes(SERVICE_NAME);
-  } catch (_) { _sharedMode = false; }  // infoServer 离线 = 纯本地
-  return _sharedMode;
-}
-
 function getInfoServerUrl() {
   return 'http://' + (window.location.hostname || '127.0.0.1') + ':5001';
 }
@@ -401,23 +451,19 @@ async function syncThemeToServer(theme) {
 async function setTheme(theme) {
   applyTheme(theme);
   localStorage.setItem('stats_theme', theme);
-  if (await getSharedMode()) await syncThemeToServer(theme);
+  await syncThemeToServer(theme);
 }
 
 async function restoreTheme() {
-  if (await getSharedMode()) {
-    // 共享: 优先服务端 (同一 IP 跨子服务同步)
-    try {
-      const r = await fetch(getInfoServerUrl() + '/api/theme');
-      const data = await r.json();
-      if (data.theme && THEMES.includes(data.theme)) {
-        applyTheme(data.theme);
-        localStorage.setItem('stats_theme', data.theme);
-        return;
-      }
-    } catch (_) { /* infoServer unreachable, fall through to local */ }
-  }
-  // 纯本地 (共享关 / 本服务 excluded / 服务端无记录)
+  try {
+    const r = await fetch(getInfoServerUrl() + '/api/theme');
+    const data = await r.json();
+    if (data.theme && THEMES.includes(data.theme)) {
+      applyTheme(data.theme);
+      localStorage.setItem('stats_theme', data.theme);
+      return;
+    }
+  } catch (_) { /* infoServer unreachable, use local */ }
   const saved = localStorage.getItem('stats_theme');
   if (saved && THEMES.includes(saved)) {
     applyTheme(saved);
@@ -432,26 +478,157 @@ document.addEventListener('DOMContentLoaded', () => {
   restoreTheme();
 });
 
+// ── API 来源管理 ─────────────────────────────────────────
+async function fetchSources() {
+  const r = await fetch('/api/sources');
+  if (!r.ok) throw new Error('sources api ' + r.status);
+  return r.json();
+}
+
+function renderSourceSelect(data) {
+  const sel = document.getElementById('sourceSelect');
+  sel.innerHTML = '';
+  if (!data.sources || !data.sources.length) {
+    sel.innerHTML = '<option value="">无来源</option>';
+    return;
+  }
+  data.sources.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.name;
+    o.textContent = (s.active ? '● ' : '') + s.name;
+    sel.appendChild(o);
+  });
+  sel.value = data.active;
+}
+
+async function loadSources() {
+  try {
+    const data = await fetchSources();
+    renderSourceSelect(data);
+  } catch (_) { /* 服务不可达时保持占位 */ }
+}
+
+async function activateSource(name) {
+  const r = await fetch(`/api/sources/${encodeURIComponent(name)}/activate`, { method: 'POST' });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    alert('切换失败: ' + (e.error || r.status));
+    return false;
+  }
+  return true;
+}
+
+function openSources() { renderSourceTable(); document.getElementById('sourcesModal').classList.add('open'); }
+function closeSources() { document.getElementById('sourcesModal').classList.remove('open'); }
+
+async function renderSourceTable() {
+  const tb = document.getElementById('sourceTable');
+  let data;
+  try { data = await fetchSources(); }
+  catch (e) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--dim)">加载失败: ' + e.message + '</td></tr>'; return; }
+  if (!data.sources || !data.sources.length) {
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--dim)">暂无来源，请在下表单新增</td></tr>';
+    return;
+  }
+  tb.innerHTML = data.sources.map(s => `<tr>
+    <td style="font-weight:600">${s.name}</td>
+    <td style="font-family:monospace;font-size:12px">${s.api_key_masked || '<span style="color:var(--dim)">空</span>'}</td>
+    <td style="font-family:monospace;font-size:12px;color:var(--blue)">${s.anthropic || '<span style="color:var(--dim)">-</span>'}</td>
+    <td style="font-family:monospace;font-size:12px;color:var(--blue)">${s.openai || '<span style="color:var(--dim)">-</span>'}</td>
+    <td>${s.active ? '<span class="badge">当前</span>' : '<span class="badge off">备用</span>'}</td>
+    <td>
+      <div class="row-actions">
+        ${s.active ? '' : `<button class="btn small" onclick="switchSource('${s.name}')">切换</button>`}
+        <button class="btn small" onclick="editSource('${s.name}')">编辑</button>
+        <button class="btn small danger" onclick="delSource('${s.name}')">删除</button>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+
+async function switchSource(name) {
+  if (await activateSource(name)) {
+    await loadSources();
+    await renderSourceTable();
+  }
+}
+
+async function saveSource() {
+  const name = document.getElementById('srcName').value.trim();
+  const api_key = document.getElementById('srcApiKey').value.trim();
+  const anthropic = document.getElementById('srcAnthropic').value.trim();
+  const openai = document.getElementById('srcOpenai').value.trim();
+  if (!name) { alert('请填写来源名称'); return; }
+  if (!anthropic && !openai) { alert('请至少填写一个 Base URL'); return; }
+
+  const orig = document.getElementById('srcNameOrig').value;
+  const method = orig ? 'PUT' : 'POST';
+  const url = orig ? `/api/sources/${encodeURIComponent(orig)}` : '/api/sources';
+  const r = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, api_key, anthropic, openai }),
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    alert('保存失败: ' + (e.error || r.status));
+    return;
+  }
+  resetForm();
+  await renderSourceTable();
+  await loadSources();
+}
+
+function editSource(name) {
+  // 从表格行反填（列表已含 masked key；编辑时清空 key 需重新输入）
+  const row = [...document.querySelectorAll('#sourceTable tr')].find(r => r.children[0] && r.children[0].textContent === name);
+  if (!row) return;
+  document.getElementById('srcNameOrig').value = name;
+  document.getElementById('srcName').value = name;
+  document.getElementById('srcApiKey').value = '';
+  document.getElementById('srcAnthropic').value = row.children[2].textContent === '-' ? '' : row.children[2].textContent;
+  document.getElementById('srcOpenai').value = row.children[3].textContent === '-' ? '' : row.children[3].textContent;
+  document.getElementById('srcApiKey').placeholder = '留空则不修改 Key';
+  document.getElementById('srcSaveBtn').textContent = '保存修改';
+}
+
+async function delSource(name) {
+  if (!confirm(`确认删除来源「${name}」？`)) return;
+  const r = await fetch(`/api/sources/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    alert('删除失败: ' + (e.error || r.status));
+    return;
+  }
+  await renderSourceTable();
+  await loadSources();
+}
+
+function resetForm() {
+  document.getElementById('srcNameOrig').value = '';
+  document.getElementById('srcName').value = '';
+  document.getElementById('srcApiKey').value = '';
+  document.getElementById('srcAnthropic').value = '';
+  document.getElementById('srcOpenai').value = '';
+  document.getElementById('srcApiKey').placeholder = 'sk-...（客户端透传 key 时可留空）';
+  document.getElementById('srcSaveBtn').textContent = '新增来源';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('sourceSelect');
+  if (sel) {
+    sel.addEventListener('change', async () => {
+      if (!sel.value) return;
+      if (await activateSource(sel.value)) { loadSources(); refresh(); }
+    });
+  }
+  loadSources();
+});
+
 // Stats
 function fmt(n){return n===null||n===undefined?'-':n.toLocaleString()}
 function fmtCost(n){if(n===null||n===undefined)return'-';if(n<.001)return'¥'+n.toFixed(6);if(n<1)return'¥'+n.toFixed(4);return'¥'+n.toFixed(2)}
 function fmtTime(ts){if(!ts)return'-';try{return new Date(ts).toLocaleTimeString()}catch(e){return ts}}
-// 定价档位 (仅展示用; 实际 cost 由后端按请求时刻+峰谷算好返回):
-// deepseek-reasoner / deepseek-chat 旧别名均为 Flash 档, 只有 ...pro 才走 Pro
-function tierInfo(m){
-  return ((m||'').toLowerCase().includes('pro'))
-    ? {miss:4.5, hit:.15, out:13.5, label:'Pro'}
-    : {miss:1.5, hit:.05, out:4.5, label:'Flash'};
-}
-function bjHour(){
-  try{ return parseInt(new Date().toLocaleString('en-US',{hour:'2-digit',hour12:false,timeZone:'Asia/Shanghai'}),10); }
-  catch(e){ return new Date().getHours(); }
-}
-function isBjPeak(){
-  const h=bjHour();
-  return (h>=9&&h<12)||(h>=14&&h<18);
-}
-function peakNote(){ return isBjPeak() ? ' · <span style="color:#f87171">当前高峰×2</span>' : ''; }
 
 function switchTab(name, el) {
   if (!el) el = document.querySelector(`.tab[data-tab="${name}"]`);
@@ -484,15 +661,24 @@ function fillCards(data){
   const mc=document.getElementById('modelCosts');
   if(data.model_costs&&Object.keys(data.model_costs).length){
     mc.innerHTML=Object.entries(data.model_costs).map(([m,c])=>{
-      const p=tierInfo(m);
+      const p=m.includes('reason')||m.includes('pro')?
+        {miss:3, hit:.025, out:6, label:'Pro'}:
+        {miss:1, hit:.02, out:2, label:'Flash'};
       return `<div style="margin-bottom:4px"><strong>${p.label}</strong> ${m}: `+
         `输入命中 ¥${p.hit}/M · 输入未命中 ¥${p.miss}/M · 输出 ¥${p.out}/M → `+
-        `<span style="color:var(--purple)">${fmtCost(c)}</span>${peakNote()}</div>`;
+        `<span style="color:var(--purple)">${fmtCost(c)}</span></div>`;
     }).join('');
   } else { mc.innerHTML='<span style="color:var(--dim)">暂无数据</span>'; }
 }
 
-async function fetchTotal(){ return (await fetch('/api/stats')).json(); }
+let _range='today'; // 总览时间范围: today|week|month|all
+function setRange(r,btn){
+  _range=r;
+  document.querySelectorAll('.range-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  refresh();
+}
+async function fetchTotal(){ return (await fetch('/api/stats?range='+encodeURIComponent(_range))).json(); }
 async function fetchDetail(){ return (await fetch('/api/stats/detail')).json(); }
 async function fetchTasks(){ return (await fetch('/api/stats/tasks?limit=100')).json(); }
 async function fetchDaily(){ return (await fetch('/api/stats/daily')).json(); }
@@ -518,7 +704,7 @@ async function refresh(){
         <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
         <td><strong>${fmt(t.total_tokens)}</strong></td>
         <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
-        <td class="purple">${fmtCost(t.cost)}${t.peak_requests>0?` <span class="peak-badge" title="高峰时段价格翻倍 (${t.peak_requests}/${t.requests} 请求在 9-12/14-18 高峰)">×2</span>`:''}</td>
+        <td class="purple">${fmtCost(t.cost)}</td>
       </tr>`;
     }).join('');
   } else { tt.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--dim)">暂无任务</td></tr>'; }
@@ -571,19 +757,29 @@ async function refresh(){
       const tasksDiv = document.getElementById('sessionTasks');
       if (tasks.length) {
         tasksDiv.style.display = 'block';
-        tb.innerHTML = tasks.map(sessionTaskRowHTML).join('');
-      } else {
-        tasksDiv.style.display = 'none';
+        tb.innerHTML = tasks.map(t=>{
+          const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
+            : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
+          return `<tr>
+          <td>#${t.task_id}</td>
+          <td>${t.requests}</td>
+          <td style="color:#f87171">${fmt(miss)}</td>
+          <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
+          <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
+          <td><strong>${fmt(t.total_tokens)}</strong></td>
+          <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
+          <td class="purple">${fmtCost(t.cost)}</td>
+        </tr>`;
+        }).join('');
       }
     });
-    renderSessionAdvice(_currentSessionId);
   }
 
   const detail=await fetchDetail();
   const tb=document.getElementById('reqTable');
   if(detail.length){
     tb.innerHTML=detail.map(r=>{
-      const modelLabel=tierInfo(r.model).label;
+      const modelLabel=r.model&&r.model.includes('reason')?'Pro':'Flash';
       const miss = (r.cache_miss != null) ? r.cache_miss
         : Math.max(0, (r.prompt||0) - (r.cache_hit||0));
       return `<tr>
@@ -597,50 +793,6 @@ async function refresh(){
       </tr>`;
     }).join('');
   } else { tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--dim)">暂无请求</td></tr>'; }
-}
-
-// 会话任务行渲染（showSession 与 refresh 共用，避免两处模板分叉 → ×2 徽标丢失）
-function sessionTaskRowHTML(t) {
-  const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
-    : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
-  return `<tr>
-    <td>#${t.task_id}</td>
-    <td>${t.requests}</td>
-    <td style="color:#f87171">${fmt(miss)}</td>
-    <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
-    <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
-    <td><strong>${fmt(t.total_tokens)}</strong></td>
-    <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
-    <td class="purple">${fmtCost(t.cost)}${t.peak_requests>0?` <span class="peak-badge" title="高峰时段价格翻倍 (${t.peak_requests}/${t.requests} 请求在 9-12/14-18 高峰)">×2</span>`:''}</td>
-  </tr>`;
-}
-
-// Token 缓存策略建议：重置 vs 继续（选中会话后展示，置于顶部卡片行）
-function renderSessionAdvice(sid) {
-  const card = document.getElementById('sessionAdviceCard');
-  if (!card) return;
-  if (!sid) { card.style.display = 'none'; return; }
-  fetch(`/api/stats/session/advice?session=${encodeURIComponent(sid)}`).then(r=>r.json()).then(a=>{
-    const badge = document.getElementById('sessionAdviceBadge');
-    const verdict = document.getElementById('sessionAdviceVerdict');
-    const sub = document.getElementById('sessionAdviceSub');
-    if (!a || a.verdict === 'insufficient') {
-      badge.innerHTML = '';
-      verdict.textContent = '暂无足够数据判断缓存策略';
-      sub.textContent = '';
-      card.style.display = 'block';
-      return;
-    }
-    const isReset = a.verdict === 'reset';
-    const col = isReset ? 'var(--red)' : 'var(--green)';
-    const breakEven = (a.break_even_requests != null)
-      ? ` · 剩余 ≥${a.break_even_requests} 次请求时重启更划算`
-      : '';
-    badge.innerHTML = `<span class="peak-badge" style="background:${col};padding:2px 8px;font-size:11px;cursor:default">${isReset ? '⚠ 建议重置' : '✓ 建议继续'}</span>`;
-    verdict.innerHTML = `未命中总额 <b>${fmtCost(a.reset_cost)}</b> vs ${a.horizon}次请求命中 <b>${fmtCost(a.continue_cost)}</b> → <b style="color:${col}">${isReset ? '建议重置' : '继续更省'}</b>`;
-    sub.innerHTML = `未命中总额 ${fmt(a.total_miss_tokens)} token · 近${a.recent_window || 10}次最大命中 ${fmt(a.recent_hit_tokens)} token/请求 · 每请求 ${fmtCost(a.recent_hit_cost)} · ${a.tier} 档原价${breakEven}`;
-    card.style.display = 'block';
-  }).catch(()=>{});
 }
 
 // Sessions
@@ -684,13 +836,24 @@ function showSession(sid) {
     const tb = document.getElementById('sessionTaskTable');
     if (tasks.length) {
       tasksDiv.style.display = 'block';
-      tb.innerHTML = tasks.map(sessionTaskRowHTML).join('');
+      tb.innerHTML = tasks.map(t=>{
+        const miss = (t.cache_miss_tokens != null) ? t.cache_miss_tokens
+          : Math.max(0, (t.prompt_tokens||0) - (t.cache_hit_tokens||0));
+        return `<tr>
+        <td>#${t.task_id}</td>
+        <td>${t.requests}</td>
+        <td style="color:#f87171">${fmt(miss)}</td>
+        <td style="color:#4ade80">${fmt(t.cache_hit_tokens)}</td>
+        <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
+        <td><strong>${fmt(t.total_tokens)}</strong></td>
+        <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
+        <td class="purple">${fmtCost(t.cost)}</td>
+      </tr>`;
+      }).join('');
     } else {
       tasksDiv.style.display = 'none';
     }
   });
-
-  renderSessionAdvice(sid);
 }
 
 function renderSessions(sessions) {
