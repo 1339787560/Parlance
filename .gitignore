@@ -20,3 +20,7 @@ diagnose*
 .svn/
 .venv
 logs/
+# Rust 构建产物
+*/target
+**/target
+*.rs.bk

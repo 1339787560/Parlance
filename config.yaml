@@ -71,9 +71,9 @@ services:
       SERVICESVR_PORT: "5099"
 
   - name: statistic-server
-    command_mac: ./.venv/bin/python
-    command_win: python
-    args: ["proxy_server.py", "--port", "5002"]
+    command_mac: ./serviceGroup/statisticServer/target/release/statistic-server
+    command_win: .\serviceGroup\statisticServer\target\release\statistic-server.exe
+    args: []
     cwd: ./serviceGroup/statisticServer
     port: 5002
     auto_restart: true

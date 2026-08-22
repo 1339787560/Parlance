@@ -1,0 +1,25 @@
+[package]
+name = "statistic-server"
+version = "0.1.0"
+edition = "2024"
+description = "DeepSeek 代理统计服务 (Rust 重写) — 透明代理 + Token 统计看板"
+license = "MIT"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream", "charset"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+regex = "1"
+futures-util = "0.3"
+async-stream = "0.3"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
