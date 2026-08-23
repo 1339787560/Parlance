@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }} - JM 在线阅读</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+    body { margin: 0; background: #111; color: #eee; font-family: sans-serif; }
+    .top-bar {
+        position: sticky; top: 0; z-index: 10;
+        background: rgba(20,20,20,0.95); padding: 10px 16px;
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        border-bottom: 1px solid #333;
+    }
+    .top-bar .meta { font-size: 14px; color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+    .top-bar select { padding: 6px 10px; border-radius: 4px; background: #2a2a2a; color: #eee; border: 1px solid #444; max-width: 40vw; }
+    .top-bar .back { color: #64b5f6; text-decoration: none; font-size: 14px; }
+    .top-bar .loaded { font-size: 12px; color: #81c784; margin-left: auto; }
+    .pages { display: flex; flex-direction: column; align-items: center; }
+    .pages img {
+        max-width: 100%; min-height: 200px; display: block;
+        background: #222 center/40px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Ccircle cx='20' cy='4' r='4' fill='%23555'/%3E%3C/svg%3E");
+        margin: 4px 0;
+    }
+    .hint { text-align: center; color: #666; padding: 40px 0; }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <a class="back" href="/">← 返回</a>
+        <span class="meta">{{ title }} · {{ author }}</span>
+        <select id="chapterSelect">
+            {% for ch in chapters %}
+            <option value="{{ ch.pid }}">{{ ch.title }}</option>
+            {% endfor %}
+        </select>
+        <span class="loaded" id="loadedInfo"></span>
+    </div>
+    <div class="pages" id="pages"></div>
+    <div class="hint" id="hint">加载中…</div>
+
+    <script>
+        const albumId = {{ album_id|tojson }};
+        const pagesBox = document.getElementById('pages');
+        const hint = document.getElementById('hint');
+        const loadedInfo = document.getElementById('loadedInfo');
+
+        function loadChapter(pid) {
+            fetch(`/jm/pages?aid=${albumId}&pid=${pid}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) { hint.textContent = '加载失败: ' + data.error; return; }
+                    hint.style.display = 'none';
+                    pagesBox.innerHTML = '';
+                    let loaded = 0;
+                    for (let i = 1; i <= data.count; i++) {
+                        const img = document.createElement('img');
+                        img.loading = 'lazy';   // 滚到可视区才请求, 服务端按需拉单图
+                        img.alt = `第 ${i} 页`;
+                        img.src = `/jm/page?aid=${albumId}&pid=${pid}&index=${i}`;
+                        img.onload = () => {
+                            loaded++;
+                            loadedInfo.textContent = `已加载 ${loaded}/${data.count} 页`;
+                        };
+                        img.onerror = () => { img.style.minHeight = '0'; img.alt = '加载失败'; };
+                        pagesBox.appendChild(img);
+                    }
+                    loadedInfo.textContent = `共 ${data.count} 页`;
+                })
+                .catch(err => { hint.textContent = '加载失败: ' + err; });
+        }
+
+        document.getElementById('chapterSelect').addEventListener('change', e => {
+            window.scrollTo(0, 0);
+            hint.style.display = 'block';
+            hint.textContent = '加载中…';
+            loadChapter(e.target.value);
+        });
+
+        loadChapter(document.getElementById('chapterSelect').value);
+    </script>
+</body>
+</html>

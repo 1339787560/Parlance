@@ -103,6 +103,21 @@ def handle_html_file(filename):
 
 @app.route('/file/<path:filepath>')
 def serve_file(filepath):
+    # 在线阅读占位文件: 命中空文件且属于 JM/Pika 在线结构时按需物化
+    if HAS_JM:
+        try:
+            real = jm_service.materialize_file(filepath)
+            if real:
+                return send_file(real)
+        except Exception:
+            pass
+    if HAS_PIKA:
+        try:
+            real = pika_service.materialize_file(filepath)
+            if real:
+                return send_file(real)
+        except Exception:
+            pass
     return send_from_directory(SHARE_DIR, filepath)
 
 @app.route('/browse/<path:subpath>')
@@ -494,3 +509,464 @@ def aggview(aggdir):
                            files=sorted(files),
                            folder=aggdir,
                            full_path_mode=True)
+
+
+# ===== JM 漫画搜索/拉取 =====
+
+try:
+    import jm_service
+    HAS_JM = True
+except ImportError:
+    HAS_JM = False
+
+try:
+    import pika_service
+    HAS_PIKA = True
+except ImportError:
+    HAS_PIKA = False
+
+
+@app.route('/jm/search')
+def jm_search():
+    """站内搜索: q=关键词, page=页码(1起), mode=site|author|work|id,
+    order_by=mr|mv|mp|tf, search_type=keyword|fuzzy|exact,
+    page_size=10|25|50, source=jm|pic。非法参数回退默认值。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    query = request.args.get('q', '').strip()
+    page = request.args.get('page', '1')
+    mode = request.args.get('mode', 'site')
+    order_by = request.args.get('order_by', 'mr')
+    search_type = request.args.get('search_type', 'keyword')
+    page_size = request.args.get('page_size', '25')
+    source = request.args.get('source', 'jm')
+    if not query:
+        return jsonify({'success': False, 'error': '请输入搜索关键词'})
+    if mode not in ('site', 'author', 'work', 'id'):
+        mode = 'site'
+    if order_by not in ('mr', 'mv', 'mp', 'tf'):
+        order_by = 'mr'
+    if search_type not in ('keyword', 'fuzzy', 'exact'):
+        search_type = 'keyword'
+    try:
+        page_size = int(page_size)
+    except (TypeError, ValueError):
+        page_size = 25
+    if page_size not in (10, 25, 50):
+        page_size = 25
+    if source not in ('jm', 'pic'):
+        source = 'jm'
+    try:
+        result = jm_service.search(query, page, mode, order_by, search_type, page_size, source)
+        result['success'] = True
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/jm/cover/<album_id>')
+def jm_cover(album_id):
+    """封面图代理（缓存于 jm_cover_cache/）。"""
+    if not HAS_JM:
+        abort(404)
+    path = jm_service.cover_path(album_id)
+    if path is None:
+        abort(404)
+    return send_file(path, mimetype='image/jpeg')
+
+
+@app.route('/jm/download', methods=['POST'])
+def jm_download():
+    """创建下载任务。body: {aid, title, author, mode: temp|persist}。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    data = request.get_json(silent=True) or {}
+    aid = str(data.get('aid', '')).strip()
+    mode = data.get('mode', 'temp')
+    if not aid or not aid.isdigit():
+        return jsonify({'success': False, 'error': '无效的 album id'})
+    if mode not in ('temp', 'persist'):
+        mode = 'temp'
+    try:
+        tid = jm_service.start_download(aid, data.get('title', ''), data.get('author', ''), mode)
+        return jsonify({'success': True, 'tid': tid})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/jm/status')
+def jm_status():
+    """查询下载任务状态: tid。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    tid = request.args.get('tid', '')
+    task = jm_service.task_status(tid)
+    if task is None:
+        return jsonify({'success': False, 'error': '任务不存在'})
+    task['success'] = True
+    return jsonify(task)
+
+
+@app.route('/jm/online')
+def jm_online():
+    """在线阅读入口: 预置占位文件, 返回 /gallery 路径。aid=album_id。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    aid = request.args.get('aid', '').strip()
+    if not aid.isdigit():
+        return jsonify({'success': False, 'error': '无效的 album id'})
+    try:
+        return jsonify({'success': True, **jm_service.prepare_online(aid)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/jm/persist', methods=['POST'])
+def jm_persist():
+    """把 temp 阅读缓存持久化到 share 根目录(移动语义)。
+    body: {path: temp/<作者> 或 temp/<作者>/<标题>}。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    data = request.get_json(silent=True) or {}
+    path = str(data.get('path', '')).strip()
+    if not path:
+        return jsonify({'success': False, 'error': '缺少 path 参数'})
+    try:
+        result = jm_service.persist_temp(path)
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/jm/check')
+def jm_check():
+    """检查专辑下载状态: aid=album_id。
+    返回 {downloaded, path, in_temp, temp_path}。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    aid = request.args.get('aid', '').strip()
+    if not aid.isdigit():
+        return jsonify({'success': False, 'error': '无效的 album id'})
+    try:
+        return jsonify({'success': True, **jm_service.check_album(aid)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/jm/config', methods=['GET', 'POST'])
+def jm_config():
+    """配置读写: GET 返回 {temp_retention_days};
+    POST {temp_retention_days: N} 保存(1-90, 非法回退默认 7)。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    if request.method == 'GET':
+        return jsonify({'success': True, 'temp_retention_days':
+                        jm_service._config_get('temp_retention_days',
+                                               jm_service.DEFAULT_TEMP_RETENTION_DAYS)})
+    data = request.get_json(silent=True) or {}
+    try:
+        n = int(data.get('temp_retention_days'))
+    except (TypeError, ValueError):
+        n = jm_service.DEFAULT_TEMP_RETENTION_DAYS
+    if not (1 <= n <= 90):
+        n = jm_service.DEFAULT_TEMP_RETENTION_DAYS
+    jm_service._config_set('temp_retention_days', n)
+    return jsonify({'success': True, 'temp_retention_days': n})
+
+
+@app.route('/jm/reader/<album_id>')
+def jm_reader(album_id):
+    """在线懒加载阅读页。"""
+    if not HAS_JM:
+        abort(404)
+    try:
+        info = jm_service.album_chapters(album_id)
+    except Exception as e:
+        return f'获取漫画信息失败: {e}', 500
+    return render_template('jm_reader.html',
+                           album_id=info['id'],
+                           title=info['title'],
+                           author=info['author'],
+                           chapters=info['chapters'])
+
+
+@app.route('/jm/chapters')
+def jm_chapters():
+    """章节列表: aid=album_id。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    aid = request.args.get('aid', '').strip()
+    if not aid.isdigit():
+        return jsonify({'success': False, 'error': '无效的 album id'})
+    try:
+        return jsonify({'success': True, **jm_service.album_chapters(aid)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/jm/pages')
+def jm_pages():
+    """章节页数: aid=album_id, pid=photo_id。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    aid = request.args.get('aid', '').strip()
+    pid = request.args.get('pid', '').strip()
+    if not aid.isdigit() or not pid.isdigit():
+        return jsonify({'success': False, 'error': '无效的 id'})
+    try:
+        return jsonify({'success': True, **jm_service.chapter_pages(aid, pid)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/jm/page')
+def jm_page():
+    """按需物化并返回单张图片: aid, pid, index(1起)。"""
+    if not HAS_JM:
+        abort(404)
+    aid = request.args.get('aid', '').strip()
+    pid = request.args.get('pid', '').strip()
+    index = request.args.get('index', '')
+    if not aid.isdigit() or not pid.isdigit() or not index.isdigit():
+        abort(404)
+    try:
+        path = jm_service.fetch_page(aid, pid, int(index))
+    except IndexError:
+        abort(404)
+    except Exception as e:
+        return f'图片获取失败: {e}', 500
+    return send_file(path)
+
+
+# ===== Pika (PicACG) 搜索/拉取 =====
+
+def _pika_unavailable():
+    return jsonify({'success': False, 'error': 'pika_service 未安装或未就绪'})
+
+
+@app.route('/pika/search')
+def pika_search():
+    """站内搜索: q=关键词, page=页码(1起), mode=site|author|work|id,
+    order_by=mr|mv|mp|tf, search_type=keyword|fuzzy|exact,
+    page_size=10|25|50。非法参数回退默认值。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    query = request.args.get('q', '').strip()
+    page = request.args.get('page', '1')
+    mode = request.args.get('mode', 'site')
+    order_by = request.args.get('order_by', 'mr')
+    search_type = request.args.get('search_type', 'keyword')
+    page_size = request.args.get('page_size', '25')
+    if not query:
+        return jsonify({'success': False, 'error': '请输入搜索关键词'})
+    if mode not in ('site', 'author', 'work', 'id'):
+        mode = 'site'
+    if order_by not in ('mr', 'mv', 'mp', 'tf'):
+        order_by = 'mr'
+    if search_type not in ('keyword', 'fuzzy', 'exact'):
+        search_type = 'keyword'
+    try:
+        page_size = int(page_size)
+    except (TypeError, ValueError):
+        page_size = 25
+    if page_size not in (10, 25, 50):
+        page_size = 25
+    try:
+        result = pika_service.search(query, page, mode, order_by, search_type, page_size)
+        result['success'] = True
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/pika/cover/<book_id>')
+def pika_cover(book_id):
+    """封面图代理。"""
+    if not HAS_PIKA:
+        abort(404)
+    try:
+        path = pika_service.cover(book_id)
+    except Exception:
+        abort(404)
+    if not path:
+        abort(404)
+    return send_file(path, mimetype='image/jpeg')
+
+
+@app.route('/pika/download', methods=['POST'])
+def pika_download():
+    """创建下载任务。body: {aid, title, author, mode: temp|persist}。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    data = request.get_json(silent=True) or {}
+    aid = str(data.get('aid', '')).strip()
+    mode = data.get('mode', 'temp')
+    if not aid:
+        return jsonify({'success': False, 'error': '无效的 book id'})
+    if mode not in ('temp', 'persist'):
+        mode = 'temp'
+    try:
+        tid = pika_service.start_download(aid, data.get('title', ''), data.get('author', ''), mode)
+        return jsonify({'success': True, 'tid': tid})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/pika/status')
+def pika_status():
+    """查询下载任务状态: tid。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    tid = request.args.get('tid', '')
+    try:
+        task = pika_service.task_status(tid)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+    if task is None:
+        return jsonify({'success': False, 'error': '任务不存在'})
+    task['success'] = True
+    return jsonify(task)
+
+
+@app.route('/pika/online')
+def pika_online():
+    """在线阅读入口: 预置占位文件, 返回 gallery 路径。aid/book_id。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    book_id = (request.args.get('aid') or request.args.get('book_id') or '').strip()
+    if not book_id:
+        return jsonify({'success': False, 'error': '无效的 book id'})
+    try:
+        return jsonify({'success': True, **pika_service.prepare_online(book_id)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/pika/check')
+def pika_check():
+    """检查专辑下载状态: aid/book_id。
+    返回 {downloaded, path, in_temp, temp_path}。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    book_id = (request.args.get('aid') or request.args.get('book_id') or '').strip()
+    if not book_id:
+        return jsonify({'success': False, 'error': '无效的 book id'})
+    try:
+        return jsonify({'success': True, **pika_service.check_album(book_id)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/pika/persist', methods=['POST'])
+def pika_persist():
+    """把 temp 阅读缓存持久化到 share 根目录(移动语义)。
+    body: {path: temp/<作者> 或 temp/<作者>/<标题>}。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    data = request.get_json(silent=True) or {}
+    path = str(data.get('path', '')).strip()
+    if not path:
+        return jsonify({'success': False, 'error': '缺少 path 参数'})
+    try:
+        result = pika_service.persist_temp(path)
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/pika/config')
+def pika_config():
+    """读取配置: 返回 {email_set}。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    try:
+        cfg = pika_service.get_config()
+        return jsonify({'success': True, **cfg})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+# ===== 双源合并搜索 =====
+
+@app.route('/search')
+def merged_search():
+    """双源合并搜索: source=jm|pika|all(默认 all),
+    其余参数同 /jm/search。source=all 并行查 jm+pika,
+    items 合并(各带 source 字段), pika 失败不阻断 jm。
+    返回 {success, total, page, items, pika_error?}。"""
+    query = request.args.get('q', '').strip()
+    page = request.args.get('page', '1')
+    mode = request.args.get('mode', 'site')
+    order_by = request.args.get('order_by', 'mr')
+    search_type = request.args.get('search_type', 'keyword')
+    page_size = request.args.get('page_size', '25')
+    source = request.args.get('source', 'all')
+    if not query:
+        return jsonify({'success': False, 'error': '请输入搜索关键词'})
+    if source not in ('jm', 'pika', 'all'):
+        source = 'all'
+    if mode not in ('site', 'author', 'work', 'id'):
+        mode = 'site'
+    if order_by not in ('mr', 'mv', 'mp', 'tf'):
+        order_by = 'mr'
+    if search_type not in ('keyword', 'fuzzy', 'exact'):
+        search_type = 'keyword'
+    try:
+        page_size = int(page_size)
+    except (TypeError, ValueError):
+        page_size = 25
+    if page_size not in (10, 25, 50):
+        page_size = 25
+
+    if source == 'jm':
+        if not HAS_JM:
+            return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+        try:
+            result = jm_service.search(query, page, mode, order_by, search_type, page_size)
+            result['items'] = [dict(it, source='jm') for it in result.get('items', [])]
+            result['success'] = True
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    if source == 'pika':
+        if not HAS_PIKA:
+            return _pika_unavailable()
+        try:
+            result = pika_service.search(query, page, mode, order_by, search_type, page_size)
+            result['success'] = True
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    # source == 'all': 并行查 jm+pika, pika 失败不阻断 jm
+    jm_items, jm_total = [], 0
+    if HAS_JM:
+        try:
+            jr = jm_service.search(query, page, mode, order_by, search_type, page_size)
+            jm_items = [dict(it, source='jm') for it in jr.get('items', [])]
+            jm_total = jr.get('total', 0)
+        except Exception as e:
+            jm_items, jm_total = [], 0
+
+    pika_items, pika_total = [], 0
+    pika_error = None
+    if HAS_PIKA:
+        try:
+            pr = pika_service.search(query, page, mode, order_by, search_type, page_size)
+            pika_items = [dict(it, source='pika') for it in pr.get('items', [])]
+            pika_total = pr.get('total', 0)
+        except Exception as e:
+            pika_items, pika_total = [], 0
+            pika_error = str(e)
+
+    if not HAS_JM and not HAS_PIKA:
+        return jsonify({'success': False, 'error': 'jmcomic 与 pika_service 均未安装'})
+
+    return jsonify({
+        'success': True,
+        'total': jm_total + pika_total,
+        'page': page,
+        'items': jm_items + pika_items,
+        'pika_error': pika_error,
+    })

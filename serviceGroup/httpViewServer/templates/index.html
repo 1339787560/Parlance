@@ -6,6 +6,7 @@
     .breadcrumb {
         margin: 20px;
         padding: 10px;
+        padding-right: 200px; /* 避免与右上角模式切换重叠 */
         background: #f5f5f5;
     }
     .breadcrumb a {
@@ -59,29 +60,123 @@
         align-items: center;
         gap: 8px;
     }
+
+    /* ===== 右上角模式切换（本地阅读 ⇄ 搜索） ===== */
+    .view-toggle {
+        position: fixed; top: 20px; right: 20px; z-index: 10000;
+        display: flex; background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .view-toggle button {
+        padding: 8px 18px; border: none; background: transparent; cursor: pointer;
+        font-size: 14px; color: #666; transition: background 0.2s, color 0.2s;
+    }
+    .view-toggle button.active {
+        background: #2196F3; color: white;
+    }
+
+    /* ===== JM 搜索整页视图 ===== */
+    .search-view { padding: 20px; padding-top: 70px; }
+    .jm-search-bar { display: flex; gap: 8px; margin-bottom: 15px; }
+    .jm-search-bar input[type="text"] {
+        flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;
+    }
+    .jm-search-bar select, .jm-search-bar button {
+        padding: 10px 14px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;
+    }
+    .jm-search-bar select { border: 1px solid #ddd; background: white; }
+    .jm-search-bar button { background: #2196F3; color: white; }
+    .jm-results {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 15px;
+    }
+    .jm-card { border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: #fafafa; position: relative; }
+    .jm-card img { width: 100%; height: 220px; object-fit: cover; display: block; background: #e0e0e0; cursor: pointer; }
+    .jm-card .jm-info { padding: 8px 10px; }
+    .jm-card .jm-title { font-size: 13px; line-height: 1.4; height: 2.8em; overflow: hidden; cursor: pointer; }
+    .jm-card .jm-author { font-size: 12px; color: #666; margin-top: 2px; cursor: pointer; }
+    .jm-card .jm-author:hover { text-decoration: underline; color: #9c27b0; }
+    .jm-card .jm-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .jm-card .jm-actions button {
+        flex: 1; padding: 6px 4px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
+    }
+    .jm-btn-online { background: #9c27b0; color: white; }
+    .jm-btn-read { background: #ff9800; color: white; }
+    .jm-btn-dl { background: #4caf50; color: white; }
+    .jm-card .jm-progress { font-size: 12px; color: #2196F3; margin-top: 6px; text-align: center; }
+    .jm-bar-track { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+    .jm-bar-fill { height: 100%; width: 0%; background: #4caf50; border-radius: 3px; transition: width 0.3s; }
+    .jm-pager { display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 20px; }
+    .jm-pager button { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; background: #f5f5f5; }
+    .jm-pager button:disabled { opacity: 0.4; cursor: default; }
+    .jm-hint { color: #999; font-size: 13px; text-align: center; padding: 20px 0; }
+
+    /* ===== pika 失败提示条 + 来源角标 ===== */
+    .pika-error-banner {
+        margin-bottom: 12px; padding: 10px 14px; border-radius: 6px;
+        background: #fff3e0; border: 1px solid #ff9800; color: #e65100; font-size: 13px;
+    }
+    .jm-badge {
+        position: absolute; top: 6px; left: 6px; z-index: 2;
+        padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; color: white;
+    }
+    .jm-badge-jm { background: #2196F3; }
+    .jm-badge-pika { background: #9c27b0; }
+
+    /* ===== 右键持久化菜单（temp 目录下） ===== */
+    .persist-menu {
+        position: fixed;
+        z-index: 10001;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        padding: 6px 0;
+        min-width: 160px;
+        display: none;
+    }
+    .persist-menu-item {
+        padding: 10px 16px;
+        font-size: 14px;
+        color: #333;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .persist-menu-item:hover {
+        background: #f5f5f5;
+    }
     </style>
 </head>
 <body>
-    <div class="breadcrumb">
-        {% if breadcrumbs %}
-            <a href="/">根目录</a>
-            {% for link, name in breadcrumbs %}
-                / <a href="{{ link }}">{{ name }}</a>
-            {% endfor %}
-        {% endif %}
+    <!-- 右上角模式切换：本地阅读 ⇄ 搜索 -->
+    <div id="viewToggle" class="view-toggle">
+        <button id="toggleBrowse" class="active" onclick="switchView('browse')">本地阅读</button>
+        <button id="toggleSearch" onclick="switchView('search')">搜索</button>
     </div>
 
-    <div class="folder-list">
-        {% for type, name, parent in items %}
-        <div class="folder-item {% if type == 'aggsearch' %}folder-item-aggsearch{% endif %}"
-            data-type='{{ type|tojson }}'
-            data-parent='{{ parent|tojson }}'
-            data-name='{{ name|tojson }}'
-            onclick="handleFolderClick(this)"
-            {% if type == 'aggsearch' %}onmousedown="startAggLongPress(this)" onmouseup="cancelAggLongPress()" onmouseleave="cancelAggLongPress()" ontouchstart="startAggLongPress(this)" ontouchend="cancelAggLongPress()"{% endif %}>
-            {% if type == 'aggsearch' %}🔍 {{ name|replace('__aggsearch__', '') }}{% else %}📁 {{ name|safe }}{% endif %}
+    <!-- 本地阅读视图 -->
+    <div id="browseView">
+        <div class="breadcrumb">
+            {% if breadcrumbs %}
+                <a href="/">根目录</a>
+                {% for link, name in breadcrumbs %}
+                    / <a href="{{ link }}">{{ name }}</a>
+                {% endfor %}
+            {% endif %}
         </div>
-        {% endfor %}
+
+        <div class="folder-list">
+            {% for type, name, parent in items %}
+            <div class="folder-item {% if type == 'aggsearch' %}folder-item-aggsearch{% endif %}"
+                data-type='{{ type|tojson }}'
+                data-parent='{{ parent|tojson }}'
+                data-name='{{ name|tojson }}'
+                onclick="handleFolderClick(this)"
+                {% if type == 'aggsearch' %}onmousedown="startAggLongPress(this)" onmouseup="cancelAggLongPress()" onmouseleave="cancelAggLongPress()" ontouchstart="startAggLongPress(this)" ontouchend="cancelAggLongPress()"{% endif %}>
+                {% if type == 'aggsearch' %}🔍 {{ name|replace('__aggsearch__', '') }}{% else %}📁 {{ name|safe }}{% endif %}
+            </div>
+            {% endfor %}
+        </div>
     </div>
 
     <!-- 聚合搜索目录删除确认弹窗 -->
@@ -101,11 +196,110 @@
         </div>
     </div>
 
-    <!-- 在head标签内添加对settings.js的引用 -->
+    <!-- 搜索视图（整页，非弹窗） -->
+    <div id="searchView" class="search-view" style="display:none;">
+        <div class="jm-search-bar">
+            <input type="text" id="jmQueryInput" placeholder="输入关键词…" onkeydown="if(event.key==='Enter')jmDoSearch(1)">
+            <select id="jmModeSelect">
+                <option value="site">全站</option>
+                <option value="author">按作者</option>
+                <option value="work">按作品</option>
+                <option value="id">按ID</option>
+            </select>
+            <select id="jmSearchTypeSelect">
+                <option value="keyword">关键词</option>
+                <option value="fuzzy">模糊</option>
+                <option value="exact">精确</option>
+            </select>
+            <select id="jmOrderBySelect">
+                <option value="mr">最新</option>
+                <option value="mv">最多点击</option>
+                <option value="mp">最多图片</option>
+                <option value="tf">最多爱心</option>
+            </select>
+            <select id="jmSourceSelect" title="数据源">
+                <option value="all">全部</option>
+                <option value="jm">jm</option>
+                <option value="pika">pika</option>
+            </select>
+            <button onclick="jmDoSearch(1)">搜索</button>
+            <button id="jmHistoryBackBtn" onclick="jmHistoryBack()" title="撤回（上一次搜索）" disabled style="opacity:0.4;">←</button>
+            <button id="jmHistoryFwdBtn" onclick="jmHistoryForward()" title="反撤回（下一次搜索）" disabled style="opacity:0.4;">→</button>
+        </div>
+        <div id="pikaErrorBanner" class="pika-error-banner" style="display:none;"></div>
+        <div id="jmResults" class="jm-results"></div>
+        <div id="jmHint" class="jm-hint">输入关键词开始搜索</div>
+        <div class="jm-pager" id="jmPager" style="display:none;">
+            <button id="jmPrevBtn" onclick="jmDoSearch(jmState.page-1)">上一页</button>
+            <span id="jmPageInfo"></span>
+            <button id="jmNextBtn" onclick="jmDoSearch(jmState.page+1)">下一页</button>
+        </div>
+    </div>
+
+    <!-- 搜索设置弹窗（复用 modal 样式类） -->
+    <div id="jmSettingsModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h2>搜索设置</h2>
+                <button onclick="closeJmSettings()" style="border: none; background: none; font-size: 20px; cursor: pointer;">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 18px;">
+                    <div style="margin-bottom: 8px; font-size: 14px; color: #333;">切换源：</div>
+                    <select id="jmSettingsSourceSelect">
+                        <option value="all">全部</option>
+                        <option value="jm">jm</option>
+                        <option value="pika">pika</option>
+                    </select>
+                </div>
+                <div>
+                    <div style="margin-bottom: 8px; font-size: 14px; color: #333;">每页展示数量：</div>
+                    <select id="jmPageSizeSelect">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 18px;">
+                    <div style="margin-bottom: 8px; font-size: 14px; color: #333;">temp 保留天数：</div>
+                    <input type="number" id="jmTempRetentionInput" min="1" max="90" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; width: 120px;">
+                </div>
+                <div style="margin-bottom: 18px;">
+                    <div style="margin-bottom: 8px; font-size: 14px; color: #333;">pika 账号：</div>
+                    <div id="pikaEmailStatus" style="font-size: 12px; color: #999; margin-bottom: 8px;">加载中…</div>
+                    <input type="email" id="pikaEmailInput" placeholder="邮箱" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; width: 100%; box-sizing: border-box; margin-bottom: 8px;">
+                    <input type="password" id="pikaPasswordInput" placeholder="密码" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; width: 100%; box-sizing: border-box;">
+                    <button onclick="savePikaConfig()" style="margin-top: 8px; padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 5px; cursor: pointer;">保存 pika 账号</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeJmSettings()" style="padding: 10px 20px; background: #f5f5f5; border: none; border-radius: 5px; cursor: pointer;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 对 settings.js 的引用 -->
     <script src="/static/settings.js"></script>
-    
+
     <script>
-        // 仅保留页面特定的JavaScript代码
+        // 当前目录路径（服务端注入），temp/ 目录下启用右键持久化菜单
+        const CURRENT_PATH = {{ current_path|tojson }};
+
+        // ===== 视图切换：本地阅读 ⇄ 搜索 =====
+        function switchView(view) {
+            const isSearch = view === 'search';
+            document.getElementById('browseView').style.display = isSearch ? 'none' : '';
+            document.getElementById('searchView').style.display = isSearch ? '' : 'none';
+            document.getElementById('toggleBrowse').classList.toggle('active', !isSearch);
+            document.getElementById('toggleSearch').classList.toggle('active', isSearch);
+            // 缓存视图状态，刷新后保持当前页面
+            try { localStorage.setItem('jmView', view); } catch (e) {}
+            if (isSearch) {
+                setTimeout(() => document.getElementById('jmQueryInput').focus(), 50);
+            }
+        }
+
+        // ===== 本地阅读：文件夹导航 =====
         function handleFolderClick(element) {
             // 长按已触发删除弹窗，抑制随后的点击导航
             if (typeof aggLongPressFired !== 'undefined' && aggLongPressFired) {
@@ -128,47 +322,47 @@
             }
             if (type === 'folder') {
                 let path = parent === '/' ? '/' + name : parent + '/' + name;
-                
+
                 // 检查漫画模式设置
                 const enableComicMode = localStorage.getItem('enableComicMode') === 'true';
-                
+
                 // 添加查询参数
                 let params = new URLSearchParams();
                 if (enableComicMode) {
                     params.append('comic_mode', 'true');
                 }
-                
+
                 // 构建完整URL
                 if (params.toString()) {
                     path += '?' + params.toString();
                 }
-                
+
                 window.location.href = path;
             } else if (type === 'gallery') {
                 // 对于图片库类型，需要检查是否有间隔设置并传递
                 const enableInterval = localStorage.getItem('enableImageInterval') === 'true';
                 const interval = enableInterval ? localStorage.getItem('imageInterval') || '0' : '0';
-                
+
                 // 获取漫画模式设置
                 const enableComicMode = localStorage.getItem('enableComicMode') === 'true';
-                
+
                 // 获取位置类型设置
                 const positionType = localStorage.getItem('positionType') || 'none';
-                
+
                 let path = parent === '/' ? '/' + name : parent + '/' + name;
                 let url = `/gallery/${encodeURIComponent(path)}`;
-                
+
                 // 添加查询参数
                 let params = new URLSearchParams();
                 if (interval && interval !== '0') {
                     params.append('interval', interval);
                 }
-                
+
                 // 如果启用漫画模式，添加comic_mode参数
                 if (enableComicMode) {
                     params.append('comic_mode', 'true');
                 }
-                
+
                 // 根据positionType决定使用哪种位置类型
                 if (positionType === 'fixed') {
                     // 使用固定位置设置
@@ -183,7 +377,7 @@
                     params.append('start_percent', percent);
                     params.append('percent_count', percentCount);
                 }
-                
+
                 // 构建完整URL
                 if (params.toString()) {
                     url += '?' + params.toString();
@@ -191,6 +385,77 @@
 
                 window.location.href = url;
             }
+        }
+
+        // ===== 右键持久化菜单（temp 目录下） =====
+        let persistMenu = null;
+        let persistTargetPath = null;
+
+        function initPersistMenu() {
+            // temp 根层 CURRENT_PATH="temp"（无尾斜杠），子层 "temp/<作者>..."，均启用
+            if (!CURRENT_PATH || (CURRENT_PATH !== 'temp' && !CURRENT_PATH.startsWith('temp/'))) return;
+            persistMenu = document.createElement('div');
+            persistMenu.className = 'persist-menu';
+            const item = document.createElement('div');
+            item.className = 'persist-menu-item';
+            item.textContent = '📌 持久化到根目录';
+            item.addEventListener('click', doPersist);
+            persistMenu.appendChild(item);
+            document.body.appendChild(persistMenu);
+
+            document.querySelectorAll('.folder-item').forEach(el => {
+                el.addEventListener('contextmenu', onFolderContextMenu);
+            });
+            document.addEventListener('click', closePersistMenu);
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closePersistMenu();
+            });
+        }
+
+        function onFolderContextMenu(e) {
+            e.preventDefault();
+            const el = e.currentTarget;
+            const type = JSON.parse(el.dataset.type);
+            const parent = JSON.parse(el.dataset.parent);
+            const name = JSON.parse(el.dataset.name);
+            // path 计算与 navigate 逻辑一致
+            let path;
+            if (type === 'folder') {
+                path = parent === '/' ? '/' + name : (parent ? parent + '/' + name : name);
+            } else {
+                path = parent ? parent + '/' + name : name;
+            }
+            persistTargetPath = path;
+            persistMenu.style.display = 'block';
+            const x = Math.min(e.clientX, window.innerWidth - persistMenu.offsetWidth - 8);
+            const y = Math.min(e.clientY, window.innerHeight - persistMenu.offsetHeight - 8);
+            persistMenu.style.left = Math.max(0, x) + 'px';
+            persistMenu.style.top = Math.max(0, y) + 'px';
+        }
+
+        function closePersistMenu() {
+            if (persistMenu) persistMenu.style.display = 'none';
+            persistTargetPath = null;
+        }
+
+        function doPersist() {
+            if (!persistTargetPath) return;
+            const path = persistTargetPath;
+            closePersistMenu();
+            fetch('/jm/persist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: path })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('已持久化到根目录，可刷新查看');
+                    } else {
+                        alert('持久化失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(err => alert('持久化失败: ' + err));
         }
 
         // ===== 聚合搜索目录：长按删除 =====
@@ -245,6 +510,538 @@
                 })
                 .catch(err => alert('删除失败: ' + err));
         }
+
+        // ===== JM 漫画搜索（整页视图） =====
+        const jmState = { query: '', mode: 'site', search_type: 'keyword', order_by: 'mr', page: 1, page_size: 25 };
+
+        // ===== 搜索历史（撤回/反撤回） =====
+        let jmHistory = [];       // 搜索状态栈
+        let jmHistoryIdx = -1;    // 当前历史位置
+
+        function jmHistoryPush(state) {
+            // 截断反撤回尾部，再入栈
+            jmHistory = jmHistory.slice(0, jmHistoryIdx + 1);
+            jmHistory.push(state);
+            jmHistoryIdx = jmHistory.length - 1;
+            jmUpdateHistoryArrows();
+        }
+
+        function jmUpdateHistoryArrows() {
+            const back = document.getElementById('jmHistoryBackBtn');
+            const fwd = document.getElementById('jmHistoryFwdBtn');
+            if (back) { back.disabled = jmHistoryIdx <= 0; back.style.opacity = back.disabled ? '0.4' : '1'; }
+            if (fwd) { fwd.disabled = jmHistoryIdx >= jmHistory.length - 1; fwd.style.opacity = fwd.disabled ? '0.4' : '1'; }
+        }
+
+        function jmApplyHistoryState(state) {
+            // 恢复控件并重新搜索（不入历史）
+            document.getElementById('jmQueryInput').value = state.query;
+            document.getElementById('jmModeSelect').value = state.mode;
+            document.getElementById('jmSearchTypeSelect').value = state.search_type;
+            document.getElementById('jmOrderBySelect').value = state.order_by;
+            document.getElementById('jmSourceSelect').value = state.source;
+            jmExecuteSearch(state);
+        }
+
+        function jmHistoryBack() {
+            if (jmHistoryIdx <= 0) return;
+            jmHistoryIdx--;
+            jmApplyHistoryState(jmHistory[jmHistoryIdx]);
+        }
+
+        function jmHistoryForward() {
+            if (jmHistoryIdx >= jmHistory.length - 1) return;
+            jmHistoryIdx++;
+            jmApplyHistoryState(jmHistory[jmHistoryIdx]);
+        }
+
+        // ===== JM 搜索状态保存/恢复(返回时还原) =====
+        const JM_SESSION_KEY = 'jmSearchState';
+
+        function jmGetSource() {
+            const sel = document.getElementById('jmSourceSelect');
+            if (sel && sel.value) return sel.value;
+            const v = localStorage.getItem('jmSource');
+            return (v === 'all' || v === 'jm' || v === 'pika') ? v : 'all';
+        }
+        function jmGetPageSize() { return parseInt(localStorage.getItem('jmPageSize') || '25', 10) || 25; }
+
+        function jmSaveState() {
+            try {
+                sessionStorage.setItem(JM_SESSION_KEY, JSON.stringify({
+                    view: document.getElementById('searchView').style.display !== 'none' ? 'search' : 'browse',
+                    query: document.getElementById('jmQueryInput').value,
+                    mode: document.getElementById('jmModeSelect').value,
+                    search_type: document.getElementById('jmSearchTypeSelect').value,
+                    order_by: document.getElementById('jmOrderBySelect').value,
+                    source: jmGetSource(),
+                    page: jmState.page,
+                    page_size: jmGetPageSize()
+                }));
+            } catch (e) {}
+        }
+
+        function jmRestoreState() {
+            let saved = null;
+            try { saved = JSON.parse(sessionStorage.getItem(JM_SESSION_KEY)); } catch (e) {}
+            if (!saved) return;
+            if (saved.view === 'search' && saved.query) {
+                document.getElementById('jmQueryInput').value = saved.query;
+                document.getElementById('jmModeSelect').value = saved.mode || 'site';
+                document.getElementById('jmSearchTypeSelect').value = saved.search_type || 'keyword';
+                document.getElementById('jmOrderBySelect').value = saved.order_by || 'mr';
+                if (saved.source && ['all', 'jm', 'pika'].indexOf(saved.source) >= 0) {
+                    document.getElementById('jmSourceSelect').value = saved.source;
+                }
+                jmState.page = Math.max(1, saved.page || 1);
+                switchView('search');
+                jmDoSearch(jmState.page);
+            }
+        }
+
+        // 离开页面(打开阅读/跳转)前保存
+        window.addEventListener('pagehide', jmSaveState);
+        window.addEventListener('beforeunload', jmSaveState);
+        // 返回本页时恢复
+        window.addEventListener('pageshow', (e) => {
+            if (e.persisted || performance.getEntriesByType('navigation')[0].type === 'back_forward') {
+                jmRestoreState();
+            }
+        });
+
+        function jmEscape(s) {
+            const d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+
+        function jmDoSearch(page) {
+            const query = document.getElementById('jmQueryInput').value.trim();
+            const mode = document.getElementById('jmModeSelect').value;
+            const search_type = document.getElementById('jmSearchTypeSelect').value;
+            const order_by = document.getElementById('jmOrderBySelect').value;
+            const page_size = jmGetPageSize();
+            const source = jmGetSource();
+            if (!query) { alert('请输入搜索关键词'); return; }
+            const state = {
+                query: query, mode: mode, search_type: search_type,
+                order_by: order_by, source: source,
+                page: Math.max(1, page || 1), page_size: page_size
+            };
+            jmHistoryPush(state);
+            jmExecuteSearch(state);
+        }
+
+        function jmExecuteSearch(state) {
+            jmState.query = state.query;
+            jmState.mode = state.mode;
+            jmState.search_type = state.search_type;
+            jmState.order_by = state.order_by;
+            jmState.page_size = state.page_size;
+            jmState.page = state.page;
+            jmUpdateHistoryArrows();
+
+            // 命中结果缓存 → 直接渲染，不重复请求（刷新/回退场景）
+            const cached = jmCacheLoad(state);
+            if (cached) {
+                jmRenderResults(state, cached);
+                return;
+            }
+
+            const hint = document.getElementById('jmHint');
+            hint.textContent = '搜索中…';
+            document.getElementById('pikaErrorBanner').style.display = 'none';
+            document.getElementById('jmPager').style.display = 'none';
+
+            const params = new URLSearchParams({
+                q: state.query, page: state.page, mode: state.mode,
+                order_by: state.order_by, search_type: state.search_type,
+                page_size: state.page_size, source: state.source
+            });
+            fetch(`/search?${params.toString()}`)
+                .then(r => r.json())
+                .then(data => {
+                    jmCacheSave(state, data);
+                    jmRenderResults(state, data);
+                })
+                .catch(err => { hint.textContent = '搜索失败: ' + err; });
+        }
+
+        // ===== 搜索结果缓存（sessionStorage，刷新/回退免重复请求） =====
+        function jmCacheKey(state) {
+            const raw = [state.query, state.mode, state.search_type, state.order_by,
+                         state.source, state.page, state.page_size].join('|');
+            let h = 5381;
+            for (let i = 0; i < raw.length; i++) h = ((h << 5) + h + raw.charCodeAt(i)) >>> 0;
+            return 'jmCache_' + h.toString(36);
+        }
+
+        function jmCacheSave(state, data) {
+            try {
+                sessionStorage.setItem(jmCacheKey(state), JSON.stringify({ state: state, data: data, ts: Date.now() }));
+                // 上限 60 条，超出淘汰最旧
+                const keys = [];
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const k = sessionStorage.key(i);
+                    if (k && k.startsWith('jmCache_')) keys.push(k);
+                }
+                if (keys.length > 60) {
+                    keys.sort((a, b) => {
+                        try { return JSON.parse(sessionStorage.getItem(a)).ts - JSON.parse(sessionStorage.getItem(b)).ts; }
+                        catch (e) { return 0; }
+                    });
+                    for (let i = 0; i < keys.length - 60; i++) sessionStorage.removeItem(keys[i]);
+                }
+            } catch (e) {}
+        }
+
+        function jmCacheLoad(state) {
+            try {
+                const raw = sessionStorage.getItem(jmCacheKey(state));
+                if (!raw) return null;
+                const obj = JSON.parse(raw);
+                return obj && obj.data ? obj.data : null;
+            } catch (e) { return null; }
+        }
+
+        function jmRenderResults(state, data) {
+            const box = document.getElementById('jmResults');
+            const banner = document.getElementById('pikaErrorBanner');
+            const hint = document.getElementById('jmHint');
+            box.innerHTML = '';
+            banner.style.display = 'none';
+            if (!data.success) {
+                hint.textContent = '搜索失败: ' + (data.error || '未知错误');
+                return;
+            }
+            if (data.pika_error) {
+                banner.textContent = 'pika 源失败: ' + data.pika_error + '（jm 结果已显示）';
+                banner.style.display = 'block';
+            }
+            hint.textContent = data.items.length ? '' : '没有更多结果';
+            for (const item of data.items) {
+                box.appendChild(jmBuildCard(item));
+            }
+            const totalPages = Math.max(1, Math.ceil(data.total / state.page_size));
+            document.getElementById('jmPager').style.display = 'flex';
+            document.getElementById('jmPrevBtn').disabled = state.page <= 1;
+            document.getElementById('jmNextBtn').disabled = state.page >= totalPages;
+            document.getElementById('jmPageInfo').textContent =
+                `第 ${state.page} / ${totalPages} 页 · 共 ${data.total} 部`;
+        }
+
+        function jmBuildCard(item) {
+            const source = item.source === 'pika' ? 'pika' : 'jm';
+            const card = document.createElement('div');
+            card.className = 'jm-card';
+            card.dataset.source = source;
+            const cover = source === 'pika' ? `/pika/cover/${item.id}` : `/jm/cover/${item.id}`;
+            const badgeCls = source === 'pika' ? 'jm-badge-pika' : 'jm-badge-jm';
+            const badge = `<span class="jm-badge ${badgeCls}">[${source}]</span>`;
+            const img = `<img src="${cover}" loading="lazy" alt="" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'">`;
+            card.innerHTML = `
+                ${badge}
+                ${img}
+                <div class="jm-info">
+                    <div class="jm-title">${jmEscape(item.title)}</div>
+                    <div class="jm-author" title="双击按作者搜索" data-author="${jmEscape(item.author || '未知作者')}">👤 ${jmEscape(item.author || '未知作者')}</div>
+                    <div class="jm-actions">
+                        <button class="jm-btn-online" onclick="jmStartOnline('${item.id}', this)">⚡ 在线</button>
+                        <button class="jm-btn-read" onclick="jmStartDownload('${item.id}', 'temp', this)">📖 阅读</button>
+                        <button class="jm-btn-dl" onclick="jmStartDownload('${item.id}', 'persist', this)">⬇ 下载</button>
+                    </div>
+                    <div class="jm-progress" style="display:none;">
+                        <span class="jm-progress-text"></span>
+                        <div class="jm-bar-track"><div class="jm-bar-fill"></div></div>
+                    </div>
+                </div>`;
+            return card;
+        }
+
+        // 双击作者名 → 自动按作者搜索（事件委托，避免内联转义问题）
+        // jm 走 author 模式；pika 无独立作者模式，mode=author 在后端按关键词搜索（同样命中作者）
+        document.getElementById('jmResults').addEventListener('dblclick', function(e) {
+            const authorEl = e.target.closest('.jm-author');
+            if (!authorEl) return;
+            const author = authorEl.dataset.author;
+            if (!author) return;
+            document.getElementById('jmQueryInput').value = author;
+            document.getElementById('jmModeSelect').value = 'author';
+            jmDoSearch(1);
+        });
+
+        function jmStartOnline(aid, btn) {
+            // 在线阅读: 预置空占位文件后跳转原生 gallery 阅读器,
+            // 图片由 /file 按需物化(滚到哪张拉哪张)
+            const card = btn.closest('.jm-card');
+            const source = card.dataset.source || 'jm';
+            const prog = card.querySelector('.jm-progress');
+            prog.style.display = 'block';
+            prog.querySelector('.jm-progress-text').textContent = '打开中…';
+            const url = source === 'pika' ? `/pika/online?aid=${aid}` : `/jm/online?aid=${aid}`;
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const path = data && (data.path || (data.success && data.path));
+                    if (!path) {
+                        prog.querySelector('.jm-progress-text').textContent = '✗ ' + ((data && data.error) || '打开失败');
+                        return;
+                    }
+                    sessionStorage.setItem('jmFromSearch', '1');
+                    window.location.href = `/gallery/${encodeURIComponent(path)}`;
+                })
+                .catch(err => {
+                    prog.querySelector('.jm-progress-text').textContent = '✗ ' + err;
+                });
+        }
+
+        function jmStartDownload(aid, mode, btn) {
+            const card = btn.closest('.jm-card');
+            const source = card.dataset.source || 'jm';
+            const title = card.querySelector('.jm-title').textContent;
+            const author = card.querySelector('.jm-author').textContent.replace('👤 ', '');
+
+            if (source === 'pika') {
+                if (mode === 'temp') {
+                    // pika 阅读优先：已下载则直接读，否则走临时下载流程
+                    fetch(`/pika/check?aid=${aid}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            const target = (data && data.downloaded && data.path) ||
+                                           (data && data.in_temp && data.temp_path);
+                            if (target) {
+                                sessionStorage.setItem('jmFromSearch', '1');
+                                window.location.href = `/gallery/${encodeURIComponent(target)}`;
+                                return;
+                            }
+                            pikaDoDownload(aid, title, author, 'temp', btn);
+                        })
+                        .catch(() => pikaDoDownload(aid, title, author, 'temp', btn));
+                    return;
+                }
+                pikaDoDownload(aid, title, author, mode, btn);
+                return;
+            }
+
+            if (mode === 'temp') {
+                // 📖 阅读优先：已下载则直接读，否则走临时下载流程
+                fetch(`/jm/check?aid=${aid}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success && data.downloaded && data.path) {
+                            sessionStorage.setItem('jmFromSearch', '1');
+                            window.location.href = `/gallery/${encodeURIComponent(data.path)}`;
+                            return;
+                        }
+                        jmDoDownload(aid, title, author, 'temp', btn);
+                    })
+                    .catch(() => jmDoDownload(aid, title, author, 'temp', btn));
+                return;
+            }
+            jmDoDownload(aid, title, author, mode, btn);
+        }
+
+        function pikaDoDownload(aid, title, author, mode, btn) {
+            const card = btn.closest('.jm-card');
+            fetch('/pika/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ aid: aid, title: title, author: author, mode: mode })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || !data.tid) {
+                        alert('下载失败: ' + ((data && data.error) || '未知错误'));
+                        return;
+                    }
+                    jmPollTask(data.tid, card, mode, 'pika');
+                })
+                .catch(err => alert('下载失败: ' + err));
+        }
+
+        function jmDoDownload(aid, title, author, mode, btn) {
+            const card = btn.closest('.jm-card');
+            fetch('/jm/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ aid: aid, title: title, author: author, mode: mode })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) { alert('下载失败: ' + (data.error || '未知错误')); return; }
+                    jmPollTask(data.tid, card, mode, 'jm');
+                })
+                .catch(err => alert('下载失败: ' + err));
+        }
+
+        function jmPollTask(tid, card, mode, source) {
+            const prog = card.querySelector('.jm-progress');
+            const text = prog.querySelector('.jm-progress-text');
+            const fill = prog.querySelector('.jm-bar-fill');
+            prog.style.display = 'block';
+            const statusUrl = source === 'pika' ? `/pika/status?tid=${tid}` : `/jm/status?tid=${tid}`;
+            const timer = setInterval(() => {
+                fetch(statusUrl)
+                    .then(r => r.json())
+                    .then(task => {
+                        if (!task.success) { clearInterval(timer); text.textContent = '✗ ' + (task.error || '任务丢失'); return; }
+                        const pct = task.total > 0 ? Math.min(100, Math.round(task.count * 100 / task.total)) : 0;
+                        if (task.status === 'queued') text.textContent = '排队中…';
+                        else if (task.status === 'running') {
+                            text.textContent = task.total > 0
+                                ? `下载中 ${pct}%（${task.count}/${task.total} 张）`
+                                : '下载中' + (task.count ? ` (${task.count} 张)` : '…');
+                            if (task.total > 0) fill.style.width = pct + '%';
+                        }
+                        else if (task.status === 'error') { clearInterval(timer); text.textContent = '✗ 失败: ' + task.error; }
+                        else if (task.status === 'done') {
+                            clearInterval(timer);
+                            text.textContent = `✓ 完成 (${task.count} 张)`;
+                            fill.style.width = '100%';
+                            if (mode === 'temp' && task.target) {
+                                // 阅读模式: 直接跳转到临时库中的漫画阅读页
+                                sessionStorage.setItem('jmFromSearch', '1');
+                                window.location.href = `/gallery/${encodeURIComponent(task.target)}`;
+                            }
+                        }
+                    })
+                    .catch(() => {});
+            }, 2000);
+        }
+
+        // ===== 搜索设置 =====
+        function openJmSettings() {
+            document.getElementById('jmSettingsModal').classList.add('active');
+            document.body.style.overflow = 'hidden';
+            // 同步当前值
+            document.getElementById('jmSettingsSourceSelect').value = jmGetSource();
+            document.getElementById('jmPageSizeSelect').value = String(jmGetPageSize());
+            // 加载 temp 保留天数
+            fetch('/jm/config')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.temp_retention_days) {
+                        document.getElementById('jmTempRetentionInput').value = data.temp_retention_days;
+                    }
+                })
+                .catch(() => {});
+            // 加载 pika 账号配置状态
+            fetch('/pika/config')
+                .then(r => r.json())
+                .then(data => {
+                    const st = document.getElementById('pikaEmailStatus');
+                    if (data && data.email_set) {
+                        st.textContent = '✓ 已配置 pika 账号';
+                        st.style.color = '#4caf50';
+                    } else {
+                        st.textContent = '✗ 未配置 pika 账号（搜索 pika 源需先配置）';
+                        st.style.color = '#e53935';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('pikaEmailStatus').textContent = '无法获取 pika 配置';
+                });
+        }
+
+        function closeJmSettings() {
+            document.getElementById('jmSettingsModal').classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // 包装 settings.js 的 openModal：搜索模式 → 搜索设置弹窗；本地阅读 → 原逻辑
+        (function() {
+            const origOpenModal = window.openModal;
+            window.openModal = function() {
+                const searchView = document.getElementById('searchView');
+                if (searchView && searchView.style.display !== 'none') {
+                    openJmSettings();
+                } else if (typeof origOpenModal === 'function') {
+                    origOpenModal();
+                }
+            };
+        })();
+
+        // 搜索设置变更自动保存到 localStorage（设置下拉 ↔ 搜索栏下拉 双向同步）
+        document.getElementById('jmSettingsSourceSelect').addEventListener('change', function() {
+            localStorage.setItem('jmSource', this.value);
+            document.getElementById('jmSourceSelect').value = this.value;
+        });
+        document.getElementById('jmSourceSelect').addEventListener('change', function() {
+            localStorage.setItem('jmSource', this.value);
+            const s = document.getElementById('jmSettingsSourceSelect');
+            if (s) s.value = this.value;
+        });
+
+        // ===== pika 账号配置 =====
+        function savePikaConfig() {
+            const email = document.getElementById('pikaEmailInput').value.trim();
+            const password = document.getElementById('pikaPasswordInput').value;
+            if (!email || !password) { alert('请输入邮箱和密码'); return; }
+            fetch('/pika/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, password: password })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    const ok = data && data.success;
+                    if (ok) {
+                        alert('已保存 pika 账号配置');
+                    } else {
+                        alert('保存失败: ' + ((data && data.error) || '未知错误'));
+                    }
+                    const st = document.getElementById('pikaEmailStatus');
+                    st.textContent = ok ? '✓ 已配置 pika 账号' : '✗ 保存失败，请重试';
+                    st.style.color = ok ? '#4caf50' : '#e53935';
+                })
+                .catch(err => alert('保存失败: ' + err));
+        }
+        document.getElementById('jmPageSizeSelect').addEventListener('change', function() {
+            localStorage.setItem('jmPageSize', this.value);
+        });
+        document.getElementById('jmTempRetentionInput').addEventListener('change', function() {
+            const days = parseInt(this.value, 10);
+            if (isNaN(days) || days < 1 || days > 90) {
+                alert('保留天数需在 1-90 之间');
+                return;
+            }
+            fetch('/jm/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ temp_retention_days: days })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('已保存 temp 保留天数: ' + days + ' 天');
+                    } else {
+                        alert('保存失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(err => alert('保存失败: ' + err));
+        });
+
+        // 初始化：源下拉 → 视图恢复（?mode=search 优先，否则 localStorage jmView）→ 搜索内容恢复
+        (function() {
+            // 初始化源选择下拉（默认 all）
+            const sel = document.getElementById('jmSourceSelect');
+            const v = localStorage.getItem('jmSource');
+            if (sel && (v === 'all' || v === 'jm' || v === 'pika')) {
+                sel.value = v;
+            }
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('mode') === 'search') {
+                switchView('search');
+            } else {
+                const savedView = localStorage.getItem('jmView');
+                if (savedView === 'search') {
+                    switchView('search');
+                }
+            }
+            // 恢复搜索内容（关键词/结果），刷新后保持当前页面内容
+            jmRestoreState();
+            initPersistMenu();
+        })();
     </script>
 </body>
 </html>

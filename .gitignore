@@ -26,3 +26,6 @@ logs/
 *.rs.bk
 
 .DS_Store
+share/
+
+_cache*/

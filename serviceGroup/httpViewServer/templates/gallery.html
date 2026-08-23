@@ -190,14 +190,22 @@
                display: flex;
                gap: 10px;">
                 
-        <a href="javascript:void(0);" 
-           onclick="saveAndReturn()" 
+        <a id="back-gallery-btn" href="javascript:void(0);"
+           onclick="saveAndReturn()"
            style="padding: 10px 20px;
                           background: rgba(255,255,255,0.9);
                           border-radius: 5px;
                           text-decoration: none;
                           box-shadow: 0 2px 5px rgba(177, 45, 45, 0.562);
                           ">← 返回图库</a>
+        <button id="back-btn" onclick="historyBackSafe()"
+                style="padding: 10px 20px;
+                       background: rgba(255,255,255,0.9);
+                       border-radius: 5px;
+                       border: none;
+                       text-decoration: none;
+                       box-shadow: 0 2px 5px rgba(177, 45, 45, 0.562);
+                       cursor: pointer;">返回</button>
         <button id="bookmark-btn" 
 onmousedown="startLongPress()" 
                 onmouseup="cancelLongPress()" 
@@ -1075,6 +1083,45 @@ onmousedown="startLongPress()"
 
     // 初始化时加载书签
     window.addEventListener('load', loadBookmarks);
+
+    // 是否从搜索模式进入（搜索页跳转时设置 sessionStorage.jmFromSearch=1 或 URL 带 from=jm）
+    let isFromSearch = false;
+
+    // 初始化返回按钮：搜索模式进入时隐藏"返回图库"、改"返回"为"返回搜索"
+    function initBackButtons() {
+        const urlParams = new URLSearchParams(window.location.search);
+        isFromSearch = sessionStorage.getItem('jmFromSearch') === '1' || urlParams.get('from') === 'jm';
+        if (!isFromSearch) return;
+
+        // 读取后清除标记，避免刷新后仍停留在搜索模式
+        sessionStorage.removeItem('jmFromSearch');
+
+        // 隐藏"← 返回图库"按钮
+        const galleryBtn = document.getElementById('back-gallery-btn');
+        if (galleryBtn) galleryBtn.style.display = 'none';
+
+        // "返回"按钮文案改为"返回搜索"
+        const backBtn = document.getElementById('back-btn');
+        if (backBtn) backBtn.textContent = '返回搜索';
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initBackButtons);
+    } else {
+        initBackButtons();
+    }
+
+    // 返回上一页(在线阅读进入时是搜索页): 无历史时回退到父目录
+    function historyBackSafe() {
+        if (window.history.length > 1) {
+            window.history.back();
+        } else if (isFromSearch) {
+            // 搜索模式无历史时回到搜索页（index.html 据此自动激活搜索视图）
+            window.location.href = '/?mode=search';
+        } else {
+            saveAndReturn();
+        }
+    }
 
     function saveAndReturn() {
         // 解码当前路径（处理URL编码）
