@@ -5,9 +5,11 @@
 // 背景图: infoServer /style/<theme>/ — 不引全量 style.css 避免布局污染 (np-reader 范本)
 // localStorage key 用 debugrel_ 前缀, 避免与其他子服务冲突
 
-const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
+const DEBUG_THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
 
-const THEME_WALLPAPERS = {
+function cfThemeValue(t) { return DEBUG_THEMES.includes(t) ? t : (t === 'dark' ? 'hysilens' : 'default'); }
+
+const DEBUG_THEME_WALLPAPERS = {
   kokomi:     { img: '/style/kokomi/kokomi.png',         overlay: 'linear-gradient(135deg, rgba(225,240,255,.55), rgba(252,232,240,.55))' },
   firefly:    { img: '/style/firefly/firefly.png',        overlay: 'linear-gradient(135deg, rgba(229,243,241,.55), rgba(236,233,242,.55), rgba(245,235,240,.55))' },
   furina:     { img: '/style/furina/furina.png',          overlay: 'radial-gradient(circle 900px at top center, rgba(255,235,190,.15) 0%, rgba(255,250,230,.03) 50%, rgba(18,11,11,.7) 100%), linear-gradient(135deg, rgba(18,11,11,.45), rgba(18,11,11,.25))' },
@@ -48,7 +50,7 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   if (sel) sel.value = theme;
 
-  const wp = THEME_WALLPAPERS[theme];
+  const wp = DEBUG_THEME_WALLPAPERS[theme];
   if (wp) {
     const url = `${getInfoServerUrl()}${wp.img}`;
     document.body.style.backgroundImage = `${wp.overlay}, url(${url})`;
@@ -79,13 +81,21 @@ async function setTheme(theme) {
 }
 
 async function restoreTheme() {
+  // Castflow embed：直接采用宿主主题，不走本地/服务端历史覆盖
+  if (new URLSearchParams(location.search).has('embed')) {
+    const q = new URLSearchParams(location.search).get('theme');
+    if (q) {
+      await setTheme(cfThemeValue(q));
+      return;
+    }
+  }
   if (await getSharedMode()) {
     // 共享: 优先 infoServer (同 IP 跨子服务同步)
     try {
       const r = await fetch(getInfoServerUrl() + '/api/theme');
       const data = await r.json();
       const t = data.theme;
-      if (t && THEMES.includes(t)) {
+      if (t && DEBUG_THEMES.includes(t)) {
         applyTheme(t);
         localStorage.setItem('debugrel_theme', t);
         return;
@@ -94,7 +104,7 @@ async function restoreTheme() {
   }
   // 纯本地 (共享关 / 本服务 excluded / 无记录) → 缓存 → 深色默认
   const saved = localStorage.getItem('debugrel_theme');
-  if (saved && THEMES.includes(saved)) {
+  if (saved && DEBUG_THEMES.includes(saved)) {
     applyTheme(saved);
   } else {
     applyTheme('');
@@ -107,4 +117,19 @@ document.addEventListener('DOMContentLoaded', () => {
     sel.addEventListener('change', () => setTheme(sel.value));
   }
   restoreTheme();
+});
+
+// Castflow embed mode：隐藏主题选择器，跟随宿主整体样式
+// debug-theme.js 在 body 末尾加载，DOM 已就绪，直接执行（不依赖 DOMContentLoaded）
+const debugEmbed = new URLSearchParams(location.search).has('embed');
+if (debugEmbed) {
+  const sel = document.getElementById('themeSelect');
+  if (sel) sel.style.display = 'none';
+  const q = new URLSearchParams(location.search).get('theme');
+  if (q) setTheme(cfThemeValue(q));
+}
+window.addEventListener('message', (ev) => {
+  if (ev.data && ev.data.type === 'cf-theme') {
+    setTheme(cfThemeValue(ev.data.value));
+  }
 });

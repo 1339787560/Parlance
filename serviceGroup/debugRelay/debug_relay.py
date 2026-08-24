@@ -183,6 +183,7 @@ class ClientCtx:
     # 客户端上报的业务身份（DebugPlugin 发送 client_info 聚合；未上报为 None）
     preview_index: Optional[int] = None
     user_id: Optional[Any] = None
+    build_version: Optional[str] = None
     console_buffer: list = field(default_factory=list)
     console_seq: int = 0
     perf_buffer: list = field(default_factory=list)
@@ -305,12 +306,15 @@ def _client_summary(c: ClientCtx, display_index: int) -> dict:
         label = f"?{display_index} · {c.ip}"
     else:
         label = f"#{display_index} · {c.ip}"
+    if c.build_version:
+        label = f"{label} · {c.build_version}"
     return {
         "id": c.id,
         "label": label,
         "ip": c.ip,
         "preview_index": c.preview_index,
         "user_id": c.user_id,
+        "build_version": c.build_version,
     }
 
 
@@ -1935,7 +1939,8 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
         # 客户端上报业务身份：preview 序号 + userId，聚合到 client_list/api_clients 供 agent 定位。
         ctx.preview_index = msg.get("preview_index")
         ctx.user_id = msg.get("user_id")
-        print(f"[debug-relay] {cid} client_info: preview_index={ctx.preview_index} user_id={ctx.user_id}", flush=True)
+        ctx.build_version = msg.get("build_version")
+        print(f"[debug-relay] {cid} client_info: preview_index={ctx.preview_index} user_id={ctx.user_id} build_version={ctx.build_version}", flush=True)
         await _broadcast_client_list()
 
     elif msg_type in (MsgType.SCENE_TREE, MsgType.SCENE_NODE_INFO):
@@ -2061,8 +2066,12 @@ async def api_clients():
 # ---- Runtime Control API ----
 
 @app.post("/api/runtime/reload")
-async def reload_runtime(client: str = None):
-    """刷新指定客户端的 Web preview runtime。?client=id（单客户端可省略）。"""
+async def reload_runtime(client: str = None, hard: bool = False):
+    """刷新指定客户端的 Web preview runtime。
+
+    - ?client=id（单客户端可省略）
+    - ?hard=true 时客户端执行 cache-busting 硬刷新（默认软刷新 location.reload()）
+    """
     ctx, err = _resolve_client(client)
     if err:
         return err
@@ -2070,6 +2079,7 @@ async def reload_runtime(client: str = None):
         "type": MsgType.RUNTIME_RELOAD,
         "ts": datetime.now().isoformat(),
         "source": "http_api",
+        "hard": hard,
     }
     try:
         await ctx.ws.send_json(msg)

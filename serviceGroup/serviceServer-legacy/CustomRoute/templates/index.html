@@ -1382,6 +1382,24 @@
     });
 });
 
+        // Castflow embed mode：隐藏主题按钮，跟随宿主整体样式（按明暗映射 dark-theme）
+        const cfEmbed = new URLSearchParams(location.search).has('embed');
+        const cfDarkThemes = new Set(['dark', 'furina', 'hysilens', 'geniusclub', 'silverwolf']);
+        const applyEmbedTheme = (t) => {
+            const dark = cfDarkThemes.has(t);
+            document.body.classList.toggle('dark-theme', dark);
+            themeIcons.forEach(icon => { icon.textContent = dark ? '☀️' : '🌙'; });
+            localStorage.setItem('darkMode', dark);
+        };
+        if (cfEmbed) {
+            themeToggleButtons.forEach(btn => { btn.style.display = 'none'; });
+            const q = new URLSearchParams(location.search).get('theme');
+            if (q) applyEmbedTheme(q);
+        }
+        window.addEventListener('message', (ev) => {
+            if (ev.data && ev.data.type === 'cf-theme') applyEmbedTheme(ev.data.value);
+        });
+
         // SVN 更新相关逻辑
         const svnUpdateButton = document.getElementById('svn-update-btn');
         const svnStatusText = document.getElementById('svn-status-text');
@@ -2037,80 +2055,6 @@
         
         // 定期更新序列列表（每30秒）
         // setInterval(updateSequenceList, 30000);
-
-        // 不活动检测功能
-        let inactivityTimeout;
-        let isHidden = false;
-        let hideForBGEnabled = false; // 从config.json加载
-
-        const elementsToHide = [
-            document.querySelector('.sidebar-wrapper'),
-            document.querySelector('.toolbar'),
-            document.querySelector('.sequence-container'),
-            document.querySelector('h1'), // Windows服务管理工具 By Liz
-            document.querySelector('.breadcrumb'),
-            document.getElementById('service-status-title'),
-            document.getElementById('service-grid')
-        ];
-        const inactivityHint = document.getElementById('inactivity-hint');
-
-        // 从config.json加载hideForBG配置
-        async function loadConfig() {
-            try {
-                const response = await fetch('/api/config'); // 假设有一个API端点来获取config.json
-                const config = await response.json();
-                if (config && typeof config.hideForBG !== 'undefined') {
-                    hideForBGEnabled = config.hideForBG;
-                }
-            } catch (error) {
-                console.error('加载config.json失败:', error);
-            }
-        }
-
-        function hideElements() {
-            if (!hideForBGEnabled) return;
-            if (isHidden) return;
-
-            elementsToHide.forEach(el => {
-                if (el) el.style.display = 'none';
-            });
-            if (inactivityHint) inactivityHint.style.display = 'block';
-            isHidden = true;
-        }
-
-        function showElements() {
-            if (!hideForBGEnabled) return;
-            if (!isHidden) return;
-
-            elementsToHide.forEach(el => {
-                if (el) el.style.display = ''; // 恢复默认显示
-            });
-            if (inactivityHint) inactivityHint.style.display = 'none';
-            isHidden = false;
-        }
-
-        function resetInactivityTimer() {
-            clearTimeout(inactivityTimeout);
-            if (hideForBGEnabled) {
-                inactivityTimeout = setTimeout(hideElements, 15000); // 15秒
-            }
-            showElements(); // 任何活动都显示元素
-        }
-
-        // 监听鼠标左键点击事件
-        document.addEventListener('mousedown', function(event) {
-            if (event.button === 0) { // 0代表鼠标左键
-                resetInactivityTimer();
-            }
-        });
-
-        // 页面加载完成后初始化不活动计时器和加载配置
-        document.addEventListener('DOMContentLoaded', async () => {
-            await loadConfig(); // 确保配置加载完成
-            if (hideForBGEnabled) {
-                resetInactivityTimer(); // 只有当功能启用时才启动计时器
-            }
-        });
 
         // ===== 配置编辑悬浮窗 (逻辑对齐 onlineConfigModify.html) =====
         let ceEditingFilePath = null;

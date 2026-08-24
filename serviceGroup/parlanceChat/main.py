@@ -83,7 +83,8 @@ def create_app(upload_dir: str, db_path: str) -> FastAPI:
     async def add_security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        # Castflow 客户端 iframe 嵌入 5001 页面需要允许 frame；本地局域网服务，取消 DENY。
+        # response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         return response
 

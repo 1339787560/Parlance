@@ -1644,6 +1644,14 @@
 
   // Restore saved theme — instant from local cache, then authoritative from server
   async function restoreTheme() {
+    // Castflow embed：直接采用宿主主题，不走本地/服务端历史覆盖
+    if (isEmbed) {
+      const q = new URLSearchParams(location.search).get('theme');
+      if (q) {
+        await setTheme(cfThemeValue(q));
+        return;
+      }
+    }
     const localTheme = localStorage.getItem('chat_theme');
     if (localTheme && THEMES.includes(localTheme)) {
       applyTheme(localTheme);
@@ -1817,6 +1825,20 @@
       await fetch('/api/messages?confirm=true', { method: 'DELETE' });
       showToast('已清空所有消息和文件');
     } catch (_) { showToast('清空失败'); }
+  });
+
+  // ── Castflow embed mode：隐藏主题选择器，跟随宿主 dark/light ──
+  function cfThemeValue(t) { return THEMES.includes(t) ? t : (t === 'dark' ? 'hysilens' : 'default'); }
+  const isEmbed = new URLSearchParams(location.search).has('embed');
+  if (isEmbed && themeSelect) themeSelect.style.display = 'none';
+  if (isEmbed) {
+    const q = new URLSearchParams(location.search).get('theme');
+    if (q) setTheme(cfThemeValue(q));
+  }
+  window.addEventListener('message', (ev) => {
+    if (ev.data && ev.data.type === 'cf-theme') {
+      setTheme(cfThemeValue(ev.data.value));
+    }
   });
 
   // ── Init ───────────────────────────────────────────────────────────────

@@ -910,6 +910,21 @@ setInterval(() => {
   }
 }, 10000);
 setInterval(refresh, 30000);
+
+// Castflow embed mode：隐藏主题选择器，跟随宿主整体样式
+function cfThemeValue(t) { return THEMES.includes(t) ? t : (t === 'dark' ? 'hysilens' : 'default'); }
+const statsEmbed = new URLSearchParams(location.search).has('embed');
+if (statsEmbed) {
+  const sel = document.getElementById('themeSelect');
+  if (sel) sel.style.display = 'none';
+  const q = new URLSearchParams(location.search).get('theme');
+  if (q) setTheme(cfThemeValue(q));
+}
+window.addEventListener('message', (ev) => {
+  if (ev.data && ev.data.type === 'cf-theme') {
+    setTheme(cfThemeValue(ev.data.value));
+  }
+});
 </script>
 </body>
 </html>
