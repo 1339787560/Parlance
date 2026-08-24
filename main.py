@@ -205,6 +205,10 @@ class ServiceControlServer:
             return self._restart_by_port(params.get("port"))
         if method == "swap_exe":
             return self._swap_exe_by_port(params.get("port"))
+        if method == "stop":
+            return self._stop_by_port(params.get("port"))
+        if method == "start":
+            return self._start_by_port(params.get("port"))
         if method == "update":
             return self._update_services(params.get("names") or params.get("tags"))
         if method == "update_log":
@@ -254,6 +258,42 @@ class ServiceControlServer:
             if svc.port == port:
                 return svc
         return None
+
+    def _stop_by_port(self, port) -> dict[str, Any]:
+        """单服务停止原语 (供 cwd_infoserver_build_swap 停→build→start 编排解锁 exe)."""
+        if self._update_running:
+            return {"error": "svn update in progress, stop blocked"}
+        if port is None:
+            return {"error": "port required"}
+        svc: Optional[ManagedService] = self._find_by_port(int(port))
+        if svc is None:
+            return {"error": f"no managed service on port {port}"}
+        if not svc.enabled:
+            return {"error": f"service '{svc.name}' on port {port} is disabled (enabled=false)"}
+        if not svc.managed:
+            return {"error": f"service '{svc.name}' on port {port} is daemon (managed=false), stop not supported"}
+        if not svc.running:
+            return {"ok": True, "name": svc.name, "port": svc.port, "status": svc.status, "note": "not running"}
+        svc.stop(timeout=15)
+        return {"ok": True, "name": svc.name, "port": svc.port, "status": svc.status}
+
+    def _start_by_port(self, port) -> dict[str, Any]:
+        """单服务启动原语 (供 build_swap 停→build→start 编排; 已运行则幂等)."""
+        if self._update_running:
+            return {"error": "svn update in progress, start blocked"}
+        if port is None:
+            return {"error": "port required"}
+        svc: Optional[ManagedService] = self._find_by_port(int(port))
+        if svc is None:
+            return {"error": f"no managed service on port {port}"}
+        if not svc.enabled:
+            return {"error": f"service '{svc.name}' on port {port} is disabled (enabled=false)"}
+        if not svc.managed:
+            return {"error": f"service '{svc.name}' on port {port} is daemon (managed=false)"}
+        if svc.running:
+            return {"ok": True, "name": svc.name, "port": svc.port, "status": svc.status, "note": "already running"}
+        svc.start()
+        return {"ok": True, "name": svc.name, "port": svc.port, "status": svc.status}
 
     # ── update 编排: 停指定子服务 → svn update → 启 ─────────────────────
     # 用户方案: infoServer 提供断点, 请求后先停两个 serviceServer 子服务
