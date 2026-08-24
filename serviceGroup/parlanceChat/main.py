@@ -68,7 +68,10 @@ def create_app(upload_dir: str, db_path: str) -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     style_dir = static_dir / "style"
-    if style_dir.exists():
+    # 用 is_dir() 而非 exists(): Windows 无 core.symlinks 时 git 符号链接
+    # (static/style -> ../style) 物化为 8B 文本文件, exists()=True 但非目录,
+    # StaticFiles 会抛 "Directory does not exist" 崩溃。is_dir() 兜底跳过。
+    if style_dir.is_dir():
         app.mount("/style", StaticFiles(directory=str(style_dir)), name="style")
 
     # ── Middleware ───────────────────────────────────────────────────────────────
