@@ -71,6 +71,10 @@ def create_app(upload_dir: str, db_path: str) -> FastAPI:
     # 用 is_dir() 而非 exists(): Windows 无 core.symlinks 时 git 符号链接
     # (static/style -> ../style) 物化为 8B 文本文件, exists()=True 但非目录,
     # StaticFiles 会抛 "Directory does not exist" 崩溃。is_dir() 兜底跳过。
+    # 若 static/style 非目录 (Windows 符号链接未物化), 回退宿主根 style/
+    # (gitignored 本地主题资产: kokomi/firefly/furina/geniusclub/Hysilens/silverwolf)。
+    if not style_dir.is_dir():
+        style_dir = Path(__file__).resolve().parent.parent.parent / "style"
     if style_dir.is_dir():
         app.mount("/style", StaticFiles(directory=str(style_dir)), name="style")
 
