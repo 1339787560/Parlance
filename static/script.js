@@ -257,7 +257,20 @@
   }
 
   // ── Resumable download ─────────────────────────────────────────────────
+  function isCastflowEmbedded() {
+    return new URLSearchParams(location.search).get('embed') === '1' && window.parent !== window;
+  }
+
+  function requestCastflowDownload(url, filename) {
+    const absolute = new URL(url, location.href).href;
+    window.parent.postMessage({ type: 'cf-download', url: absolute, filename: filename || '' }, '*');
+  }
+
   function downloadFile(msgId, filename) {
+    if (isCastflowEmbedded()) {
+      requestCastflowDownload(`${DL_API}/${msgId}`, filename || 'download');
+      return;
+    }
     // Use backend streaming with Range support — browser handles resume natively
     const a = document.createElement('a');
     a.href = `${DL_API}/${msgId}`;
@@ -268,6 +281,10 @@
   }
 
   function downloadBatch(msgId, filename) {
+    if (isCastflowEmbedded()) {
+      requestCastflowDownload('/api/download-batch/' + msgId, (filename || 'batch') + '.zip');
+      return;
+    }
     const a = document.createElement('a');
     a.href = '/api/download-batch/' + msgId;
     a.download = (filename || 'batch') + '.zip';
@@ -1838,6 +1855,9 @@
   window.addEventListener('message', (ev) => {
     if (ev.data && ev.data.type === 'cf-theme') {
       setTheme(cfThemeValue(ev.data.value));
+    } else if (ev.data && ev.data.type === 'cf-bg-opacity') {
+      const op = Math.max(0, Math.min(1, Number(ev.data.value) || 0));
+      document.documentElement.style.setProperty('--theme-bg-opacity', String(op));
     }
   });
 
