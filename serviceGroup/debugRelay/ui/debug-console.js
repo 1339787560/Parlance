@@ -783,87 +783,10 @@ function resumeExecution() {
     resumeBtn.classList.add('hidden');
 }
 
-// ---- Theme system (synced with statisticServer) ----
-
-const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
-const THEME_NAMES = ['朱砂红', '简约配色', '珊瑚宫心海', '流萤·萨姆', '芙宁娜·歌剧院', '海瑟音·深境', '天才俱乐部', '狼尊 LV.999'];
-
-const THEME_WALLPAPERS = {
-    kokomi:     { img: '/style/kokomi/kokomi.png',       overlay: 'linear-gradient(135deg, rgba(225,240,255,.55), rgba(252,232,240,.55))' },
-    firefly:    { img: '/style/firefly/firefly.png',      overlay: 'linear-gradient(135deg, rgba(229,243,241,.55), rgba(236,233,242,.55), rgba(245,235,240,.55))' },
-    furina:     { img: '/style/furina/furina.png',        overlay: 'radial-gradient(circle 900px at top center, rgba(255,235,190,.15) 0%, rgba(255,250,230,.03) 50%, rgba(18,11,11,.7) 100%), linear-gradient(135deg, rgba(18,11,11,.45), rgba(18,11,11,.25))' },
-    hysilens:   { img: '/style/Hysilens/Hysilens.jpg',    overlay: 'radial-gradient(ellipse 80% 35% at 50% 0%, rgba(112,195,252,.12) 0%, transparent 70%), radial-gradient(ellipse 40% 30% at 10% 100%, rgba(209,46,107,.10) 0%, transparent 70%), linear-gradient(135deg, rgba(14,24,38,.4), rgba(45,15,63,.3), rgba(21,42,66,.4))' },
-    geniusclub: { img: '/style/geniusclub/geniusclub.png', overlay: 'radial-gradient(ellipse 70% 40% at 50% 0%, rgba(138,79,255,.08) 0%, transparent 70%), radial-gradient(ellipse 40% 25% at 80% 100%, rgba(229,193,123,.06) 0%, transparent 60%), linear-gradient(135deg, rgba(15,18,31,.5), rgba(34,18,48,.4))' },
-    silverwolf: { img: '/style/silverwolf/silverwolf.png', overlay: 'linear-gradient(#070312, rgba(7,3,18,.4))' },
-};
-
-function getInfoServerUrl() {
-    return 'http://' + (window.location.hostname || '127.0.0.1') + ':5001';
-}
-
-function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme || '');
-    const sel = document.getElementById('themeSelect');
-    if (sel) sel.value = theme || '';
-
-    // Set background image from infoServer (only for themed pages with wallpaper)
-    const wp = THEME_WALLPAPERS[theme];
-    if (wp) {
-        const url = getInfoServerUrl() + wp.img;
-        document.body.style.backgroundImage = wp.overlay + ', url(' + url + ')';
-        document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundAttachment = 'fixed';
-    } else {
-        document.body.style.backgroundImage = 'none';
-        document.body.style.backgroundSize = '';
-        document.body.style.backgroundAttachment = '';
-    }
-}
-
-async function syncThemeToServer(theme) {
-    try {
-        await fetch(getInfoServerUrl() + '/api/theme', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ theme: theme || '' })
-        });
-    } catch (_) { /* infoServer offline, local-only */ }
-}
-
-async function setTheme(theme) {
-    applyTheme(theme);
-    localStorage.setItem('debug_theme', theme || '');
-    await syncThemeToServer(theme);
-}
-
-async function restoreTheme() {
-    // Try infoServer first
-    try {
-        const r = await fetch(getInfoServerUrl() + '/api/theme');
-        const data = await r.json();
-        if (data.theme && THEMES.includes(data.theme)) {
-            applyTheme(data.theme);
-            localStorage.setItem('debug_theme', data.theme);
-            return;
-        }
-    } catch (_) { /* infoServer unreachable, use local */ }
-
-    // Fallback to localStorage
-    const saved = localStorage.getItem('debug_theme');
-    if (saved && THEMES.includes(saved)) {
-        applyTheme(saved);
-    } else {
-        applyTheme('');  // default dark theme
-    }
-}
-
-// Theme selector event
+// ---- Theme system ----
+// 主题系统已迁移到 debug-theme.js（支持 Castflow 透明度同步），
+// 这里不再重复设置 body 背景图，避免同一页面出现两张背景图。
 document.addEventListener('DOMContentLoaded', () => {
-    const sel = document.getElementById('themeSelect');
-    if (sel) {
-        sel.addEventListener('change', () => setTheme(sel.value));
-    }
-    restoreTheme();
     restoreActiveTab();
 });
 

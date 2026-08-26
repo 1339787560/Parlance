@@ -50,18 +50,19 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   if (sel) sel.value = theme;
 
+  // 背景图交给 body::before 伪元素渲染，透明度由 --theme-bg-opacity 控制
   const wp = DEBUG_THEME_WALLPAPERS[theme];
   if (wp) {
     const url = `${getInfoServerUrl()}${wp.img}`;
-    document.body.style.backgroundImage = `${wp.overlay}, url(${url})`;
-    document.body.style.backgroundSize = 'cover';
-    document.body.style.backgroundAttachment = 'fixed';
+    document.documentElement.style.setProperty('--theme-bg-image', `${wp.overlay}, url(${url})`);
+    document.body.style.background = 'transparent'; // 让 body::before 背景图透出
   } else {
-    // red/default 纯色主题, 清背景图露底色
-    document.body.style.backgroundImage = 'none';
-    document.body.style.backgroundSize = '';
-    document.body.style.backgroundAttachment = '';
+    document.documentElement.style.setProperty('--theme-bg-image', 'none');
+    document.body.style.background = ''; // 恢复 CSS 纯色背景
   }
+  document.body.style.backgroundImage = 'none';
+  document.body.style.backgroundSize = '';
+  document.body.style.backgroundAttachment = '';
 }
 
 async function syncThemeToServer(theme) {
@@ -131,5 +132,8 @@ if (debugEmbed) {
 window.addEventListener('message', (ev) => {
   if (ev.data && ev.data.type === 'cf-theme') {
     setTheme(cfThemeValue(ev.data.value));
+  } else if (ev.data && ev.data.type === 'cf-bg-opacity') {
+    const op = Math.max(0, Math.min(1, Number(ev.data.value) || 0));
+    document.documentElement.style.setProperty('--theme-bg-opacity', String(op));
   }
 });

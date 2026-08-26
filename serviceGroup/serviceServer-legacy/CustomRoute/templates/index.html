@@ -1393,6 +1393,11 @@
         };
         if (cfEmbed) {
             themeToggleButtons.forEach(btn => { btn.style.display = 'none'; });
+            // 嵌入 Castflow 时不再使用自己的背景图，跟随 Castflow 背景
+            const bgContainer = document.getElementById('bg-container');
+            if (bgContainer) bgContainer.style.display = 'none';
+            document.documentElement.style.background = 'transparent';
+            document.body.style.background = 'transparent';
             const q = new URLSearchParams(location.search).get('theme');
             if (q) applyEmbedTheme(q);
         }

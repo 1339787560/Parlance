@@ -13,6 +13,22 @@
     --cn-gold:        #C39A5B;   /* 暗金 — decorative accents */
     --cn-wood:        #D4C4A9;   /* 檀木色 — soft borders */
     --cn-overlay:     rgba(44, 37, 31, 0.5); /* 墨色遮罩 */
+    /* 背景图透明度：由 Castflow 通过 cf-bg-opacity 注入，0-1 */
+    --theme-bg-opacity: 1;
+    --theme-bg-image: none;
+  }
+
+  /* 主题背景图独立伪元素：便于单独控制透明度，不透明度不影响文字内容 */
+  html[data-theme] body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--theme-bg-image, none);
+    background-size: cover;
+    background-attachment: fixed;
+    opacity: var(--theme-bg-opacity, 1);
+    pointer-events: none;
   }
 
   html, body {
@@ -465,11 +481,9 @@
 
   /* ── Kokomi 主题专属样式（毛玻璃、圆角、渐变背景） ────────── */
   html[data-theme="kokomi"] {
-    background-image:
+    --theme-bg-image:
       linear-gradient(135deg, rgba(225, 240, 255, 0.55), rgba(252, 232, 240, 0.55)),
       url('/style/kokomi/kokomi.png');
-    background-size: cover;
-    background-attachment: fixed;
   }
   html[data-theme="kokomi"] body {
     background: none;
@@ -684,11 +698,9 @@
 
   /* ── Firefly 主题专属样式 ──────────────────────────────────── */
   html[data-theme="firefly"] {
-    background-image:
+    --theme-bg-image:
       linear-gradient(135deg, rgba(229, 243, 241, 0.55), rgba(236, 233, 242, 0.55), rgba(245, 235, 240, 0.55)),
       url('/style/firefly/firefly.png');
-    background-size: cover;
-    background-attachment: fixed;
   }
   html[data-theme="firefly"] body {
     background: none;
@@ -1009,12 +1021,10 @@
   }
   html[data-theme="furina"] {
     background-color: #120B0B;
-    background-image:
+    --theme-bg-image:
       radial-gradient(circle 900px at top center, rgba(255, 235, 190, 0.15) 0%, rgba(255, 250, 230, 0.03) 50%, rgba(18, 11, 11, 0.7) 100%),
       linear-gradient(135deg, rgba(18, 11, 11, 0.45), rgba(18, 11, 11, 0.25)),
       url('/style/furina/furina.png');
-    background-size: cover;
-    background-attachment: fixed;
   }
   html[data-theme="furina"] body {
     background: none;
@@ -1156,13 +1166,11 @@
     --cn-overlay:     rgba(14, 24, 38, 0.7);
   }
   html[data-theme="hysilens"] {
-    background:
+    --theme-bg-image:
       radial-gradient(ellipse 80% 35% at 50% 0%, rgba(112, 195, 252, 0.12) 0%, transparent 70%),
       radial-gradient(ellipse 40% 30% at 10% 100%, rgba(209, 46, 107, 0.10) 0%, transparent 70%),
       linear-gradient(135deg, rgba(14, 24, 38, 0.4), rgba(45, 15, 63, 0.3), rgba(21, 42, 66, 0.4)),
       url('/style/Hysilens/Hysilens.jpg');
-    background-size: cover;
-    background-attachment: fixed;
   }
   html[data-theme="hysilens"] body {
     background: none;
@@ -1363,13 +1371,11 @@
     --cn-overlay:     rgba(15, 18, 31, 0.7);
   }
   html[data-theme="geniusclub"] {
-    background:
+    --theme-bg-image:
       radial-gradient(ellipse 70% 40% at 50% 0%, rgba(138, 79, 255, 0.08) 0%, transparent 70%),
       radial-gradient(ellipse 40% 25% at 80% 100%, rgba(229, 193, 123, 0.06) 0%, transparent 60%),
       linear-gradient(135deg, rgba(15, 18, 31, 0.5), rgba(34, 18, 48, 0.4)),
       url('/style/geniusclub/geniusclub.png');
-    background-size: cover;
-    background-attachment: fixed;
   }
   html[data-theme="geniusclub"] body {
     background: none;
@@ -1574,12 +1580,10 @@
     --cn-overlay:     rgba(7, 3, 18, 0.7);
   }
   html[data-theme="silverwolf"] {
-    background: #070312;
-    background-image:
+    background-color: #070312;
+    --theme-bg-image:
       linear-gradient(#070312, rgba(7, 3, 18, 0.4)),
       url('/style/silverwolf/silverwolf.png');
-    background-size: cover;
-    background-attachment: fixed;
   }
   html[data-theme="silverwolf"] body {
     background: none;

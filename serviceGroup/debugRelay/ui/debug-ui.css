@@ -17,6 +17,8 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html { background-color: var(--bg); min-height: 100%; }
+
 body {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 12px;
@@ -1533,6 +1535,19 @@ html[data-theme="silverwolf"] {
 
 /* ── Theme background images ──────────────────────────────────── */
 /* Applied via JS (same pattern as statisticServer) */
+
+/* 背景图伪元素：透明度由 Castflow cf-bg-opacity 控制 */
+html[data-theme] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--theme-bg-image, none);
+  background-size: cover;
+  background-attachment: fixed;
+  opacity: var(--theme-bg-opacity, 1);
+  pointer-events: none;
+}
 
 /* ── Events Panel ────────────────────────────────────────────── */
 

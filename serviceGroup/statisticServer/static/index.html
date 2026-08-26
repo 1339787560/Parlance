@@ -19,6 +19,7 @@
   --cyan:    #39d2c0;
 }
 *{margin:0;padding:0;box-sizing:border-box}
+html{background-color:var(--bg);min-height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);padding:20px}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px}
 .header h1{font-size:22px;font-weight:600}
@@ -174,6 +175,19 @@ html[data-theme="silverwolf"] {
   --blue:    #7AADF5;
   --purple:  #B388FF;
   --cyan:    #00FFCC;
+}
+
+/* 主题背景图伪元素：透明度由 Castflow cf-bg-opacity 控制 */
+html[data-theme] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--theme-bg-image, none);
+  background-size: cover;
+  background-attachment: fixed;
+  opacity: var(--theme-bg-opacity, 1);
+  pointer-events: none;
 }
 
 /* Theme selector */
@@ -421,18 +435,19 @@ function applyTheme(theme) {
   const sel = document.getElementById('themeSelect');
   if (sel) sel.value = theme;
 
-  // Set background image from infoServer
+  // 背景图交给 html::before 伪元素渲染，透明度由 --theme-bg-opacity 控制
   const wp = THEME_WALLPAPERS[theme];
   if (wp) {
     const url = `${getInfoServerUrl()}${wp.img}`;
-    document.body.style.backgroundImage = `${wp.overlay}, url(${url})`;
-    document.body.style.backgroundSize = 'cover';
-    document.body.style.backgroundAttachment = 'fixed';
+    document.documentElement.style.setProperty('--theme-bg-image', `${wp.overlay}, url(${url})`);
+    document.body.style.background = 'transparent'; // 让 body::before 背景图透出
   } else {
-    document.body.style.backgroundImage = 'none';
-    document.body.style.backgroundSize = '';
-    document.body.style.backgroundAttachment = '';
+    document.documentElement.style.setProperty('--theme-bg-image', 'none');
+    document.body.style.background = ''; // 恢复 CSS 纯色背景
   }
+  document.body.style.backgroundImage = 'none';
+  document.body.style.backgroundSize = '';
+  document.body.style.backgroundAttachment = '';
 }
 
 function getInfoServerUrl() {
@@ -923,6 +938,9 @@ if (statsEmbed) {
 window.addEventListener('message', (ev) => {
   if (ev.data && ev.data.type === 'cf-theme') {
     setTheme(cfThemeValue(ev.data.value));
+  } else if (ev.data && ev.data.type === 'cf-bg-opacity') {
+    const op = Math.max(0, Math.min(1, Number(ev.data.value) || 0));
+    document.documentElement.style.setProperty('--theme-bg-opacity', String(op));
   }
 });
 </script>
