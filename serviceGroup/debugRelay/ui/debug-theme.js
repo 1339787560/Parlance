@@ -16,6 +16,7 @@ const DEBUG_THEME_WALLPAPERS = {
   hysilens:   { img: '/style/Hysilens/Hysilens.jpg',      overlay: 'radial-gradient(ellipse 80% 35% at 50% 0%, rgba(112,195,252,.12) 0%, transparent 70%), radial-gradient(ellipse 40% 30% at 10% 100%, rgba(209,46,107,.10) 0%, transparent 70%), linear-gradient(135deg, rgba(14,24,38,.4), rgba(45,15,63,.3), rgba(21,42,66,.4))' },
   geniusclub: { img: '/style/geniusclub/geniusclub.png',  overlay: 'radial-gradient(ellipse 70% 40% at 50% 0%, rgba(138,79,255,.08) 0%, transparent 70%), radial-gradient(ellipse 40% 25% at 80% 100%, rgba(229,193,123,.06) 0%, transparent 60%), linear-gradient(135deg, rgba(15,18,31,.5), rgba(34,18,48,.4))' },
   silverwolf: { img: '/style/silverwolf/silverwolf.png',  overlay: 'linear-gradient(#070312, rgba(7,3,18,.4))' },
+  odette:     { img: '/style/odette/odette.jpg',          overlay: 'radial-gradient(circle at 50% 30%, rgba(123,228,255,.15) 0%, transparent 60%), linear-gradient(to bottom, rgba(8,13,36,.2), rgba(8,13,36,.85))' },
 };
 
 const SERVICE_NAME = 'debugRelay';

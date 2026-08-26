@@ -1732,6 +1732,246 @@
     box-shadow: 0 0 8px #FF007F, 0 0 16px rgba(255, 0, 127, 0.4);
   }
 
+  /* ── Odette · 月夜羽翼 ─────────────────────────────────────── */
+  html[data-theme="odette"] {
+    --cn-paper:       #080d24;
+    --cn-bubble:      rgba(15, 23, 56, 0.65);
+    --cn-ink:         #f8fbff;
+    --cn-ink-light:   #93c5fd;
+    --cn-ink-faint:   rgba(147, 197, 253, 0.55);
+    --cn-red:         #ff5c98;
+    --cn-red-hover:   #ff7aa8;
+    --cn-red-light:   rgba(255, 92, 152, 0.15);
+    --cn-gold:        #fef08a;
+    --cn-wood:        rgba(147, 197, 253, 0.25);
+    --cn-overlay:     rgba(8, 13, 36, 0.7);
+  }
+  html[data-theme="odette"] {
+    background: #080d24;
+    background-image:
+      radial-gradient(circle at 50% 30%, rgba(123, 228, 255, 0.15) 0%, transparent 60%),
+      linear-gradient(to bottom, rgba(8, 13, 36, 0.2), rgba(8, 13, 36, 0.85)),
+      url('/style/odette/odette.jpg');
+    background-size: cover;
+    background-attachment: fixed;
+  }
+  html[data-theme="odette"] body {
+    background: none;
+    font-family: 'Cormorant Garamond', 'Songti SC', 'PingFang SC', 'Microsoft YaHei', serif;
+  }
+
+  /* 月影玻璃顶栏 */
+  html[data-theme="odette"] .header {
+    background: rgba(15, 23, 56, 0.55);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(147, 197, 253, 0.25);
+    box-shadow: 0 8px 32px 0 rgba(0, 180, 255, 0.15);
+  }
+  html[data-theme="odette"] .header h1 {
+    color: #f8fbff;
+    text-shadow: 0 0 12px rgba(123, 228, 255, 0.6), 0 0 24px rgba(123, 228, 255, 0.3);
+    animation: odetteTitleGlow 7s ease-in-out infinite;
+  }
+  @keyframes odetteTitleGlow {
+    0%, 100% { text-shadow: 0 0 12px rgba(123, 228, 255, 0.6), 0 0 24px rgba(123, 228, 255, 0.3); }
+    50% { text-shadow: 0 0 18px rgba(123, 228, 255, 0.9), 0 0 40px rgba(255, 92, 152, 0.4); }
+  }
+
+  /* [我方·天鹅羽翼] 冰晶白羽毛玻璃 + 月青光晕 */
+  html[data-theme="odette"] .msg.self {
+    background: linear-gradient(135deg, rgba(147, 197, 253, 0.22) 0%, rgba(15, 23, 56, 0.65) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(123, 228, 255, 0.45);
+    border-radius: 18px 18px 2px 18px;
+    color: #f8fbff;
+    box-shadow:
+      0 8px 32px 0 rgba(0, 180, 255, 0.15),
+      inset 0 1px 0 rgba(248, 251, 255, 0.2);
+    position: relative;
+  }
+  html[data-theme="odette"] .msg.self::after {
+    content: "❄";
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #7be4ff;
+    font-size: 11px;
+    text-shadow: 0 0 6px rgba(123, 228, 255, 0.7);
+    opacity: 0.7;
+  }
+
+  /* [对方·月夜湖畔] 深蓝玻璃 + 玫粉缎带光 */
+  html[data-theme="odette"] .msg.other {
+    background: linear-gradient(135deg, rgba(8, 13, 36, 0.7) 0%, rgba(15, 23, 56, 0.55) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 92, 152, 0.4);
+    border-radius: 18px 18px 18px 2px;
+    color: #f8fbff;
+    box-shadow:
+      0 8px 32px 0 rgba(0, 180, 255, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    position: relative;
+  }
+  html[data-theme="odette"] .msg.other::before {
+    content: "✦";
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    color: #fef08a;
+    font-size: 11px;
+    text-shadow: 0 0 6px rgba(254, 240, 138, 0.6);
+    opacity: 0.8;
+  }
+
+  /* 我方文本 */
+  html[data-theme="odette"] .msg.self .msg-content,
+  html[data-theme="odette"] .msg.self .msg-header {
+    color: #f8fbff;
+  }
+  html[data-theme="odette"] .msg.self .msg-time {
+    color: rgba(147, 197, 253, 0.6);
+  }
+  html[data-theme="odette"] .msg.self .msg-file-name {
+    color: #f8fbff;
+  }
+  html[data-theme="odette"] .msg.self .msg-file-size {
+    color: rgba(147, 197, 253, 0.5);
+  }
+
+  /* 对方文本 */
+  html[data-theme="odette"] .msg.other .msg-content,
+  html[data-theme="odette"] .msg.other .msg-header {
+    color: #f8fbff;
+  }
+  html[data-theme="odette"] .msg.other .msg-time {
+    color: rgba(254, 240, 138, 0.55);
+  }
+  html[data-theme="odette"] .msg.other .msg-file-name {
+    color: #f8fbff;
+  }
+  html[data-theme="odette"] .msg.other .msg-file-size {
+    color: rgba(254, 240, 138, 0.45);
+  }
+
+  /* IP 标签 */
+  html[data-theme="odette"] .msg.self .msg-ip {
+    background: rgba(248, 251, 255, 0.08);
+    border-left: 3px solid #7be4ff;
+    color: #f8fbff;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+  html[data-theme="odette"] .msg.other .msg-ip {
+    background: rgba(248, 251, 255, 0.08);
+    border-left: 3px solid #ff5c98;
+    color: #f8fbff;
+    border-radius: 2px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-top: none; border-right: none; border-bottom: none;
+  }
+
+  /* 下载按钮 */
+  html[data-theme="odette"] .msg.self .btn-download {
+    background: transparent;
+    color: #7be4ff;
+    border: 1px solid rgba(123, 228, 255, 0.4);
+  }
+  html[data-theme="odette"] .msg.self .btn-download:hover {
+    background: rgba(123, 228, 255, 0.15);
+    border-color: #7be4ff;
+    color: #f8fbff;
+    box-shadow: 0 0 12px rgba(123, 228, 255, 0.3);
+  }
+  html[data-theme="odette"] .msg.other .btn-download {
+    background: transparent;
+    color: #ff5c98;
+    border: 1px solid rgba(255, 92, 152, 0.4);
+  }
+  html[data-theme="odette"] .msg.other .btn-download:hover {
+    background: rgba(255, 92, 152, 0.15);
+    border-color: #ff5c98;
+    color: #f8fbff;
+    box-shadow: 0 0 12px rgba(255, 92, 152, 0.3);
+  }
+
+  /* 输入区 — 月影玻璃 */
+  html[data-theme="odette"] .input-area {
+    background: transparent;
+    border-top: 1px solid rgba(147, 197, 253, 0.15);
+  }
+  html[data-theme="odette"] .input-area textarea {
+    background: rgba(15, 23, 56, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(147, 197, 253, 0.3);
+    border-radius: 10px;
+    color: #f8fbff;
+  }
+  html[data-theme="odette"] .input-area textarea:focus {
+    border-color: #7be4ff;
+    box-shadow: 0 0 15px rgba(123, 228, 255, 0.2);
+    outline: none;
+  }
+  html[data-theme="odette"] .input-area textarea::placeholder {
+    color: rgba(147, 197, 253, 0.45);
+  }
+
+  /* 发送按钮 — 月青→玫粉渐变 */
+  html[data-theme="odette"] .btn-send {
+    background: linear-gradient(135deg, rgba(123, 228, 255, 0.35), rgba(255, 92, 152, 0.35));
+    border: 1px solid rgba(248, 251, 255, 0.4);
+    color: #f8fbff;
+    border-radius: 9999px;
+    font-family: 'Cormorant Garamond', 'Songti SC', serif;
+    letter-spacing: 2px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+  }
+  html[data-theme="odette"] .btn-send:hover {
+    background: linear-gradient(135deg, #7be4ff, #ff5c98);
+    color: #050a1e;
+    font-weight: 600;
+    box-shadow: 0 0 20px rgba(123, 228, 255, 0.7), 0 0 35px rgba(255, 92, 152, 0.4);
+    transform: scale(1.03);
+  }
+
+  /* 图标按钮 */
+  html[data-theme="odette"] .btn-icon {
+    background: rgba(15, 23, 56, 0.5);
+    border: 1px solid rgba(147, 197, 253, 0.25);
+    color: rgba(240, 246, 255, 0.85);
+  }
+  html[data-theme="odette"] .btn-icon:hover {
+    background: rgba(123, 228, 255, 0.12);
+    border-color: #7be4ff;
+    color: #7be4ff;
+    box-shadow: 0 0 10px rgba(123, 228, 255, 0.25);
+  }
+
+  /* 标题 — 月青→玫粉流光 */
+  html[data-theme="odette"] #pageTitle {
+    background: linear-gradient(135deg, #7be4ff, #ff5c98);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* 状态灯 */
+  html[data-theme="odette"] .sse-status.connected {
+    background: #7be4ff;
+    box-shadow: 0 0 8px #7be4ff, 0 0 16px rgba(123, 228, 255, 0.4);
+  }
+  html[data-theme="odette"] .sse-status.disconnected {
+    background: #ff5c98;
+    box-shadow: 0 0 8px #ff5c98, 0 0 16px rgba(255, 92, 152, 0.4);
+  }
+
   /* User features */
   .name-input { width: 90px; padding: 3px 6px; border: 1px solid var(--cn-wood); background: var(--cn-bubble); color: var(--cn-ink); border-radius: 2px; font-size: 11px; font-family: inherit; outline: none; }
   .name-input:focus { border-color: var(--cn-red); }

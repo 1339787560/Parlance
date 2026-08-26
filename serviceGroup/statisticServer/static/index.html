@@ -176,6 +176,25 @@ html[data-theme="silverwolf"] {
   --cyan:    #00FFCC;
 }
 
+/* Odette (moonlit swan / 月夜羽翼) */
+html[data-theme="odette"] {
+  --bg:      #080d24;
+  --card:    rgba(15,23,56,0.65);
+  --border:  rgba(147,197,253,0.25);
+  --text:    #f8fbff;
+  --dim:     rgba(147,197,253,0.55);
+  --hover-bg:rgba(123,228,255,0.10);
+  --btn-bg:  #7be4ff;
+  --btn-border: rgba(123,228,255,.4);
+  --btn-hover-bg: #ff5c98;
+  --green:   #7be4ff;
+  --yellow:  #fef08a;
+  --red:     #ff5c98;
+  --blue:    #93c5fd;
+  --purple:  #93c5fd;
+  --cyan:    #7be4ff;
+}
+
 /* Theme selector */
 .theme-select {
   padding: 4px 8px;
@@ -230,6 +249,7 @@ html[data-theme="silverwolf"] {
       <option value="hysilens">海瑟音·深境</option>
       <option value="geniusclub">天才俱乐部</option>
       <option value="silverwolf">狼尊 LV.999</option>
+      <option value="odette">奥黛塔·月夜羽翼</option>
     </select>
     <button class="btn" onclick="refresh()">刷新</button>
     <span style="color:var(--dim);font-size:12px" id="updateTime"></span>
@@ -403,8 +423,8 @@ html[data-theme="silverwolf"] {
 
 <script>
 // Theme switching
-const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
-const THEME_NAMES = ['朱砂红', '简约配色', '珊瑚宫心海', '流萤·萨姆', '芙宁娜·歌剧院', '海瑟音·深境', '天才俱乐部', '狼尊 LV.999'];
+const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf', 'odette'];
+const THEME_NAMES = ['朱砂红', '简约配色', '珊瑚宫心海', '流萤·萨姆', '芙宁娜·歌剧院', '海瑟音·深境', '天才俱乐部', '狼尊 LV.999', '奥黛塔·月夜羽翼'];
 
 // Theme background images (served by infoServer)
 const THEME_WALLPAPERS = {
@@ -414,6 +434,7 @@ const THEME_WALLPAPERS = {
   hysilens:   { img: '/style/Hysilens/Hysilens.jpg',    overlay: 'radial-gradient(ellipse 80% 35% at 50% 0%, rgba(112,195,252,.12) 0%, transparent 70%), radial-gradient(ellipse 40% 30% at 10% 100%, rgba(209,46,107,.10) 0%, transparent 70%), linear-gradient(135deg, rgba(14,24,38,.4), rgba(45,15,63,.3), rgba(21,42,66,.4))' },
   geniusclub: { img: '/style/geniusclub/geniusclub.png', overlay: 'radial-gradient(ellipse 70% 40% at 50% 0%, rgba(138,79,255,.08) 0%, transparent 70%), radial-gradient(ellipse 40% 25% at 80% 100%, rgba(229,193,123,.06) 0%, transparent 60%), linear-gradient(135deg, rgba(15,18,31,.5), rgba(34,18,48,.4))' },
   silverwolf: { img: '/style/silverwolf/silverwolf.png', overlay: 'linear-gradient(#070312, rgba(7,3,18,.4))' },
+  odette:     { img: '/style/odette/odette.jpg',         overlay: 'radial-gradient(circle at 50% 30%, rgba(123,228,255,.15) 0%, transparent 60%), linear-gradient(to bottom, rgba(8,13,36,.2), rgba(8,13,36,.85))' },
 };
 
 function applyTheme(theme) {
