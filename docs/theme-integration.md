@@ -1,6 +1,6 @@
 # 主题系统集成指南
 
-infoServer 有 7 套主题（朱砂红、简约配色、珊瑚宫心海、流萤·萨姆、芙宁娜·歌剧院、海瑟音·深境、天才俱乐部），子服务页面可共享同一套主题，同一用户在不同页面间样式一致。
+infoServer 有 8 套主题（朱砂红、简约配色、珊瑚宫心海、流萤·萨姆、芙宁娜·歌剧院、海瑟音·深境、天才俱乐部、狼尊 LV.999、奥黛塔·月夜羽翼），子服务页面可共享同一套主题，同一用户在不同页面间样式一致。
 
 ## 原理
 
@@ -60,13 +60,15 @@ CSS 中 `url('/style/xxx/xxx.png')` 等资源路径会以 infoServer 为 origin 
   <option value="furina">芙宁娜·歌剧院</option>
   <option value="hysilens">海瑟音·深境</option>
   <option value="geniusclub">天才俱乐部</option>
+  <option value="silverwolf">狼尊 LV.999</option>
+  <option value="odette">奥黛塔·月夜羽翼</option>
 </select>
 ```
 
 ### 4. JavaScript
 
 ```js
-const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub'];
+const THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf', 'odette'];
 const INFO_PORT = 5001;
 
 function getInfoServerUrl() {
