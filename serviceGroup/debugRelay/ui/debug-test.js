@@ -120,6 +120,7 @@ function testFlattenCatalog(catalog) {
                 env: meta.env || '',
                 category: testCategoryOf(ns),
                 params: Array.isArray(meta.params) ? meta.params : [],
+                origName: meta.origName || '',
             });
         }
     }
@@ -152,7 +153,8 @@ function testRender() {
     if (category !== 'all') filtered = filtered.filter(x => x.category === category);
     if (q) filtered = filtered.filter(x =>
         x.name.toLowerCase().includes(q) ||
-        (x.desc || '').toLowerCase().includes(q)
+        (x.desc || '').toLowerCase().includes(q) ||
+        (x.origName || '').toLowerCase().includes(q)
     );
     if (filtered.length === 0) {
         list.innerHTML = '<div class="events-empty">没有匹配的测试接口</div>';
@@ -185,19 +187,26 @@ function testRenderItem(item) {
             <input class="test-param-input" data-param-index="${i}" placeholder="输入值（JSON / 数字 / 字符串）" />
         </div>
     `).join('') : '<div class="test-param-empty">无需参数，直接运行</div>';
+    const aliasHtml = item.origName && item.origName !== item.fn
+        ? `<span class="test-item-alias" title="原函数名">${escapeHtml(item.origName)}</span>`
+        : '';
+    const paramBadge = item.arity > 0
+        ? `<span class="test-item-params-badge">⚙ 有参数 ${item.arity}</span>`
+        : '<span class="test-item-params-badge no-params">无参数</span>';
     return `
         <div class="test-item ${expanded ? 'test-item-open' : ''}" data-name="${escapeHtml(item.name)}">
             <div class="test-item-head" onclick="testToggleItem('${escapeHtml(item.name).replace(/'/g, "\\'")}')">
                 <span class="test-item-arrow">${expanded ? '▼' : '▶'}</span>
                 <span class="test-item-name">${escapeHtml(item.name)}</span>
+                ${aliasHtml}
                 <span class="test-item-cat ${item.category === 'agent' ? 'cat-agent' : 'cat-user'}">${item.category === 'agent' ? 'Agent' : '用户'}</span>
                 <span class="test-item-env">${escapeHtml(item.env)}</span>
-                <span class="test-item-arity">arity ${item.arity}</span>
+                ${paramBadge}
+                <button class="test-item-run" onclick="event.stopPropagation();testRunItem('${escapeHtml(item.name).replace(/'/g, "\\'")}', ${item.arity})">🚀 运行</button>
             </div>
             <div class="test-item-detail ${expanded ? '' : 'hidden'}">
                 <div class="test-item-desc">${escapeHtml(item.desc || '暂无描述')}</div>
                 ${paramsHtml}
-                <button class="test-item-run" onclick="testRunItem('${escapeHtml(item.name).replace(/'/g, "\\'")}', ${item.arity})">🚀 运行</button>
             </div>
         </div>
     `;
@@ -238,6 +247,16 @@ function testCollectArgs(name, arity) {
 }
 
 async function testRunItem(name, arity) {
+    if (arity > 0) {
+        const items = document.querySelectorAll('.test-item');
+        const item = Array.from(items).find(x => x.dataset.name === name);
+        const detail = item && item.querySelector('.test-item-detail');
+        if (!detail || detail.classList.contains('hidden')) {
+            if (!testExpanded[name]) testToggleItem(name);
+            testToast(`${name} 有 ${arity} 个参数，请展开填写后再次运行`, true);
+            return;
+        }
+    }
     const args = testCollectArgs(name, arity);
     testToast(`正在调用 ${name} ...`, false, true);
     try {
@@ -305,6 +324,9 @@ function testToast(message, isError, keep) {
         .cat-user { background:rgba(74,158,255,.15); color:var(--accent, #4a9eff); }
         .test-item-env { background:rgba(255,255,255,.08); color:var(--dim); border-radius:3px; padding:0 4px; font-size:10px; }
         .test-item-arity { color:var(--dim); font-size:10px; }
+        .test-item-alias { background:rgba(255,193,7,.12); color:#ffc107; border-radius:3px; padding:0 4px; font-size:10px; }
+        .test-item-params-badge { border-radius:3px; padding:0 5px; font-size:10px; background:rgba(255,165,0,.12); color:#ffa502; white-space:nowrap; }
+        .test-item-params-badge.no-params { background:rgba(255,255,255,.06); color:var(--dim); }
         .test-item-detail { padding:8px 12px 10px; border-top:1px solid var(--border); }
         .test-item-desc { color:var(--dim); font-size:12px; margin-bottom:8px; }
         .test-param { margin-bottom:8px; }
@@ -313,7 +335,7 @@ function testToast(message, isError, keep) {
         .test-param-meta { color:var(--dim); font-size:11px; margin-bottom:2px; }
         .test-param-input { width:100%; box-sizing:border-box; padding:4px 8px; background:var(--bg, #1e1e1e); color:var(--fg); border:1px solid var(--border); border-radius:4px; }
         .test-param-empty { color:var(--dim); font-size:12px; margin-bottom:8px; }
-        .test-item-run { background:var(--bg-alt, rgba(255,255,255,0.06)); border:1px solid var(--border); color:var(--fg); border-radius:4px; padding:4px 16px; cursor:pointer; }
+        .test-item-run { margin-left:auto; background:var(--bg-alt, rgba(255,255,255,0.06)); border:1px solid var(--border); color:var(--fg); border-radius:4px; padding:3px 12px; cursor:pointer; }
         .test-item-run:hover { border-color:#2ed573; color:#2ed573; }
         .test-legend { color:var(--dim); font-size:11px; padding:6px 0; border-top:1px solid var(--border); margin-top:8px; }
         .test-legend code { background:var(--bg-alt, rgba(255,255,255,0.04)); padding:0 3px; border-radius:3px; }

@@ -1750,6 +1750,7 @@ def _debug_index_expr(env: str = None) -> str:
         "var full=(ns==='action'?fn:ns+'.'+fn);"
         "var target=full.split('.').reduce(function(o,p){return o&&o[p]},globalThis);"
         "if(typeof target==='function'){"
+        "fns[ns][fn].origName=target.name;"
         "var m=target.toString().match(/^[^(]*\\(([^)]*)\\)/);"
         "if(m&&m[1].trim()){"
         "fns[ns][fn].params=m[1].split(',').map(function(s){return s.trim().replace(/[=:].*$/,'')}).filter(Boolean).slice(0,target.length);"
