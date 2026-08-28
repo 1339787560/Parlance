@@ -315,10 +315,10 @@ function testToast(message, isError, keep) {
         .test-group-title { font-weight:bold; color:var(--dim); font-size:12px; text-transform:uppercase; margin:8px 0 6px; }
         .test-item { border:1px solid var(--border); border-radius:6px; margin-bottom:6px; overflow:hidden; }
         .test-item-open { border-color:var(--accent, #4a9eff); }
-        .test-item-head { display:flex; align-items:center; gap:8px; padding:6px 10px; cursor:pointer; user-select:none; }
+        .test-item-head { display:flex; align-items:center; gap:8px; padding:6px 10px; cursor:pointer; user-select:none; justify-content:flex-start; text-align:left; }
         .test-item-head:hover { background:var(--bg-alt, rgba(255,255,255,0.04)); }
         .test-item-arrow { width:16px; text-align:center; color:var(--dim); }
-        .test-item-name { font-family:monospace; font-size:12px; flex:1; min-width:0; word-break:break-all; }
+        .test-item-name { font-family:monospace; font-size:12px; flex:1; min-width:0; word-break:break-all; text-align:left; }
         .test-item-cat { border-radius:3px; padding:0 5px; font-size:10px; }
         .cat-agent { background:rgba(46,213,115,.15); color:#2ed573; }
         .cat-user { background:rgba(74,158,255,.15); color:var(--accent, #4a9eff); }
@@ -327,7 +327,7 @@ function testToast(message, isError, keep) {
         .test-item-alias { background:rgba(255,193,7,.12); color:#ffc107; border-radius:3px; padding:0 4px; font-size:10px; }
         .test-item-params-badge { border-radius:3px; padding:0 5px; font-size:10px; background:rgba(255,165,0,.12); color:#ffa502; white-space:nowrap; }
         .test-item-params-badge.no-params { background:rgba(255,255,255,.06); color:var(--dim); }
-        .test-item-detail { padding:8px 12px 10px; border-top:1px solid var(--border); }
+        .test-item-detail { padding:8px 12px 10px; border-top:1px solid var(--border); text-align:left; }
         .test-item-detail.hidden { display:none; }
         .test-item-desc { color:var(--dim); font-size:12px; margin-bottom:8px; }
         .test-param { margin-bottom:8px; }
