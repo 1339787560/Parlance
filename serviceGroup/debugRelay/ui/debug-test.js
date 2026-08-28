@@ -53,6 +53,33 @@ const TEST_PARAM_HINTS = {
     'game.test.setHands': [{ name: 'seatsCards', desc: '四家手牌', range: '{1:[...],2:[...],3:[...],4:[...]}' }],
 };
 
+const TEST_CATEGORY_LABELS = {
+    'hall.room': '大厅 · 房间/大区', 'hall.enter': '大厅 · 进房/快捷',
+    'hall.view': '大厅 · 视图/Tab', 'hall.route': '大厅 · 路由/配置',
+    'hall.tutorial': '大厅 · 新手引导',
+    'game.settle': '对局 · 终局/结算', 'game.system': '对局 · 重连/系统',
+    'game.hand': '对局 · 手牌/出牌', 'game.cpg': '对局 · 吃碰杠',
+    'game.hu': '对局 · 听牌/胡牌', 'game.swap': '对局 · 换三张/定缺/理牌',
+    'game.3d': '对局 · 3D 表现', 'game.dress': '对局 · 装扮',
+    'game.ui': '对局 · UI 状态', 'game.action': '对局 · Agent 原子操作',
+    'plugin.resurrect': '插件 · 复活', 'plugin.goldbank': '插件 · 金库',
+    'plugin.replay': '插件 · 回放', 'plugin.loadTablePreview': '插件 · 桌布预览',
+    'plugin.cardBack': '插件 · 牌背', 'plugin.promptHu': '插件 · 听牌提示',
+    'plugin.exchange3': '插件 · 换三张', 'plugin.huInfoTouch': '插件 · 胡牌触摸',
+    'plugin.dingQueFly': '插件 · 定缺飞', 'plugin.autotest': '插件 · 自动测试',
+    'plugin.other': '插件 · 其他',
+    'device': '设备模拟', 'meta': '自省/元信息', 'other': '其他',
+};
+
+const TEST_CATEGORY_ORDER = [
+    'hall.room', 'hall.enter', 'hall.view', 'hall.route', 'hall.tutorial',
+    'game.settle', 'game.system', 'game.hand', 'game.cpg', 'game.hu',
+    'game.swap', 'game.3d', 'game.dress', 'game.ui', 'game.action',
+    'plugin.resurrect', 'plugin.goldbank', 'plugin.replay', 'plugin.loadTablePreview',
+    'plugin.cardBack', 'plugin.promptHu', 'plugin.exchange3', 'plugin.huInfoTouch',
+    'plugin.dingQueFly', 'plugin.autotest', 'plugin.other', 'device', 'meta', 'other',
+];
+
 let testCatalog = null;
 let testExpanded = {};  // name -> true/false
 
@@ -89,6 +116,7 @@ async function testRefresh() {
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
         testCatalog = data;
+        testPopulateSubcategories();
         testRender();
         testSetStatus(`已加载 ${data.count || 0} 个测试接口`);
     } catch (e) {
@@ -118,7 +146,8 @@ function testFlattenCatalog(catalog) {
                 arity: meta.arity != null ? meta.arity : 0,
                 desc: meta.desc || '',
                 env: meta.env || '',
-                category: testCategoryOf(ns),
+                scope: testCategoryOf(ns),
+                category: meta.category || 'other',
                 params: Array.isArray(meta.params) ? meta.params : [],
                 origName: meta.origName || '',
             });
@@ -142,15 +171,47 @@ function testParamHints(name, fallbackParams, arity) {
     });
 }
 
+function testCategoryLabel(cat) {
+    return TEST_CATEGORY_LABELS[cat] || cat;
+}
+
+function testOnCategoryChange() {
+    const sub = document.getElementById('test-subcategory');
+    if (sub) sub.value = '';
+    testPopulateSubcategories();
+    testRender();
+}
+
+function testPopulateSubcategories() {
+    const sel = document.getElementById('test-subcategory');
+    if (!sel || !testCatalog) return;
+    const all = testFlattenCatalog(testCatalog);
+    const scope = document.getElementById('test-category').value || 'all';
+    const items = scope === 'all' ? all : all.filter(x => x.scope === scope);
+    const cats = Array.from(new Set(items.map(x => x.category))).filter(Boolean);
+    cats.sort((a, b) => {
+        const ia = TEST_CATEGORY_ORDER.indexOf(a);
+        const ib = TEST_CATEGORY_ORDER.indexOf(b);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+    });
+    const current = sel.value;
+    sel.innerHTML = '<option value="">全部分属</option>' + cats.map(c =>
+        `<option value="${c}">${testCategoryLabel(c)}</option>`
+    ).join('');
+    if (current && cats.includes(current)) sel.value = current;
+}
+
 function testRender() {
     const list = document.getElementById('test-list');
     if (!list) return;
     if (!testCatalog) return;
     const all = testFlattenCatalog(testCatalog);
     const q = (document.getElementById('test-search').value || '').trim().toLowerCase();
-    const category = document.getElementById('test-category').value || 'all';
+    const scope = document.getElementById('test-category').value || 'all';
+    const subcategory = document.getElementById('test-subcategory').value || '';
     let filtered = all;
-    if (category !== 'all') filtered = filtered.filter(x => x.category === category);
+    if (scope !== 'all') filtered = filtered.filter(x => x.scope === scope);
+    if (subcategory) filtered = filtered.filter(x => x.category === subcategory);
     if (q) filtered = filtered.filter(x =>
         x.name.toLowerCase().includes(q) ||
         (x.desc || '').toLowerCase().includes(q) ||
@@ -161,12 +222,12 @@ function testRender() {
         return;
     }
     const sections = [];
-    if (category === 'all' || category === 'agent') {
-        const agentItems = filtered.filter(x => x.category === 'agent');
+    if (scope === 'all' || scope === 'agent') {
+        const agentItems = filtered.filter(x => x.scope === 'agent');
         if (agentItems.length) sections.push({ title: 'Agent 接口', items: agentItems });
     }
-    if (category === 'all' || category === 'user') {
-        const userItems = filtered.filter(x => x.category === 'user');
+    if (scope === 'all' || scope === 'user') {
+        const userItems = filtered.filter(x => x.scope === 'user');
         if (userItems.length) sections.push({ title: '用户测试接口', items: userItems });
     }
     list.innerHTML = sections.map(sec => `
@@ -199,7 +260,7 @@ function testRenderItem(item) {
                 <span class="test-item-arrow">${expanded ? '▼' : '▶'}</span>
                 <span class="test-item-name">${escapeHtml(item.name)}</span>
                 ${aliasHtml}
-                <span class="test-item-cat ${item.category === 'agent' ? 'cat-agent' : 'cat-user'}">${item.category === 'agent' ? 'Agent' : '用户'}</span>
+                <span class="test-item-cat ${item.scope === 'agent' ? 'cat-agent' : 'cat-user'}">${item.scope === 'agent' ? 'Agent' : '用户'}</span>
                 <span class="test-item-env">${escapeHtml(item.env)}</span>
                 ${paramBadge}
                 <button class="test-item-run" onclick="event.stopPropagation();testRunItem('${escapeHtml(item.name).replace(/'/g, "\\'")}', ${item.arity})">🚀 运行</button>

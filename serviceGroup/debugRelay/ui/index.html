@@ -334,10 +334,13 @@
                 <option value="game">game</option>
                 <option value="both">both</option>
             </select>
-            <select id="test-category" class="theme-select" onchange="testRender()" title="区分 Agent 测试空间与用户测试接口">
+            <select id="test-category" class="theme-select" onchange="testOnCategoryChange()" title="区分 Agent 测试空间与用户测试接口">
                 <option value="all">全部分类</option>
                 <option value="agent">Agent 接口</option>
-                <option value="user">用户测试接口</option>
+                <option value="user" selected>用户测试接口</option>
+            </select>
+            <select id="test-subcategory" class="theme-select" onchange="testRender()" title="按归属分类进一步筛选">
+                <option value="">全部分属</option>
             </select>
             <input id="test-search" type="text" placeholder="搜索接口名/描述..." oninput="testRender()" style="min-width:200px;">
             <span id="test-status" class="events-status"></span>
@@ -504,7 +507,7 @@
     <script src="debug-launcher.js?v=17"></script>
     <script src="debug-autotest.js?v=2"></script>
 <script src="debug-device.js?v=5"></script>
-    <script src="debug-test.js?v=5"></script>
+    <script src="debug-test.js?v=6"></script>
     <script src="debug-theme.js?v=6"></script>
 </body>
 </html>

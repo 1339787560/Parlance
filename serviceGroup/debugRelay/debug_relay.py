@@ -1795,6 +1795,87 @@ def _parse_debug_index(data) -> tuple:
 _DEBUG_FN_PATH_RE = re.compile(r"^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$")
 
 
+# 测试接口归属分类（单一真相源，供 /api/debug-index 和前端/Agent 共用）
+_HALL_CATEGORY = {
+    "areas": "hall.room", "openArea": "hall.room", "rooms": "hall.room",
+    "currentArea": "hall.room", "getRoomInfo": "hall.room", "findRoom": "hall.room",
+    "enterRoomByIndex": "hall.room",
+    "enterRoom": "hall.enter", "quickStart": "hall.enter",
+    "selectTab": "hall.view", "viewState": "hall.view", "closeAllViews": "hall.view",
+    "openView": "hall.view",
+    "routeDisplay": "hall.route", "routeRoute": "hall.route",
+    "getCpRouteCfg": "hall.route", "getIsEnableRoute": "hall.route",
+    "getVXCfg": "hall.route", "refreshVXCfg": "hall.route",
+    "testForceTeachBout": "hall.tutorial", "testTeachBout": "hall.tutorial",
+}
+
+_GAME_CATEGORY = {
+    # 终局/结算
+    "testGameWin": "game.settle", "winAfterHu": "game.settle",
+    "huForTouch": "game.settle", "presaveResult": "game.settle",
+    "twiceResult": "game.settle",
+    # 重连/系统
+    "checkReconnect": "game.system", "clearCache": "game.system",
+    "redress": "game.system", "autoPlay": "game.system",
+    "openShop": "game.system", "info": "game.system", "find": "game.system",
+    # 装扮
+    "updateTable": "game.dress", "showPlayerHead": "game.dress",
+    "changePlayerHead": "game.dress", "changeCardBack": "game.dress",
+    "changeTable": "game.dress",
+    # 换三张/定缺/理牌
+    "exchange3Anim": "game.swap", "swapDirIcon": "game.swap",
+    "swapDirIconTiming": "game.swap", "dingQueFinished": "game.swap",
+    "arrangeAni": "game.swap",
+    # 手牌/出牌
+    "handCards": "game.hand", "showHandCards": "game.hand",
+    "clearCards": "game.hand", "resetUsedCards": "game.hand",
+    "throwCards": "game.hand",
+    # 吃碰杠
+    "cpgCards": "game.cpg", "cpgMultiChoose": "game.cpg",
+    "cpgType": "game.cpg", "cpgReplenish": "game.cpg",
+    "castOffCards": "game.cpg",
+    # 听牌/胡牌
+    "huCards": "game.hu", "tingTipsOverCards": "game.hu",
+    "deadTingTipFilter": "game.hu", "testTingPanel": "game.hu",
+    "testFeng4MustHu": "game.hu", "testRestCardsTips": "game.hu",
+    "huEffect": "game.hu",
+    # 3D 表现
+    "angleMark": "game.3d", "queJoker": "game.3d",
+    "clearAll3DCard": "game.3d", "testRoot2DShow": "game.3d",
+    "testClockDrawIndex": "game.3d",
+    # UI 状态
+    "cardUnable": "game.ui", "seatDisabled": "game.ui",
+    # Agent 原子操作
+    "state": "game.action", "actions": "game.action", "doAction": "game.action",
+    "hand": "game.action", "cpg": "game.action", "discard": "game.action",
+    "setHands": "game.action",
+    # 插件
+    "resurrect": "plugin.resurrect",
+}
+
+_PLUGIN_NAMES = [
+    "resurrect", "goldbank", "replay", "loadTablePreview", "cardBack",
+    "promptHu", "exchange3", "huInfoTouch", "dingQueFly", "autotest",
+]
+
+
+def _test_category(ns: str, key: str) -> str:
+    """返回测试函数归属分类；未收录时按命名空间兜底。"""
+    if ns in ("agent.meta",):
+        return "meta"
+    if ns in ("agent.device",):
+        return "device"
+    if ns in ("agent.plugins",):
+        return f"plugin.{key}" if key in _PLUGIN_NAMES else "plugin.other"
+    if ns == "common.test.ct":
+        return "hall.enter"
+    if ns in ("agent.hall", "hall.test"):
+        return _HALL_CATEGORY.get(key, "hall.other")
+    if ns in ("agent.game", "game.test"):
+        return _GAME_CATEGORY.get(key, "game.other")
+    return "other"
+
+
 def _debug_call_expr(name: str, args: list) -> str:
     """构造调用 window.<name>(...args) 的 eval 表达式（JSON 序列化参数）。"""
     args_js = ", ".join(json.dumps(a, ensure_ascii=False, default=str) for a in (args or []))
@@ -2263,6 +2344,15 @@ async def api_debug_index(client: str = None, env: str = None):
     if parse_err:
         return JSONResponse({"ok": False, "error": parse_err, "client_id": ctx.id}, status_code=404)
     fns = catalog.get("fns", {}) if isinstance(catalog, dict) else catalog
+    categories = set()
+    if isinstance(fns, dict):
+        for ns, members in fns.items():
+            if not isinstance(members, dict):
+                continue
+            for key, meta in members.items():
+                if isinstance(meta, dict):
+                    meta["category"] = _test_category(ns, key)
+                    categories.add(meta["category"])
     n_ns = len(fns) if isinstance(fns, dict) else 0
     n_fn = sum(len(v) for v in fns.values()) if isinstance(fns, dict) else 0
     return {
@@ -2273,6 +2363,7 @@ async def api_debug_index(client: str = None, env: str = None):
         "refs": catalog.get("refs", {}) if isinstance(catalog, dict) else {},
         "count": n_fn,
         "namespace_count": n_ns,
+        "categories": sorted(categories),
     }
 
 
