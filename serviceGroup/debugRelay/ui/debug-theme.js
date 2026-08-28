@@ -5,7 +5,7 @@
 // 背景图: infoServer /style/<theme>/ — 不引全量 style.css 避免布局污染 (np-reader 范本)
 // localStorage key 用 debugrel_ 前缀, 避免与其他子服务冲突
 
-const DEBUG_THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf'];
+const DEBUG_THEMES = ['red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf', 'odette'];
 
 function cfThemeValue(t) { return DEBUG_THEMES.includes(t) ? t : (t === 'dark' ? 'hysilens' : 'default'); }
 

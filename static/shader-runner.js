@@ -76,22 +76,49 @@
     return {
       u_time: gl.getUniformLocation(prog, 'u_time'),
       u_resolution: gl.getUniformLocation(prog, 'u_resolution'),
+      u_color_a: gl.getUniformLocation(prog, 'u_color_a'),
+      u_color_b: gl.getUniformLocation(prog, 'u_color_b'),
+      u_color_c: gl.getUniformLocation(prog, 'u_color_c'),
       a_position: gl.getAttribLocation(prog, 'a_position'),
     };
   }
 
+  // ── 工具: '#RRGGBB' → [r,g,b] (0..1) ──────────────────────
+  function hexToRgb(hex) {
+    if (typeof hex !== 'string') return null;
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  }
+
   // ── GLSL 文件 URL (按主题) ─────────────────────────────────
+  function shaderBase() {
+    try {
+      if (window.location.port === '5001') return window.location.origin;
+    } catch (e) {}
+    return 'http://localhost:5001';
+  }
+
   function shaderUrl(theme) {
-    // 无对应着色器的主题 → null
+    // 有 skin-manifest 时：custom = 专属 shader；其他主题用 generic 通用主题色 shader
+    const skin = (window.SKIN_MANIFEST && window.SKIN_MANIFEST[theme]) || null;
+    if (skin) {
+      return shaderBase() + (skin.shader === 'custom'
+        ? '/static/shaders/' + theme + '.glsl'
+        : '/static/shaders/generic.glsl');
+    }
+    // 无 manifest 时兼容旧逻辑：仅 silverwolf 有专属 shader
     const themed = ['silverwolf'];
     if (!themed.includes(theme)) return null;
-    return '/static/shaders/' + theme + '.glsl';
+    return shaderBase() + '/static/shaders/' + theme + '.glsl';
   }
 
   // ── 主类 ───────────────────────────────────────────────────
-  window.ShaderRunner = function () {
+  window.ShaderRunner = function (opts) {
     // 状态
     const self = this;
+    const zIndex = (opts && typeof opts.zIndex === 'number') ? opts.zIndex : -1;
     let canvas = null;
     let gl = null;
     let program = null;
@@ -99,6 +126,7 @@
     let animId = null;
     let active = false;
     let currentTheme = 'default';
+    let currentColors = null;
 
     // DOM 准备就绪后初始化 canvas
     function ensureCanvas() {
@@ -107,7 +135,7 @@
       canvas.id = 'shaderCanvas';
       canvas.style.cssText =
         'position:fixed;top:0;left:0;width:100%;height:100%;' +
-        'z-index:-1;pointer-events:none;display:block;';
+        'z-index:' + zIndex + ';pointer-events:none;display:block;';
       document.body.insertBefore(canvas, document.body.firstChild);
 
       // WebGL 2 → WebGL 1 回退
@@ -217,6 +245,15 @@
         canvas ? canvas.height : 1
       );
 
+      if (currentColors && currentColors.length >= 3) {
+        const ca = hexToRgb(currentColors[0]);
+        const cb = hexToRgb(currentColors[1]);
+        const cc = hexToRgb(currentColors[2]);
+        if (loc.u_color_a && ca) gl.uniform3f(loc.u_color_a, ca[0], ca[1], ca[2]);
+        if (loc.u_color_b && cb) gl.uniform3f(loc.u_color_b, cb[0], cb[1], cb[2]);
+        if (loc.u_color_c && cc) gl.uniform3f(loc.u_color_c, cc[0], cc[1], cc[2]);
+      }
+
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
       animId = requestAnimationFrame(render);
@@ -237,11 +274,16 @@
     }
 
     // ── 公开 API ─────────────────────────────────────────────
-    self.setTheme = function (theme) {
-      if (theme === currentTheme) return;
-      currentTheme = theme || 'default';
+    self.setTheme = function (theme, colors) {
+      const nextTheme = theme || 'default';
+      currentColors = colors || null;
+      const changed = nextTheme !== currentTheme;
+      currentTheme = nextTheme;
 
       if (!ensureCanvas()) return;
+
+      // 同主题且已编译过 → 只更新颜色，下一帧生效
+      if (!changed && program) return;
 
       // 清理旧着色器输出
       if (gl) {

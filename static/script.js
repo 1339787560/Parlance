@@ -1651,7 +1651,7 @@
     localStorage.setItem('chat_theme', theme);
     await saveThemeToServer(theme);
     if (!shaderRunner && window.ShaderRunner) shaderRunner = new window.ShaderRunner();
-    if (shaderRunner) shaderRunner.setTheme(theme);
+    if (shaderRunner) shaderRunner.setTheme(theme, (window.SKIN_MANIFEST && window.SKIN_MANIFEST[theme] && window.SKIN_MANIFEST[theme].colors) || null);
   }
 
   themeSelect.addEventListener('change', async () => {
@@ -1676,13 +1676,13 @@
       applyTheme('red');
     }
     if (!shaderRunner && window.ShaderRunner) shaderRunner = new window.ShaderRunner();
-    if (shaderRunner) shaderRunner.setTheme(localTheme && THEMES.includes(localTheme) ? localTheme : 'red');
+    if (shaderRunner) shaderRunner.setTheme(localTheme && THEMES.includes(localTheme) ? localTheme : 'red', (window.SKIN_MANIFEST && window.SKIN_MANIFEST[localTheme] && window.SKIN_MANIFEST[localTheme].colors) || (window.SKIN_MANIFEST && window.SKIN_MANIFEST.red && window.SKIN_MANIFEST.red.colors) || null);
     try {
       const r = await fetchJSON('/api/theme');
       if (r.theme && THEMES.includes(r.theme)) {
         applyTheme(r.theme);
         localStorage.setItem('chat_theme', r.theme);
-        if (shaderRunner) shaderRunner.setTheme(r.theme);
+        if (shaderRunner) shaderRunner.setTheme(r.theme, (window.SKIN_MANIFEST && window.SKIN_MANIFEST[r.theme] && window.SKIN_MANIFEST[r.theme].colors) || null);
       }
     } catch (_) { /* offline, stay with local cache */ }
   }

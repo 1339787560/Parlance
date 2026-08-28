@@ -9,6 +9,7 @@ whitelist:
     - 127.0.0.1
     - 192.168.41.158
     - 192.168.46.68
+    - 172.16.40.96
 
 # 源码目录（Sources 面板，不依赖设备，以本机代码为准；--src 可覆盖）
 source_dir: "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets"

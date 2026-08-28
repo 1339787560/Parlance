@@ -1384,7 +1384,7 @@
 
         // Castflow embed mode：隐藏主题按钮，跟随宿主整体样式（按明暗映射 dark-theme）
         const cfEmbed = new URLSearchParams(location.search).has('embed');
-        const cfDarkThemes = new Set(['dark', 'furina', 'hysilens', 'geniusclub', 'silverwolf']);
+        const cfDarkThemes = new Set(['dark', 'furina', 'hysilens', 'geniusclub', 'silverwolf', 'odette']);
         const applyEmbedTheme = (t) => {
             const dark = cfDarkThemes.has(t);
             document.body.classList.toggle('dark-theme', dark);

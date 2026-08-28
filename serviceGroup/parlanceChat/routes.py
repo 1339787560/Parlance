@@ -47,7 +47,10 @@ async def index():
     idx = state.static_dir / "index.html"
     if not idx.exists():
         raise HTTPException(500, "index.html not found")
-    return HTMLResponse(idx.read_bytes())
+    return HTMLResponse(
+        idx.read_bytes(),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @router.get("/api/messages")

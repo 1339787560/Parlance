@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>drawio viewer</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #fff; }
+    body { overflow: auto; }
+    #container { padding: 12px; min-height: 100vh; box-sizing: border-box; }
+    #err { color: #c00; font-family: monospace; padding: 16px; white-space: pre-wrap; }
+    .mxgraph { background: #fff; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="err" style="display:none"></div>
+  </div>
+  <script src="vendor/drawio/viewer-static.min.js"></script>
+  <script>
+    // 从 location.hash 读 base64 编码的 drawio XML, 解码后嵌入 .mxgraph 渲染
+    (function () {
+      var container = document.getElementById('container');
+      var errEl = document.getElementById('err');
+      function fail(msg) {
+        errEl.textContent = msg;
+        errEl.style.display = 'block';
+      }
+      if (!window.GraphViewer) {
+        fail('viewer-static.min.js 未加载或网络失败。请先跑 fetch_drawio.ps1 下载。');
+        return;
+      }
+      var hash = location.hash || '';
+      if (!hash.startsWith('#')) { fail('缺少 hash 数据'); return; }
+      var b64 = hash.slice(1);
+      var xml;
+      try {
+        // base64 -> utf-8 xml
+        xml = decodeURIComponent(escape(atob(b64)));
+      } catch (e) {
+        fail('base64 解码失败: ' + e.message);
+        return;
+      }
+      // viewer-static 自动扫描 .mxgraph 节点; data-mxgraph 传配置
+      var node = document.createElement('div');
+      node.className = 'mxgraph';
+      node.style.cssText = 'background:#fff;max-width:100%';
+      var cfg = {
+        highlight: '#0000ff',
+        nav: true,
+        resize: true,
+        toolbar: 'zoom layers lightbox',
+        xml: xml
+      };
+      node.dataset.mxgraph = JSON.stringify(cfg);
+      container.appendChild(node);
+
+      // 启动渲染
+      try {
+        GraphViewer.processElements();
+      } catch (e) {
+        fail('渲染失败: ' + e.message + '\n\nXML 预览:\n' + xml.slice(0, 500));
+      }
+    })();
+  </script>
+</body>
+</html>

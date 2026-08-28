@@ -2441,12 +2441,12 @@ class DeviceRequest(BaseModel):
 
 
 @app.post("/api/device")
-async def api_device(req: DeviceRequest):
+async def api_device(req: DeviceRequest, client: Optional[str] = None):
     """在指定客户端执行设备模拟操作（代码通道, 非 eval, 真机可用）。
-    body: {"action","payload"?,"client"?} → game DebugPlugin._onDevice → DEVICE_RESULT 回传。
+    body: {"action","payload"?,"client"?} 或 ?client=id → game DebugPlugin._onDevice → DEVICE_RESULT 回传。
     action: apply(改 windowSize+safeArea) / restore / capture(抓真机参数) / diag(打包彻查)。
     """
-    ctx, err = _resolve_client(req.client)
+    ctx, err = _resolve_client(req.client or client)
     if err:
         return err
     msg = {"type": MsgType.DEVICE, "action": req.action}

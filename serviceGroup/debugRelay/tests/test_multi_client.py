@@ -185,6 +185,32 @@ def test_rest_multi_requires_client(relay):
             assert r2.status_code == 200
 
 
+def test_device_api_accepts_query_client(relay, monkeypatch):
+    """SC05 回归：/api/device 支持 ?client= 定位选中客户端（前端只传 query 不传 body client）。"""
+    async def fake_send(msg, response_key, ctx, timeout=8.0):
+        return {"ok": True, "client_id": ctx.id, "action": msg.get("action")}
+    monkeypatch.setattr(dr, "_send_game_and_await", fake_send)
+
+    with TestClient(dr.app) as client:
+        with client.websocket_connect("/ws/game") as ga, \
+                client.websocket_connect("/ws/game") as gb:
+            ids = [c["id"] for c in _wait_clients(client, 2)]
+
+            # 不带 client：多客户端仍 409
+            r0 = client.post("/api/device", json={"action": "diag"})
+            assert r0.status_code == 409
+
+            # 前端实际调用：?client=<id> + body 只有 action/payload
+            r = client.post(f"/api/device?client={ids[0]}", json={"action": "diag"})
+            assert r.status_code == 200
+            assert r.json()["client_id"] == ids[0]
+
+            # body client 仍兼容
+            r2 = client.post("/api/device", json={"action": "diag", "client": ids[1]})
+            assert r2.status_code == 200
+            assert r2.json()["client_id"] == ids[1]
+
+
 def test_rest_client_not_found(relay):
     with TestClient(dr.app) as client:
         with client.websocket_connect("/ws/game") as ga:

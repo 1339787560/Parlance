@@ -1,4 +1,6 @@
 @echo off
+setlocal enabledelayedexpansion
+cd /d "%~dp0"
 :: infoServer Admin Launcher
 :: Double-click to run with UAC elevation
 

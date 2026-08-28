@@ -1,0 +1,10 @@
+{
+  "port": 5090,
+  "workspace": "D:/Codlib/dq-workflow",
+  "static_dir": "static",
+  "visible_roots": ["SDD", "roles", "ExternDoc", ".claude", "projCommon"],
+  "hidden_folders": [".git", "target", "node_modules", "RoleManager", "WebReader", "tools", "venv"],
+  "hidden_files": ["RoleManager.exe"],
+  "hidden_patterns": [],
+  "visible_dot_dirs": [".claude"]
+}

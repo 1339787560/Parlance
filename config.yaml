@@ -93,6 +93,17 @@ services:
     tags: [debug, game, cocos]
     enabled: true
 
+  - name: session-registry
+    command_mac: ./.venv/bin/python
+    command_win: python
+    args: ["main.py", "--port", "5011"]
+    cwd: ./serviceGroup/sessionRegistry
+    port: 5011
+    auto_restart: true
+    tags: [session, registry, agent]
+    enabled: true
+
+
   - name: np-reader
     # Novel-Pineline 与 infoServer 同级 (../Novel-Pineline), 相对化后任意主机同根即可部署
     command: ../Novel-Pineline/.venv/Scripts/np.exe
@@ -104,6 +115,17 @@ services:
     port: 8000
     auto_restart: true
     tags: [reader, novel, web]
+    enabled: true
+
+  # WebReader — 独立子服务 (从 RoleManager 分离, 静态文件在本服务 static/)
+  - name: webreader
+    command_win: .\serviceGroup\webreader\webreader-server.exe
+    command_mac: ./serviceGroup/webreader/webreader-server
+    args: ["config.json"]
+    cwd: ./serviceGroup/webreader
+    port: 5090
+    auto_restart: true
+    tags: [reader, web, doc, rolemanager]
     enabled: true
 
   # dsh web — DeepSeek Harness Web UI。不直接用 dsh.cmd (Popen 无 shell 拉不起批处理),

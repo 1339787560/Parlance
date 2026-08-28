@@ -119,6 +119,38 @@ restoreTheme();
 
 `serviceGroup/statisticServer/static/index.html` — 搜索 "Theme switching" 注释处。
 
+## 皮肤三部分规范（2026-08-28 起）
+
+每个皮肤固定拆成三部分，由 `skin-manifest.js` 统一登记：
+
+| 部分 | 内容 | 载体 |
+|---|---|---|
+| 1. 背景图及资源 | 每个主题的背景图 + 叠加层 | `static/skin-manifest.js` 的 `bg` 字段；`/style/<theme>/` 图片 |
+| 2. CSS 样式 | 按钮、分割线、进度条、滚动条、高亮等共享组件规则 | `static/style.css` 的 `--cn-*` 变量 + `skin-runner.js` 注入的 `skin-components-css` |
+| 3. Shader | 全屏特殊效果；普通主题用 `generic.glsl`（主题色驱动），silverwolf 保留专属 shader | `static/shaders/generic.glsl` + `static/shaders/<theme>.glsl` |
+
+### 统一应用器
+
+- `static/skin-runner.js`：页面加载 manifest + shader-runner + skin-runner 后，自动应用三部分。
+- Castflow 通过 postMessage 下发统一皮肤消息：
+
+```js
+{ type: 'cf-skin', theme: 'odette', bgOpacity: 0.85 }
+```
+
+- 兼容旧消息：`cf-theme`、`cf-bg-opacity`。
+- 页面需要共享组件 CSS 时，在 `<body data-skin-components="1">` 开启。
+
+### 接入新页面
+
+```html
+<script src="http://localhost:5001/static/skin-manifest.js"></script>
+<script src="http://localhost:5001/static/shader-runner.js"></script>
+<script src="http://localhost:5001/static/skin-runner.js"></script>
+```
+
+WebReader 已接入；statisticServer/debugRelay 已接入 shader/背景/透明度。
+
 ## 注意事项
 
 - **CORS**：infoServer（端口 5001）已配置 `CORSMiddleware(allow_origins=["*"])`，不同端口的子服务页面可直接调用其 API

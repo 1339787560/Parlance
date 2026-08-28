@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DQ-WorkFlow Web Reader</title>
+  <link rel="stylesheet" href="http://localhost:5001/static/style.css?v=20260828e" />
+  <link rel="stylesheet" href="vendor/highlight-styles/github.css" />
+  <link rel="stylesheet" href="style.css?v=20260828h" />
+  <link rel="stylesheet" href="vendor/vditor/index.css" />
+  <!-- 首帧主题：读 ?theme= 参数（iframe 嵌入方传），在首帧绘制前设置 data-theme，
+       避免深色模式下白闪。无参数 → 回退 localStorage 或系统偏好。 -->
+  <script>
+    (function () {
+      try {
+        var valid = ['dark', 'light', 'red', 'default', 'kokomi', 'firefly', 'furina', 'hysilens', 'geniusclub', 'silverwolf', 'odette'];
+        var t = new URLSearchParams(location.search).get('theme');
+        if (!valid.includes(t)) {
+          t = localStorage.getItem('reader.theme');
+          if (!valid.includes(t)) t = null;
+        }
+        if (t) document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    })();
+  </script>
+  <!-- import map: 让所有 CM6 模块共享同一个 @codemirror/state 实例 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@codemirror/state": "./vendor/codemirror/state.mjs",
+      "@codemirror/view": "./vendor/codemirror/view.mjs",
+      "@codemirror/commands": "./vendor/codemirror/commands.mjs",
+      "@codemirror/language": "./vendor/codemirror/language.mjs",
+      "@codemirror/autocomplete": "./vendor/codemirror/autocomplete.mjs",
+      "@codemirror/search": "./vendor/codemirror/search.mjs",
+      "@codemirror/lang-markdown": "./vendor/codemirror/lang-markdown.mjs",
+      "@codemirror/lang-python": "./vendor/codemirror/lang-python.mjs",
+      "@codemirror/lang-cpp": "./vendor/codemirror/lang-cpp.mjs",
+      "@codemirror/lang-rust": "./vendor/codemirror/lang-rust.mjs",
+      "@codemirror/lang-javascript": "./vendor/codemirror/lang-javascript.mjs",
+      "@codemirror/lang-json": "./vendor/codemirror/lang-json.mjs",
+      "@codemirror/lang-html": "./vendor/codemirror/lang-html.mjs",
+      "@codemirror/lang-css": "./vendor/codemirror/lang-css.mjs",
+      "@codemirror/lang-yaml": "./vendor/codemirror/lang-yaml.mjs",
+      "@codemirror/theme-one-dark": "./vendor/codemirror/theme-one-dark.mjs",
+      "@lezer/common": "./vendor/codemirror/lezer-common.mjs",
+      "@lezer/highlight": "./vendor/codemirror/lezer-highlight.mjs",
+      "@lezer/lr": "./vendor/codemirror/lezer-lr.mjs",
+      "@lezer/markdown": "./vendor/codemirror/lezer-markdown.mjs",
+      "@lezer/python": "./vendor/codemirror/lezer-python.mjs",
+      "@lezer/cpp": "./vendor/codemirror/lezer-cpp.mjs",
+      "@lezer/rust": "./vendor/codemirror/lezer-rust.mjs",
+      "@lezer/javascript": "./vendor/codemirror/lezer-javascript.mjs",
+      "@lezer/json": "./vendor/codemirror/lezer-json.mjs",
+      "@lezer/html": "./vendor/codemirror/lezer-html.mjs",
+      "@lezer/css": "./vendor/codemirror/lezer-css.mjs",
+      "@lezer/yaml": "./vendor/codemirror/lezer-yaml.mjs",
+      "crelt": "./vendor/codemirror/crelt.mjs",
+      "style-mod": "./vendor/codemirror/style-mod.mjs",
+      "w3c-keyname": "./vendor/codemirror/w3c-keyname.mjs"
+    }
+  }
+  </script>
+</head>
+<body data-skin-components="1">
+  <header id="topbar">
+    <button id="btn-toggle-sidebar" title="折叠/展开侧栏 (Ctrl/Cmd+B)">≡</button>
+    <span id="brand">DQ-WorkFlow</span>
+    <span id="current-path" class="muted">未打开文件</span>
+    <span class="spacer"></span>
+    <button id="btn-history" title="版本历史" disabled>历史</button>
+    <button id="btn-trash" title="回收站">回收站</button>
+    <button id="btn-tree-filter-config" title="配置文件树显示哪些根目录/文件">目录</button>
+    <button id="btn-share" title="复制分享链接" disabled>分享</button>
+    <button id="btn-download" title="打包下载当前 tab 文档" disabled>下载</button>
+    <button id="btn-decrease-font" title="缩小字号">A-</button>
+    <span id="font-size-label">14</span>
+    <button id="btn-increase-font" title="放大字号">A+</button>
+    <button id="btn-edit-toggle" title="切换编辑/预览 (md 文件可用)" disabled>编辑</button>
+    <button id="btn-archive" title="归档: 提交当前文档到 git" disabled>归档</button>
+    <button id="btn-comments" title="批注: 切换批注面板" disabled>批注<span id="btn-comments-badge" class="comment-badge" hidden></span></button>
+    <span id="save-status" class="muted">就绪</span>
+  </header>
+
+  <main id="layout">
+    <aside id="sidebar">
+      <div id="tree-toolbar">
+        <input id="tree-filter" type="text" placeholder="过滤文件名..." />
+        <button id="btn-refresh-tree" title="刷新文件树">⟳</button>
+      </div>
+      <div id="tree"></div>
+    </aside>
+
+    <div id="splitter" title="拖动调整宽度"></div>
+
+    <section id="content">
+      <div id="tab-bar"></div>
+      <div id="content-wrap">
+        <aside id="outline-panel" hidden>
+          <div class="panel-header">
+            <span>目录</span>
+            <button id="btn-outline-toggle" class="eye-btn" title="显示/隐藏目录">👁</button>
+          </div>
+          <div id="outline-body"></div>
+        </aside>
+        <div id="content-body">
+          <div id="welcome" class="empty-state">
+            <h2>roleManager Web Reader</h2>
+            <p>左侧选择文件 · <kbd>Ctrl/⌘</kbd>+<kbd>P</kbd> 快速打开 · <kbd>Ctrl/⌘</kbd>+<kbd>F</kbd> 当前查找 · <kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 全局搜索</p>
+          </div>
+          <article id="viewer" hidden></article>
+          <div id="vditor-host" hidden></div>
+          <div id="editor-host" hidden></div>
+        </div>
+        <aside id="history-panel" hidden>
+          <div class="panel-header">
+            <span>版本历史</span>
+            <button class="panel-close" data-target="history-panel">✕</button>
+          </div>
+          <div id="history-body"></div>
+        </aside>
+        <aside id="trash-panel" hidden>
+          <div class="panel-header">
+            <span>回收站</span>
+            <button class="panel-close" data-target="trash-panel">✕</button>
+          </div>
+          <div id="trash-toolbar">
+            <label class="trash-select-all"><input type="checkbox" id="trash-select-all"> 全选</label>
+            <button id="btn-trash-restore" title="还原选中" disabled>↩ 还原</button>
+            <button id="btn-trash-purge" title="彻底删除选中" disabled>🗑 删除</button>
+          </div>
+          <div id="trash-body"></div>
+        </aside>
+        <aside id="comment-panel" hidden>
+          <div class="panel-header">
+            <span>批注</span>
+            <select id="comment-filter" title="筛选批注">
+              <option value="all">全部</option>
+              <option value="open">未解决</option>
+              <option value="resolved">已解决</option>
+            </select>
+            <button id="btn-comment-refresh" class="eye-btn" title="刷新">⟳</button>
+            <button class="panel-close" data-target="comment-panel">✕</button>
+          </div>
+          <div id="comment-body"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <footer id="statusbar">
+    <span id="sb-encoding" class="muted">—</span>
+    <span class="spacer"></span>
+    <span id="sb-info" class="muted"></span>
+  </footer>
+
+  <div id="search-modal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <input id="search-input" type="text" placeholder="全局搜索内容...  (Esc 关闭)" autocomplete="off" />
+        <select id="search-ext">
+          <option value="">所有扩展名</option>
+          <option value="md">md</option>
+          <option value="py">py</option>
+          <option value="rs">rs</option>
+          <option value="ts">ts</option>
+          <option value="js">js</option>
+          <option value="cpp">cpp</option>
+          <option value="lua">lua</option>
+          <option value="json">json</option>
+        </select>
+      </div>
+      <ul id="search-results"></ul>
+      <div class="modal-hint">↑↓ 导航 · Enter 打开 · Esc 关闭</div>
+    </div>
+  </div>
+
+  <!-- 页内查找（只读渲染模式也用，web/客户端一致）：ctrl/cmd+F 唤起 -->
+  <div id="find-bar" hidden>
+    <input id="find-input" type="text" placeholder="查找...  (Enter 下一个 / Shift+Enter 上一个 / Esc 关闭)" autocomplete="off" />
+    <span id="find-count" class="muted"></span>
+    <button id="find-prev" title="上一个">▲</button>
+    <button id="find-next" title="下一个">▼</button>
+  </div>
+
+  <div id="quickopen-modal" hidden>
+    <div class="modal-card">
+      <input id="quickopen-input" type="text" placeholder="输入文件名模糊匹配...  (Esc 关闭)" autocomplete="off" />
+      <ul id="quickopen-results"></ul>
+      <div class="modal-hint">↑↓ 导航 · Enter 打开 · Esc 关闭</div>
+    </div>
+  </div>
+
+
+  <!-- Mermaid 点击放大 (lightbox): 任意 .mermaid 内 svg → 全屏放大 + 缩放/平移 -->
+  <div id="mermaid-zoom" hidden>
+    <div class="mermaid-zoom-toolbar">
+      <button type="button" data-act="zoom-out" title="缩小">−</button>
+      <span class="mermaid-zoom-scale">100%</span>
+      <button type="button" data-act="zoom-in" title="放大">+</button>
+      <button type="button" data-act="reset" title="重置 100%">1:1</button>
+      <button type="button" data-act="fit" title="适配窗口">适</button>
+      <span class="mermaid-zoom-hint">Ctrl+滚轮 缩放 · 滚轮 平移 · Esc 关闭</span>
+      <button type="button" data-act="close" title="关闭 (Esc)" class="mermaid-zoom-close">✕</button>
+    </div>
+    <div class="mermaid-zoom-stage"></div>
+  </div>
+
+  <!-- tab 右键菜单 -->
+  <div id="tab-menu" hidden>
+    <div class="tab-menu-item" data-action="pin">📌 固定/取消固定</div>
+    <div class="tab-menu-item" data-action="close">✕ 关闭</div>
+    <div class="tab-menu-sep"></div>
+    <div class="tab-menu-item" data-action="close-others">✕ 关闭其他</div>
+    <div class="tab-menu-item" data-action="close-left">✕ 关闭左侧</div>
+    <div class="tab-menu-item" data-action="close-right">✕ 关闭右侧</div>
+    <div class="tab-menu-item" data-action="close-all">✕ 关闭全部</div>
+  </div>
+
+  <!-- 文件树右键菜单 -->
+  <div id="tree-menu" hidden>
+    <div class="tab-menu-item" data-action="new-file">📄 新建文件</div>
+    <div class="tab-menu-item" data-action="new-folder">📁 新建文件夹</div>
+    <div class="tab-menu-sep"></div>
+    <div class="tab-menu-item" data-action="rename">✎ 重命名</div>
+    <div class="tab-menu-item" data-action="delete">🗑 删除</div>
+    <div class="tab-menu-sep"></div>
+    <div class="tab-menu-item" data-action="copy">📋 复制</div>
+    <div class="tab-menu-item" data-action="cut">✂ 剪切</div>
+    <div class="tab-menu-item" data-action="paste">📥 粘贴</div>
+  </div>
+
+  <!-- 文档批注右键菜单 -->
+  <div id="comment-menu" hidden>
+    <div class="tab-menu-item" data-action="add-comment">📝 添加批注</div>
+  </div>
+
+  <!-- 批注编辑器 (inline modal) -->
+  <div id="comment-editor-panel" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="comment-editor-title">添加批注</span>
+      </div>
+      <div class="comment-editor-snippet" id="comment-editor-snippet"></div>
+      <textarea id="comment-editor-text" placeholder="批注内容...  (Esc 取消, Ctrl+Enter 提交)"></textarea>
+      <div class="comment-editor-actions">
+        <button id="comment-editor-cancel">取消</button>
+        <button id="comment-editor-submit">提交</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 根目录显示配置弹窗 -->
+  <div id="tree-filter-modal" class="modal-mask" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <span>配置文件树显示</span>
+        <button id="tree-filter-close" class="modal-close">✕</button>
+      </div>
+      <div class="tree-filter-body">
+        <div class="tree-filter-tip">选择要显示的根目录；勾选“根目录文件”可显示根目录下的散文件。</div>
+        <div id="tree-filter-list"></div>
+      </div>
+      <div class="comment-editor-actions">
+        <button id="tree-filter-cancel">取消</button>
+        <button id="tree-filter-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/dompurify.min.js"></script>
+  <script src="vendor/highlight.min.js"></script>
+  <script>
+    if (window.marked) {
+      window.marked.setOptions({ gfm: true, breaks: true });
+    }
+  </script>
+
+  <!-- Mermaid: ```mermaid 代码块 → SVG (marked 只读态 + Vditor IR 编辑态共用) -->
+  <script src="vendor/mermaid/mermaid.min.js"></script>
+
+  <!-- Vditor IR 编辑器: lute 预加载 (id=vditorLuteScript 让 Vditor 复用, 不重复拉取) -->
+  <script id="vditorLuteScript" src="vendor/vditor/lute.min.js"></script>
+  <script src="vendor/vditor/index.min.js"></script>
+  <!-- 统一皮肤：manifest + shader + runner（与 Castflow/子服务同一套三部分皮肤） -->
+  <script src="http://localhost:5001/static/skin-manifest.js"></script>
+  <script src="http://localhost:5001/static/shader-runner.js"></script>
+  <script src="http://localhost:5001/static/skin-runner.js?v=20260828f"></script>
+  <script type="module" src="app.js?v=20260828h"></script>
+</body>
+</html>

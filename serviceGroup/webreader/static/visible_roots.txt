@@ -1,0 +1,8 @@
+# WebReader root 可见文件夹白名单 (plain text, 一行一目, # 注释)
+# 仅控 root 层展示 (viewer_list_dir/collect_all/search); 子目录内全显; 直接 path 访问不受限
+# 缺失/空 → 降级全显 + eprintln 告警
+SDD
+roles
+ExternDoc
+.claude
+projCommon
