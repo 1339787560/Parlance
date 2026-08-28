@@ -334,19 +334,20 @@
                 <option value="game">game</option>
                 <option value="both">both</option>
             </select>
+            <select id="test-category" class="theme-select" onchange="testRender()" title="区分 Agent 测试空间与用户测试接口">
+                <option value="all">全部分类</option>
+                <option value="agent">Agent 接口</option>
+                <option value="user">用户测试接口</option>
+            </select>
             <input id="test-search" type="text" placeholder="搜索接口名/描述..." oninput="testRender()" style="min-width:200px;">
             <span id="test-status" class="events-status"></span>
         </div>
         <div id="test-body">
             <div id="test-list" class="events-empty">选择客户端后点击刷新查看测试接口</div>
-            <div id="test-result-wrap">
-                <div class="test-section-title">执行结果</div>
-                <pre id="test-result" class="test-result-empty">尚未执行测试接口</pre>
-            </div>
         </div>
         <div class="test-legend">
-            目录来自 creator xzmp 的 <code>window.__debugIndex</code> / <code>agent.meta.registry()</code>。
-            点击“▶ 执行”调用 <code>window.&lt;name&gt;(...args)</code>；有参数的接口会提示输入 JSON 数组。
+            点击接口行展开参数表单，填写后点运行；执行结果以 Toast 提示。
+            Agent 接口与用户测试接口分开展示，可分别筛选。
             Agent 可用 <code>GET /api/debug-index</code> 和 <code>POST /api/test-call</code> 做相同操作。
         </div>
     </div>
@@ -503,7 +504,7 @@
     <script src="debug-launcher.js?v=17"></script>
     <script src="debug-autotest.js?v=2"></script>
 <script src="debug-device.js?v=5"></script>
-    <script src="debug-test.js?v=1"></script>
+    <script src="debug-test.js?v=2"></script>
     <script src="debug-theme.js?v=6"></script>
 </body>
 </html>
