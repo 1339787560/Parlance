@@ -980,6 +980,14 @@ async def ui_curl_js():
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/debug-test.js")
+async def ui_test_js():
+    f = UI_DIR / "debug-test.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/debug-theme.js")
 async def ui_theme_js():
     f = UI_DIR / "debug-theme.js"
@@ -1713,6 +1721,81 @@ async def _send_eval(expr: str, ctx: ClientCtx, timeout: float = 5.0) -> dict:
         return result
 
 
+# 调试矩阵运行时注册表表达式: 优先 window.gameDebug.registry(env) (索引式, 带 env 标记 + desc)
+#  → fallback 手写 window-walk 四根 (gameDebug 缺失时), 只有 arity 无 desc。
+#  → 仍未挂任何命名空间 → __empty; 异常 → __error。env 可过滤 hall/game/both。
+# 与 tools/cocos_tool.py `_debug_index_expr` 同语义（relay 统一暴露，agent 免重复实现）。
+def _debug_index_expr(env: str = None) -> str:
+    fallback_walk = (
+        "var out={fns:{},refs:{}};"
+        "var seen=(typeof WeakSet!=='undefined')?new WeakSet():null;"
+        "function walk(obj,prefix){"
+        "if(!obj||typeof obj!=='object')return;"
+        "if(seen&&seen.has(obj))return;if(seen){seen.add(obj);}"
+        "Object.keys(obj).forEach(function(k){"
+        "var v=obj[k];var p=prefix?prefix+'.'+k:k;"
+        "if(typeof v==='function'){var dot=p.lastIndexOf('.');if(dot>0){var ns=p.slice(0,dot),leaf=p.slice(dot+1);"
+        "var e={env:(ns.indexOf('hall.')===0||ns.indexOf('agent.hall')===0)?'hall':(ns.indexOf('game.')===0||ns.indexOf('agent.game')===0)?'game':'both',arity:v.length,desc:''};"
+        "out.fns[ns]=out.fns[ns]||{};out.fns[ns][leaf]=e;}}"
+        "else if(v&&typeof v==='object'){walk(v,p);}"
+        "});}"
+    )
+    return (
+        "(()=>{try{"
+        "var g=(globalThis.gameDebug||null);"
+        "if(g&&typeof g.registry==='function'){return JSON.stringify(g.registry(" + (f"'{env}'" if env else "") + "));}"
+        + fallback_walk +
+        "['game','hall','common','agent'].forEach(function(r){var v=globalThis[r];if(v&&typeof v==='object')walk(v,r);});"
+        "Object.keys(globalThis).forEach(function(k){if(k.indexOf('action_')===0){var v=globalThis[k];if(typeof v==='function'){var e={env:'both',arity:v.length,desc:''};out.fns['action']=out.fns['action']||{};out.fns['action'][k]=e;}}});"
+        "if(Object.keys(out.fns).length||Object.keys(out.refs).length){return JSON.stringify(out);}"
+        "if(g&&typeof g.list==='function'){return JSON.stringify({__legacy:g.list()});}"
+        "return JSON.stringify({__empty:'window 无 game/hall/common/action_* 调试命名空间 (未注入或未进对应界面)'});"
+        "}catch(e){return JSON.stringify({__error:String(e)});}})()"
+    )
+
+
+def _parse_debug_index(data) -> tuple:
+    """解析 debug-index eval 响应 → (catalog|None, error)。"""
+    if not isinstance(data, dict):
+        return None, "debug-index 无有效响应"
+    raw = data.get("eval_result")
+    if not isinstance(raw, str):
+        return None, f"debug-index 响应异常: {str(raw)[:200]}"
+    try:
+        obj = json.loads(raw)
+    except ValueError:
+        return None, f"debug-index 目录解析失败: {raw[:200]}"
+    if isinstance(obj, dict):
+        if "__error" in obj:
+            return None, f"游戏侧 registry 异常: {obj['__error']}"
+        if "__legacy" in obj:
+            return None, f"window.gameDebug 无 registry (DebugInjector 旧版), 仅 list: {obj['__legacy']}"
+        if "__empty" in obj:
+            return None, obj["__empty"]
+        if "fns" in obj and "refs" in obj and not obj["fns"] and not obj["refs"]:
+            return None, "debug-index 空目录 (索引存在但无已挂调试 fn)"
+        if obj:
+            return obj, None
+    return None, "debug-index 空目录 (无已挂调试 fn)"
+
+
+# 测试接口名白名单: 点分路径, 每段 JS 标识符; 拒绝引号/括号/分号等注入。
+_DEBUG_FN_PATH_RE = re.compile(r"^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$")
+
+
+def _debug_call_expr(name: str, args: list) -> str:
+    """构造调用 window.<name>(...args) 的 eval 表达式（JSON 序列化参数）。"""
+    args_js = ", ".join(json.dumps(a, ensure_ascii=False, default=str) for a in (args or []))
+    return (
+        "(()=>{try{"
+        f"var fn=globalThis.{name};"
+        "if(typeof fn!=='function'){return JSON.stringify({__error:'not a function: " + name + "'});}"
+        "try{return JSON.stringify(fn(" + args_js + "));}"
+        "catch(e){return JSON.stringify({__error:'call error: '+(e&&e.message||e)});}"
+        "}catch(e){return JSON.stringify({__error:String(e)});}})()"
+    )
+
+
 # Cocos 3.8.1 触摸派发: 构造 EventTouch 在场景上 dispatch。
 def _touch_js(x: float, y: float, touch_type: str) -> str:
     return (
@@ -2144,6 +2227,90 @@ async def api_eval(req: EvalRequest):
         return err
     msg = {"type": MsgType.EVAL, "expr": req.expr}
     return await _send_game_and_await(msg, MsgType.EVAL, ctx, timeout=max(req.timeout + 3.0, 8.0))
+
+
+@app.get("/api/debug-index")
+async def api_debug_index(client: str = None, env: str = None):
+    """统一获取 creator xzmp 已注入的测试接口目录（window.__debugIndex / agent.meta.registry）。
+
+    ?client=<id> 指定客户端（单客户端可省略）
+    ?env=hall|game|both 过滤（透传 window.gameDebug.registry(env)）
+    """
+    if env is not None and env not in ("hall", "game", "both"):
+        return JSONResponse({"error": "env 仅支持 hall|game|both"}, status_code=400)
+    ctx, err = _resolve_client(client)
+    if err:
+        return err
+    expr = _debug_index_expr(env)
+    data = await _send_game_and_await(
+        {"type": MsgType.EVAL, "expr": expr}, MsgType.EVAL, ctx, timeout=12.0,
+    )
+    if isinstance(data, JSONResponse):
+        return data
+    catalog, parse_err = _parse_debug_index(data)
+    if parse_err:
+        return JSONResponse({"ok": False, "error": parse_err, "client_id": ctx.id}, status_code=404)
+    fns = catalog.get("fns", {}) if isinstance(catalog, dict) else catalog
+    n_ns = len(fns) if isinstance(fns, dict) else 0
+    n_fn = sum(len(v) for v in fns.values()) if isinstance(fns, dict) else 0
+    return {
+        "ok": True,
+        "client_id": ctx.id,
+        "env": env,
+        "namespaces": fns,
+        "refs": catalog.get("refs", {}) if isinstance(catalog, dict) else {},
+        "count": n_fn,
+        "namespace_count": n_ns,
+    }
+
+
+class DebugCallRequest(BaseModel):
+    """POST /api/test-call 请求体。"""
+    name: str
+    args: Optional[list] = None
+    client: Optional[str] = None
+    timeout: float = 5.0
+
+
+@app.post("/api/test-call")
+async def api_test_call(req: DebugCallRequest):
+    """调用 creator xzmp 已注入的测试接口（如 agent.hall.findRoom / game.test.handCards）。
+
+    body: {"name":"agent.hall.findRoom","args":[{...}],"client"?,"timeout"?}
+    等价于在所选客户端执行 `window.<name>(...args)`，返回游戏端 eval 原响应。
+    """
+    name = (req.name or "").strip()
+    if not _DEBUG_FN_PATH_RE.match(name):
+        return JSONResponse({"error": "name 仅允许点分 JS 标识符，如 agent.hall.findRoom"}, status_code=400)
+    ctx, err = _resolve_client(req.client)
+    if err:
+        return err
+    expr = _debug_call_expr(name, req.args or [])
+    data = await _send_game_and_await(
+        {"type": MsgType.EVAL, "expr": expr}, MsgType.EVAL, ctx,
+        timeout=max(req.timeout + 3.0, 8.0),
+    )
+    if isinstance(data, JSONResponse):
+        return data
+    # 解析我们包的一层 __error，转成结构化错误响应
+    raw = data.get("eval_result")
+    if isinstance(raw, str):
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict) and "__error" in obj:
+                return JSONResponse({"ok": False, "error": obj["__error"],
+                                     "client_id": ctx.id, "name": name}, status_code=400)
+        except ValueError:
+            pass
+    return {
+        "ok": True,
+        "client_id": ctx.id,
+        "name": name,
+        "eval_result": data.get("eval_result"),
+        "eval_is_object": data.get("eval_is_object"),
+        "eval_type": data.get("eval_type"),
+        "eval_error": data.get("eval_error"),
+    }
 
 
 class DeviceRequest(BaseModel):

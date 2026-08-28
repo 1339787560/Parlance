@@ -46,6 +46,7 @@
         <button id="tab-launcher" class="tab" onclick="switchTab('launcher')">Launcher</button>
         <button id="tab-autotest" class="tab" onclick="switchTab('autotest')">AutoTest</button>
         <button id="tab-device" class="tab" onclick="switchTab('device')">Device</button>
+        <button id="tab-test" class="tab" onclick="switchTab('test')">Test</button>
     </div>
 
     <div id="panel-console" class="panel active">
@@ -323,6 +324,33 @@
         </div>
     </div>
 
+        <!-- Test Panel - creator xzmp 测试接口统一入口（列表点击模拟测试行为） -->
+    <div id="panel-test" class="panel">
+        <div id="test-toolbar">
+            <button class="toolbar-btn" onclick="testRefresh()" title="拉取当前客户端已注入的测试接口目录">🔄 刷新</button>
+            <select id="test-env" class="theme-select" onchange="testRefresh()" title="按环境过滤（hall=大厅 / game=对局 / both=双端）">
+                <option value="">全部环境</option>
+                <option value="hall">hall</option>
+                <option value="game">game</option>
+                <option value="both">both</option>
+            </select>
+            <input id="test-search" type="text" placeholder="搜索接口名/描述..." oninput="testRender()" style="min-width:200px;">
+            <span id="test-status" class="events-status"></span>
+        </div>
+        <div id="test-body">
+            <div id="test-list" class="events-empty">选择客户端后点击刷新查看测试接口</div>
+            <div id="test-result-wrap">
+                <div class="test-section-title">执行结果</div>
+                <pre id="test-result" class="test-result-empty">尚未执行测试接口</pre>
+            </div>
+        </div>
+        <div class="test-legend">
+            目录来自 creator xzmp 的 <code>window.__debugIndex</code> / <code>agent.meta.registry()</code>。
+            点击“▶ 执行”调用 <code>window.&lt;name&gt;(...args)</code>；有参数的接口会提示输入 JSON 数组。
+            Agent 可用 <code>GET /api/debug-index</code> 和 <code>POST /api/test-call</code> 做相同操作。
+        </div>
+    </div>
+
     <!-- BTree Panel - 行为树可视化（四层 + 节点跳 TS）-->
     <div id="panel-btree" class="panel">
         <div id="btree-toolbar">
@@ -475,6 +503,7 @@
     <script src="debug-launcher.js?v=17"></script>
     <script src="debug-autotest.js?v=2"></script>
 <script src="debug-device.js?v=5"></script>
+    <script src="debug-test.js?v=1"></script>
     <script src="debug-theme.js?v=6"></script>
 </body>
 </html>

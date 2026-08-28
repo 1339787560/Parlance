@@ -101,6 +101,7 @@ function resetAllPanels() {
     if (window.resetSourcesPanel) window.resetSourcesPanel();
     if (window.resetScenePanel) window.resetScenePanel();
     if (window.resetLeakPanel) window.resetLeakPanel();
+    if (window.resetTestPanel) window.resetTestPanel();
 }
 
 // ---- Console Display ----
@@ -317,6 +318,9 @@ function switchTab(tab) {
         }
         if (tab === 'device' && typeof deviceOnTabShow === 'function') {
             deviceOnTabShow();
+        }
+        if (tab === 'test' && typeof testOnTabShow === 'function') {
+            testOnTabShow();
         }
         if (tab === 'scene' && window.sceneRefreshTree) {
             sceneRefreshTree();
