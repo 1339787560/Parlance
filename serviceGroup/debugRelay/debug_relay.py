@@ -250,6 +250,8 @@ arm_state: Dict[str, dict] = {}
 # {servicesvr_url, combatdata_path, flow_path}
 _COMBATDATA_CFG: dict = {}
 whitelist_ips: set = set()
+# whitelist 热更新持久化目标（__main__ 解析 config 后设置）
+_WHITELIST_CONFIG_PATH = None
 
 # 行为树可视化配置（行为树 tab，无需游戏端连接）
 bt_layers: Dict[str, str] = {}        # layer_key -> 绝对目录路径
@@ -1004,6 +1006,57 @@ async def health():
         "client_count": len(clients),
         "browser_count": len(browsers),
     }
+
+
+@app.get("/api/whitelist")
+async def whitelist_get():
+    """读取当前 IP 白名单状态（enabled + ips）。"""
+    return {
+        "ok": True,
+        "enabled": whitelist_enabled,
+        "ips": sorted(whitelist_ips),
+    }
+
+
+@app.post("/api/whitelist")
+async def whitelist_set(payload: dict):
+    """热更新 IP 白名单：enabled + ips 立即生效，并尽量持久化到配置文件。"""
+    global whitelist_enabled, whitelist_ips
+    new_enabled = bool(payload.get("enabled", whitelist_enabled))
+    raw_ips = payload.get("ips", list(whitelist_ips))
+    if not isinstance(raw_ips, list):
+        return JSONResponse({"ok": False, "error": "ips 必须是数组"}, status_code=400)
+    new_ips = {str(x).strip() for x in raw_ips if str(x).strip()}
+    whitelist_enabled = new_enabled
+    whitelist_ips = new_ips
+    if new_enabled and not new_ips:
+        print("WARNING: IP 白名单已启用但 IP 列表为空,将拒绝所有连接")
+
+    # 持久化到配置文件（尽力而为；无配置文件时仅运行时生效）
+    if _WHITELIST_CONFIG_PATH:
+        try:
+            cfg = _load_config(_WHITELIST_CONFIG_PATH) or {}
+            cfg["whitelist"] = {"enabled": new_enabled, "ips": sorted(new_ips)}
+            suffix = _WHITELIST_CONFIG_PATH.suffix.lower()
+            if suffix in (".yaml", ".yml"):
+                if _HAS_YAML:
+                    with _WHITELIST_CONFIG_PATH.open("w", encoding="utf-8") as f:
+                        yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
+                else:
+                    print("WARNING: PyYAML 未安装,白名单仅运行时生效")
+            else:
+                with _WHITELIST_CONFIG_PATH.open("w", encoding="utf-8") as f:
+                    json.dump(cfg, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"WARNING: 持久化白名单配置失败: {e}")
+
+    print(f"IP 白名单热更新: enabled={new_enabled} ips={sorted(new_ips)}")
+    return {
+        "ok": True,
+        "enabled": new_enabled,
+        "ips": sorted(new_ips),
+    }
+
 
 
 # ---- Behavior Tree Visualization API（无需游戏端连接，读文件）----
@@ -3370,6 +3423,8 @@ if __name__ == "__main__":
             if p.exists():
                 cfg_path = p
                 break
+    # 白名单热更新持久化到该配置文件（若存在）
+    _WHITELIST_CONFIG_PATH = cfg_path
 
     cfg = _load_config(cfg_path) if cfg_path else {}
     # 源码目录: --src > config source_dir > 默认（行为树/Sources 不依赖设备，以本机代码为准）
