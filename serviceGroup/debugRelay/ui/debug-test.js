@@ -328,6 +328,7 @@ function testToast(message, isError, keep) {
         .test-item-params-badge { border-radius:3px; padding:0 5px; font-size:10px; background:rgba(255,165,0,.12); color:#ffa502; white-space:nowrap; }
         .test-item-params-badge.no-params { background:rgba(255,255,255,.06); color:var(--dim); }
         .test-item-detail { padding:8px 12px 10px; border-top:1px solid var(--border); }
+        .test-item-detail.hidden { display:none; }
         .test-item-desc { color:var(--dim); font-size:12px; margin-bottom:8px; }
         .test-param { margin-bottom:8px; }
         .test-param-label { font-size:12px; margin-bottom:2px; }
