@@ -150,6 +150,7 @@ function testFlattenCatalog(catalog) {
                 category: meta.category || 'other',
                 params: Array.isArray(meta.params) ? meta.params : [],
                 origName: meta.origName || '',
+                aliases: Array.isArray(meta.aliases) ? meta.aliases : [],
             });
         }
     }
@@ -187,7 +188,9 @@ function testPopulateSubcategories() {
     if (!sel || !testCatalog) return;
     const all = testFlattenCatalog(testCatalog);
     const scope = document.getElementById('test-category').value || 'all';
-    const items = scope === 'all' ? all : all.filter(x => x.scope === scope);
+    const env = document.getElementById('test-env').value || '';
+    let items = env ? all.filter(x => x.env === env || x.env === 'both') : all;
+    if (scope !== 'all') items = items.filter(x => x.scope === scope);
     const cats = Array.from(new Set(items.map(x => x.category))).filter(Boolean);
     cats.sort((a, b) => {
         const ia = TEST_CATEGORY_ORDER.indexOf(a);
@@ -248,8 +251,9 @@ function testRenderItem(item) {
             <input class="test-param-input" data-param-index="${i}" placeholder="输入值（JSON / 数字 / 字符串）" />
         </div>
     `).join('') : '<div class="test-param-empty">无需参数，直接运行</div>';
-    const aliasHtml = item.origName && item.origName !== item.fn
-        ? `<span class="test-item-alias" title="原函数名">${escapeHtml(item.origName)}</span>`
+    const aliasNames = [item.origName, ...(item.aliases || [])].filter(Boolean).filter(x => x !== item.fn);
+    const aliasHtml = aliasNames.length
+        ? aliasNames.map(a => `<span class="test-item-alias" title="原函数名/别名">${escapeHtml(a)}</span>`).join('')
         : '';
     const paramBadge = item.arity > 0
         ? `<span class="test-item-params-badge">⚙ 有参数 ${item.arity}</span>`

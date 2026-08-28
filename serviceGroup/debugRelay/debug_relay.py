@@ -2353,6 +2353,23 @@ async def api_debug_index(client: str = None, env: str = None):
                 if isinstance(meta, dict):
                     meta["category"] = _test_category(ns, key)
                     categories.add(meta["category"])
+    # 同命名空间下同 origName 视为同一逻辑函数，去重（保留首个，别名记入 aliases）
+    if isinstance(fns, dict):
+        for ns, members in fns.items():
+            if not isinstance(members, dict):
+                continue
+            seen = {}
+            for key in list(members.keys()):
+                meta = members[key]
+                if not isinstance(meta, dict):
+                    continue
+                orig = meta.get("origName") or key
+                if orig in seen:
+                    kept = seen[orig]
+                    kept.setdefault("aliases", []).append(key)
+                    del members[key]
+                else:
+                    seen[orig] = meta
     n_ns = len(fns) if isinstance(fns, dict) else 0
     n_fn = sum(len(v) for v in fns.values()) if isinstance(fns, dict) else 0
     return {
