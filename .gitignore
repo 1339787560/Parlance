@@ -24,6 +24,7 @@ logs/
 */target
 **/target
 *.rs.bk
+serviceGroup/webreader/webreader-server
 
 .DS_Store
 share/
