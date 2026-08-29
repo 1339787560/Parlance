@@ -131,6 +131,18 @@ services:
     tags: [reader, web, doc, rolemanager]
     enabled: true
 
+  # castflow-web — Castflow 远程访问统一入口：5130 -> 127.0.0.1:5120 纯字节反代
+  # (完整桌面 UI + invoke 桥网关 + /terminal + /events 全协议通吃; 平板/手机与桌面同源界面)
+  - name: castflow-web
+    command: python
+    command_mac: ./.venv/bin/python
+    args: ["serviceGroup/castflow-web/proxy.py", "--port", "5130"]
+    cwd: .
+    port: 5130
+    auto_restart: true
+    tags: [castflow, proxy, web, remote]
+    enabled: true
+
   # dsh web — DeepSeek Harness Web UI。不直接用 dsh.cmd (Popen 无 shell 拉不起批处理),
   # 等价展开 = node <npm全局>/node_modules/@deepseek-ai/dsh/lib/bin.js web (dsh.cmd 原样转发)
   - name: dsh-web
