@@ -1,11 +1,20 @@
 from JsonConfigParser import *
 import os
+import sys
 import threading
 import time
 import psutil
-import win32serviceutil
-import win32service
 import socket
+
+# Windows 服务控制 (pywin32) 仅 Windows 可用；非 Windows 平台置 None，
+# 服务管理函数在非 Windows 上调用会报 "win32 服务控制仅支持 Windows"。
+# 使模块可在 Mac/Linux 干净 import（ServiceRoute 顶层 import Service）。
+if sys.platform.startswith("win"):
+    import win32serviceutil
+    import win32service
+else:
+    win32serviceutil = None
+    win32service = None
 
 # 全局状态字典，用于存储服务状态
 service_status = {}

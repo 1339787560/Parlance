@@ -61,6 +61,7 @@ services:
 
   - name: serviceServer-legacy
     command: python
+    command_mac: ./serviceGroup/serviceServer-legacy/.venv/bin/python
     args: ["main.py"]
     cwd: ./serviceGroup/serviceServer-legacy
     port: 5099
@@ -87,6 +88,7 @@ services:
     command_mac: ./.venv/bin/python
     command_win: python
     args: ["debug_relay.py", "--port", "5003", "--src", "D:\\Codlib\\douque\\xzmx\\ClientEngineGame\\trunk\\assets"]
+    args_mac: ["debug_relay.py", "--port", "5003"]   # Mac 无客户端 assets, 不带 --src
     cwd: ./serviceGroup/debugRelay
     port: 5003
     auto_restart: true
@@ -122,6 +124,7 @@ services:
     command_win: .\serviceGroup\webreader\webreader-server.exe
     command_mac: ./serviceGroup/webreader/webreader-server
     args: ["config.json"]
+    args_mac: ["config.mac.json"]     # Mac 本机配置 (gitignored, workspace 指向 Mac skillrepo)
     cwd: ./serviceGroup/webreader
     port: 5090
     auto_restart: true
@@ -133,6 +136,7 @@ services:
   - name: dsh-web
     command: node
     args: ["C:\\Users\\admin\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js", "web"]
+    args_mac: ["/Users/liz/.nvm/versions/node/v24.16.0/lib/node_modules/@deepseek-ai/dsh/lib/bin.js", "web"]
     port: 3080
     auto_restart: true
     tags: [dsh, deepseek, agent, web]

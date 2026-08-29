@@ -27,5 +27,8 @@ logs/
 
 .DS_Store
 share/
-
 _cache*/
+
+# 机器本地配置文件（跨平台差异，不入库）
+config.mac.json
+serviceGroup/webreader/config.mac.json
