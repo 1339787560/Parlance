@@ -1,5 +1,6 @@
 // debug-build.js — Build/编译状态 tab
 // 轮询 /api/build/progress，展示 packer-driver 产物进度 + 编译日志关键行。
+// 提供 增量 Reload / 全量 Rebuild / Restart Preview 操作按钮（异步触发）。
 (function () {
     let prevPreviewFiles = null;
     let timer = null;
@@ -55,9 +56,34 @@
         }
     }
 
-    window.buildRefresh = refresh;
+    async function buildAction(action) {
+        const btn = $('build-' + (action === 'incremental' ? 'incremental' : action === 'full' ? 'full' : 'restart'));
+        if (btn) btn.disabled = true;
+        setText('build-action-result', '⏳ 已触发，等待执行...');
+        try {
+            const resp = await fetch('/api/build/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action })
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                setText('build-action-result', `✅ 已启动 ${action}`);
+            } else {
+                setText('build-action-result', `❌ ${data.error || '启动失败'}`);
+            }
+        } catch (e) {
+            setText('build-action-result', `❌ ${e}`);
+        } finally {
+            if (btn) btn.disabled = false;
+            // 触发后立刻刷新一次，稍后轮询会持续跟进
+            setTimeout(refresh, 500);
+        }
+    }
 
-    // 页面加载后开始轮询；切走 tab 也继续，数据量小无妨
+    window.buildRefresh = refresh;
+    window.buildAction = buildAction;
+
     if (!timer) {
         timer = setInterval(refresh, 2000);
         refresh();

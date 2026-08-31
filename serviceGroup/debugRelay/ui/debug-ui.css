@@ -2354,10 +2354,22 @@ html[data-theme] body::before {
   border-bottom: 1px solid var(--border); flex-wrap: wrap;
 }
 #build-toolbar button {
-  padding: 3px 12px; border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 12px; border: 1px solid var(--border); border-radius: 4px;
   background: var(--bg); color: var(--text); cursor: pointer; font-size: 11px;
 }
-#build-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+#build-toolbar button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+#build-toolbar button:disabled { opacity: .45; cursor: default; }
+#build-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px; padding: 10px;
+}
+.build-stat {
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px;
+}
+.build-stat-label { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
+.build-stat-value { color: var(--text); font-size: 22px; font-weight: 700; margin: 4px 0 2px; }
+.build-stat-sub { color: var(--dim); font-size: 11px; }
 .build-section-title {
   padding: 8px 10px; font-weight: 600;
   border-bottom: 1px solid var(--border);
@@ -2371,6 +2383,7 @@ html[data-theme] body::before {
   font-size: 12px; line-height: 1.5;
   color: var(--text); background: var(--bg);
 }
+
 
 
 /* 鈹€鈹€ Command Palette (Quick Open / Search) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */

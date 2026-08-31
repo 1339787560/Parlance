@@ -924,6 +924,44 @@ async def build_progress():
     }
 
 
+@app.post("/api/build/action")
+async def build_action(request: Request):
+    """Build tab 操作按钮：触发 cocos_tool 的 reload/rebuild。
+
+    body: {"action": "incremental" | "full" | "restart"}
+    异步执行，不阻塞 HTTP；前端通过 /api/build/progress 观察进度。
+    """
+    project = _PROJECT_DIR
+    if not project or not Path(project).exists():
+        return JSONResponse({"ok": False, "error": "project_dir 未配置或不存在"}, status_code=400)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    action = body.get("action", "incremental")
+    tool = "D:/Codlib/dq-workflow/tools/cocos_tool.py"
+    if action == "full":
+        cmd = [sys.executable, tool, "--json", "py:stable-reload", "--full", str(project)]
+    elif action == "restart":
+        cmd = [sys.executable, tool, "--json", "py:restart-preview", str(project)]
+    else:
+        cmd = [sys.executable, tool, "--json", "py:stable-reload", str(project)]
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    try:
+        subprocess.Popen(
+            cmd,
+            cwd="D:/Codlib/dq-workflow",
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    return {"ok": True, "action": action, "started": True}
+
+
 @app.get("/debug-ui.css")
 async def ui_css():
     f = UI_DIR / "debug-ui.css"
