@@ -2371,11 +2371,25 @@ html[data-theme] body::before {
   gap: 8px; padding: 10px;
 }
 .build-stat {
-  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
-  padding: 10px 12px;
+  background: linear-gradient(180deg, var(--card), rgba(255,255,255,0.02));
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  transition: border-color .15s ease;
 }
-.build-stat-label { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
-.build-stat-value { color: var(--text); font-size: 22px; font-weight: 700; margin: 4px 0 2px; }
+.build-stat-label {
+  color: var(--dim); font-size: 10px; text-transform: uppercase;
+  letter-spacing: .6px; font-weight: 600;
+}
+.build-stat-value {
+  color: var(--text); font-size: 24px; font-weight: 700;
+  margin: 6px 0 4px; font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.build-stat-value.state-ok { color: var(--accent); }
+.build-stat-value.state-building { color: var(--yellow); }
+.build-stat-value.state-wait { color: var(--dim); }
 .build-stat-sub { color: var(--dim); font-size: 11px; }
 .build-section-title {
   padding: 8px 10px; font-weight: 600;

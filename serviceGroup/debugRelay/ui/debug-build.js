@@ -26,12 +26,17 @@
 
         const previewFiles = t.preview_files || 0;
         let stateText;
+        const stateEl = $('build-state');
+        stateEl.className = 'build-stat-value';
         if (data.building) {
             stateText = '🔄 重建中';
+            stateEl.classList.add('state-building');
         } else if (t.preview_import_map) {
             stateText = '✅ 就绪';
+            stateEl.classList.add('state-ok');
         } else {
             stateText = '⏳ 等待构建';
+            stateEl.classList.add('state-wait');
         }
         if (prevPreviewFiles !== null && previewFiles !== prevPreviewFiles) {
             const delta = previewFiles - prevPreviewFiles;
