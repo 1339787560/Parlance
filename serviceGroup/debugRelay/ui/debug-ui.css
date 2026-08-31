@@ -2346,4 +2346,31 @@ html[data-theme] body::before {
 .btree-cfg-legend-body { color: var(--dim); font-size: 11px; margin-top: 6px; line-height: 1.7; word-break: break-all; }
 .btree-cfg-legend-body code { color: var(--blue); background: var(--bg); padding: 0 3px; border-radius: 2px; }
 
+/* Build tab */
+#panel-build { flex-direction: column; }
+#build-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: var(--card);
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+#build-toolbar button {
+  padding: 3px 12px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg); color: var(--text); cursor: pointer; font-size: 11px;
+}
+#build-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+.build-section-title {
+  padding: 8px 10px; font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.build-log {
+  margin: 0; padding: 10px 12px;
+  flex: 1; overflow: auto; min-height: 0;
+  white-space: pre-wrap; word-break: break-all;
+  font-family: Consolas, monospace;
+  font-size: 12px; line-height: 1.5;
+  color: var(--text); background: var(--bg);
+}
+
+
 /* 鈹€鈹€ Command Palette (Quick Open / Search) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */

@@ -35,6 +35,7 @@
 
     <div id="tab-bar">
         <button id="tab-console" class="tab active" onclick="switchTab('console')">Console</button>
+        <button id="tab-build" class="tab" onclick="switchTab('build')">Build</button>
         <button id="tab-sources" class="tab" onclick="switchTab('sources')">Sources</button>
         <button id="tab-btree" class="tab" onclick="switchTab('btree')">行为树</button>
         <button id="tab-curl" class="tab" onclick="switchTab('curl')">Curl</button>
@@ -63,6 +64,33 @@
             <input id="eval-input" type="text" placeholder="输入表达式查看变量（如 GameInfo.curGameState）" onkeydown="if(event.key==='Enter')evalExpr()">
             <button onclick="evalExpr()">Eval</button>
         </div>
+    </div>
+
+    <!-- Build Panel - 编译/重建进度与状态 -->
+    <div id="panel-build" class="panel">
+        <div id="build-toolbar">
+            <button onclick="buildRefresh()" title="立即刷新编译状态">🔄 刷新</button>
+            <span id="build-status" class="events-status"></span>
+        </div>
+        <div id="build-cards" class="perf-cards">
+            <div class="perf-card">
+                <div class="perf-label">Editor Target</div>
+                <div class="perf-value" id="build-editor-files">-</div>
+                <div class="perf-sub">import-map: <span id="build-editor-import">-</span></div>
+            </div>
+            <div class="perf-card">
+                <div class="perf-label">Preview Target</div>
+                <div class="perf-value" id="build-preview-files">-</div>
+                <div class="perf-sub">import-map: <span id="build-preview-import">-</span></div>
+            </div>
+            <div class="perf-card">
+                <div class="perf-label">状态</div>
+                <div class="perf-value" id="build-state">-</div>
+                <div class="perf-sub">判断是否卡住：文件数是否增长 / import-map 是否生成</div>
+            </div>
+        </div>
+        <div class="build-section-title">编译日志（project.log 关键行）</div>
+        <pre id="build-log" class="build-log">加载中...</pre>
     </div>
 
     <div id="panel-sources" class="panel">
@@ -499,6 +527,7 @@
     <script src="http://localhost:5001/static/shader-runner.js"></script>
     <script src="http://localhost:5001/static/skin-runner.js"></script>
     <script src="debug-console.js?v=13"></script>
+    <script src="debug-build.js?v=1"></script>
     <script src="debug-sources.js?v=5"></script>
     <script src="debug-perf.js?v=6"></script>
     <script src="debug-leak.js?v=1"></script>

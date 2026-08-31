@@ -838,6 +838,9 @@ UI_DIR = Path(__file__).parent / "ui"
 # 用 dict 持状态 (mutable, 无需 global 声明, 避开 Python 3.12 annotated/global 冲突)
 _BUILD_STATE = {"web_dir": None, "mounted": False}
 
+# 当前 Cocos 项目根（Build/编译状态 tab 用；__main__ 从 config project_dir 或 src_dir.parent 注入）
+_PROJECT_DIR = None
+
 @app.get("/")
 async def index():
     idx = UI_DIR / "index.html"
@@ -867,6 +870,57 @@ async def build_status():
         "path": web_dir,
         "url": "/build-preview/" if _BUILD_STATE["mounted"] else None,
         "hint": "build/web-desktop 未找到。Cocos Creator → 构建 → web-desktop (取消勾选调试构建) → 构建" if not _BUILD_STATE["mounted"] else None,
+    }
+
+
+@app.get("/api/build/progress")
+async def build_progress():
+    """Build/编译状态 tab 数据：packer-driver 产物进度 + project.log 编译日志。
+
+    用于在项目重建时判断是否卡住：preview 文件数是否增长、import-map 是否生成。
+    """
+    project = _PROJECT_DIR
+    if not project or not Path(project).exists():
+        return {"ok": False, "error": "project_dir 未配置或不存在"}
+    project = Path(project)
+
+    def _count_dir(p: Path) -> int:
+        if not p.exists():
+            return 0
+        return sum(1 for _ in p.rglob("*") if _.is_file())
+
+    targets = project / "temp" / "programming" / "packer-driver" / "targets"
+    editor_dir = targets / "editor"
+    preview_dir = targets / "preview"
+    editor_files = _count_dir(editor_dir)
+    preview_files = _count_dir(preview_dir)
+    preview_import_map = (preview_dir / "import-map.json").exists()
+    editor_import_map = (editor_dir / "import-map.json").exists()
+
+    log_path = project / "temp" / "logs" / "project.log"
+    log_tail = []
+    if log_path.exists():
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            keys = ("Start Quick Compile", "Quick Compile:", "QuickCompiler:",
+                    "packer-driver", "PackerDriver", "Init packer-driver failed",
+                    "Build is in progress", "Failed to clear cache",
+                    "脚本系统初始化失败", "Use preview template")
+            log_tail = [ln for ln in lines[-400:] if any(k in ln for k in keys) and ".js.map" not in ln][-40:]
+        except OSError:
+            pass
+
+    return {
+        "ok": True,
+        "project": str(project),
+        "targets": {
+            "editor_files": editor_files,
+            "preview_files": preview_files,
+            "editor_import_map": editor_import_map,
+            "preview_import_map": preview_import_map,
+        },
+        "building": (preview_files > 0 and not preview_import_map) or editor_files == 0,
+        "log_tail": log_tail,
     }
 
 
@@ -985,6 +1039,14 @@ async def ui_curl_js():
 @app.get("/debug-test.js")
 async def ui_test_js():
     f = UI_DIR / "debug-test.js"
+    if f.exists():
+        return FileResponse(str(f), media_type="application/javascript")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
+@app.get("/debug-build.js")
+async def ui_build_js():
+    f = UI_DIR / "debug-build.js"
     if f.exists():
         return FileResponse(str(f), media_type="application/javascript")
     return JSONResponse({"error": "not found"}, status_code=404)
@@ -3430,6 +3492,10 @@ if __name__ == "__main__":
     # 源码目录: --src > config source_dir > 默认（行为树/Sources 不依赖设备，以本机代码为准）
     _src_arg = args.src or (cfg.get("source_dir") if isinstance(cfg, dict) else None) or DEFAULT_SRC
     src_dir = Path(_src_arg).resolve()
+
+    # 当前 Cocos 项目根: config project_dir > src_dir.parent（Build/编译状态 tab 用）
+    _project_arg = cfg.get("project_dir") if isinstance(cfg, dict) else None
+    _PROJECT_DIR = str(Path(_project_arg).resolve() if _project_arg else src_dir.parent.resolve())
 
     # 稳定 build 静态服务: config build_dir > 默认 <source_dir>/../build/web-desktop (即 trunk/build/web-desktop)
     # 存在则 mount /build-preview (launcher build 模式 iframe 指向)

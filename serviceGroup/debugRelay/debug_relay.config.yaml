@@ -14,6 +14,9 @@ whitelist:
 # 源码目录（Sources 面板，不依赖设备，以本机代码为准；--src 可覆盖）
 source_dir: "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets"
 
+# 当前 Cocos 项目根（Build/编译状态 tab 用；默认取 source_dir 的父目录）
+project_dir: "D:/Codlib/douque/xzmx/git/xzmk"
+
 # 行为树可视化配置（行为树 tab）
 # layers: 四层行为树目录（绝对路径）
 #   base_btree / base_popup   引擎插件基础层（CocosCreator2.0/Plugins）
