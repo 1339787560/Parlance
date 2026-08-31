@@ -2349,16 +2349,23 @@ html[data-theme] body::before {
 /* Build tab */
 #panel-build { flex-direction: column; }
 #build-toolbar {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; flex-direction: column; gap: 6px;
   padding: 6px 10px; background: var(--card);
-  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
 }
-#build-toolbar button {
+#build-actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+#build-actions button {
   padding: 5px 12px; border: 1px solid var(--border); border-radius: 4px;
   background: var(--bg); color: var(--text); cursor: pointer; font-size: 11px;
 }
-#build-toolbar button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-#build-toolbar button:disabled { opacity: .45; cursor: default; }
+#build-actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+#build-actions button:disabled { opacity: .45; cursor: default; }
+#build-result {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  color: var(--dim); font-size: 11px; min-height: 16px;
+}
 #build-stats {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px; padding: 10px;
