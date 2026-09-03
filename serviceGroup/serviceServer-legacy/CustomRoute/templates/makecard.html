@@ -821,12 +821,13 @@
                 });
                 const d = await r.json();
                 if (!d.success) throw new Error(d.message);
-                applyIni(d.content);
+                const warn = applyIni(d.content);
                 await loadFiles();
                 document.getElementById('file-sel').value = 'test.ini';
                 currentFile = 'test.ini';
                 updateActivateBtn();
                 toast(d.message, 'ok');
+                if (warn) toast(warn, 'err');   // 覆盖成功提示，警告留在屏幕
             } catch (e) { toast('生效失败: ' + e.message, 'err'); }
         }
         async function readFile() {
@@ -835,8 +836,9 @@
                 const r = await fetch(`/api/makecard/read?service=${currentService}&file=${encodeURIComponent(currentFile)}`);
                 const d = await r.json();
                 if (!d.success) throw new Error(d.message);
-                applyIni(d.content);
+                const warn = applyIni(d.content);
                 toast(`读取 ${currentFile}`, 'ok');
+                if (warn) toast(warn, 'err');   // 覆盖成功提示，警告留在屏幕
             } catch (e) { toast('读取失败: ' + e.message, 'err'); }
         }
         // 引擎生效键 = Total + Banker + BeginNO + Made（nChair/CatchCard/GangCard/bankerno/beginno 全是注释，不读）
@@ -879,14 +881,26 @@
             state.chairs = state.chairs.map(sane);
             state.catch = sane(state.catch);
             state.gang = sane(state.gang);
+            // 读入侧重复检测：坏文件（同 cardid 多张）返回警告，由调用方在成功提示后弹出；保存时 serializeIni 会拒绝写回
+            const seen = new Set();
+            const dup = [];
+            [...state.chairs.flat(), ...state.catch, ...state.gang].forEach(c => seen.has(c) ? dup.push(c) : seen.add(c));
+            const warn = dup.length ? `文件含重复 cardid ${[...new Set(dup)].join(', ')}（保存将被拦截，请先修正）` : '';
             flipRender();
             clearHistory();   // 读文件 = 新基线，清撤销栈
+            return warn;
         }
         function serializeIni() {
             const flat = arr => arr.length ? arr.join('|') : '';
             const banker = state.bankerno || 0;
+            const max = hasJoker ? 114 : 108;
             const bankPool = Array.from(state.bank).sort((a,b)=>a-b);   // 椅子空槽时从此补（升序）
-            const takeBank = () => bankPool.length ? bankPool.shift() : 0;
+            let shortfall = 0;   // 椅子空槽且牌池耗尽的张数（禁止兜底造牌）
+            const takeBank = () => {
+                if (bankPool.length) return bankPool.shift();
+                shortfall++;
+                return -1;   // 占位，下方守恒校验统一拦截
+            };
             const slot = (i, k) => {
                 const cid = state.chairs[i] && state.chairs[i][k];
                 return (cid != null && cid !== '') ? cid : takeBank();
@@ -905,6 +919,16 @@
             // 牌墙 = catch + gang + bank 余量
             [...state.catch, ...state.gang, ...bankPool].forEach(c => total.push(c));
 
+            // 守恒 + 唯一性校验：一副牌每种 cardid 唯一，任何缺牌/造牌/重复都拒绝写盘
+            const seen = new Set();
+            const dup = [];
+            total.forEach(c => seen.has(c) ? dup.push(c) : seen.add(c));
+            const errs = [];
+            if (shortfall) errs.push(`椅子未摆满且牌池缺 ${shortfall} 张（庄14/闲13）`);
+            if (total.length !== max) errs.push(`总张数 ${total.length} ≠ ${max}`);
+            if (dup.length) errs.push(`重复 cardid: ${[...new Set(dup)].join(', ')}`);
+            if (errs.length) throw new Error(errs.join('；'));
+
             let s = '[Card]\r\nMade=1\r\n';
             s += `Total=${flat(total)}\r\n`;
             s += `Banker=${banker}\r\nBeginNO=${state.beginno||0}\r\n`;
@@ -921,8 +945,9 @@
             currentFile = name;
         }
         async function doSave(file) {
-            const content = serializeIni();
+            let content;
             try {
+                content = serializeIni();   // 守恒/唯一性校验失败会 throw，须在 try 内接住提示
                 const r = await fetch('/api/makecard/save', {
                     method:'POST', headers:{'Content-Type':'application/json'},
                     body: JSON.stringify({service:currentService, file, content})
