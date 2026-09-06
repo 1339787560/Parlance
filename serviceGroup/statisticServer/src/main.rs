@@ -125,6 +125,7 @@ async fn main() {
             api_key,
             anthropic: anthropic_target.clone(),
             openai: openai_target.clone(),
+            use_system_proxy: false,
         };
         SourceManager::new(vec![default], "env".into())
     } else {

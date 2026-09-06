@@ -19,6 +19,17 @@ pub struct ApiSource {
     pub api_key: String,
     pub anthropic: String,
     pub openai: String,
+    /// 转发是否走系统代理（默认 false=直连；规避智谱对代理出口 IP 的审查，F5）。
+    #[serde(default)]
+    pub use_system_proxy: bool,
+}
+
+impl ApiSource {
+    /// 是否 GLM 系来源（bigmodel / z.ai base）→ 模型映射透传、积分按 coding plan 折算。
+    pub fn is_glm_provider(&self) -> bool {
+        let b = format!("{} {}", self.anthropic, self.openai).to_lowercase();
+        b.contains("bigmodel") || b.contains("z.ai")
+    }
 }
 
 /// 来源管理器：内存态（RwLock 保护，代理每请求读激活来源）。
@@ -73,6 +84,7 @@ impl SourceManager {
         existing.api_key = src.api_key;
         existing.anthropic = src.anthropic;
         existing.openai = src.openai;
+        existing.use_system_proxy = src.use_system_proxy;
         Ok(())
     }
 
@@ -116,16 +128,27 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             name TEXT PRIMARY KEY,
             api_key TEXT DEFAULT '',
             anthropic TEXT DEFAULT '',
-            openai TEXT DEFAULT ''
+            openai TEXT DEFAULT '',
+            use_system_proxy INTEGER DEFAULT 0
         );",
     )?;
+    // 旧库补列（幂等）
+    let has: bool = conn
+        .prepare("SELECT 1 FROM pragma_table_info('sources') WHERE name='use_system_proxy'")?
+        .exists([])?;
+    if !has {
+        conn.execute_batch(
+            "ALTER TABLE sources ADD COLUMN use_system_proxy INTEGER DEFAULT 0;",
+        )?;
+    }
     Ok(())
 }
 
 /// 从 DB 载入来源列表与激活名。
 pub fn load(conn: &Connection) -> rusqlite::Result<(Vec<ApiSource>, String)> {
-    let mut stmt = conn
-        .prepare("SELECT name, api_key, anthropic, openai FROM sources ORDER BY rowid")?;
+    let mut stmt = conn.prepare(
+        "SELECT name, api_key, anthropic, openai, COALESCE(use_system_proxy,0) FROM sources ORDER BY rowid",
+    )?;
     let sources = stmt
         .query_map([], |r| {
             Ok(ApiSource {
@@ -133,6 +156,7 @@ pub fn load(conn: &Connection) -> rusqlite::Result<(Vec<ApiSource>, String)> {
                 api_key: r.get(1)?,
                 anthropic: r.get(2)?,
                 openai: r.get(3)?,
+                use_system_proxy: r.get::<_, i64>(4)? != 0,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -148,8 +172,8 @@ pub fn save_all(conn: &Connection, m: &SourceManager) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM sources", [])?;
     for s in &m.sources {
         conn.execute(
-            "INSERT OR REPLACE INTO sources(name, api_key, anthropic, openai) VALUES (?1,?2,?3,?4)",
-            rusqlite::params![s.name, s.api_key, s.anthropic, s.openai],
+            "INSERT OR REPLACE INTO sources(name, api_key, anthropic, openai, use_system_proxy) VALUES (?1,?2,?3,?4,?5)",
+            rusqlite::params![s.name, s.api_key, s.anthropic, s.openai, s.use_system_proxy as i64],
         )?;
     }
     conn.execute(
@@ -174,7 +198,34 @@ mod tests {
             api_key: format!("sk-{name}"),
             anthropic: format!("http://{name}:82"),
             openai: format!("http://{name}:82/v1"),
+            use_system_proxy: false,
         }
+    }
+
+    #[test]
+    fn sources_persist_use_system_proxy() {
+        let path = std::env::temp_dir().join(format!("stat-src-{}.db", uuid::Uuid::new_v4()));
+        let conn = Connection::open(&path).unwrap();
+        init_schema(&conn).unwrap();
+        let mut m = SourceManager::default();
+        let mut a = src("a");
+        a.use_system_proxy = true;
+        m.create(a).unwrap();
+        m.create(src("b")).unwrap();
+        save_all(&conn, &m).unwrap();
+        let (loaded, _) = load(&conn).unwrap();
+        assert!(loaded.iter().find(|s| s.name == "a").unwrap().use_system_proxy);
+        assert!(!loaded.iter().find(|s| s.name == "b").unwrap().use_system_proxy);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn glm_provider_detected_by_base() {
+        let mut s = src("zhipu");
+        s.openai = "https://open.bigmodel.cn/api/paas/v4".into();
+        s.anthropic = "https://api.z.ai/api/anthropic".into();
+        assert!(s.is_glm_provider());
+        assert!(!src("ds").is_glm_provider());
     }
 
     #[test]

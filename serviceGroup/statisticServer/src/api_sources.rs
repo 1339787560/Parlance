@@ -19,6 +19,8 @@ struct SourceView {
     api_key_masked: String,
     anthropic: String,
     openai: String,
+    use_system_proxy: bool,
+    is_glm: bool,
     active: bool,
 }
 
@@ -40,6 +42,8 @@ fn view(src: &ApiSource, active: bool) -> SourceView {
         api_key_masked: mask_key(&src.api_key),
         anthropic: src.anthropic.clone(),
         openai: src.openai.clone(),
+        use_system_proxy: src.use_system_proxy,
+        is_glm: src.is_glm_provider(),
         active,
     }
 }
@@ -69,6 +73,8 @@ pub struct SourcePayload {
     pub anthropic: String,
     #[serde(default)]
     pub openai: String,
+    #[serde(default)]
+    pub use_system_proxy: bool,
 }
 
 /// POST /api/sources — 新增来源。
@@ -84,6 +90,7 @@ pub async fn create(
         api_key: payload.api_key.trim().to_string(),
         anthropic: payload.anthropic.trim().to_string(),
         openai: payload.openai.trim().to_string(),
+        use_system_proxy: payload.use_system_proxy,
     };
 
     let mut mgr = state.sources.write().await;
@@ -114,6 +121,7 @@ pub async fn update(
         api_key: payload.api_key.trim().to_string(),
         anthropic: payload.anthropic.trim().to_string(),
         openai: payload.openai.trim().to_string(),
+        use_system_proxy: payload.use_system_proxy,
     };
     if let Err(e) = mgr.update(&name, src) {
         return (StatusCode::NOT_FOUND, Json(json!({"error": e}))).into_response();

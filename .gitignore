@@ -23,6 +23,7 @@ logs/
 # Rust 构建产物
 */target
 **/target
+**/target-v2
 *.rs.bk
 
 .DS_Store

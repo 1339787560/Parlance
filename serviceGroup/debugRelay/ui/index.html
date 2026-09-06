@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Cocos Debug - 真机调试</title>
-    <link rel="stylesheet" href="debug-ui.css?v=34">
+    <link rel="stylesheet" href="debug-ui.css?v=35">
 </head>
 <body>
     <div id="toolbar">
@@ -70,10 +70,10 @@
     <div id="panel-build" class="panel">
         <div id="build-toolbar">
             <div id="build-actions">
-                <button onclick="buildRefresh()" title="立即刷新编译状态">🔄 刷新</button>
-                <button id="build-incremental" onclick="buildAction('incremental')" title="执行 py:stable-reload（增量刷新）">⚡ 增量 Reload</button>
-                <button id="build-full" onclick="buildAction('full')" title="执行 py:stable-reload --full（全量重建，需先停 preview）">🔨 全量 Rebuild</button>
-                <button id="build-restart" onclick="buildAction('restart')" title="执行 py:restart-preview（清缓存+重建+拉起）">🔄 Restart Preview</button>
+                <button class="build-btn build-refresh" onclick="buildRefresh()" title="立即刷新编译状态">🔄 刷新</button>
+                <button id="build-incremental" class="build-btn build-incremental" onclick="buildAction('incremental')" title="执行 py:stable-reload（增量刷新）">⚡ 增量 Reload</button>
+                <button id="build-full" class="build-btn build-full" onclick="buildAction('full')" title="执行 py:stable-reload --full（全量重建，需先停 preview）">🔨 全量 Rebuild</button>
+                <button id="build-restart" class="build-btn build-restart" onclick="buildAction('restart')" title="执行 py:restart-preview（清缓存+重建+拉起）">🔄 Restart Preview</button>
             </div>
             <div id="build-result">
                 <span id="build-action-result" class="events-status"></span>

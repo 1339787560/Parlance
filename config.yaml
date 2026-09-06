@@ -45,6 +45,7 @@ services:
 
   - name: serviceServer-rust
     command: ./serviceGroup/serviceServer/service-server.exe
+    command_mac: ./serviceGroup/serviceServer/target/release/service-server
     cwd: ./serviceGroup/serviceServer
     port: 5000
     auto_restart: true
@@ -157,6 +158,19 @@ services:
     auto_restart: true
     tags: [cocos, test, web]
     enabled: true
+
+  # Preview 缓存代理 — 转发 Cocos preview(:7456) 并对 import-map/chunks 加 no-store
+  - name: preview-proxy
+    command_mac: python
+    command_win: python
+    args: ["D:/Codlib/dq-workflow/tools/cocos_tool.py", "py:preview-proxy", "--port", "7500"]
+    cwd: D:/Codlib/dq-workflow
+    port: 7500
+    auto_restart: true
+    tags: [preview, proxy, cocos]
+    enabled: true
+    env:
+      PYTHONIOENCODING: "utf-8"
 
   # HttpViewServer — Flask 图片/视频/文本库浏览 (自用存档展示)
   # 依赖: serviceGroup/httpViewServer/.venv (flask), 库根 = 服务 cwd 下 share/

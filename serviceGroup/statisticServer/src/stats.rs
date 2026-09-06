@@ -22,16 +22,20 @@ pub async fn detail(State(state): State<std::sync::Arc<AppState>>) -> Json<Value
         .unwrap();
     let rows = stmt
         .query_map([], |r| {
+            let ts: String = r.get(0)?;
+            let model: String = r.get(2)?;
+            let peak = crate::model::is_peak_for_model(&model, &ts);
             Ok(json!({
-                "ts": r.get::<_, String>(0)?,
+                "ts": ts,
                 "session": r.get::<_, String>(1)?,
-                "model": r.get::<_, String>(2)?,
+                "model": model,
                 "prompt": r.get::<_, i64>(3)?,
                 "completion": r.get::<_, i64>(4)?,
                 "total": r.get::<_, i64>(5)?,
                 "cache_hit": r.get::<_, i64>(6)?,
                 "cache_miss": r.get::<_, i64>(7)?,
                 "latency_ms": r.get::<_, i64>(8)?,
+                "peak": peak,
             }))
         })
         .unwrap()
@@ -144,6 +148,8 @@ pub struct TasksQuery {
     pub session: Option<String>,
     pub gap: Option<String>,
     pub mode: Option<String>,
+    /// 无 session 时只扫描最近 N 天明细（默认 30，0 = 全量），防全表 O(n) 膨胀。
+    pub days: Option<i64>,
 }
 
 /// 任务切分 /api/stats/tasks — 同会话 + 时间邻近归为一任务。
@@ -157,12 +163,25 @@ pub async fn tasks(
     let mode = q.mode.unwrap_or_default();
 
     let (sql, params) = if session.is_empty() {
-        (
-            "SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,
-             cache_hit_tokens,latency_ms,cache_miss_tokens,cost
-             FROM requests ORDER BY ts ASC",
-            vec![],
-        )
+        let days = q.days.unwrap_or(30).clamp(0, 3650);
+        if days > 0 {
+            let cutoff = (chrono::Local::now() - chrono::Duration::days(days))
+                .format("%Y-%m-%dT%H:%M:%S")
+                .to_string();
+            (
+                "SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,
+                 cache_hit_tokens,latency_ms,cache_miss_tokens,cost
+                 FROM requests WHERE ts >= ?1 ORDER BY ts ASC",
+                vec![cutoff],
+            )
+        } else {
+            (
+                "SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,
+                 cache_hit_tokens,latency_ms,cache_miss_tokens,cost
+                 FROM requests ORDER BY ts ASC",
+                vec![],
+            )
+        }
     } else {
         (
             "SELECT ts,session_id,model,prompt_tokens,completion_tokens,total_tokens,
@@ -222,7 +241,7 @@ pub async fn tasks(
             cur = Some(super::stats_internal::TaskAccum::new(ts.clone(), r_session.clone()));
         }
         if let Some(c) = cur.as_mut() {
-            let peak = crate::model::is_peak_time(ts);
+            let peak = crate::model::is_peak_for_model(model, ts);
             c.add(
                 ts, &r_session, model, *prompt, *completion, *total, *hit, *latency, *miss, *cost, peak,
             );
@@ -247,8 +266,11 @@ pub async fn aggregate(
     let conn = state.db.lock().unwrap();
     let session = q.session.unwrap_or_default();
     let range = q.range.unwrap_or_else(|| "all".to_string());
+    let source = q.source.unwrap_or_default();
+    let start = q.start.as_deref();
+    let end = q.end.as_deref();
 
-    let (where_clause, params) = combine_where(&range, &session);
+    let (where_clause, params) = combine_where(&range, &session, &source, start, end);
 
     let mut stmt = conn
         .prepare(&format!(
@@ -315,61 +337,84 @@ pub async fn aggregate(
         .map(|(k, v)| (k, round6(v)))
         .collect();
 
-    // 会话列表（未指定 session 时，应用 range 过滤）
+    // 会话列表（未指定 session 时，应用 range/source 过滤）
     let mut sessions: Vec<Value> = Vec::new();
     if session.is_empty() {
-        // 会话查询的 where：range 过滤 + session_id != ''
-        let (range_frag, range_params) = time_range_filter(&range);
-        let sess_where = if range_frag.is_empty() {
+        // 会话查询的 where：range/source 过滤 + session_id != ''
+        let (base_frag, base_params) = combine_where(&range, "", &source, start, end);
+        let sess_where = if base_frag.is_empty() {
             " WHERE session_id != ''".to_string()
         } else {
-            format!("{} AND session_id != ''", range_frag)
+            format!("{} AND session_id != ''", base_frag)
         };
+        // 每会话高峰请求数（按模型分派窗口：glm 工作日 14-18；其余 DS 工作日 9-12/14-18）
+        let peak_sum = sessions_peak_sum_sql();
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT session_id, MIN(ts), MAX(ts), COUNT(*), COALESCE(SUM(total_tokens),0)
+                "SELECT session_id, MIN(ts), MAX(ts), COUNT(*), COALESCE(SUM(total_tokens),0), {peak_sum}
                  FROM requests{sess_where} GROUP BY session_id ORDER BY MAX(ts) DESC LIMIT 50"
             ))
             .unwrap();
         let sess_rows = stmt
-            .query_map(rusqlite::params_from_iter(range_params.iter()), |r| {
+            .query_map(rusqlite::params_from_iter(base_params.iter()), |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, String>(2)?,
                     r.get::<_, i64>(3)?,
                     r.get::<_, i64>(4)?,
+                    r.get::<_, i64>(5)?,
                 ))
             })
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        let (cost_frag, cost_params) = time_range_filter(&range);
-        let cost_where = if cost_frag.is_empty() {
-            " WHERE session_id != ''".to_string()
-        } else {
-            format!("{} AND session_id != ''", cost_frag)
-        };
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT session_id, SUM(cost) FROM requests{cost_where} GROUP BY session_id"
+                "SELECT session_id, SUM(cost), SUM(credits) FROM requests{sess_where} GROUP BY session_id"
             ))
             .unwrap();
-        let sess_costs: std::collections::HashMap<String, f64> = stmt
-            .query_map(rusqlite::params_from_iter(cost_params.iter()), |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+        let sess_costs: std::collections::HashMap<String, (f64, f64)> = stmt
+            .query_map(rusqlite::params_from_iter(base_params.iter()), |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    (r.get::<_, f64>(1)?, r.get::<_, f64>(2)?),
+                ))
             })
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        for (sid, first, last, count, tokens) in sess_rows {
+        for (sid, first, last, count, tokens, peak_reqs) in sess_rows {
+            let (cost, credits) = sess_costs.get(&sid).copied().unwrap_or((0.0, 0.0));
             sessions.push(json!({
                 "id": sid, "first": first, "last": last,
                 "count": count, "tokens": tokens,
-                "cost": round6(sess_costs.get(&sid).copied().unwrap_or(0.0)),
+                "cost": round6(cost),
+                "credits": round6(credits),
+                "peak_requests": peak_reqs,
             }));
         }
     }
+
+    // 按来源汇总（GLM cost=0 只积分，DS 走 USD；同 where 过滤）
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT source, COUNT(*), COALESCE(SUM(cost),0), COALESCE(SUM(credits),0)
+             FROM requests{where_clause} GROUP BY source ORDER BY SUM(cost) DESC"
+        ))
+        .unwrap();
+    let source_costs: Vec<Value> = stmt
+        .query_map(rusqlite::params_from_iter(params.iter()), |r| {
+            Ok(json!({
+                "source": r.get::<_, String>(0)?,
+                "requests": r.get::<_, i64>(1)?,
+                "cost": round6(r.get::<_, f64>(2)?),
+                "credits": round6(r.get::<_, f64>(3)?),
+            }))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
 
     Json(json!({
         "total_requests": row.0,
@@ -384,6 +429,7 @@ pub async fn aggregate(
         "total_credits": round6(row.9),
         "model_costs": model_costs_rounded,
         "model_credits": model_credits_rounded,
+        "source_costs": source_costs,
         "sessions": sessions,
     }))
 }
@@ -393,15 +439,43 @@ pub struct AggQuery {
     pub session: Option<String>,
     /// 时间范围快捷选择：today | week | month | all（缺省 all）
     pub range: Option<String>,
+    /// 来源过滤：仅统计该 source 的请求（缺省全部）
+    pub source: Option<String>,
+    /// 自定义区间起点 YYYY-MM-DDTHH:MM（本地时区；start/end 任一给定则忽略 range）
+    pub start: Option<String>,
+    /// 自定义区间终点 YYYY-MM-DDTHH:MM（含边界，到分自动补 :59）
+    pub end: Option<String>,
 }
 
 /// 时间范围 → SQL WHERE 片段 + 参数（基于 ts 字符串比较，ISO 格式可字典序比较）。
 ///
+/// - start/end 任一给定：自定义区间（ts >= start AND ts <= end，end 到分补 :59）
 /// - today：今天 00:00 起
 /// - week：本周一 00:00 起（周一起始）
 /// - month：本月 1 号 00:00 起
 /// - 其它/空：所有（无条件）
-fn time_range_filter(range: &str) -> (String, Vec<String>) {
+fn time_range_filter(range: &str, start: Option<&str>, end: Option<&str>) -> (String, Vec<String>) {
+    let s = start.map(str::trim).filter(|v| !v.is_empty());
+    let e = end.map(str::trim).filter(|v| !v.is_empty());
+    if s.is_some() || e.is_some() {
+        let mut frag = String::new();
+        let mut params: Vec<String> = Vec::new();
+        if let Some(sv) = s {
+            frag.push_str(" WHERE ts >= ?");
+            params.push(sv.to_string());
+        }
+        if let Some(ev) = e {
+            // 到分精度（len 16）补 :59，保证该分钟内落库记录（含毫秒后缀）被包含
+            let ev_norm = if ev.len() == 16 { format!("{}:59", ev) } else { ev.to_string() };
+            if frag.is_empty() {
+                frag.push_str(" WHERE ts <= ?");
+            } else {
+                frag.push_str(" AND ts <= ?");
+            }
+            params.push(ev_norm);
+        }
+        return (frag, params);
+    }
     let now = chrono::Local::now();
     let start = match range {
         "today" => now.date_naive().and_hms_opt(0, 0, 0),
@@ -426,21 +500,41 @@ fn time_range_filter(range: &str) -> (String, Vec<String>) {
     }
 }
 
-/// 组合 where 条件：range 过滤 + session 过滤。
-/// 返回 (sql_where_fragment, params)
-fn combine_where(range: &str, session: &str) -> (String, Vec<String>) {
-    let (r_where, r_params) = time_range_filter(range);
-    if session.is_empty() {
-        return (r_where, r_params);
-    }
-    if r_params.is_empty() {
-        return (" WHERE session_id=?1".to_string(), vec![session.to_string()]);
-    }
-    // 两者都有：range 条件在前，session 用 ?2
-    (
-        format!("{} AND session_id=?2", r_where),
-        vec![r_params.into_iter().next().unwrap(), session.to_string()],
+/// 会话高峰计数 SQL 片段：按模型分派窗口（glm 工作日 14-18；其余 DS 工作日 9-12/14-18）。
+/// 独立函数 + 单测（历史上多行 `\` 续行吞空格拼出 `11OR` 语法错误，panic 中毒 mutex 全端点陪葬）。
+fn sessions_peak_sum_sql() -> String {
+    let hour = "CAST(substr(ts,12,2) AS INT)";
+    format!(
+        "SUM(CASE WHEN CAST(strftime('%w', ts) AS INT) BETWEEN 1 AND 5 AND ( \
+         (model LIKE '%glm%' AND {hour} BETWEEN 14 AND 17) \
+         OR (model NOT LIKE '%glm%' AND ({hour} BETWEEN 9 AND 11 \
+             OR {hour} BETWEEN 14 AND 17)) \
+         ) THEN 1 ELSE 0 END)"
     )
+}
+
+/// 组合 where 条件：range/自定义区间 + session + source 过滤（全部匿名 ? 按序绑定）。
+/// 返回 (sql_where_fragment, params)
+fn combine_where(
+    range: &str,
+    session: &str,
+    source: &str,
+    start: Option<&str>,
+    end: Option<&str>,
+) -> (String, Vec<String>) {
+    let (mut frag, mut params) = time_range_filter(range, start, end);
+    for (cond, val) in [("session_id=?", session), ("source=?", source)] {
+        if val.is_empty() {
+            continue;
+        }
+        if frag.is_empty() {
+            frag = format!(" WHERE {}", cond);
+        } else {
+            frag = format!("{} AND {}", frag, cond);
+        }
+        params.push(val.to_string());
+    }
+    (frag, params)
 }
 
 /// 会话缓存策略建议查询参数。
@@ -500,12 +594,12 @@ pub async fn session_advice(
     } else if reset_cost < continue_cost {
         (
             "reset",
-            &format!("未命中总额 ¥{:.3} < {}次请求命中 ¥{:.3}, 重启会话更省", reset_cost, HORIZON, continue_cost)[..],
+            &format!("未命中总额 ${:.3} < {}次请求命中 ${:.3}, 重启会话更省", reset_cost, HORIZON, continue_cost)[..],
         )
     } else {
         (
             "continue",
-            &format!("未命中总额 ¥{:.3} ≥ {}次请求命中 ¥{:.3}, 继续更省", reset_cost, HORIZON, continue_cost)[..],
+            &format!("未命中总额 ${:.3} ≥ {}次请求命中 ${:.3}, 继续更省", reset_cost, HORIZON, continue_cost)[..],
         )
     };
     let break_even = if per_req_hit_cost > 0.0 {
@@ -524,7 +618,9 @@ pub async fn session_advice(
         "horizon": HORIZON,
         "continue_cost": round6(continue_cost),
         "break_even_requests": break_even,
-        "tier": if pricing as *const _ == &crate::model::PRICING_PRO as *const _ { "Pro" } else { "Flash" },
+        "tier": if crate::model::is_glm_model(&rows.last().unwrap().1) { "GLM" }
+            else if pricing as *const _ == &crate::model::PRICING_PRO as *const _ { "Pro" }
+            else { "Flash" },
         "hit_price": pricing.hit,
         "miss_price": pricing.miss,
     }))
@@ -615,5 +711,89 @@ mod tests {
         ];
         let gap = adaptive_gap(&rows);
         assert_eq!(gap, 13);
+    }
+
+    #[test]
+    fn sessions_peak_sum_sql_dispatches_by_model() {
+        use rusqlite::{params, Connection};
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE requests(ts TEXT, model TEXT, session_id TEXT, total_tokens INTEGER DEFAULT 0)",
+        )
+        .unwrap();
+        let ins = |ts: &str, m: &str| {
+            conn.execute(
+                "INSERT INTO requests(ts, model, session_id) VALUES (?1, ?2, 's')",
+                params![ts, m],
+            )
+            .unwrap()
+        };
+        // 2026-08-19 = 周三
+        ins("2026-08-19T15:00:00", "glm-5.3"); // GLM 峰 ✓
+        ins("2026-08-19T10:00:00", "glm-5.3"); // GLM 非峰（10 点不在 14-18）
+        ins("2026-08-19T10:00:00", "deepseek-v4-flash"); // DS 峰 ✓
+        ins("2026-08-19T08:00:00", "deepseek-v4-flash"); // DS 非峰
+        ins("2026-08-22T15:00:00", "deepseek-v4-flash"); // 周六非峰
+        let sql = format!("SELECT {} FROM requests", sessions_peak_sum_sql());
+        let n: i64 = conn.query_row(&sql, [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2, "GLM 峰 1 + DS 峰 1；语法错误则 prepare 直接报错");
+    }
+
+    #[test]
+    fn time_range_filter_custom_start_end() {
+        // 仅 start
+        let (w, p) = time_range_filter("all", Some("2026-09-01T10:00"), None);
+        assert_eq!(w, " WHERE ts >= ?");
+        assert_eq!(p, vec!["2026-09-01T10:00".to_string()]);
+        // 仅 end（分钟精度自动补 :59，含该分钟）
+        let (w, p) = time_range_filter("all", None, Some("2026-09-01T11:30"));
+        assert_eq!(w, " WHERE ts <= ?");
+        assert_eq!(p, vec!["2026-09-01T11:30:59".to_string()]);
+        // 双端给定 → 忽略 range 快捷键
+        let (w, p) = time_range_filter("today", Some("2026-09-01T00:00"), Some("2026-09-02T23:59"));
+        assert_eq!(w, " WHERE ts >= ? AND ts <= ?");
+        assert_eq!(
+            p,
+            vec!["2026-09-01T00:00".to_string(), "2026-09-02T23:59:59".to_string()]
+        );
+        // end 已带秒 → 原样
+        let (_, p) = time_range_filter("all", None, Some("2026-09-01T11:30:45"));
+        assert_eq!(p, vec!["2026-09-01T11:30:45".to_string()]);
+        // 空串视为未给 → 原 all 行为
+        let (w, p) = time_range_filter("all", Some("  "), Some(""));
+        assert_eq!(w, "");
+        assert!(p.is_empty());
+    }
+
+    #[test]
+    fn combine_where_source_filter() {
+        // 仅 source
+        let (w, p) = combine_where("all", "", "glm-team", None, None);
+        assert_eq!(w, " WHERE source=?");
+        assert_eq!(p, vec!["glm-team".to_string()]);
+        // range 快捷键 + source
+        let (w, p) = combine_where("today", "", "glm-team", None, None);
+        assert_eq!(w, " WHERE ts >= ? AND source=?");
+        assert_eq!(p.len(), 2);
+        // session + source（无 range）
+        let (w, p) = combine_where("all", "sess-1", "glm-team", None, None);
+        assert_eq!(w, " WHERE session_id=? AND source=?");
+        assert_eq!(p, vec!["sess-1".to_string(), "glm-team".to_string()]);
+        // 自定义区间 + session + source 全组合
+        let (w, p) = combine_where("all", "sess-1", "glm", Some("2026-09-01T00:00"), Some("2026-09-01T23:59"));
+        assert_eq!(w, " WHERE ts >= ? AND ts <= ? AND session_id=? AND source=?");
+        assert_eq!(
+            p,
+            vec![
+                "2026-09-01T00:00".to_string(),
+                "2026-09-01T23:59:59".to_string(),
+                "sess-1".to_string(),
+                "glm".to_string()
+            ]
+        );
+        // 全空 → 无条件
+        let (w, p) = combine_where("all", "", "", None, None);
+        assert_eq!(w, "");
+        assert!(p.is_empty());
     }
 }

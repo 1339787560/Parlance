@@ -230,6 +230,12 @@ html[data-theme="odette"] {
 .badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--btn-bg,#238636);color:#fff}
 .badge.off{background:var(--dim);color:var(--bg)}
 .hint{font-size:11px;color:var(--dim);margin-top:6px;line-height:1.6}
+.pb{display:inline-block;font-size:10px;line-height:1.5;padding:0 6px;border-radius:8px;margin-left:6px;vertical-align:1px;cursor:default}
+.pb.peak{background:var(--yellow);color:#1b1b1b}
+.pb.off{background:var(--green);color:#fff}
+.pb.mix{background:transparent;border:1px solid var(--yellow);color:var(--yellow)}
+.dt-input{background:var(--card);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 8px;font-size:12px;font-family:monospace;outline:none}
+.dt-input:hover{border-color:var(--blue)}
 </style>
 </head>
 <body>
@@ -266,12 +272,21 @@ html[data-theme="odette"] {
 </div>
 
 <div id="tab-total">
-  <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+  <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
     <span style="font-size:12px;color:var(--dim);line-height:28px">时间范围：</span>
     <button class="range-btn active" data-range="today" onclick="setRange('today',this)">本日</button>
     <button class="range-btn" data-range="week" onclick="setRange('week',this)">本周</button>
     <button class="range-btn" data-range="month" onclick="setRange('month',this)">本月</button>
     <button class="range-btn" data-range="all" onclick="setRange('all',this)">所有</button>
+    <button class="range-btn" data-range="custom" onclick="setRange('custom',this)" title="使用下方起止时间过滤">自定义</button>
+    <input type="datetime-local" id="customStart" class="dt-input" onchange="onCustomRangeChange()">
+    <span style="color:var(--dim);font-size:12px">~</span>
+    <input type="datetime-local" id="customEnd" class="dt-input" onchange="onCustomRangeChange()">
+    <span style="font-size:12px;color:var(--dim);line-height:28px;margin-left:8px">来源：</span>
+    <select class="theme-select" id="filterSource" onchange="onFilterSourceChange()" title="按 API 来源过滤统计">
+      <option value="">全部来源</option>
+      <option value="unknown">历史(unknown)</option>
+    </select>
   </div>
   <div class="cards" id="totalCards">
     <div class="card"><div class="card-label">请求次数</div><div class="card-value blue" id="s-req">-</div></div>
@@ -284,13 +299,22 @@ html[data-theme="odette"] {
       </div>
       <div class="card-sub">未命中 / 缓存命中 / 输出 token</div>
     </div>
-    <div class="card"><div class="card-label">总费用 (RMB)</div><div class="card-value purple" id="s-cost">-</div></div>
+    <div class="card"><div class="card-label">总费用 (USD)</div><div class="card-value purple" id="s-cost">-</div></div>
     <div class="card"><div class="card-label">总 Credits</div><div class="card-value" id="s-credits" style="color:#f0c674">-</div></div>
     <div class="card"><div class="card-label">平均用时</div><div class="card-value cyan" id="s-lat">-</div></div>
   </div>
   <div class="section">
     <div class="section-title"><span>各模型费用明细</span></div>
     <div id="modelCosts" style="padding:12px 16px;font-size:13px;color:var(--dim)">暂无数据</div>
+  </div>
+  <div class="section">
+    <div class="section-title"><span>按来源汇总</span></div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>来源</th><th>请求数</th><th>费用</th><th>Credits</th></tr></thead>
+        <tbody id="sourceCosts"><tr><td colspan="4" class="empty" style="padding:20px">暂无数据</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -307,6 +331,7 @@ html[data-theme="odette"] {
       <div class="card-sub">未命中 / 缓存命中 / 输出 token</div>
     </div>
     <div class="card"><div class="card-label">费用</div><div class="card-value purple" id="ss-cost">-</div></div>
+    <div class="card"><div class="card-label">Credits</div><div class="card-value" id="ss-credits" style="color:#f0c674">-</div></div>
     <div class="card"><div class="card-label">平均请求耗时</div><div class="card-value cyan" id="ss-lat">-</div><div class="card-sub" id="ss-lat-diff">-</div></div>
   </div>
   <div class="section">
@@ -314,7 +339,7 @@ html[data-theme="odette"] {
     <div style="overflow-x:auto">
       <table>
         <thead><tr>
-          <th>会话 ID</th><th>请求数</th><th>总 Token</th><th>费用</th><th>开始时间</th><th>最后请求</th>
+          <th>会话 ID</th><th>请求数</th><th>总 Token</th><th>费用</th><th>Credits</th><th>开始时间</th><th>最后请求</th>
         </tr></thead>
         <tbody id="sessionTable"></tbody>
       </table>
@@ -654,7 +679,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Stats
 function fmt(n){return n===null||n===undefined?'-':n.toLocaleString()}
-function fmtCost(n){if(n===null||n===undefined)return'-';if(n<.001)return'¥'+n.toFixed(6);if(n<1)return'¥'+n.toFixed(4);return'¥'+n.toFixed(2)}
+function fmtCost(n){if(n===null||n===undefined)return'-';if(n<.001)return'$'+n.toFixed(6);if(n<1)return'$'+n.toFixed(4);return'$'+n.toFixed(2)}
+// 峰谷徽标：高峰=基准价（DS 工作日9-12/14-18；GLM 工作日14-18），错峰 ×0.5
+function peakBadge(p, n){
+  if(!n) return '';
+  if(p===0) return '<span class="pb off" title="全部错峰 ×0.5">×0.5</span>';
+  if(p===n) return '<span class="pb peak" title="全部高峰 基准价">峰</span>';
+  return '<span class="pb mix" title="跨峰谷：高峰 '+p+'/'+n+' 次">峰 '+p+'/'+n+'</span>';
+}
 function fmtTime(ts){if(!ts)return'-';try{return new Date(ts).toLocaleTimeString()}catch(e){return ts}}
 
 function switchTab(name, el) {
@@ -689,31 +721,130 @@ function fillCards(data){
   const mc=document.getElementById('modelCosts');
   if(data.model_costs&&Object.keys(data.model_costs).length){
     mc.innerHTML=Object.entries(data.model_costs).map(([m,c])=>{
-      const p=m.includes('reason')||m.includes('pro')?
-        {miss:3, hit:.025, out:6, label:'Pro'}:
-        {miss:1, hit:.02, out:2, label:'Flash'};
+      const lm=m.toLowerCase();
+      const p=lm.includes('glm')
+        ? {label:'GLM', glm:true}
+        : (lm.includes('reason')||lm.includes('pro')
+          ? {miss:1.32, hit:0.044, out:3.96, label:'Pro'}
+          : {miss:0.44, hit:0.014, out:1.32, label:'Flash'});
       const cr = (data.model_credits&&data.model_credits[m]!=null)?data.model_credits[m]:null;
       const crHtml = (cr!=null)?` · <span style="color:#f0c674">${fmt(Math.round(cr))} credits</span>`:'';
-      return `<div style="margin-bottom:4px"><strong>${p.label}</strong> ${m}: `+
-        `输入命中 ¥${p.hit}/M · 输入未命中 ¥${p.miss}/M · 输出 ¥${p.out}/M → `+
-        `<span style="color:var(--purple)">${fmtCost(c)}</span>${crHtml}</div>`;
+      const body = p.glm
+        ? `Coding Plan 按积分计费（不计 cost）${crHtml}`
+        : `输入命中 $${p.hit}/M · 输入未命中 $${p.miss}/M · 输出 $${p.out}/M → <span style="color:var(--purple)">${fmtCost(c)}</span>${crHtml}`;
+      return `<div style="margin-bottom:4px"><strong>${p.label}</strong> ${m}: ${body}</div>`;
     }).join('');
   } else { mc.innerHTML='<span style="color:var(--dim)">暂无数据</span>'; }
+
+  const sc=document.getElementById('sourceCosts');
+  if(data.source_costs&&data.source_costs.length){
+    sc.innerHTML=data.source_costs.map(s=>`<tr>
+      <td style="font-weight:600">${s.source}</td>
+      <td>${fmt(s.requests)}</td>
+      <td class="purple">${fmtCost(s.cost)}</td>
+      <td style="color:#f0c674">${fmt(Math.round(s.credits||0))}</td>
+    </tr>`).join('');
+  } else { sc.innerHTML='<tr><td colspan="4" class="empty" style="padding:20px">暂无数据</td></tr>'; }
 }
 
-let _range='today'; // 总览时间范围: today|week|month|all
+// ── 筛选状态：range + 自定义区间 + 来源，localStorage 持久化 ──
+const FILTER_KEY = 'castflow.statsFilter'; // today|week|month|all|custom
+let _range='today';
+let _customStart='';
+let _customEnd='';
+let _filterSource='';
+
+function loadFilterState(){
+  try{
+    const s = JSON.parse(localStorage.getItem(FILTER_KEY)||'{}');
+    if(s.range) _range=s.range;
+    _customStart=s.start||'';
+    _customEnd=s.end||'';
+    _filterSource=s.source||'';
+  }catch(_){}
+  if(_range==='custom' && !_customStart && !_customEnd) _range='today';
+}
+function saveFilterState(){
+  localStorage.setItem(FILTER_KEY, JSON.stringify({range:_range,start:_customStart,end:_customEnd,source:_filterSource}));
+}
+function applyFilterUI(){
+  document.querySelectorAll('.range-btn').forEach(b=>b.classList.toggle('active', b.dataset.range===_range));
+  const cs=document.getElementById('customStart'), ce=document.getElementById('customEnd');
+  if(cs) cs.value=_customStart;
+  if(ce) ce.value=_customEnd;
+  const fs=document.getElementById('filterSource');
+  if(fs) fs.value=_filterSource;
+}
+async function loadFilterSources(){
+  // 筛选下拉：全部来源 + 已配置来源 + 历史 unknown（旧数据 source 缺省值）
+  try{
+    const data = await fetchSources();
+    const sel=document.getElementById('filterSource');
+    sel.innerHTML='<option value="">全部来源</option>'
+      +(data.sources||[]).map(s=>`<option value="${s.name}">${s.name}</option>`).join('')
+      +'<option value="unknown">历史(unknown)</option>';
+    if ([...sel.options].some(o=>o.value===_filterSource)) sel.value=_filterSource;
+  }catch(_){ /* 服务不可达时保留占位 */ }
+}
+
 function setRange(r,btn){
   _range=r;
+  if(r==='custom'){
+    _customStart=document.getElementById('customStart').value||'';
+    _customEnd=document.getElementById('customEnd').value||'';
+  }
   document.querySelectorAll('.range-btn').forEach(b=>b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-  refresh();
+  if(btn) btn.classList.add('active'); else applyFilterUI();
+  saveFilterState();
+  refreshTotal(); // 时段/来源只影响总览聚合，不重拉 tasks/daily/detail
 }
-async function fetchTotal(){ return (await fetch('/api/stats?range='+encodeURIComponent(_range))).json(); }
+function onCustomRangeChange(){
+  const s=document.getElementById('customStart').value, e=document.getElementById('customEnd').value;
+  _customStart=s; _customEnd=e;
+  if(s&&e){ // 双端齐备才切自定义并查询
+    _range='custom';
+    applyFilterUI();
+    saveFilterState();
+    refreshTotal();
+  } else { saveFilterState(); }
+}
+function onFilterSourceChange(){
+  _filterSource=document.getElementById('filterSource').value;
+  saveFilterState();
+  refreshTotal();
+}
+
+async function fetchTotal(){
+  const q=new URLSearchParams();
+  if(_range==='custom' && (_customStart||_customEnd)){
+    if(_customStart) q.set('start',_customStart);
+    if(_customEnd) q.set('end',_customEnd);
+  } else {
+    q.set('range',_range);
+  }
+  if(_filterSource) q.set('source',_filterSource);
+  return (await fetch('/api/stats?'+q)).json();
+}
 async function fetchDetail(){ return (await fetch('/api/stats/detail')).json(); }
-async function fetchTasks(){ return (await fetch('/api/stats/tasks?limit=100')).json(); }
+async function fetchTasks(){ return (await fetch('/api/stats/tasks?limit=100&days=30')).json(); }
 async function fetchDaily(){ return (await fetch('/api/stats/daily')).json(); }
 
-async function refresh(){
+// 总览聚合刷新（时段/来源筛选变化只需这个，不碰 tasks/daily/detail）
+async function refreshTotal(){
+  document.getElementById('updateTime').textContent=new Date().toLocaleTimeString();
+  const total=await fetchTotal();
+  fillCards(total);
+  renderSessions(total.sessions);
+}
+
+// 全量刷新入口（SSE/定时/手动按钮共用）；500ms 防抖把 new_data 风暴合并成一次
+let _refreshTimer=null;
+function refresh(){
+  if (_refreshTimer) return;
+  _refreshTimer=setTimeout(()=>{ _refreshTimer=null; _doFullRefresh(); }, 500);
+}
+
+async function _doFullRefresh(){
   document.getElementById('updateTime').textContent=new Date().toLocaleTimeString();
   const total=await fetchTotal();
   fillCards(total);
@@ -734,7 +865,7 @@ async function refresh(){
         <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
         <td><strong>${fmt(t.total_tokens)}</strong></td>
         <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
-        <td class="purple">${fmtCost(t.cost)}</td>
+        <td class="purple">${fmtCost(t.cost)}${peakBadge(t.peak_requests, t.requests)}</td>
       </tr>`;
     }).join('');
   } else { tt.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--dim)">暂无任务</td></tr>'; }
@@ -769,6 +900,8 @@ async function refresh(){
       document.getElementById('ss-hit').textContent = fmt(hit);
       document.getElementById('ss-comp').textContent = fmt(d.total_completion_tokens);
       document.getElementById('ss-cost').textContent = fmtCost(d.total_cost);
+    document.getElementById('ss-credits').textContent = (d.total_credits!=null)?fmt(Math.round(d.total_credits)):'-';
+      document.getElementById('ss-credits').textContent = (d.total_credits!=null)?fmt(Math.round(d.total_credits)):'-';
       const lat = d.avg_latency_ms;
       document.getElementById('ss-lat').textContent = lat ? Math.round(lat) + 'ms' : '-';
       const diffEl = document.getElementById('ss-lat-diff');
@@ -798,7 +931,7 @@ async function refresh(){
           <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
           <td><strong>${fmt(t.total_tokens)}</strong></td>
           <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
-          <td class="purple">${fmtCost(t.cost)}</td>
+          <td class="purple">${fmtCost(t.cost)}${peakBadge(t.peak_requests, t.requests)}</td>
         </tr>`;
         }).join('');
       }
@@ -809,12 +942,13 @@ async function refresh(){
   const tb=document.getElementById('reqTable');
   if(detail.length){
     tb.innerHTML=detail.map(r=>{
-      const modelLabel=r.model&&r.model.includes('reason')?'Pro':'Flash';
+      const lm=(r.model||'').toLowerCase();
+      const modelLabel=lm.includes('glm')?'GLM':(lm.includes('reason')?'Pro':'Flash');
       const miss = (r.cache_miss != null) ? r.cache_miss
         : Math.max(0, (r.prompt||0) - (r.cache_hit||0));
       return `<tr>
         <td>${fmtTime(r.ts)}</td>
-        <td style="font-size:12px">${modelLabel}</td>
+        <td style="font-size:12px">${modelLabel}${r.peak?'<span class="pb peak" title="高峰时段 基准价">峰</span>':'<span class="pb off" title="错峰时段 ×0.5">×0.5</span>'}</td>
         <td style="color:#f87171">${fmt(miss)}</td>
         <td style="color:#4ade80">${fmt(r.cache_hit)}</td>
         <td style="color:#a78bfa">${fmt(r.completion)}</td>
@@ -848,6 +982,7 @@ function showSession(sid) {
     document.getElementById('ss-hit').textContent = fmt(hit);
     document.getElementById('ss-comp').textContent = fmt(d.total_completion_tokens);
     document.getElementById('ss-cost').textContent = fmtCost(d.total_cost);
+    document.getElementById('ss-credits').textContent = (d.total_credits!=null)?fmt(Math.round(d.total_credits)):'-';
     const lat = d.avg_latency_ms;
     document.getElementById('ss-lat').textContent = lat ? Math.round(lat) + 'ms' : '-';
     const diffEl = document.getElementById('ss-lat-diff');
@@ -877,7 +1012,7 @@ function showSession(sid) {
         <td style="color:#a78bfa">${fmt(t.completion_tokens)}</td>
         <td><strong>${fmt(t.total_tokens)}</strong></td>
         <td>${t.wall_time_ms?t.wall_time_ms+'ms':'-'}</td>
-        <td class="purple">${fmtCost(t.cost)}</td>
+        <td class="purple">${fmtCost(t.cost)}${peakBadge(t.peak_requests, t.requests)}</td>
       </tr>`;
       }).join('');
     } else {
@@ -889,14 +1024,15 @@ function showSession(sid) {
 function renderSessions(sessions) {
   const tb = document.getElementById('sessionTable');
   if (!sessions || !sessions.length) {
-    tb.innerHTML = '<tr><td colspan="6" class="empty" style="padding:20px">暂无会话</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" class="empty" style="padding:20px">暂无会话</td></tr>';
     return;
   }
   tb.innerHTML = sessions.map(s => `<tr onclick="showSession('${s.id}')" style="cursor:pointer">
     <td style="font-family:monospace;font-size:12px;color:var(--blue)">${s.id.slice(0,20)}...</td>
     <td>${s.count}</td>
     <td>${fmt(s.tokens)}</td>
-    <td class="purple">${fmtCost(s.cost)}</td>
+    <td class="purple">${fmtCost(s.cost)}${peakBadge(s.peak_requests, s.count)}</td>
+    <td style="color:#f0c674">${fmt(Math.round(s.credits||0))}</td>
     <td>${fmtTime(s.first)}</td>
     <td>${fmtTime(s.last)}</td>
   </tr>`).join('');
@@ -905,6 +1041,9 @@ function renderSessions(sessions) {
 const savedTab = localStorage.getItem('statsTab');
 if (savedTab) switchTab(savedTab);
 
+loadFilterState();
+applyFilterUI();
+loadFilterSources();
 refresh();
 
 // SSE 实时推送 + 5 秒兜底轮询

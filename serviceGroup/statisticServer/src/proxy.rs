@@ -61,13 +61,19 @@ pub async fn proxy(
             .into_response();
     }
 
-    // 格式检测 + 目标（取激活来源的 target）
+    // 格式检测 + 目标（取激活来源的 target；同时记来源名/代理开关/映射行为）
     let (fmt, target_name) = crate::model::detect_format(&path);
-    let (anthropic, openai) = {
+    let (anthropic, openai, source_name, use_system_proxy, source_is_glm) = {
         let mgr = state.sources.read().await;
         match mgr.active_source() {
-            Some(s) => (s.anthropic.clone(), s.openai.clone()),
-            None => (String::new(), String::new()),
+            Some(s) => (
+                s.anthropic.clone(),
+                s.openai.clone(),
+                s.name.clone(),
+                s.use_system_proxy,
+                s.is_glm_provider(),
+            ),
+            None => (String::new(), String::new(), "unknown".to_string(), false, false),
         }
     };
     let target_base = match target_name {
@@ -95,12 +101,13 @@ pub async fn proxy(
         serde_json::from_slice(&bytes).unwrap_or(json!({}))
     };
 
-    // 模型映射
+    // 模型映射：GLM 来源透传（claude→deepseek 映射是 DS 专属，套到 GLM 会被拒）；
+    // 其余来源沿用全局映射。
     let model = body_json
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let mapped_model = crate::model::map_model(model).to_string();
+    let mapped_model = map_model_for_source(model, source_is_glm);
     body_json["model"] = json!(mapped_model);
 
     // 流式判定：OpenAI 默认非流式，Anthropic 默认流式
@@ -118,12 +125,14 @@ pub async fn proxy(
         .to_string();
     let start = Instant::now();
 
-    // 构造上游请求
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .unwrap();
+    // 构造上游请求：默认直连（no_proxy，规避智谱对代理出口 IP 的审查，F5）；
+    // 来源显式 use_system_proxy=true 时走系统代理。
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300));
+    if !use_system_proxy {
+        builder = builder.no_proxy();
+    }
+    let client = builder.build().unwrap();
 
     let mut req = client.request(method.clone(), &target_url);
     req = req.header(header::CONTENT_TYPE, "application/json");
@@ -158,28 +167,35 @@ pub async fn proxy(
 
     // ---- 非流式 ----
     if !is_stream {
-        return handle_non_stream(state, req, req_id, session_id, mapped_model, fmt, start).await;
+        return handle_non_stream(state, client, req, req_id, session_id, mapped_model, fmt, start, source_name)
+            .await;
     }
 
     // ---- 流式 ----
-    handle_stream(state, req, req_id, session_id, mapped_model, fmt, start).await
+    handle_stream(state, client, req, req_id, session_id, mapped_model, fmt, start, source_name).await
 }
 
-/// 非流式请求处理。
+/// 模型映射分派：GLM 来源透传；其余走全局 claude→deepseek 映射。
+fn map_model_for_source(model: &str, source_is_glm: bool) -> String {
+    if source_is_glm {
+        model.to_string()
+    } else {
+        crate::model::map_model(model).to_string()
+    }
+}
+
+/// 非流式请求处理。client 由 proxy() 按 use_system_proxy 构建后传入复用。
 async fn handle_non_stream(
     state: std::sync::Arc<AppState>,
+    client: reqwest::Client,
     req: reqwest::RequestBuilder,
     req_id: String,
     session_id: String,
     model: String,
     fmt: ApiFormat,
     start: Instant,
+    source_name: String,
 ) -> Response {
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .unwrap();
     match client.execute(req.build().unwrap()).await {
         Ok(resp) => {
             let status = resp.status();
@@ -210,6 +226,7 @@ async fn handle_non_stream(
                         latency_ms: latency,
                         status: format!("http_{}", status.as_u16()),
                         format: format_name(fmt).to_string(),
+                        source: source_name.clone(),
                     },
                 );
                 return (StatusCode::from_u16(status.as_u16()).unwrap(), JsonErr(body)).into_response();
@@ -232,6 +249,7 @@ async fn handle_non_stream(
                     latency_ms: latency,
                     status: "ok".into(),
                     format: format_name(fmt).to_string(),
+                    source: source_name.clone(),
                 },
             );
             crate::sse::broadcast(&state.sse, "new_data", json!({}));
@@ -251,6 +269,7 @@ async fn handle_non_stream(
                     latency_ms: latency,
                     status: format!("upstream_{}", err_name(&e)),
                     format: format_name(fmt).to_string(),
+                    source: source_name,
                 },
             );
             (
@@ -263,21 +282,18 @@ async fn handle_non_stream(
 }
 
 /// 流式请求处理：SSE 逐行透传，边转发边解析 usage。
+/// client 由 proxy() 按 use_system_proxy 构建后传入复用。
 async fn handle_stream(
     state: std::sync::Arc<AppState>,
+    client: reqwest::Client,
     req: reqwest::RequestBuilder,
     req_id: String,
     session_id: String,
     model: String,
     fmt: ApiFormat,
     start: Instant,
+    source_name: String,
 ) -> Response {
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .unwrap();
-
     match client.execute(req.build().unwrap()).await {
         Ok(resp) => {
             let status = resp.status();
@@ -302,9 +318,55 @@ async fn handle_stream(
                         latency_ms: latency,
                         status: format!("http_{}", status.as_u16()),
                         format: format_name(fmt).to_string(),
+                        source: source_name.clone(),
                     },
                 );
                 return (StatusCode::from_u16(status.as_u16()).unwrap(), JsonErr(body)).into_response();
+            }
+
+            // 上游返回 JSON（非 SSE）：客户端未显式带 stream 时按「Anthropic 默认流式」
+            // 误入此路径（上游协议缺省非流式），或上游忽略 stream 参数——按非流式
+            // 处理（整体读 body 提取 usage），否则 SSE 逐行解析提不到 usage 落 0。
+            let content_type = resp
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if !content_type.contains("text/event-stream") {
+                let bytes = match resp.bytes().await {
+                    Ok(b) => b,
+                    Err(_) => return (StatusCode::BAD_GATEWAY, JsonErr(json!({"error": "read err"}))).into_response(),
+                };
+                let data: Value = serde_json::from_slice(&bytes).unwrap_or(json!({}));
+                let usage = extract_usage(data.get("usage").unwrap_or(&json!({})), fmt);
+                let latency = start.elapsed().as_millis() as i64;
+                let resp_model = data
+                    .get("model")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&model)
+                    .to_string();
+                let _ = record(
+                    &state.db.lock().unwrap(),
+                    &RequestRecord {
+                        id: req_id,
+                        ts: crate::now_iso(),
+                        session_id,
+                        model: resp_model,
+                        usage,
+                        latency_ms: latency,
+                        status: "ok".into(),
+                        format: format_name(fmt).to_string(),
+                        source: source_name,
+                    },
+                );
+                crate::sse::broadcast(&state.sse, "new_data", json!({}));
+                return (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "application/json")],
+                    bytes,
+                )
+                    .into_response();
             }
 
             // SSE 流式透传
@@ -361,6 +423,7 @@ async fn handle_stream(
                             latency_ms: latency,
                             status: "ok".into(),
                             format: format_name(fmt).to_string(),
+                            source: source_name.clone(),
                         },
                     );
                     crate::sse::broadcast(&sse, "new_data", json!({}));
@@ -377,6 +440,7 @@ async fn handle_stream(
                             latency_ms: latency,
                             status: "ok".into(),
                             format: format_name(fmt).to_string(),
+                            source: source_name.clone(),
                         },
                     );
                 }
@@ -406,6 +470,7 @@ async fn handle_stream(
                     latency_ms: latency,
                     status: format!("upstream_{}", err_name(&e)),
                     format: format_name(fmt).to_string(),
+                    source: source_name,
                 },
             );
             (
