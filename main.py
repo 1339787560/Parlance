@@ -19,6 +19,7 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 from multiprocessing.connection import Connection, Listener
@@ -43,10 +44,25 @@ _ERR_METHOD_NOT_FOUND = -32601
 _ERR_INTERNAL = -32603
 
 
+def config_path() -> Path:
+    """配置文件选择: --config 参 > env INFOSERVER_CONFIG > 缺省 config.yaml.
+
+    本机用 config.yaml (6 融入 castflow 的服务已 disabled);
+    堡垒机全量用 config.full.yaml (run.py --config config.full.yaml)。
+    """
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == "--config" and i + 1 < len(argv):
+            return Path(argv[i + 1])
+        if a.startswith("--config="):
+            return Path(a.split("=", 1)[1])
+    return Path(os.environ.get("INFOSERVER_CONFIG") or "config.yaml")
+
+
 def load_config() -> dict:
-    cfg_path = Path("config.yaml")
+    cfg_path = config_path()
     if not cfg_path.exists():
-        logger.warning("config.yaml not found, using defaults (no services)")
+        logger.warning("%s not found, using defaults (no services)", cfg_path)
         return {"services": []}
     with open(cfg_path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}

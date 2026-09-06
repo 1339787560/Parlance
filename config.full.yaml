@@ -1,11 +1,8 @@
-# infoServer — 本机辅助/孵化配置 (走法 A: host 无 HTTP).
+# infoServer — 全量配置文件 (堡垒机专用).
 #
-# 本机定位 (2026-09-02 三配置拆分):
-#   - 6 个已融入 castflow 的服务 (parlance-chat / serviceServer-rust / statistic-server /
-#     debug-relay / session-registry / webreader) 在此 disabled → 由 castflow ExtensionManager
-#     托管 (skillrepo: modules.yaml + extensions/<id>/extension.yaml, 含保活/崩溃重启)。
-#   - 本文件保留: infoserver 独有服务 + 孵化中(lab)服务; 堡垒机全量部署用 config.full.yaml。
-#   - 新服务孵化进本文件; 升入 castflow 时: 写 extension.yaml → 本条 disabled → 确认 full 版同步。
+# 堡垒机无 castflow 客户端 → 所有服务(含本机已融入 castflow 的 6 个)全量归 infoserver 托管。
+# 本机请用 config.yaml (6 融入服务 disabled, 交 castflow ExtensionManager 托管)。
+# 部署堡垒机: git clone → run.py --config config.full.yaml。
 #
 # host (main.py) 是纯进程启动器, 不监听任何 TCP 端口。
 # server.port 仅供 run.py 启动器预清理端口用(为 parlanceChat 让出 5001);
@@ -29,7 +26,7 @@ shared_theme:
 #   managed=false: fire-and-forget, survives parent exit
 #   port=<number>: auto-free port before start (kill occupying process)
 services:
-  - name: parlance-chat        # 融入 castflow: extensions/parlance-chat/extension.yaml
+  - name: parlance-chat
     command: python
     command_mac: ./.venv/bin/python
     args: ["main.py", "--port", "5001"]
@@ -37,7 +34,7 @@ services:
     port: 5001
     auto_restart: true
     tags: [chat, parlance]
-    enabled: false
+    enabled: true
 
   # Caddy reverse proxy for parlance HTTPS/HTTP2 + HTTP fallback.
   # Managed by InfoServer: auto-restart, port cleanup, same lifecycle as other services.
@@ -50,14 +47,13 @@ services:
     tags: [parlance, https, proxy]
     enabled: true
 
-  - name: serviceServer-rust    # 融入 castflow: extensions/service-server/extension.yaml
+  - name: serviceServer-rust
     command: ./serviceGroup/serviceServer/service-server.exe
-    command_mac: ./serviceGroup/serviceServer/target/release/service-server
     cwd: ./serviceGroup/serviceServer
     port: 5000
     auto_restart: true
     tags: [service, api]
-    enabled: false
+    enabled: true
     env:
       # SERVICESVR_CONFIG 基准 = Rust 子进程 cwd (serviceGroup/serviceServer), 故用 ../ 到 legacy
       SERVICESVR_CONFIG: ../serviceServer-legacy/config.json
@@ -79,7 +75,7 @@ services:
     env:
       SERVICESVR_PORT: "5099"
 
-  - name: statistic-server      # 融入 castflow: extensions/statistic-server/extension.yaml
+  - name: statistic-server
     command_mac: ./serviceGroup/statisticServer/target/release/statistic-server
     command_win: .\serviceGroup\statisticServer\target\release\statistic-server.exe
     args: []
@@ -87,12 +83,12 @@ services:
     port: 5002
     auto_restart: true
     tags: [statistics, proxy]
-    enabled: false
+    enabled: true
     env:
       ANTHROPIC_TARGET: "http://aiapi.tcy365.net:82"
       OPENAI_TARGET: "http://aiapi.tcy365.net:82/v1"
 
-  - name: debug-relay           # 融入 castflow: extensions/debug-relay/extension.yaml
+  - name: debug-relay
     command_mac: ./.venv/bin/python
     command_win: python
     args: ["debug_relay.py", "--port", "5003", "--src", "D:\\Codlib\\douque\\xzmx\\ClientEngineGame\\trunk\\assets"]
@@ -101,9 +97,9 @@ services:
     port: 5003
     auto_restart: true
     tags: [debug, game, cocos]
-    enabled: false
+    enabled: true
 
-  - name: session-registry      # 融入 castflow: extensions/session-registry/extension.yaml
+  - name: session-registry
     command_mac: ./.venv/bin/python
     command_win: python
     args: ["main.py", "--port", "5011"]
@@ -111,7 +107,7 @@ services:
     port: 5011
     auto_restart: true
     tags: [session, registry, agent]
-    enabled: false
+    enabled: true
 
 
   - name: np-reader
@@ -127,7 +123,7 @@ services:
     tags: [reader, novel, web]
     enabled: true
 
-  # WebReader — 融入 castflow: extensions/webreader/extension.yaml (本机由 castflow 托管)
+  # WebReader — 独立子服务 (从 RoleManager 分离, 静态文件在本服务 static/)
   - name: webreader
     command_win: .\serviceGroup\webreader\webreader-server.exe
     command_mac: ./serviceGroup/webreader/webreader-server
@@ -137,7 +133,7 @@ services:
     port: 5090
     auto_restart: true
     tags: [reader, web, doc, rolemanager]
-    enabled: false
+    enabled: true
 
   # castflow-web — Castflow 远程访问统一入口：5130 -> 127.0.0.1:5120 纯字节反代
   # (完整桌面 UI + invoke 桥网关 + /terminal + /events 全协议通吃; 平板/手机与桌面同源界面)
@@ -181,19 +177,6 @@ services:
     auto_restart: true
     tags: [cocos, test, web]
     enabled: true
-
-  # Preview 缓存代理 — 转发 Cocos preview(:7456) 并对 import-map/chunks 加 no-store
-  - name: preview-proxy
-    command_mac: python
-    command_win: python
-    args: ["D:/Codlib/dq-workflow/tools/cocos_tool.py", "py:preview-proxy", "--port", "7500"]
-    cwd: D:/Codlib/dq-workflow
-    port: 7500
-    auto_restart: true
-    tags: [preview, proxy, cocos]
-    enabled: true
-    env:
-      PYTHONIOENCODING: "utf-8"
 
   # HttpViewServer — Flask 图片/视频/文本库浏览 (自用存档展示)
   # 依赖: serviceGroup/httpViewServer/.venv (flask), 库根 = 服务 cwd 下 share/

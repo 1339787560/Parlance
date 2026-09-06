@@ -4,6 +4,7 @@
 Usage:
     python run.py            # Start infoServer and listen for hotkeys
     python run.py --no-input # Start without keyboard listener (service mode)
+    python run.py --config config.full.yaml   # 指定服务配置 (堡垒机全量; 本机缺省 config.yaml)
 
 Hotkeys:
     r / R   Reload infoServer (stop fully then start)
@@ -208,14 +209,29 @@ class ControlServer:
                 "error": {"code": code, "message": message}}
 
 
+def _config_args() -> List[str]:
+    """提取 --config (转发 main.py + 端口预清理读同一文件)。"""
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == "--config" and i + 1 < len(argv):
+            return ["--config", argv[i + 1]]
+        if a.startswith("--config="):
+            return ["--config", a.split("=", 1)[1]]
+    env_cfg = os.environ.get("INFOSERVER_CONFIG")
+    if env_cfg:
+        return ["--config", env_cfg]
+    return []
+
+
 def _load_port() -> int:
-    cfg_path = PROJECT_DIR / "config.yaml"
+    ca = _config_args()
+    cfg_path = PROJECT_DIR / (ca[1] if ca else "config.yaml")
     if cfg_path.exists():
         try:
             cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
             return cfg.get("server", {}).get("port", 5001)
         except Exception as e:
-            logger.warning("Failed to read config.yaml: %s", e)
+            logger.warning("Failed to read %s: %s", cfg_path.name, e)
     return 5001
 
 
@@ -314,7 +330,7 @@ class Launcher:
         self.service = ManagedService(
             name="infoServer",
             command=self.python,
-            args=[str(PROJECT_DIR / "main.py")],
+            args=[str(PROJECT_DIR / "main.py")] + _config_args(),
             cwd=str(PROJECT_DIR),
             port=self.port,
             managed=True,
