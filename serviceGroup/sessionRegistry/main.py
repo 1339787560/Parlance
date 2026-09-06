@@ -18,6 +18,13 @@ API 摘要：
     GET  /sessions/{owner}/{agent_id}
     POST /sessions/{owner}/{agent_id}/heartbeat
     POST /sessions/{owner}/{agent_id}/release
+
+meta 扩展字段（v0.2.0，rolemanager配置化重构 T1）：
+    - 记录携带自由字典 meta（如 RoleManager 的 prompt_ledger 台账），跨宿主持久化。
+    - 合并语义：register/update 请求体**未携带 meta 键时保留原值**（防宿主全量重报刷没）；
+      携带时按 meta 顶层键深合并（同键覆盖=快照语义，异键保留=多写者互不侵占）。
+    - GC：alive=false 且 updated_at 超过 SESSION_REGISTRY_GC_DAYS（默认 30）天的记录，
+      meta 清空、骨架保留。写操作顺带触发（store 量级小，O(n) 扫描可接受）。
 """
 
 from __future__ import annotations
@@ -40,7 +47,10 @@ DATA_FILE = DATA_DIR / "session-registry.json"
 
 ALLOWED_OWNERS = {"castflow", "extension"}
 
-app = FastAPI(title="session-registry", version="0.1.0")
+# meta GC 阈值（天）：alive=false 且 updated_at 超期 → 清 meta 保骨架
+GC_DAYS = int(os.environ.get("SESSION_REGISTRY_GC_DAYS", "30"))
+
+app = FastAPI(title="session-registry", version="0.2.0")
 _lock = threading.Lock()
 _store: Dict[str, Dict[str, Any]] = {}
 
@@ -88,6 +98,8 @@ class RegisterBody(BaseModel):
     cli: Optional[str] = None
     cwd: Optional[str] = None
     alive: bool = True
+    # None=不携带（保留原值）；dict=按顶层键深合并进原 meta
+    meta: Optional[Dict[str, Any]] = None
 
 
 class UpdateBody(BaseModel):
@@ -97,6 +109,7 @@ class UpdateBody(BaseModel):
     cli: Optional[str] = None
     cwd: Optional[str] = None
     alive: Optional[bool] = None
+    meta: Optional[Dict[str, Any]] = None
 
 
 # ---------- helpers ----------
@@ -118,6 +131,25 @@ def _conflict_session(session_id: str, exclude_key: Optional[str] = None) -> Opt
     return None
 
 
+def _merge_meta(v: Dict[str, Any], incoming: Optional[Dict[str, Any]]) -> None:
+    """meta 顶层键深合并：incoming=None 保留原值；同键覆盖、异键保留。"""
+    if incoming is None:
+        return
+    cur = v.get("meta")
+    if not isinstance(cur, dict):
+        cur = {}
+    cur.update(incoming)
+    v["meta"] = cur
+
+
+def _gc() -> None:
+    """清退死记录 meta：alive=false 且 updated_at 超 GC_DAYS。锁内调用。"""
+    cutoff = _now() - GC_DAYS * 86400 * 1000
+    for v in _store.values():
+        if not v.get("alive", True) and v.get("meta") and v.get("updated_at", 0) < cutoff:
+            v["meta"] = {}
+
+
 def _public(owner: str, agent_id: str) -> Dict[str, Any]:
     v = _store[_key(owner, agent_id)]
     return {
@@ -129,6 +161,7 @@ def _public(owner: str, agent_id: str) -> Dict[str, Any]:
         "cli": v.get("cli"),
         "cwd": v.get("cwd"),
         "alive": bool(v.get("alive", True)),
+        "meta": v.get("meta", {}),
         "created_at": v.get("created_at"),
         "updated_at": v.get("updated_at"),
     }
@@ -195,6 +228,7 @@ def register(body: RegisterBody) -> Dict[str, Any]:
             if body.cwd is not None:
                 v["cwd"] = body.cwd
             v["alive"] = body.alive
+            _merge_meta(v, body.meta)
             v["updated_at"] = now
         else:
             _store[k] = {
@@ -206,9 +240,11 @@ def register(body: RegisterBody) -> Dict[str, Any]:
                 "cli": body.cli,
                 "cwd": body.cwd,
                 "alive": body.alive,
+                "meta": dict(body.meta) if body.meta else {},
                 "created_at": now,
                 "updated_at": now,
             }
+        _gc()
         _save()
         return _public(body.owner, body.agent_id)
 
@@ -231,7 +267,9 @@ def update(owner: str, agent_id: str, body: UpdateBody) -> Dict[str, Any]:
             val = getattr(body, field)
             if val is not None:
                 v[field] = val
+        _merge_meta(v, body.meta)
         v["updated_at"] = _now()
+        _gc()
         _save()
         return _public(owner, agent_id)
 
