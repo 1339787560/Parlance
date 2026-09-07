@@ -10,6 +10,8 @@ use thiserror::Error;
 pub enum AppError {
     #[error("缺少参数: {0}")]
     MissingParam(&'static str),
+    #[error("{0}")]
+    BadRequest(String),
     #[error("服务不存在: {0}")]
     ServiceNotFound(String),
     #[error("服务未运行或路径不可用")]
@@ -40,6 +42,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (code, msg) = match &self {
             AppError::MissingParam(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::ServiceNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::ServiceUnavailable => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),

@@ -188,12 +188,13 @@
     <span class="sep"></span>
     <button id="btn-clear-cache" class="pill" title="清空所有缓存数据" style="background:#5a1a1a;border-color:#8a2a2a">🗑 重置</button>
     <button id="btn-export-makecard" class="pill" title="按当前局牌堆顺序导出 test.ini 做牌配置到剪贴板 (粘贴到做牌器「导入做牌信息」框)">📤 做牌</button>
+    <button id="btn-save-makecard" class="pill" title="一键导出: 写入当前源对应服务的 test_<名称>.ini (做牌器直接可选)">➡ 直存</button>
     <label class="pill" style="cursor:pointer">加载 record<input type="file" accept=".log,.txt" id="file-input" style="display:none"></label>
   </div>
 
   <div class="app">
     <div class="meta" id="meta">未加载</div>
-    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v11</div>
+    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v12</div>
 
     <div class="table">
       <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
@@ -237,6 +238,19 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="savecard-modal">
+    <div class="modal-content" style="max-width:380px">
+      <span class="modal-close" id="savecard-close">×</span>
+      <h3 id="savecard-title">一键导出做牌</h3>
+      <div style="font-size:12px;color:#9ab;margin-bottom:10px" id="savecard-desc"></div>
+      <input type="text" id="savecard-name" class="pill" placeholder="做牌名称 (如: 复盘11783局2)" style="width:100%;padding:6px 10px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="pill" id="savecard-cancel">取消</button>
+        <button class="pill" id="savecard-ok" style="background:#2a5a3a">导出</button>
+      </div>
+    </div>
+  </div>
+
 <script>
   const rec = { header: {}, rounds: [] };
   let curRound = 0, curStep = -1, listBuilt = false, perspective = 0, prevQue = ['','','',''];
@@ -246,6 +260,7 @@
   let lastFetchKey = '';  // 追踪上次 API 拉取的 source+date, 避免重复请求
   let isScanning = false; // scan_rounds 进行中 (前端空列表显示"扫描中"而非"无匹配")
   let lastLoad = '';      // 最近一次 record 载入方式: 'file'(手动导入) / 'api'(数据源) — 对局按钮路由用
+  let curSource = '';     // 当前 record 来源 source id (直存做牌按它定位目标服务; 手动导入为空)
 
   const ROWS_Y = [8, 153, 301, 448, 590, 745];
   const ROWS_H = [133, 136, 131, 132, 137, 120];
@@ -720,7 +735,7 @@
   };
   document.getElementById('file-input').onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
-    try { const txt = await f.text(); parseRecord(txt); lastLoad = 'file'; restoreState(); }
+    try { const txt = await f.text(); parseRecord(txt); lastLoad = 'file'; curSource = ''; restoreState(); }
     catch (err) { document.getElementById('meta').textContent = '加载失败: ' + err; }
     e.target.value = '';
   };
@@ -757,6 +772,54 @@
     btn.textContent = `✓ 已复制${n}张`;
     setTimeout(() => { btn.textContent = '📤 做牌'; }, 1800);
   };
+  // ── 一键直存做牌 (当前源 → 对应服务 test_<名称>.ini) ──
+  // 与「📤 做牌」互补: 拷贝走剪贴板+做牌器粘贴; 直存直接写目标服务, 做牌器刷新文件列表即可选。
+  // 支持源: local-*/bastion-* (有对应部署服务); oss (归档) 与手动导入不支持。
+  function sourceLabelOf(id) {
+    const opt = [...document.querySelectorAll('#src-sel option')].find(o => o.value === id);
+    return opt ? opt.textContent : id;
+  }
+  document.getElementById('btn-save-makecard').onclick = () => {
+    const meta = document.getElementById('meta');
+    if (!curSource) { meta.textContent = '直存失败: 手动导入的 record 无来源服务, 请用「📤 做牌」复制'; return; }
+    if (curSource.startsWith('oss-')) { meta.textContent = '直存失败: OSS 归档源无对应服务, 请用「📤 做牌」复制'; return; }
+    if (!curRoundObj()) { meta.textContent = '直存失败: 未加载对局'; return; }
+    const txt = buildMakecardText();
+    if (!txt) { meta.textContent = '直存失败: 当前局无 RawCards 牌堆数据'; return; }
+    const label = sourceLabelOf(curSource);
+    document.getElementById('savecard-title').textContent = `一键导出到「${label}」`;
+    document.getElementById('savecard-desc').textContent = `写入 ${curSource.startsWith('local') ? '本机' : '远端'}对应服务的 test_<名称>.ini, 做牌器刷新文件列表即可选用。当前: 局 ${curRound+1}/${rec.rounds.length}。`;
+    document.getElementById('savecard-name').value = '';
+    document.getElementById('savecard-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('savecard-name').focus(), 50);
+  };
+  async function doSaveMakecard() {
+    const name = document.getElementById('savecard-name').value.trim();
+    const meta = document.getElementById('meta');
+    if (!name) { document.getElementById('savecard-name').focus(); return; }
+    if (/[\\/:*?"<>|]/.test(name)) { meta.textContent = '直存失败: 名称含非法字符 (\\/:*?"<>|)'; return; }
+    const content = buildMakecardText();
+    const btn = document.getElementById('savecard-ok');
+    btn.textContent = '导出中...'; btn.disabled = true;
+    try {
+      const r = await fetch('/api/record/save_makecard', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: curSource, name, content }),
+      }).then(r => r.json());
+      if (!r.success) throw new Error(r.message || '保存失败');
+      document.getElementById('savecard-modal').classList.add('hidden');
+      meta.textContent = `已导出做牌: ${r.path} (做牌器刷新文件列表可选)`;
+    } catch (e) {
+      meta.textContent = '直存失败: ' + e.message;
+    } finally {
+      btn.textContent = '导出'; btn.disabled = false;
+    }
+  }
+  document.getElementById('savecard-ok').onclick = doSaveMakecard;
+  document.getElementById('savecard-name').onkeydown = e => { if (e.key === 'Enter') doSaveMakecard(); };
+  document.getElementById('savecard-cancel').onclick = () => document.getElementById('savecard-modal').classList.add('hidden');
+  document.getElementById('savecard-close').onclick = () => document.getElementById('savecard-modal').classList.add('hidden');
+  document.getElementById('savecard-modal').onclick = (e) => { if (e.target.id === 'savecard-modal') e.currentTarget.classList.add('hidden'); };
   // 对局按钮双模式: 手动导入的 record → 当前文件局列表; 否则 → 数据源对局列表
   document.getElementById('btn-rounds').onclick = () => {
     if (lastLoad === 'file' && rec.rounds.length) {
@@ -937,6 +1000,7 @@
       if (!r.success) throw new Error(r.message || 'get 失败');
       parseRecord(r.content);
       lastLoad = 'api';
+      curSource = source;
       // 从指定局从头展示 (roundIdx 来自 scan_rounds; 无则默认 0)
       let sv = {}; try { sv = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
       if (sv.perspective !== undefined) { perspective = sv.perspective; applyLayout(); }
