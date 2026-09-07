@@ -39,7 +39,6 @@
             padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
             font-size: 12px; background: #fff; min-width: 120px;
         }
-        #file-sel { min-width: 200px; }
         .svc-bar .lbl { font-size: 11px; color: #777; }
         .svc-bar .count-pill {
             font-size: 11px; color: #555; background: #eef1f5;
@@ -54,6 +53,43 @@
         body.dark-theme .svc-bar .crumb { color: #aaa; }
         body.dark-theme .svc-bar .crumb a { color: #6cb7ff; }
         body.dark-theme .svc-bar .sep { background: #444; }
+
+        /* 保存下拉 tab（split button：主体 = 保存到当前文件，▾ = 展开做牌记录列表） */
+        .save-tab { position: relative; display: flex; }
+        .save-tab .save-main { border-radius: 4px 0 0 4px; }
+        .save-tab .save-caret { border-radius: 0 4px 4px 0; margin-left: 1px; padding: 5px 6px; }
+        .file-menu {
+            display: none; position: absolute; top: calc(100% + 6px); left: 0;
+            min-width: 260px; max-height: 60vh; overflow-y: auto;
+            background: #fff; border: 1px solid #ddd; border-radius: 8px;
+            box-shadow: 0 8px 28px rgba(0,0,0,.22); padding: 4px; z-index: 300;
+        }
+        .file-menu.open { display: block; }
+        .file-menu .menu-title { font-size: 11px; color: #999; padding: 4px 8px 2px; }
+        .file-item {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 5px 8px; border-radius: 5px; cursor: pointer; font-size: 12px; color: #333;
+        }
+        .file-item:hover { background: #f0f4fa; }
+        .file-item.active { background: #e2efff; font-weight: bold; }
+        .file-item .fname {
+            flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .file-item .fdel {
+            background: #dc3545; color: #fff; border: none; border-radius: 3px;
+            font-size: 10px; padding: 2px 7px; cursor: pointer; flex-shrink: 0;
+        }
+        .file-item .fdel:hover { background: #c82333; }
+        .file-item .fren {
+            background: #6c757d; color: #fff; border: none; border-radius: 3px;
+            font-size: 10px; padding: 2px 7px; cursor: pointer; flex-shrink: 0;
+        }
+        .file-item .fren:hover { background: #5a6268; }
+        body.dark-theme .file-menu { background: #262626; border-color: #444; }
+        body.dark-theme .file-menu .menu-title { color: #777; }
+        body.dark-theme .file-item { color: #ddd; }
+        body.dark-theme .file-item:hover { background: #333; }
+        body.dark-theme .file-item.active { background: #2a4a6a; }
 
         .btn {
             background: #007bff; color: #fff; border: none;
@@ -250,6 +286,12 @@
             width: 100%; text-align: center; padding: 40px 0;
         }
 
+        /* 导入做牌悬浮窗（宽版，对齐 onlineConfigModify 页 75vw/75vh 大卡片样式） */
+        .modal-card.wide { width: min(75vw, 1100px); height: 75vh; }
+        .modal-card.wide textarea { flex: 1; min-height: 220px; height: auto; }
+        .modal-card.wide .modal-toolbar { flex-shrink: 0; margin-bottom: 0; }
+        .modal-card.wide .modal-head { flex-shrink: 0; }
+
         /* 夜间 */
         body.dark-theme { background: #121212; color: #e0e0e0; }
         body.dark-theme .container { background: #1a1a1a; color: #e0e0e0; }
@@ -276,19 +318,19 @@
             <option value="xzms">xzms</option>
             <option value="xzmo2">xzmo2</option>
         </select>
-        <span class="lbl">文件</span>
-        <select id="file-sel" onchange="onFileChange()"></select>
         <div class="sep"></div>
-        <button class="btn ghost icon" onclick="loadFiles()" title="刷新列表">刷新</button>
-        <button class="btn icon" onclick="readFile()" title="读取">读取</button>
-        <button class="btn ok icon" onclick="saveFile()" title="保存">保存</button>
-        <button class="btn ghost icon" onclick="saveAs()" title="另存为新文件">另存</button>
+        <button class="btn ghost icon" id="undo-btn" onclick="undo()" title="撤销 (Ctrl+Z)" disabled>◀</button>
+        <button class="btn ghost icon" id="redo-btn" onclick="redo()" title="恢复 (Ctrl+Y)" disabled>▶</button>
+        <div class="save-tab" id="save-tab">
+            <button class="btn ok icon save-main" onclick="saveFile()" title="保存到当前文件">保存</button>
+            <button class="btn ok icon save-caret" onclick="toggleFileMenu(event)" title="做牌记录列表（点击选择 / 删除）">▾</button>
+            <div class="file-menu" id="file-menu"></div>
+        </div>
+        <button class="btn ghost icon" onclick="saveAs()" title="另存为新文件（文件名可用中文，如 test_清一色.ini）">另存</button>
         <button class="btn ok icon" id="activate-btn" onclick="activateFile()" title="设为生效（复制覆盖 test.ini，旧文件备份 remove/）" disabled>生效</button>
         <div class="sep"></div>
         <button class="btn ok icon" onclick="randomDeal()" title="随机发牌">随机发牌</button>
         <button class="btn warn icon" onclick="resetAll()" title="重置">重置</button>
-        <button class="btn ghost icon" id="undo-btn" onclick="undo()" title="撤销 (Ctrl+Z)" disabled>◀</button>
-        <button class="btn ghost icon" id="redo-btn" onclick="redo()" title="重做 (Ctrl+Y)" disabled>▶</button>
         <button class="btn ghost" onclick="openIdModal()" title="id → 牌张翻译">id翻译</button>
         <div class="sep"></div>
         <div class="view-tabs">
@@ -296,6 +338,9 @@
             <button id="tab-cardid" onclick="setView('cardid')">cardid</button>
         </div>
         <span class="count-pill">牌堆 <b id="bank-count">0</b></span>
+        <div class="sep"></div>
+        <button class="btn ghost icon" onclick="copyMakecardInfo()" title="拷贝当前打开的配置文件内容到剪贴板">拷贝做牌信息</button>
+        <button class="btn ghost icon" onclick="openImportModal()" title="粘贴/在线编辑 ini 导入（自动纠正重复 cardid 与长度）">导入做牌信息</button>
     </div>
 
     <div class="container">
@@ -361,6 +406,24 @@
         </div>
     </div>
 
+    <!-- 导入做牌信息悬浮窗（对齐 onlineConfigModify 编辑器样式：遮罩 + 75vw/75vh 卡片 + 在线编辑） -->
+    <div class="modal-overlay" id="import-modal" onclick="onImportOverlayClick(event)">
+        <div class="modal-card wide">
+            <div class="modal-head">
+                <span>导入做牌信息</span>
+                <button class="close-x" onclick="closeImportModal()">×</button>
+            </div>
+            <textarea id="import-input" placeholder="粘贴 test*.ini 配置内容（Total=... 格式；也兼容 nChair 旧格式）&#10;导入时自动纠正：重复 cardid（原位改补缺失牌）、越界 cardid、总张数不符（不足补齐 / 超长截断）" oninput="checkImport()"></textarea>
+            <div class="modal-toolbar">
+                <span id="import-status" style="color:#888;">等待输入</span>
+                <span style="margin-left:auto; display:flex; gap:6px;">
+                    <button class="btn ok icon" onclick="doImport()">导入并纠正</button>
+                    <button class="btn ghost icon" onclick="clearImport()">清空</button>
+                </span>
+            </div>
+        </div>
+    </div>
+
     <script>
         if (localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-theme');
 
@@ -388,7 +451,7 @@
         const HAND_LIMIT = 14;   // 手牌上限（后续可配置）
         const state = {
             bank: new Set(), catch: [], chairs: [[],[],[],[]], gang: [],
-            bankerno: 0, beginno: 0,
+            bankerno: 0, beginno: 0, exchange3: -1,
         };
 
         // ---- 撤销/重做（snapshot 栈）----
@@ -403,6 +466,7 @@
                 gang: state.gang.slice(),
                 bankerno: state.bankerno,
                 beginno: state.beginno,
+                exchange3: state.exchange3,
             };
         }
         function restoreSnap(s) {
@@ -412,6 +476,7 @@
             state.gang = s.gang.slice();
             state.bankerno = s.bankerno;
             state.beginno = s.beginno;
+            state.exchange3 = s.exchange3;
         }
         function pushHistory() {
             history.push(snapshot());
@@ -788,24 +853,114 @@
             if (currentFile) await readFile();   // 切服务后自动读默认 test.ini
             savePrefs();
         }
+        let fileList = [];   // 服务目录下的做牌记录（含 remove/ 备份）
         async function loadFiles() {
-            const sel = document.getElementById('file-sel');
-            sel.innerHTML = '';
+            await refreshFileList();
+            if (fileList.includes('test.ini')) currentFile = 'test.ini';
+            else if (fileList.length) currentFile = fileList[0];
+            else currentFile = '';
+            syncFileUI();
+        }
+        async function refreshFileList() {
             try {
                 const r = await fetch(`/api/makecard/files?service=${currentService}`);
                 const d = await r.json();
                 if (!d.success) throw new Error(d.message);
-                d.files.forEach(f => { const o = document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o); });
-                if (d.files.includes('test.ini')) { sel.value='test.ini'; currentFile='test.ini'; }
-                else if (d.files.length) { sel.value=d.files[0]; currentFile=d.files[0]; }
-                else currentFile = '';
-            } catch (e) { toast('加载失败: ' + e.message, 'err'); }
+                fileList = d.files;
+            } catch (e) { toast('加载失败: ' + e.message, 'err'); fileList = []; }
         }
-        async function onFileChange() {
-            currentFile = document.getElementById('file-sel').value;
-            updateActivateBtn();
+        // 记录短名：test.ini 原样展示；test_abc.ini → abc；test_清一色.ini → 清一色
+        function fileLabel(f) {
+            const name = f.includes('/') ? f.split('/').pop() : f;
+            if (/^test\.ini$/i.test(name)) return name;
+            const short = name.replace(/^test/i, '').replace(/\.ini$/i, '').replace(/^[_.\-]+/, '');
+            return short || name;
+        }
+        function renderFileMenu() {
+            const menu = document.getElementById('file-menu');
+            menu.innerHTML = '';
+            const main = fileList.filter(f => !f.includes('/'));
+            const removed = fileList.filter(f => f.startsWith('remove/'));
+            const addGroup = (title, arr) => {
+                if (!arr.length) return;
+                if (title) {
+                    const t = document.createElement('div');
+                    t.className = 'menu-title'; t.textContent = title;
+                    menu.appendChild(t);
+                }
+                arr.forEach(f => {
+                    const row = document.createElement('div');
+                    row.className = 'file-item' + (f === currentFile ? ' active' : '');
+                    row.title = f;
+                    const nm = document.createElement('span');
+                    nm.className = 'fname'; nm.textContent = fileLabel(f);
+                    row.appendChild(nm);
+                    row.addEventListener('click', () => selectRecord(f));
+                    if (f !== 'test.ini') {   // 根目录 test.ini 为生效文件，禁删/禁改名（remove/ 备份可删）
+                        const ren = document.createElement('button');
+                        ren.className = 'fren'; ren.textContent = '重命名'; ren.title = `重命名 ${f}`;
+                        ren.addEventListener('click', e => { e.stopPropagation(); renameRecord(f); });
+                        row.appendChild(ren);
+                        const del = document.createElement('button');
+                        del.className = 'fdel'; del.textContent = '删除'; del.title = `删除 ${f}`;
+                        del.addEventListener('click', e => { e.stopPropagation(); deleteRecord(f); });
+                        row.appendChild(del);
+                    }
+                    menu.appendChild(row);
+                });
+            };
+            addGroup('', main);
+            addGroup('remove/ 备份', removed);
+            if (!fileList.length) {
+                const e = document.createElement('div');
+                e.className = 'menu-title'; e.textContent = '无做牌记录';
+                menu.appendChild(e);
+            }
+        }
+        async function toggleFileMenu(e) {
+            e.stopPropagation();
+            const menu = document.getElementById('file-menu');
+            if (menu.classList.contains('open')) { closeFileMenu(); return; }
+            await refreshFileList();   // 每次打开重新拉取列表（替代原刷新按钮）
+            if (currentFile && !fileList.includes(currentFile)) {   // 当前文件已被删除 → 回退
+                currentFile = fileList.includes('test.ini') ? 'test.ini' : (fileList[0] || '');
+                syncFileUI();
+            }
+            renderFileMenu();
+            menu.classList.add('open');
+        }
+        function closeFileMenu() { document.getElementById('file-menu').classList.remove('open'); }
+        async function selectRecord(f) {
+            closeFileMenu();
+            currentFile = f;
+            syncFileUI();
             savePrefs();
-            if (currentFile) await readFile();   // 切文件自动同步
+            if (currentFile) await readFile();   // 切记录自动读取
+        }
+        function syncFileUI() {
+            renderFileMenu();
+            updateActivateBtn();
+        }
+        async function deleteRecord(f) {
+            if (!confirm(`确定删除做牌记录 ${f} ？\n（文件将从磁盘移除，不可恢复）`)) return;
+            try {
+                const r = await fetch('/api/makecard/delete', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ service: currentService, file: f })
+                });
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                toast(`已删除 ${f}`, 'ok');
+                await refreshFileList();
+                if (f === currentFile) {   // 当前打开的记录被删 → 回退 test.ini 并读取
+                    currentFile = fileList.includes('test.ini') ? 'test.ini' : (fileList[0] || '');
+                    syncFileUI();
+                    savePrefs();
+                    if (currentFile) await readFile();
+                } else {
+                    renderFileMenu();
+                }
+            } catch (e) { toast('删除失败: ' + e.message, 'err'); }
         }
         function updateActivateBtn() {
             const btn = document.getElementById('activate-btn');
@@ -822,10 +977,8 @@
                 const d = await r.json();
                 if (!d.success) throw new Error(d.message);
                 const warn = applyIni(d.content);
-                await loadFiles();
-                document.getElementById('file-sel').value = 'test.ini';
-                currentFile = 'test.ini';
-                updateActivateBtn();
+                await loadFiles();   // loadFiles 默认回到 test.ini（生效后当前文件即 test.ini）
+                syncFileUI();
                 toast(d.message, 'ok');
                 if (warn) toast(warn, 'err');   // 覆盖成功提示，警告留在屏幕
             } catch (e) { toast('生效失败: ' + e.message, 'err'); }
@@ -853,10 +1006,13 @@
             const get = (...keys) => { for (const k of keys) if (kv[k] != null) return kv[k]; return ''; };
             const ids = s => (s||'').split('|').map(x=>parseInt(x.trim())).filter(x=>!isNaN(x));
             const total = ids(get('Total'));
-            const banker = parseInt(get('Banker', 'bankerno')||'0') || 0;
+            const banker = Math.min(3, Math.max(0, parseInt(get('Banker', 'bankerno')||'0') || 0));   // 防越界 crash（导入内容可能乱填）
             const beginno = parseInt(get('BeginNO', 'beginno')||'0') || 0;
             state.bankerno = banker;
             state.beginno = beginno;
+            // 换三张方向 (服务端枚举: 0=顺 1=逆 2=对家); 非法/缺省 = -1 随机
+            const ex3 = parseInt(get('Exchange3', 'exchange3'));
+            state.exchange3 = (ex3 >= 0 && ex3 <= 2) ? ex3 : -1;
             if (total.length >= 53) {
                 // 解码连续 4 张布局
                 const handOf = i => {
@@ -932,17 +1088,51 @@
             let s = '[Card]\r\nMade=1\r\n';
             s += `Total=${flat(total)}\r\n`;
             s += `Banker=${banker}\r\nBeginNO=${state.beginno||0}\r\n`;
+            // 换三张方向 (服务端枚举: 0=顺时针 1=逆时针 2=对家); -1/缺省 = 随机不写键
+            const ex3 = parseInt(state.exchange3);
+            if (ex3 >= 0 && ex3 <= 2) s += `Exchange3=${ex3}\r\n`;
             return s;
         }
         async function saveFile() { if (!currentFile) { toast('请先选文件或另存', 'err'); return; } await doSave(currentFile); }
+        // 短名 → 完整文件名：输入已是完整 test*.ini 则原样，否则自动拼 test_ 前缀 + .ini 后缀
+        function shortNameToFile(name) {
+            const n = name.trim();
+            if (/^test[\w一-鿿.-]*\.ini$/i.test(n)) return n;
+            return `test_${n}.ini`;
+        }
         async function saveAs() {
-            const name = prompt('新文件名（test*.ini）:', 'test_mydeal.ini');
+            const name = prompt('记录名称（可用中文，如：清一色。自动存为 test_<名称>.ini）:', 'mydeal');
             if (!name) return;
-            if (!/^test[\w.-]*\.ini$/i.test(name)) { toast('文件名需 test*.ini', 'err'); return; }
-            await doSave(name);
-            await loadFiles();
-            document.getElementById('file-sel').value = name;
-            currentFile = name;
+            const file = shortNameToFile(name);
+            if (!/^test[\w一-鿿.-]*\.ini$/i.test(file)) { toast('名称仅支持中文/字母/数字/._-，不能为空', 'err'); return; }
+            await doSave(file);
+            await refreshFileList();   // 只刷列表，保持 currentFile = 新文件
+            currentFile = file;
+            syncFileUI();
+            savePrefs();
+        }
+        async function renameRecord(f) {
+            const cur = fileLabel(f);
+            const name = prompt(`重命名 "${cur}" 为（自动存为 test_<名称>.ini）:`, cur);
+            if (!name) return;
+            const newFile = shortNameToFile(name);
+            if (!/^test[\w一-鿿.-]*\.ini$/i.test(newFile)) { toast('名称仅支持中文/字母/数字/._-，不能为空', 'err'); return; }
+            if (newFile === f) return;
+            try {
+                const r = await fetch('/api/makecard/rename', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ service: currentService, file: f, newFile })
+                });
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                toast(`已重命名 ${cur} → ${fileLabel(newFile)}`, 'ok');
+                await refreshFileList();
+                if (f === currentFile) {   // 当前打开的记录被重命名 → 跟随新名
+                    currentFile = newFile;
+                    savePrefs();
+                }
+                syncFileUI();
+            } catch (e) { toast('重命名失败: ' + e.message, 'err'); }
         }
         async function doSave(file) {
             let content;
@@ -965,6 +1155,156 @@
             t.className = 'toast show' + (kind ? ' '+kind : '');
             clearTimeout(toastTimer);
             toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+        }
+
+        // ---- 拷贝/导入做牌信息 ----
+        // 拷贝：当前打开的配置文件原始内容 → 剪贴板
+        async function copyMakecardInfo() {
+            if (!currentFile) { toast('当前无打开文件，请先从保存下拉选择记录', 'err'); return; }
+            try {
+                const r = await fetch(`/api/makecard/read?service=${currentService}&file=${encodeURIComponent(currentFile)}`);
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                await copyText(d.content);
+                toast(`已拷贝 ${currentFile}（${d.content.length} 字符）`, 'ok');
+            } catch (e) { toast('拷贝失败: ' + e.message, 'err'); }
+        }
+        async function copyText(text) {
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                    return;
+                }
+            } catch (e) { /* 落 execCommand 兜底 */ }
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');   // http 非 secure context 兜底
+            document.body.removeChild(ta);
+            if (!ok) throw new Error('剪贴板不可用，请手动复制');
+        }
+
+        // 导入悬浮窗：在线编辑 ini 文本 + 校验 + 纠正后应用
+        function openImportModal() {
+            document.getElementById('import-modal').classList.add('show');
+            setTimeout(() => document.getElementById('import-input').focus(), 50);
+        }
+        function closeImportModal() {
+            document.getElementById('import-modal').classList.remove('show');
+        }
+        function onImportOverlayClick(e) {
+            if (e.target === e.currentTarget) closeImportModal();   // 点遮罩（非卡片）关闭
+        }
+        function clearImport() {
+            document.getElementById('import-input').value = '';
+            checkImport();
+        }
+        // 解析导入文本：Total 格式返回 {ids,...}；无 Total 兼容 nChair 旧格式返回 {legacy:true,...}
+        function analyzeImport(text) {
+            const kv = {};
+            text.split(/\r?\n/).forEach(l => { const m = l.match(/^(\w+)=(.*)$/); if (m) kv[m[1]] = m[2]; });
+            const get = (...keys) => { for (const k of keys) if (kv[k] != null) return kv[k]; return ''; };
+            const ids = s => (s||'').split('|').map(x=>parseInt(x.trim())).filter(x=>!isNaN(x));
+            const banker = Math.min(3, Math.max(0, parseInt(get('Banker','bankerno')||'0') || 0));
+            const beginno = parseInt(get('BeginNO','beginno')||'0') || 0;
+            const total = ids(get('Total'));
+            if (total.length) {
+                const max = hasJoker ? 114 : 108;
+                const seen = new Set(); let dup = 0, oor = 0;
+                total.forEach(c => {
+                    if (c < 0 || c >= max) oor++;
+                    else if (seen.has(c)) dup++;
+                    else seen.add(c);
+                });
+                return { legacy: false, ids: total, banker, beginno, dupCount: dup, outOfRange: oor };
+            }
+            const chairs = [0,1,2,3].map(i => ids(get('nChair'+i)));
+            const cat = ids(get('CatchCard'));
+            if (chairs.some(c => c.length) || cat.length) {
+                return { legacy: true, chairs, catch: cat, banker, beginno };
+            }
+            return null;
+        }
+        // 实时校验（oninput）：显示问题但不修正，导入时才纠正
+        function checkImport() {
+            const text = document.getElementById('import-input').value;
+            const st = document.getElementById('import-status');
+            if (!text.trim()) { st.textContent = '等待输入'; st.style.color = '#888'; return null; }
+            const info = analyzeImport(text);
+            if (!info) { st.textContent = '未识别到做牌数据（需 Total= 或 nChair 键）'; st.style.color = '#c8332e'; return null; }
+            if (info.legacy) {
+                const hand = info.chairs.reduce((n,c) => n + c.length, 0);
+                st.textContent = `旧格式（nChair）· 手牌 ${hand} 张 · 牌墙 ${info.catch.length} 张 · 不自动纠正`;
+                st.style.color = '#b8860b';
+                return info;
+            }
+            const max = hasJoker ? 114 : 108;
+            const problems = [];
+            if (info.dupCount) problems.push(`重复 cardid ${info.dupCount} 处`);
+            if (info.outOfRange) problems.push(`越界 ${info.outOfRange} 处`);
+            if (info.ids.length !== max) problems.push(`长度 ${info.ids.length} ≠ ${max}`);
+            if (problems.length) {
+                st.textContent = '发现问题：' + problems.join('，') + '（导入时自动纠正）';
+                st.style.color = '#c8332e';
+            } else {
+                st.textContent = `格式正常 · ${max} 张 · 庄家椅子 ${info.banker}`;
+                st.style.color = '#28a745';
+            }
+            return info;
+        }
+        // 纠正：重复/越界 cardid 原位替换为缺失牌（保布局位置）；超长截尾；不足补缺失牌到尾部（牌墙区）
+        function fixImportIds(ids) {
+            const max = hasJoker ? 114 : 108;
+            const seen = new Set();
+            const out = [];
+            let dup = 0, oor = 0;
+            ids.forEach(c => {
+                if (c < 0 || c >= max) { out.push(null); oor++; }        // 越界 → 占位待补
+                else if (seen.has(c)) { out.push(null); dup++; }          // 重复 → 占位待补（保留首次出现）
+                else { seen.add(c); out.push(c); }
+            });
+            let truncated = 0;
+            while (out.length > max) { out.pop(); truncated++; }          // 超长截尾
+            const present = new Set(out.filter(c => c !== null));
+            const missing = [];
+            for (let i = 0; i < max; i++) if (!present.has(i)) missing.push(i);
+            for (let i = 0; i < out.length; i++) {
+                if (out[i] === null) out[i] = missing.shift();            // 原位改补
+            }
+            const added = missing.splice(0);                              // 长度不足 → 缺失牌补到尾部
+            added.forEach(c => out.push(c));
+            const parts = [];
+            if (dup) parts.push(`重复 ${dup} 处已原位改补`);
+            if (oor) parts.push(`越界 ${oor} 处已原位改补`);
+            if (truncated) parts.push(`超长截断 ${truncated} 张`);
+            if (added.length) parts.push(`补齐 ${added.length} 张`);
+            return { fixed: out, report: parts.length ? `已导入并纠正：${parts.join('；')}` : '已导入（无需纠正）' };
+        }
+        async function doImport() {
+            const info = checkImport();
+            if (!info) { toast('内容无效，未导入', 'err'); return; }
+            try {
+                let text, msg;
+                if (info.legacy) {
+                    // 旧格式：拼回 ini 走 applyIni 兼容解析（不自动纠正）
+                    const lines = ['[Card]', 'Made=1'];
+                    info.chairs.forEach((c, i) => lines.push(`nChair${i}=${c.join('|')}`));
+                    lines.push(`CatchCard=${info.catch.join('|')}`);
+                    lines.push(`Banker=${info.banker}`, `BeginNO=${info.beginno}`);
+                    text = lines.join('\r\n');
+                    msg = '已导入（旧格式，未自动纠正）';
+                } else {
+                    const { fixed, report } = fixImportIds(info.ids);
+                    text = `[Card]\r\nMade=1\r\nTotal=${fixed.join('|')}\r\nBanker=${info.banker}\r\nBeginNO=${info.beginno}\r\n`;
+                    msg = report;
+                }
+                const warn = applyIni(text);
+                toast(msg, 'ok');
+                if (warn) toast(warn, 'err');   // 纠正后理论无警告，保底显示
+                closeImportModal();
+            } catch (e) { toast('导入失败: ' + e.message, 'err'); }
         }
 
         // ---- id 翻译悬浮窗 ----
@@ -1057,13 +1397,8 @@
             }
             document.getElementById('service-sel').value = currentService;
             await loadFiles();
-            if (prefs.file) {
-                const opts = [...document.getElementById('file-sel').options].map(o => o.value);
-                if (opts.includes(prefs.file)) {
-                    document.getElementById('file-sel').value = prefs.file;
-                    currentFile = prefs.file;
-                }
-            }
+            if (prefs.file && fileList.includes(prefs.file)) currentFile = prefs.file;
+            syncFileUI();
             if (prefs.viewMode) setView(prefs.viewMode); else renderAllDOM();
             setActive(prefs.activeZone || 'catch');
             if (prefs.idSort) setIdSort(prefs.idSort);
@@ -1078,11 +1413,18 @@
             if (e.key === 'Escape') {
                 const m = document.getElementById('id-modal');
                 if (m.classList.contains('show')) { closeIdModal(); return; }
+                const im = document.getElementById('import-modal');
+                if (im.classList.contains('show')) { closeImportModal(); return; }
+                closeFileMenu();
             }
             if (!e.ctrlKey && !e.metaKey) return;
             const k = e.key.toLowerCase();
             if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
             else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+        });
+        // 点击下拉外部 → 关闭做牌记录列表
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.save-tab')) closeFileMenu();
         });
     </script>
 </body>

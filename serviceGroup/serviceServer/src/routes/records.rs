@@ -838,6 +838,10 @@ struct RecordScript {
     timestamp: u64,
     /// RawCards cardid 序列 ("a|b|c", test.ini Total 同语义)
     total: String,
+    /// 换三张方向 (与服务端枚举一致: 0=顺 1=逆 2=对家; None=本局无换三张)
+    /// 由 "Exchange <recv> <from>" diff=(from-recv+4)%4 推导: 3→0 / 1→1 / 2→2
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exchange3: Option<u8>,
     actions: Vec<ScriptAction>,
 }
 
@@ -865,6 +869,8 @@ pub async fn script(Query(p): Query<ScriptParams>) -> Result<Json<Value>> {
     Ok(Json(v))
 }
 
+const TOTAL_CHAIRS_W: usize = 4;
+
 /// 从 record 文本解析指定局剧本。局以 `Version ` 行分隔; None = 无该局。
 fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<RecordScript> {
     // 切局: Version 行界
@@ -891,6 +897,7 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
     let mut timestamp: u64 = 0;
     let mut banker = 0usize;
     let mut total = String::new();
+    let mut exchange3: Option<u8> = None;
     let mut actions: Vec<ScriptAction> = Vec::new();
 
     for line in lines {
@@ -965,6 +972,15 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
                 // Exchange <recv> <from> <cards>
                 if pp.len() >= 3 {
                     if let (Ok(r), Ok(f)) = (pp[0].parse::<usize>(), pp[1].parse::<usize>()) {
+                        if exchange3.is_none() {
+                            // 首个 Exchange 定方向: diff=(from-recv+4)%4, 3→0顺 / 1→1逆 / 2→2对家
+                            exchange3 = match (TOTAL_CHAIRS_W + f - r) % TOTAL_CHAIRS_W {
+                                3 => Some(0),
+                                1 => Some(1),
+                                2 => Some(2),
+                                _ => None,
+                            };
+                        }
                         actions.push(ScriptAction {
                             seq: actions.len(), kind: "exchange", chair: r,
                             card: pp[2].to_string(), gang_type: None, from: Some(f),
@@ -1017,7 +1033,7 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
         id: id.to_string(),
         round,
         action_count: actions.len(),
-        room_id, table_no, players, names, banker, timestamp, total, actions,
+        room_id, table_no, players, names, banker, timestamp, total, exchange3, actions,
     })
 }
 

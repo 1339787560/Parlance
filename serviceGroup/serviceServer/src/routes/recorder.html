@@ -744,6 +744,16 @@
   // record 的 RawCards 行 = cardid 牌堆序列, 与 test.ini Total 同布局
   // (三轮48 [r*16+i*4+k] + 庄补[48-49] + 闲补[50-52] + 墙[53..]);
   // 转成 test.ini [Card] 段写剪贴板, 粘贴到做牌器「导入做牌信息」框即完成做牌。
+  // 换三张方向 → exchange3 键 (与服务端枚举一致: 0=顺时针 1=逆时针 2=对家):
+  // record "Exchange <recv> <from>" 中 diff=(from-recv+4)%4, 3→0顺 / 1→1逆 / 2→2对家。
+  function exchange3Of(round) {
+    const ev = round.events.find(e => e.type === 'Exchange');
+    if (!ev) return null;
+    const pp = ev.rest.split(/\s+/);
+    if (pp.length < 2) return null;
+    const diff = (+pp[1] - +pp[0] + 4) % 4;
+    return diff === 3 ? 0 : diff === 1 ? 1 : diff === 2 ? 2 : null;
+  }
   function buildMakecardText() {
     const r = curRoundObj();
     if (!r) return null;
@@ -752,7 +762,10 @@
     const bankerEv = r.events.find(e => e.type === 'Banker');
     const banker = bankerEv ? parseInt(bankerEv.rest.split(/\s+/)[0], 10) : 0;
     const total = raw.rest.split(/[,\s]+/).filter(Boolean).join('|');
-    return `[Card]\r\nMade=1\r\nTotal=${total}\r\nBanker=${Number.isNaN(banker) ? 0 : banker}\r\nBeginNO=0\r\n`;
+    // 本局有换三张才写 exchange3 (无换三张玩法/局不写, 服务端保持缺省随机)
+    const ex3 = exchange3Of(r);
+    return `[Card]\r\nMade=1\r\nTotal=${total}\r\nBanker=${Number.isNaN(banker) ? 0 : banker}\r\nBeginNO=0` +
+      (ex3 !== null ? `\r\nExchange3=${ex3}` : '') + `\r\n`;
   }
   document.getElementById('btn-export-makecard').onclick = async () => {
     const btn = document.getElementById('btn-export-makecard');
