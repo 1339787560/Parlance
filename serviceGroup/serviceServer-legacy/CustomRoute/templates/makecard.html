@@ -1010,7 +1010,7 @@
             const beginno = parseInt(get('BeginNO', 'beginno')||'0') || 0;
             state.bankerno = banker;
             state.beginno = beginno;
-            // 换三张方向 (服务端枚举: 0=顺 1=逆 2=对家); 非法/缺省 = -1 随机
+            // 换三张方向 (值=服务端枚举; 用户口径叫法: 0=逆[0传1] 1=顺[1传0] 2=对家); 非法/缺省 = -1 随机
             const ex3 = parseInt(get('Exchange3', 'exchange3'));
             state.exchange3 = (ex3 >= 0 && ex3 <= 2) ? ex3 : -1;
             if (total.length >= 53) {
@@ -1088,7 +1088,7 @@
             let s = '[Card]\r\nMade=1\r\n';
             s += `Total=${flat(total)}\r\n`;
             s += `Banker=${banker}\r\nBeginNO=${state.beginno||0}\r\n`;
-            // 换三张方向 (服务端枚举: 0=顺时针 1=逆时针 2=对家); -1/缺省 = 随机不写键
+            // 换三张方向 (值=服务端枚举; 叫法按用户口径: 0=逆时针[0传1] 1=顺时针[1传0] 2=对家); -1/缺省 = 随机不写键
             const ex3 = parseInt(state.exchange3);
             if (ex3 >= 0 && ex3 <= 2) s += `Exchange3=${ex3}\r\n`;
             return s;

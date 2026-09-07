@@ -811,7 +811,7 @@ struct ScriptAction {
     seq: usize,
     /// que / exchange / throw / catch / peng / gang / hu / banker
     kind: &'static str,
-    /// 动作椅 (exchange = 送牌椅; from = 牌去向)
+    /// 动作椅 (exchange = 收牌椅; from = 送牌椅)
     chair: usize,
     /// 牌面 (如 "7T"/"5D"); exchange = 送出牌串; que = 缺门 (W/T/D)
     card: String,
@@ -839,7 +839,7 @@ struct RecordScript {
     /// RawCards cardid 序列 ("a|b|c", test.ini Total 同语义)
     total: String,
     /// 换三张方向 (与服务端枚举一致: 0=顺 1=逆 2=对家; None=本局无换三张)
-    /// "Exchange <send> <recv>" diff=(recv-send+4)%4: 1→0顺 / 3→1逆 / 2→2对
+    /// "Exchange <recv> <send>" diff=(send-recv+4)%4: 3→0逆时针 / 1→1顺时针 / 2→2对家 (用户口径)
     #[serde(skip_serializing_if = "Option::is_none")]
     exchange3: Option<u8>,
     actions: Vec<ScriptAction>,
@@ -969,12 +969,14 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
                 }
             }
             "Exchange" => {
-                // 服务端 RecordExchange: "Exchange <send> <recv> <send 的三张>" (字段2=牌去向)
+                // 服务端 RecordExchange: "Exchange <recv> <send> <recv 收到的三张>" —
+                // 权威链: ExchangeCards 先 memcpy 翻转 m_nExchangeCards[i]=nTemp[src] (收到语义) 再落盘
                 if pp.len() >= 3 {
                     if let (Ok(r), Ok(f)) = (pp[0].parse::<usize>(), pp[1].parse::<usize>()) {
                         if exchange3.is_none() {
-                            // 首个 Exchange 定方向 (用户权威定义=服务端枚举): diff=(recv-send+4)%4,
-                            // 3→0顺时针(1传0) / 1→1逆时针(0传1) / 2→2对家。r=send, f=recv。
+                            // 首个 Exchange 定方向 (用户权威口径): 0传1=逆时针(0) / 1传0=顺时针(1) / 0传2=对家(2)。
+                            // diff=(send-recv+4)%4: 3→0逆 / 1→1顺 / 2→对。r=recv, f=send。
+                            // (用户叫法与服务端枚举名 Dir_Clockwise/Anti 互为镜像, 值=枚举恒定)
                             exchange3 = match (TOTAL_CHAIRS_W + f - r) % TOTAL_CHAIRS_W {
                                 3 => Some(0),
                                 1 => Some(1),
