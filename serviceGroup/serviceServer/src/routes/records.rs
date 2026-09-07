@@ -222,13 +222,29 @@ fn parse_rec_line(text: &str) -> Option<(String, String, usize)> {
     None
 }
 
-/// `POST /api/record/save_makecard` — 复盘器一键导出做牌到相同服务。
+/// save_makecard 的本机目标解析: 任意浏览源 → 本机等价 local 源。
+/// 本机 recorder 直存永远写本机服务 (保存到本机做牌文件, 非选中大区);
+/// 每台机器的 servicesvr 同规则 (53 recorder 直存写 53 本机)。
+/// 映射: local-* 原样 / bastion-* 取 remote_source / oss 按 game+ver (银子→xzmo2)。
+fn local_equivalent(src: &RecordSource) -> Option<&'static str> {
+    match src.kind {
+        "local" => Some(src.id),
+        "bastion" => src.remote_source,
+        // oss: 金币→xzmo, 银子→xzmo2, xzms 无分版
+        _ => match (src.game, src.ver) {
+            ("xzms", _) => Some("local-xzms"),
+            ("xzmo", Some("银子")) => Some("local-xzmo2"),
+            ("xzmo", _) => Some("local-xzmo"),
+            _ => None,
+        },
+    }
+}
+
+/// `POST /api/record/save_makecard {source, name, content}` — 复盘器一键导出做牌。
 ///
-/// 写 `<服务根>/test_<名称>.ini` (服务根 = local_dir 的 Record 上级)。
-/// - local 源: 本机 FS 直写 (GBK, 与 test.ini 家族一致; 新建文件)
-/// - bastion 源: 转发远端同款端点 (远端需部署本版本; 否则 404/失败提示更新)
-/// - oss 源: 不支持 (归档无服务), 提示走剪贴板
-/// 名称仅允许非路径分隔字符, 防 `..\` 穿越。
+/// **永远写本机**（source 仅用于定位玩法与 Rec 关联）: 浏览 53/185/OSS 源的对局,
+/// 直存落到本机对应服务 `<服务根>/test_<名称>.ini` (按 game+ver 映射本机 xzms/xzmo/xzmo2)。
+/// 本机未部署该服务目录时报错提示。名称仅允许非路径分隔字符, 防 `..\` 穿越。
 pub async fn save_makecard(Json(req): Json<SaveMakecardReq>) -> Result<Json<Value>> {
     let src = find_source(&req.source).ok_or(AppError::MissingParam("source"))?;
     let name = req.name.trim();
@@ -239,61 +255,33 @@ pub async fn save_makecard(Json(req): Json<SaveMakecardReq>) -> Result<Json<Valu
         return Err(AppError::BadRequest("名称含非法字符 (\\/:*?\"<>|)".into()));
     }
     let file_name = format!("test_{name}.ini");
+    // 本机目标服务 (浏览源 → 本机等价 local 源)
+    let local_id = local_equivalent(src)
+        .ok_or_else(|| AppError::BadRequest(format!("源 {} 无本机等价服务", req.source)))?;
+    let dir = local_dir(local_id)
+        .ok_or_else(|| AppError::BadRequest(format!("源 {} 无本机等价服务", req.source)))?;
+    let svc_root = std::path::Path::new(dir).parent().ok_or(AppError::NotFound)?;
+    if !svc_root.is_dir() {
+        return Err(AppError::BadRequest(format!(
+            "本机未部署该服务目录: {} (直存仅写本机服务, 大区源对局也落本机)",
+            svc_root.display()
+        )));
+    }
+
     // 关联行: 有 record_id 才写 (纯手搓做牌无关联)
     let content = match (&req.record_id, req.round) {
         (Some(id), Some(r)) => format!("{}\r\n{}\r\n", req.content.trim_end(), rec_line(&req.source, id, r)),
         _ => req.content.clone(),
     };
 
-    match src.kind {
-        "local" => {
-            let record_dir = std::path::Path::new(local_dir(&req.source).unwrap());
-            let svc_root = record_dir.parent().ok_or(AppError::NotFound)?;
-            let path = svc_root.join(&file_name);
-            let bytes = crate::encoding::encode(&content, "gbk")?;
-            tokio::fs::write(&path, &bytes).await?;
-            tracing::info!("save_makecard: {} → {}", src.id, path.display());
-            Ok(Json(json!({
-                "success": true, "source": req.source, "file": file_name,
-                "path": path.display().to_string(),
-            })))
-        }
-        "bastion" => {
-            let proxy = bastion_proxy_url(src)?;
-            let remote = src.remote_source.unwrap();
-            let client = reqwest::Client::builder()
-                .timeout(BASTION_TIMEOUT)
-                .build()
-                .map_err(|_| AppError::ServiceUnavailable)?;
-            let body = serde_json::to_string(&json!({
-                "source": remote, "name": name, "content": content,
-                "record_id": req.record_id, "round": req.round,
-            }))
-            .map_err(|_| AppError::ServiceUnavailable)?;
-            let resp = client
-                .post(format!("{proxy}/api/record/save_makecard"))
-                .header(reqwest::header::CONTENT_TYPE, "application/json")
-                .body(body)
-                .send()
-                .await
-                .map_err(|e| {
-                    tracing::warn!("bastion save_makecard {} 连接失败: {e}", src.id);
-                    AppError::ServiceUnavailable
-                })?;
-            let bytes = resp.bytes().await.map_err(|_| AppError::ServiceUnavailable)?;
-            let v: Value = serde_json::from_slice(&bytes).map_err(|_| AppError::ServiceUnavailable)?;
-            if !v.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
-                return Err(AppError::ServiceUnavailable);
-            }
-            Ok(Json(json!({
-                "success": true, "source": req.source, "file": file_name,
-                "path": v.get("path").cloned().unwrap_or(Value::String(file_name)),
-            })))
-        }
-        _ => Err(AppError::BadRequest(
-            "oss 源无对应服务, 请用「📤 做牌」复制后到做牌器粘贴".into(),
-        )),
-    }
+    let path = svc_root.join(&file_name);
+    let bytes = crate::encoding::encode(&content, "gbk")?;
+    tokio::fs::write(&path, &bytes).await?;
+    tracing::info!("save_makecard: {} ({}) → {}", src.id, local_id, path.display());
+    Ok(Json(json!({
+        "success": true, "source": local_id, "file": file_name,
+        "path": path.display().to_string(),
+    })))
 }
 
 #[derive(Serialize)]

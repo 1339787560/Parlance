@@ -783,13 +783,12 @@
   document.getElementById('btn-save-makecard').onclick = () => {
     const meta = document.getElementById('meta');
     if (!curSource) { meta.textContent = '直存失败: 手动导入的 record 无来源服务, 请用「📤 做牌」复制'; return; }
-    if (curSource.startsWith('oss-')) { meta.textContent = '直存失败: OSS 归档源无对应服务, 请用「📤 做牌」复制'; return; }
     if (!curRoundObj()) { meta.textContent = '直存失败: 未加载对局'; return; }
     const txt = buildMakecardText();
     if (!txt) { meta.textContent = '直存失败: 当前局无 RawCards 牌堆数据'; return; }
     const label = sourceLabelOf(curSource);
     document.getElementById('savecard-title').textContent = `一键导出到「${label}」`;
-    document.getElementById('savecard-desc').textContent = `写入 ${curSource.startsWith('local') ? '本机' : '远端'}对应服务的 test_<名称>.ini, 做牌器刷新文件列表即可选用。当前: 局 ${curRound+1}/${rec.rounds.length}。`;
+    document.getElementById('savecard-desc').textContent = `写入本机对应服务的 test_<名称>.ini (大区源对局也落本机做牌, 按玩法映射 xzms/xzmo/xzmo2)。当前: 局 ${curRound+1}/${rec.rounds.length}。`;
     document.getElementById('savecard-name').value = '';
     document.getElementById('savecard-modal').classList.remove('hidden');
     setTimeout(() => document.getElementById('savecard-name').focus(), 50);
