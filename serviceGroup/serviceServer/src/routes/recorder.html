@@ -437,15 +437,17 @@
       }
       if (t === 'Exchange') {
         const recv = {};
+        // 服务端 RecordExchange: "Exchange <send> <recv> <send 的三张>" (j=GetExchangeChairNO(i,dir)=牌去向)
+        // 此前误按 <recv> <send> 解析致换三张手牌消/加牌反向 (张数守恒不崩故未暴露)。
+        // recv 键 = 收者, from = 送者 — 消 from 加 r 方向自正。
         while (i < n && (evs[i].type==='Exchange'||evs[i].type==='RawExchange')) {
-          if (evs[i].type==='Exchange') { const pp = evs[i].rest.split(/\s+/); recv[pp[0]] = { from: pp[1], cards: chunks(pp[2]||'') }; }
+          if (evs[i].type==='Exchange') { const pp = evs[i].rest.split(/\s+/); recv[pp[1]] = { from: pp[0], cards: chunks(pp[2]||'') }; }
           i++;
         }
-        // 方向显示 = 服务端枚举值 + 物理事实 (枚举名 Dir_Clockwise/Anti 与客户端动画视觉
-        // 历史上互为镜像, 顺/逆汉字与 ↻↺ 符号均有感知歧义 → 弃用, 只留数值+传给谁)。
-        // diff=(from-recv+4)%4: 3→dir0 传给下家 / 1→dir1 传给上家 / 2→dir2 对家 (行牌方向=椅号+1)。
+        // 方向 (用户权威定义, 与服务端枚举一致): 0=顺时针(1传0, 送上家) 1=逆时针(0传1, 送下家) 2=对家。
+        // diff=(send-recv+4)%4: 1→顺0 / 3→逆1 / 2→对2。
         let dir = ''; const rs = Object.keys(recv);
-        if (rs.length) { const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4; dir = diff===3?'方向0·传给下家':diff===1?'方向1·传给上家':diff===2?'方向2·对家互换':'换'; }
+        if (rs.length) { const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4; dir = diff===1?'顺时针(0)':diff===3?'逆时针(1)':diff===2?'对家(2)':'换'; }
         round.snaps.push(S({ phase: '换三张·亮牌', recv, dir }));
         for (const r in recv) for (const c of recv[r].cards) { const idx = hands[recv[r].from].indexOf(c); if (idx>=0) hands[recv[r].from].splice(idx,1); }
         for (const r in recv) hands[r].push(...recv[r].cards);
@@ -747,8 +749,9 @@
   // record 的 RawCards 行 = cardid 牌堆序列, 与 test.ini Total 同布局
   // (三轮48 [r*16+i*4+k] + 庄补[48-49] + 闲补[50-52] + 墙[53..]);
   // 转成 test.ini [Card] 段写剪贴板, 粘贴到做牌器「导入做牌信息」框即完成做牌。
-  // 换三张方向 → exchange3 键 (与服务端枚举一致: 0=顺时针 1=逆时针 2=对家):
-  // record "Exchange <recv> <from>" 中 diff=(from-recv+4)%4, 3→0顺 / 1→1逆 / 2→2对家。
+  // 换三张方向 → exchange3 键 (与服务端枚举一致: 0=顺时针[1传0] 1=逆时针[0传1] 2=对家):
+  // record "Exchange <send> <recv>" (RecordExchange 权威: 第一=送者, 第二=去向),
+  // diff=(recv-send+4)%4: 1→0顺 / 3→1逆 / 2→2对家。
   function exchange3Of(round) {
     const ev = round.events.find(e => e.type === 'Exchange');
     if (!ev) return null;

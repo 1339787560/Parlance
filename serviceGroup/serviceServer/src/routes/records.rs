@@ -811,7 +811,7 @@ struct ScriptAction {
     seq: usize,
     /// que / exchange / throw / catch / peng / gang / hu / banker
     kind: &'static str,
-    /// 动作椅 (exchange = 收牌椅)
+    /// 动作椅 (exchange = 送牌椅; from = 牌去向)
     chair: usize,
     /// 牌面 (如 "7T"/"5D"); exchange = 送出牌串; que = 缺门 (W/T/D)
     card: String,
@@ -839,7 +839,7 @@ struct RecordScript {
     /// RawCards cardid 序列 ("a|b|c", test.ini Total 同语义)
     total: String,
     /// 换三张方向 (与服务端枚举一致: 0=顺 1=逆 2=对家; None=本局无换三张)
-    /// 由 "Exchange <recv> <from>" diff=(from-recv+4)%4 推导: 3→0 / 1→1 / 2→2
+    /// "Exchange <send> <recv>" diff=(recv-send+4)%4: 1→0顺 / 3→1逆 / 2→2对
     #[serde(skip_serializing_if = "Option::is_none")]
     exchange3: Option<u8>,
     actions: Vec<ScriptAction>,
@@ -969,11 +969,12 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
                 }
             }
             "Exchange" => {
-                // Exchange <recv> <from> <cards>
+                // 服务端 RecordExchange: "Exchange <send> <recv> <send 的三张>" (字段2=牌去向)
                 if pp.len() >= 3 {
                     if let (Ok(r), Ok(f)) = (pp[0].parse::<usize>(), pp[1].parse::<usize>()) {
                         if exchange3.is_none() {
-                            // 首个 Exchange 定方向: diff=(from-recv+4)%4, 3→0顺 / 1→1逆 / 2→2对家
+                            // 首个 Exchange 定方向 (用户权威定义=服务端枚举): diff=(recv-send+4)%4,
+                            // 3→0顺时针(1传0) / 1→1逆时针(0传1) / 2→2对家。r=send, f=recv。
                             exchange3 = match (TOTAL_CHAIRS_W + f - r) % TOTAL_CHAIRS_W {
                                 3 => Some(0),
                                 1 => Some(1),
