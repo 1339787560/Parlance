@@ -5,6 +5,7 @@
 
 mod atomic_write;
 mod backup;
+mod breadcrumb;
 mod config;
 mod encoding;
 mod error;
@@ -167,6 +168,8 @@ async fn main() -> anyhow::Result<()> {
         )
         // strangler: 未匹配请求反代到旧 Flask 后端 (SERVICESVR_LEGACY_URL)。
         .fallback(crate::proxy::proxy_legacy)
+        // 全 HTML 页面 (rust 内嵌 + legacy 反代) 注入面包屑条 (第二层下拉直达切换)
+        .layer(axum::middleware::from_fn(crate::breadcrumb::inject))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 5000));
