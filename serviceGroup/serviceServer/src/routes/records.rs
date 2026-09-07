@@ -52,11 +52,13 @@ struct RecordSource {
 }
 
 /// 静态源清单 (hostID 速查表 hardcode, 前端源下拉用)。
-/// local 本机 + oss 8 大区 + bastion 4 (53/185 × xzms/xzmo2)。
+/// local 本机 + oss 8 大区 + bastion 6 (53/185 × xzmo金币/xzmo2银子)。
+/// xzmo = 金币版血流血战, xzmo2 = 银子版血流血战 (两者互斥运行, 均活跃服务)。
 const SOURCES: &[RecordSource] = &[
-    // local 本机 FS
-    RecordSource { id: "local-xzms",  label: "本机·六红中",   kind: "local", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
-    RecordSource { id: "local-xzmo2", label: "本机·血流血战", kind: "local", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
+    // local 本机 FS (sources() 按目录存在性过滤, 未部署的自然隐藏)
+    RecordSource { id: "local-xzms",  label: "本机·六红中",     kind: "local", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
+    RecordSource { id: "local-xzmo",  label: "本机·血流血战(金币)", kind: "local", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
+    RecordSource { id: "local-xzmo2", label: "本机·血流血战(银子)", kind: "local", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: None, remote_source: None },
     // oss-xzms (xzmssvr 血流六红中, 全金币)
     RecordSource { id: "oss-xzms-3291", label: "OSS·六红中1区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3291), region: Some("血流六红中1区"), ver: Some("金币"), bastion_host: None, remote_source: None },
     RecordSource { id: "oss-xzms-3058", label: "OSS·六红中2区", kind: "oss", game: "xzms", oss_service: Some("xzmssvr"), host_id: Some(3058), region: Some("血流六红中2区"), ver: Some("金币"), bastion_host: None, remote_source: None },
@@ -69,10 +71,12 @@ const SOURCES: &[RecordSource] = &[
     RecordSource { id: "oss-xzmo-3728", label: "OSS·血流大区", kind: "oss", game: "xzmo", oss_service: Some("xzmosvr"), host_id: Some(3728), region: Some("血流大区"), ver: Some("银子"), bastion_host: None, remote_source: None },
     // bastion (堡垒机 53/185 近 2 日 record, OSS 未上传; reqwest 代理远端 servicesvr)
     // proxy_url 走 env SERVICESVR_BASTION_<host>_URL (部署时配, 避硬编 IP)
-    RecordSource { id: "bastion-53-xzms",  label: "53·六红中",   kind: "bastion", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzms") },
-    RecordSource { id: "bastion-53-xzmo2", label: "53·血流血战", kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzmo2") },
-    RecordSource { id: "bastion-185-xzms",  label: "185·六红中",  kind: "bastion", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzms") },
-    RecordSource { id: "bastion-185-xzmo2", label: "185·血流血战",kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzmo2") },
+    RecordSource { id: "bastion-53-xzms",   label: "53·六红中",        kind: "bastion", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzms") },
+    RecordSource { id: "bastion-53-xzmo",   label: "53·血流血战(金币)", kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzmo") },
+    RecordSource { id: "bastion-53-xzmo2",  label: "53·血流血战(银子)", kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("53"),  remote_source: Some("local-xzmo2") },
+    RecordSource { id: "bastion-185-xzms",  label: "185·六红中",       kind: "bastion", game: "xzms", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzms") },
+    RecordSource { id: "bastion-185-xzmo",  label: "185·血流血战(金币)", kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzmo") },
+    RecordSource { id: "bastion-185-xzmo2", label: "185·血流血战(银子)", kind: "bastion", game: "xzmo", oss_service: None, host_id: None, region: None, ver: None, bastion_host: Some("185"), remote_source: Some("local-xzmo2") },
 ];
 
 fn find_source(id: &str) -> Option<&'static RecordSource> {
@@ -103,19 +107,26 @@ static CACHE: LazyLock<RwLock<HashMap<CacheKey, Vec<RecordMeta>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// local 源 Record 根目录。None = 非 local 源。
+/// xzmo = 金币版, xzmo2 = 银子版 (互斥运行; 目录常驻, 谁在跑数据就落在谁目录)。
 fn local_dir(source: &str) -> Option<&'static str> {
     match source {
         "local-xzms" => Some(r"D:\game\xzms\server_game\Record"),
+        "local-xzmo" => Some(r"D:\game\xzmo\server_game\Record"),
         "local-xzmo2" => Some(r"D:\game\xzmo2\server_game\Record"),
         _ => None,
     }
 }
 
 /// `GET /api/record/sources` — 列可用数据源 + 本机 host_id (前端隐本机 bastion 源)。
+/// local 源按目录存在性过滤 (本机未部署的服务如 xzmo 不显示; 部署机上自然出现)。
 pub async fn sources() -> Json<Value> {
     let my_host_id =
         std::env::var("SERVICESVR_HOST_ID").unwrap_or_else(|_| "local".to_string());
-    Json(json!({ "success": true, "sources": SOURCES, "my_host_id": my_host_id }))
+    let visible: Vec<&RecordSource> = SOURCES
+        .iter()
+        .filter(|s| s.kind != "local" || local_dir(s.id).is_some_and(|d| std::path::Path::new(d).is_dir()))
+        .collect();
+    Json(json!({ "success": true, "sources": visible, "my_host_id": my_host_id }))
 }
 
 #[derive(Deserialize)]
@@ -653,14 +664,15 @@ mod tests {
     #[test]
     fn local_dir_maps_known_sources() {
         assert_eq!(local_dir("local-xzms"), Some(r"D:\game\xzms\server_game\Record"));
+        assert_eq!(local_dir("local-xzmo"), Some(r"D:\game\xzmo\server_game\Record"));
         assert_eq!(local_dir("local-xzmo2"), Some(r"D:\game\xzmo2\server_game\Record"));
         assert_eq!(local_dir("oss-xzms-3291"), None);
     }
 
     #[test]
     fn sources_table_sanity() {
-        // 2 local + 4 oss-xzms + 4 oss-xzmo + 4 bastion = 14
-        assert_eq!(SOURCES.len(), 14, "源清单数量");
+        // 3 local + 4 oss-xzms + 4 oss-xzmo + 6 bastion = 17
+        assert_eq!(SOURCES.len(), 17, "源清单数量");
         assert!(SOURCES.iter().all(|s| !s.id.is_empty() && !s.label.is_empty()));
         // local 项无 oss/bastion 元数据
         for s in SOURCES.iter().filter(|s| s.kind == "local") {

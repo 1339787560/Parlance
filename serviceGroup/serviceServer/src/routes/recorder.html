@@ -159,7 +159,8 @@
     .round-item .ri-no { color: #fc6; font-weight: bold; min-width: 36px; }
     .modal-close { float: right; cursor: pointer; color: #9ab; font-size: 16px; }
   select.pill, input.pill { color:#fff; background:#1a3a2a; border:1px solid #3a5a4a; padding:2px 8px; border-radius:8px; font-size:12px; }
-  select.pill option { color:#000; background:#fff; }
+  select.pill option, select.pill optgroup { color:#000; background:#fff; }
+  select.pill optgroup { font-weight:bold; }
   input[type=date].pill { color-scheme: dark; }
   </style>
 </head>
@@ -186,12 +187,13 @@
     </span>
     <span class="sep"></span>
     <button id="btn-clear-cache" class="pill" title="清空所有缓存数据" style="background:#5a1a1a;border-color:#8a2a2a">🗑 重置</button>
+    <button id="btn-export-makecard" class="pill" title="按当前局牌堆顺序导出 test.ini 做牌配置到剪贴板 (粘贴到做牌器「导入做牌信息」框)">📤 做牌</button>
     <label class="pill" style="cursor:pointer">加载 record<input type="file" accept=".log,.txt" id="file-input" style="display:none"></label>
   </div>
 
   <div class="app">
     <div class="meta" id="meta">未加载</div>
-    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v9</div>
+    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v11</div>
 
     <div class="table">
       <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
@@ -394,7 +396,9 @@
   function buildSnapshots(round) {
     const hands = [[],[],[],[]], que = ['','','',''], discards=[[],[],[],[]], melds=[[],[],[],[]], hu=[[],[],[],[]], exchanges = [];
     const deposit = [null,null,null,null], depositInit = [null,null,null,null];
-    const TOTAL = 114;
+    // 牌堆总数按玩法区分 (六红中 xzms=114 含红中, 血流血战 xzmo=108); 取当前局 Cards 张数, 无 Cards 兜底 114
+    const cardsEv = round.events.find(e => e.type === 'Cards');
+    const TOTAL = cardsEv ? chunks(cardsEv.rest).length : 114;
     const evs = round.events, n = evs.length;
     let wallOffset = 0;  // 杠后无显式 Catch 的隐式补摸 (杠牌堆减 1; 碰不变, 杠减一)
     const wallNow = () => TOTAL - sumLen(hands) - sumLen(discards) - sumLen(melds) - sumLen(hu) + wallOffset;
@@ -720,6 +724,39 @@
     catch (err) { document.getElementById('meta').textContent = '加载失败: ' + err; }
     e.target.value = '';
   };
+  // ── 导出做牌 (与做牌器联动) ──
+  // record 的 RawCards 行 = cardid 牌堆序列, 与 test.ini Total 同布局
+  // (三轮48 [r*16+i*4+k] + 庄补[48-49] + 闲补[50-52] + 墙[53..]);
+  // 转成 test.ini [Card] 段写剪贴板, 粘贴到做牌器「导入做牌信息」框即完成做牌。
+  function buildMakecardText() {
+    const r = curRoundObj();
+    if (!r) return null;
+    const raw = r.events.find(e => e.type === 'RawCards');
+    if (!raw || !raw.rest.trim()) return null;
+    const bankerEv = r.events.find(e => e.type === 'Banker');
+    const banker = bankerEv ? parseInt(bankerEv.rest.split(/\s+/)[0], 10) : 0;
+    const total = raw.rest.split(/[,\s]+/).filter(Boolean).join('|');
+    return `[Card]\r\nMade=1\r\nTotal=${total}\r\nBanker=${Number.isNaN(banker) ? 0 : banker}\r\nBeginNO=0\r\n`;
+  }
+  document.getElementById('btn-export-makecard').onclick = async () => {
+    const btn = document.getElementById('btn-export-makecard');
+    const meta = document.getElementById('meta');
+    const txt = buildMakecardText();
+    if (!txt) { meta.textContent = '导出失败: 当前局无 RawCards 牌堆数据'; return; }
+    const n = txt.split('\r\n').find(l => l.startsWith('Total=')).split('|').length;
+    try { await navigator.clipboard.writeText(txt); }
+    catch (e) {
+      // clipboard API 失败 (页面失焦等) fallback: 隐藏 textarea + execCommand
+      const ta = document.createElement('textarea');
+      ta.value = txt; ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      if (!ok) { meta.textContent = '复制失败，请点击页面后重试'; return; }
+    }
+    btn.textContent = `✓ 已复制${n}张`;
+    setTimeout(() => { btn.textContent = '📤 做牌'; }, 1800);
+  };
   // 对局按钮双模式: 手动导入的 record → 当前文件局列表; 否则 → 数据源对局列表
   document.getElementById('btn-rounds').onclick = () => {
     if (lastLoad === 'file' && rec.rounds.length) {
@@ -765,15 +802,27 @@
       myHostId = r.my_host_id || 'local';
       const sel = document.getElementById('src-sel');
       sel.innerHTML = '';
+      // 分组陈列: 内网环境 (local/bastion) / 金币场 / 银子场 (oss ver)
+      // xzmo=金币版血流血战, xzmo2=银子版 (互斥运行), label 已带标注
+      const groups = {};
       (r.sources || []).forEach(s => {
-        // 本机 bastion 源隐 (local 已覆盖本机 FS); 非本机 bastion 显 (代理远端)
-        if (s.kind === 'bastion' && s.bastion_host === myHostId) return;
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        // label 优先用 region + 金/银标 (oss 大区), 否则 label (local/bastion)
-        opt.textContent = s.region ? (s.region + (s.ver ? ('(' + s.ver + ')') : '')) : s.label;
-        sel.appendChild(opt);
+        if (s.kind === 'bastion' && s.bastion_host === myHostId) return; // 本机 bastion 源隐 (local 已覆盖本机 FS)
+        const g = (s.kind === 'oss') ? (s.ver === '银子' ? '银子场' : '金币场') : '内网环境';
+        (groups[g] = groups[g] || []).push(s);
       });
+      for (const g of ['内网环境', '金币场', '银子场']) {
+        if (!groups[g] || !groups[g].length) continue;
+        const og = document.createElement('optgroup');
+        og.label = g;
+        groups[g].forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          // label 优先用 region + 金/银标 (oss 大区), 否则 label (local/bastion)
+          opt.textContent = s.region ? (s.region + (s.ver ? ('(' + s.ver + ')') : '')) : s.label;
+          og.appendChild(opt);
+        });
+        sel.appendChild(og);
+      }
       // 日期/源 change 仅调 max 限制 (日期值由 restoreListState 恢复)
       adjustDateMax(sel.value);
       sel.onchange = () => adjustDateMax(sel.value);
