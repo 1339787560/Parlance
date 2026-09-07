@@ -532,7 +532,9 @@
   function curRoundObj() { return rec.rounds[curRound]; }
   function curSnaps() { return curRoundObj().snaps; }
   function posOf(chair) { return (chair - perspective + 4) % 4; }
-  const POS_CLASS = ['pos-bottom', 'pos-left', 'pos-top', 'pos-right'];
+  // 方位排布 (用户口径): 南=当前玩家, 左=上家(椅-1), 右=下家(椅+1), 上=对家 —
+  // posOf=+1 (下家) 映射 pos-right; 切视角时座位随椅号轮动, 手牌/胡牌/弃牌数据按 data-chair 绑定不变。
+  const POS_CLASS = ['pos-bottom', 'pos-right', 'pos-top', 'pos-left'];
 
   function applyLayout() {
     for (let c = 0; c < 4; c++) {
