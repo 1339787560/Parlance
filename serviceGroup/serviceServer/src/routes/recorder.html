@@ -185,8 +185,7 @@
     <span class="persp-btns" id="persp-btns" title="第一视角座位 (底位玩家=椅号; 键盘 1-4)">
       <button data-p="0">0</button><button data-p="1">1</button><button data-p="2">2</button><button data-p="3">3</button>
     </span>
-    <span class="sep"></span>
-    <button id="btn-allopen" class="pill" title="切换全员明牌 / 第一视角 (仅底位玩家手牌可见)">第一视角</button>
+
     <span class="sep"></span>
     <button id="btn-clear-cache" class="pill" title="清空所有缓存数据" style="background:#5a1a1a;border-color:#8a2a2a">🗑 重置</button>
     <button id="btn-export-makecard" class="pill" title="按当前局牌堆顺序导出 test.ini 做牌配置到剪贴板 (粘贴到做牌器「导入做牌信息」框)">📤 做牌</button>
@@ -196,7 +195,7 @@
 
   <div class="app">
     <div class="meta" id="meta">未加载</div>
-    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v14</div>
+    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v15</div>
 
     <div class="table">
       <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
@@ -256,7 +255,6 @@
 <script>
   const rec = { header: {}, rounds: [] };
   let curRound = 0, curStep = -1, listBuilt = false, perspective = 0, prevQue = ['','','',''];
-  let allOpen = false;  // 全员明牌开关 (默认 false = 第一视角, 仅底位玩家手牌可见)
   const STORE_KEY = 'recorder_state_v1';
   const STORE_KEY_RECORD = 'recorder_record_v1';
   const STORE_KEY_LIST = 'recorder_list_v2';  // 全状态持久化 (源/日期/房间/ID/列表)
@@ -596,7 +594,7 @@
     if (!listBuilt) buildStepListOnce();
     curStep = idx;
     const s = snaps[idx];
-    // 第一视角 (默认): 仅底位玩家 (perspective) 手牌可见, 其余背面; 「👁 明牌」开全员
+    // 全局复盘视角: 四家手牌全明 (数据按 data-chair 绑定, 座位轮动仅换方位)
     const isExchange = s.phase && s.phase.startsWith('换三张');
     const isResult = s.phase === '结算';
 
@@ -607,7 +605,7 @@
     for (let c = 0; c < 4; c++) {
       const chair = document.querySelector(`.chair[data-chair="${c}"]`);
       const side = posOf(c) === 1 || posOf(c) === 3;
-      const showHand = c === perspective || allOpen;
+      const showHand = true;
       // 抓牌分离: 本步 catch 的牌移到抓牌区(手牌左侧 半张间隔), 手牌排除该牌
       let handCards = s.hands[c].slice().sort(sortHand);
       let catchCard = null;
@@ -713,12 +711,10 @@
     list.querySelectorAll('.round-item').forEach(el => el.onclick = () => { document.getElementById('rounds-modal').classList.add('hidden'); setRound(+el.dataset.round); });
   }
 
-  function saveState() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ curRound, curStep, perspective, allOpen })); } catch {} }
+  function saveState() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ curRound, curStep, perspective })); } catch {} }
   function restoreState() {
     let s = {}; try { s = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
     if (s.perspective !== undefined) { perspective = s.perspective; applyLayout(); }
-    if (s.allOpen !== undefined) allOpen = !!s.allOpen;
-    syncAllOpenBtn();
     if (s.curRound !== undefined && s.curRound < rec.rounds.length) curRound = s.curRound;
     listBuilt = false; prevQue = ['','','',''];
     renderMeta(); renderRoundsList();
@@ -864,15 +860,6 @@
   document.getElementById('modal-close').onclick = () => document.getElementById('rounds-modal').classList.add('hidden');
   document.getElementById('rounds-modal').onclick = (e) => { if (e.target.id === 'rounds-modal') e.currentTarget.classList.add('hidden'); };
   document.querySelectorAll('#persp-btns button').forEach(b => b.onclick = () => { perspective = +b.dataset.p; applyLayout(); renderSnap(curStep); });
-  // 全员明牌 toggle (默认第一视角: 仅底位玩家手牌可见)
-  function syncAllOpenBtn() {
-    const btn = document.getElementById('btn-allopen');
-    if (!btn) return;
-    btn.textContent = allOpen ? '👁 明牌中' : '🂠 第一视角';
-    btn.classList.toggle('primary', false);
-    btn.style.background = allOpen ? '#2a5a3a' : '';
-  }
-  document.getElementById('btn-allopen').onclick = () => { allOpen = !allOpen; syncAllOpenBtn(); renderSnap(curStep); saveState(); };
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); if (curStep > 0) renderSnap(curStep - 1); }
@@ -1045,7 +1032,6 @@
       // 从指定局从头展示 (roundIdx 来自 scan_rounds; 无则默认 0)
       let sv = {}; try { sv = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
       if (sv.perspective !== undefined) { perspective = sv.perspective; applyLayout(); }
-      if (sv.allOpen !== undefined) { allOpen = !!sv.allOpen; syncAllOpenBtn(); }
       const targetRound = (roundIdx !== undefined && roundIdx < rec.rounds.length) ? roundIdx : 0;
       curRound = targetRound; curStep = 0; listBuilt = false; prevQue = ['','','',''];
       renderMeta();
