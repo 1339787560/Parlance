@@ -191,7 +191,7 @@
 
   <div class="app">
     <div class="meta" id="meta">未加载</div>
-    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v8</div>
+    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v9</div>
 
     <div class="table">
       <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
@@ -242,6 +242,8 @@
   const STORE_KEY_RECORD = 'recorder_record_v1';
   const STORE_KEY_LIST = 'recorder_list_v2';  // 全状态持久化 (源/日期/房间/ID/列表)
   let lastFetchKey = '';  // 追踪上次 API 拉取的 source+date, 避免重复请求
+  let isScanning = false; // scan_rounds 进行中 (前端空列表显示"扫描中"而非"无匹配")
+  let lastLoad = '';      // 最近一次 record 载入方式: 'file'(手动导入) / 'api'(数据源) — 对局按钮路由用
 
   const ROWS_Y = [8, 153, 301, 448, 590, 745];
   const ROWS_H = [133, 136, 131, 132, 137, 120];
@@ -518,11 +520,17 @@
     (h.ChairNO || []).forEach((s, c) => { if (c>=4) return; const uid = s.split(/\s+/)[1]; const el = document.querySelector(`.chair[data-chair="${c}"] .uid`); if (el) { el.textContent = uid ? `uid ${uid}` : ''; el.style.cursor = uid ? 'pointer' : ''; el.title = uid ? '点击复制 UID' : ''; el.onclick = uid ? () => { navigator.clipboard.writeText(uid).then(() => { const orig = el.textContent; el.textContent = `uid ${uid} ✓`; setTimeout(() => { el.textContent = orig; }, 1200); }).catch(() => {}); } : null; } });
     updateRoundsButton();
   }
-  // 对局按钮唯一设值入口: 显示记录文件列表的过滤计数 (非 round 计数, round 在 meta 栏)
-  // allRecords 空 → "对局 -/-"; 有过滤 → "对局 N/总"; 无过滤 → "对局 总"
+  // 对局按钮唯一设值入口: 数据源有列表 → 过滤计数; 空 → 已载入 record (手动导入/在线) 显示局数
+  // allRecords 空: "对局 -/-"; 有 rec.rounds (手动导入典型) → "局 N" (点击开局列表)
+  // 有过滤 → "对局 N/总"; 无过滤 → "对局 总"
   function updateRoundsButton() {
     const btn = document.getElementById('btn-rounds');
-    if (!allRecords.length) { btn.textContent = '对局 -/-'; return; }
+    // 手动导入的 record → 按钮即当前文件局列表入口 (与点击行为一致)
+    if (lastLoad === 'file' && rec.rounds.length) { btn.textContent = `局 ${curRound+1}/${rec.rounds.length}`; return; }
+    if (!allRecords.length) {
+      btn.textContent = rec.rounds.length ? `局 ${rec.rounds.length}` : '对局 -/-';
+      return;
+    }
     const playersStr = document.getElementById('src-players').value.trim();
     const need = playersStr ? playersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
     const room = document.getElementById('src-room').value;
@@ -708,11 +716,20 @@
   };
   document.getElementById('file-input').onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
-    try { const txt = await f.text(); parseRecord(txt); restoreState(); }
+    try { const txt = await f.text(); parseRecord(txt); lastLoad = 'file'; restoreState(); }
     catch (err) { document.getElementById('meta').textContent = '加载失败: ' + err; }
     e.target.value = '';
   };
-  document.getElementById('btn-rounds').onclick = () => { renderFilteredRecords(document.getElementById('src-sel').value); document.getElementById('records-modal').classList.remove('hidden'); };
+  // 对局按钮双模式: 手动导入的 record → 当前文件局列表; 否则 → 数据源对局列表
+  document.getElementById('btn-rounds').onclick = () => {
+    if (lastLoad === 'file' && rec.rounds.length) {
+      renderRoundsList();
+      document.getElementById('rounds-modal').classList.remove('hidden');
+      return;
+    }
+    renderFilteredRecords(document.getElementById('src-sel').value);
+    document.getElementById('records-modal').classList.remove('hidden');
+  };
   document.getElementById('modal-close').onclick = () => document.getElementById('rounds-modal').classList.add('hidden');
   document.getElementById('rounds-modal').onclick = (e) => { if (e.target.id === 'rounds-modal') e.currentTarget.classList.add('hidden'); };
   document.querySelectorAll('#persp-btns button').forEach(b => b.onclick = () => { perspective = +b.dataset.p; applyLayout(); renderSnap(curStep); });
@@ -798,34 +815,41 @@
     const dateRaw = document.getElementById('src-date').value;
     const date = dateRaw ? dateRaw.replace(/-/g, '') : '';
     const fetchKey = source + '|' + date;
-    // 源+日期未变 → 跳过 API, 仅重新过滤 (玩家ID/房间 筛选)
+    // 源+日期未变 → 跳过 API, 仅重新过滤 (玩家ID/房间 筛选); 缓存秒回直接弹列表
     if (fetchKey === lastFetchKey && allRecords.length > 0) {
+      lastLoad = '';  // 用户回到数据源列表语境, 对局按钮恢复数据源模式
       renderFilteredRecords(source);
       updateRoundsButton();
       persistListState();
+      document.getElementById('records-modal').classList.remove('hidden');
       return;
     }
-    // 源+日期变了 → 局级扫描 (下载文件 + 扫每局 header)
+    // 源+日期变了 → 局级扫描 (下载文件 + 扫每局 header; 不选日期=全部日期, 可达 1-2 分钟)
     const q = new URLSearchParams({ source });
     if (date) q.set('date', date);
     document.getElementById('records-title').textContent = source + ' · ' + (date || '全部');
     document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>';
     document.getElementById('records-list').innerHTML = '';
+    isScanning = true;
     showProgress('扫描对局中...');
-    document.getElementById('records-list').textContent = '扫描中...';
+    // 先弹列表显示扫描进度 (全量下载耗时, 用户看得见在跑, 完成自动刷新)
+    document.getElementById('records-modal').classList.remove('hidden');
+    document.getElementById('records-list').textContent = '扫描中... 正在逐文件下载并解析对局 (不选日期=全部日期, 大源可达 1-2 分钟), 完成后自动列出';
     try {
       const r = await fetch('/api/record/scan_rounds?' + q).then(r => r.json());
       hideProgress();
+      isScanning = false;
       if (!r.success) { document.getElementById('records-list').textContent = '该源不可用'; return; }
       allRecords = r.rounds || [];
       lastFetchKey = fetchKey;
+      lastLoad = '';  // 扫描完成进入数据源列表语境, 对局按钮恢复数据源模式
       // 填房间下拉 (room_id = 文件 = 房间)
       const rooms = [...new Set(allRecords.map(x => x.room_id).filter(Boolean))].sort((a,b)=>+a-+b);
       document.getElementById('src-room').innerHTML = '<option value="">全部房间</option>' + rooms.map(rm => `<option value="${rm}">${rm}</option>`).join('');
       renderFilteredRecords(source);
       updateRoundsButton();
       persistListState();
-    } catch (e) { hideProgress(); document.getElementById('records-list').textContent = '扫描失败: ' + e; }
+    } catch (e) { hideProgress(); isScanning = false; document.getElementById('records-list').textContent = '扫描失败: ' + e; }
   }
   // 前端筛 (缓存 allRecords, 房间/玩家变更即时, 不重 fetch)
   function renderFilteredRecords(source) {
@@ -840,7 +864,7 @@
     list.innerHTML = '';
     const total = allRecords.length;
     title.textContent = `${source} · ${items.length} 局` + (items.length !== total ? ` / ${total}` : '') + (need.length ? ` (含 ${need.join(',')})` : '') + (room ? ` 房${room}` : '');
-    if (!items.length) { list.textContent = '无匹配'; return; }
+    if (!items.length) { list.textContent = isScanning ? '扫描中... 正在逐文件下载并解析对局, 完成后自动列出' : '无匹配'; return; }
     items.forEach(it => {
       const globalIdx = allRecords.indexOf(it) + 1;
       const row = document.createElement('div');
@@ -863,6 +887,7 @@
       hideProgress();
       if (!r.success) throw new Error(r.message || 'get 失败');
       parseRecord(r.content);
+      lastLoad = 'api';
       // 从指定局从头展示 (roundIdx 来自 scan_rounds; 无则默认 0)
       let sv = {}; try { sv = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
       if (sv.perspective !== undefined) { perspective = sv.perspective; applyLayout(); }
