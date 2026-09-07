@@ -140,6 +140,142 @@ function autotestOnTabShow() {
 autotestRefresh();
 autotestPollTimer = setInterval(autotestRefresh, 2000);
 
+// ── 复盘回放（做牌激活 + 剧本 scenario 一键启动, servicesvr 联动）──
+// 服务源 → servicesvr /api/record/makecards 列 ; Rec= 关联做牌;
+// 启动 = POST /api/autotest/replay (激活 test.ini + 生成 replay_* scenario + 广播/单发)。
+
+const REPLAY_SVRS = {
+    'local-xzms': 'http://127.0.0.1:5000',
+    'local-xzmo': 'http://127.0.0.1:5000',
+    'local-xzmo2': 'http://127.0.0.1:5000',
+    'bastion-53-xzmo': 'http://127.0.0.1:5000',
+    'bastion-53-xzmo2': 'http://127.0.0.1:5000',
+};
+
+function replayStatus(text, isError) {
+    const el = document.getElementById('replay-status');
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = isError ? 'var(--red)' : 'var(--green)';
+}
+
+/** 拉做牌记录列表 + 当前 test.ini 关联 + 连接列表, 渲染回放区 */
+async function replayRefresh() {
+    const srcSel = document.getElementById('replay-source');
+    const mkSel = document.getElementById('replay-makecard');
+    const cliSel = document.getElementById('replay-client');
+    if (!srcSel || !mkSel) return;
+    const source = srcSel.value;
+    // 做牌记录列表 (servicesvr 直连; CORS 已放开)
+    try {
+        const r = await fetch(`${REPLAY_SVRS[source]}/api/record/makecards?source=${encodeURIComponent(source)}`).then(r => r.json());
+        const items = (r.items || []);
+        const prev = mkSel.value;
+        mkSel.innerHTML = items.length
+            ? items.map(it => `<option value="${it.name}">${it.name} · ${it.record_id} 局${it.round + 1}</option>`).join('')
+            : '<option value="">(无关联做牌记录)</option>';
+        if (items.some(it => it.name === prev)) mkSel.value = prev;
+    } catch (e) {
+        mkSel.innerHTML = `<option value="">(拉取失败: ${e.message})</option>`;
+    }
+    // 当前 test.ini 关联 (仅 local 源)
+    const recEl = document.getElementById('replay-current-rec');
+    if (recEl) {
+        if (!source.startsWith('local-')) {
+            recEl.textContent = '当前 test.ini 关联: bastion 源暂不支持远读, 启动时由激活步骤自动校验';
+        } else {
+            try {
+                const c = await fetch(`/api/autotest/current_rec?source=${source}`).then(r => r.json());
+                if (c.rec) {
+                    recEl.innerHTML = `当前 test.ini 已关联: <b>${c.rec.record_id} 局${c.rec.round + 1}</b> ` +
+                        `(${c.has_total ? '做牌生效中' : '⚠ 无 Total'}) <button class="toolbar-btn" style="padding:2px 8px" onclick="replayLaunchRec(${JSON.stringify(c.rec).replace(/"/g, '&quot;')})">▶ 按此关联启动</button>`;
+                } else {
+                    recEl.textContent = '当前 test.ini 无 ; Rec= 关联' + (c.has_total ? '（做牌生效中, 来源非复盘器直存）' : '');
+                }
+            } catch (e) { recEl.textContent = ''; }
+        }
+    }
+    // 连接列表 (单发启动目标)
+    if (cliSel) {
+        try {
+            const cs = await fetch('/api/clients').then(r => r.json());
+            const list = Array.isArray(cs) ? cs : (cs.clients || []);
+            const prev = cliSel.value;
+            cliSel.innerHTML = list.length
+                ? list.map(c => `<option value="${c.client_id || c.id}">${c.client_id || c.id}${c.chair != null ? ' · 椅' + c.chair : ''}</option>`).join('')
+                : '<option value="">(无连接)</option>';
+            if (list.some(c => (c.client_id || c.id) === prev)) cliSel.value = prev;
+        } catch (e) { /* 忽略, 列表空态 */ }
+    }
+}
+
+/** 启动回放: clientId=null 广播全部; 指定 = 单连接 */
+async function replayLaunch(clientId) {
+    const mkSel = document.getElementById('replay-makecard');
+    const name = mkSel && mkSel.value;
+    const source = document.getElementById('replay-source').value;
+    if (!name) { replayStatus('先选择做牌记录', true); return; }
+    replayStatus('启动中 (激活做牌+生成剧本)...');
+    try {
+        const body = { source, name, enabled: true };
+        if (clientId) body.client_id = clientId;
+        const resp = await fetch('/api/autotest/replay', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        replayStatus(`✓ ${data.scenario} (${data.actions} 步, 已发 ${data.broadcast_to} 连接)`);
+        await autotestRefresh();
+    } catch (e) {
+        replayStatus('启动失败: ' + e.message, true);
+    }
+}
+
+function replayLaunchClient() {
+    const cid = document.getElementById('replay-client').value;
+    if (!cid) { replayStatus('无连接可选', true); return; }
+    replayLaunch(cid);
+}
+
+/** 当前 test.ini 已有关联 → direct_rec 路径启动 (做牌已生效, 跳过激活直接加载剧本) */
+async function replayLaunchRec(rec, clientId) {
+    replayStatus('按当前关联启动中...');
+    try {
+        const source = document.getElementById('replay-source').value;
+        const body = { source, enabled: true, direct_rec: rec };
+        if (clientId) body.client_id = clientId;
+        const resp = await fetch('/api/autotest/replay', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        replayStatus(`✓ ${data.scenario} (${data.actions} 步, 已发 ${data.broadcast_to} 连接)`);
+        await autotestRefresh();
+    } catch (e) {
+        replayStatus('启动失败: ' + e.message, true);
+    }
+}
+
+document.getElementById('replay-source').addEventListener('change', replayRefresh);
+if (document.getElementById('replay-makecard')) replayRefresh();
+// 连接列表随 arm 刷新 (2s poll 里做牌列表不重复拉 — servicesvr 压力考虑, 手动换源才刷新)
+setInterval(async () => {
+    const cliSel = document.getElementById('replay-client');
+    if (!cliSel) return;
+    try {
+        const cs = await fetch('/api/clients').then(r => r.json());
+        const list = Array.isArray(cs) ? cs : (cs.clients || []);
+        const ids = list.map(c => c.client_id || c.id);
+        if (ids.join(',') !== [...cliSel.options].map(o => o.value).join(',')) {
+            const prev = cliSel.value;
+            cliSel.innerHTML = ids.length ? ids.map(id => `<option value="${id}">${id}</option>`).join('') : '<option value="">(无连接)</option>';
+            if (ids.includes(prev)) cliSel.value = prev;
+        }
+    } catch (e) { /* ignore */ }
+}, 5000);
+
 // 注入极简样式（避免改 debug-ui.css）
 (function injectAutotestStyle() {
     if (document.getElementById('autotest-style')) return;

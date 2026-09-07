@@ -101,6 +101,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/record/list", get(records::list))
         .route("/api/record/get", get(records::get))
         .route("/api/record/scan_rounds", get(records::scan_rounds))
+        .route("/api/record/script", get(records::script))
+        .route("/api/record/makecards", get(records::makecards))
+        .route(
+            "/api/record/activate_makecard",
+            axum::routing::post(records::activate_makecard),
+        )
         .route(
             "/api/record/save_makecard",
             axum::routing::post(records::save_makecard),

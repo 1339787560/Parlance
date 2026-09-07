@@ -194,6 +194,32 @@ pub struct SaveMakecardReq {
     pub name: String,
     /// test.ini [Card] 段文本 (Total=| 分隔)
     pub content: String,
+    /// 关联 record 文件名 (可选; 写 `; Rec=` 注释行, autotest 据此反向定位剧本)
+    #[serde(default)]
+    pub record_id: Option<String>,
+    /// 关联局序 0 起 (可选)
+    #[serde(default)]
+    pub round: Option<usize>,
+}
+
+/// `; Rec=<source>|<record_id>|<round>` — test_*.ini 尾部关联行 (`;` 注释,
+/// 引擎与做牌器均忽略), autotest 读它反查复盘剧本 (script 端点)。
+fn rec_line(source: &str, id: &str, round: usize) -> String {
+    format!("; Rec={source}|{id}|{round}")
+}
+
+/// 解析 test_*.ini 里的 `; Rec=` 行 → (source, record_id, round)。无关联 → None。
+fn parse_rec_line(text: &str) -> Option<(String, String, usize)> {
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("; Rec=") {
+            let p: Vec<&str> = rest.split('|').collect();
+            if p.len() == 3 {
+                let round = p[2].trim().parse().unwrap_or(0);
+                return Some((p[0].to_string(), p[1].to_string(), round));
+            }
+        }
+    }
+    None
 }
 
 /// `POST /api/record/save_makecard` — 复盘器一键导出做牌到相同服务。
@@ -213,13 +239,18 @@ pub async fn save_makecard(Json(req): Json<SaveMakecardReq>) -> Result<Json<Valu
         return Err(AppError::BadRequest("名称含非法字符 (\\/:*?\"<>|)".into()));
     }
     let file_name = format!("test_{name}.ini");
+    // 关联行: 有 record_id 才写 (纯手搓做牌无关联)
+    let content = match (&req.record_id, req.round) {
+        (Some(id), Some(r)) => format!("{}\r\n{}\r\n", req.content.trim_end(), rec_line(&req.source, id, r)),
+        _ => req.content.clone(),
+    };
 
     match src.kind {
         "local" => {
             let record_dir = std::path::Path::new(local_dir(&req.source).unwrap());
             let svc_root = record_dir.parent().ok_or(AppError::NotFound)?;
             let path = svc_root.join(&file_name);
-            let bytes = crate::encoding::encode(&req.content, "gbk")?;
+            let bytes = crate::encoding::encode(&content, "gbk")?;
             tokio::fs::write(&path, &bytes).await?;
             tracing::info!("save_makecard: {} → {}", src.id, path.display());
             Ok(Json(json!({
@@ -235,7 +266,8 @@ pub async fn save_makecard(Json(req): Json<SaveMakecardReq>) -> Result<Json<Valu
                 .build()
                 .map_err(|_| AppError::ServiceUnavailable)?;
             let body = serde_json::to_string(&json!({
-                "source": remote, "name": name, "content": req.content,
+                "source": remote, "name": name, "content": content,
+                "record_id": req.record_id, "round": req.round,
             }))
             .map_err(|_| AppError::ServiceUnavailable)?;
             let resp = client
@@ -261,6 +293,161 @@ pub async fn save_makecard(Json(req): Json<SaveMakecardReq>) -> Result<Json<Valu
         _ => Err(AppError::BadRequest(
             "oss 源无对应服务, 请用「📤 做牌」复制后到做牌器粘贴".into(),
         )),
+    }
+}
+
+#[derive(Serialize)]
+struct MakecardEntry {
+    /// 短名 (去 test_ 前缀与 .ini 后缀)
+    name: String,
+    /// 文件名 test_<name>.ini
+    file: String,
+    /// 关联 record 源 id (local-xzmo2 等)
+    source: String,
+    /// 关联 record 文件名
+    record_id: String,
+    /// 关联局序 (0 起)
+    round: usize,
+    /// Total 行 (cardid|...; 无 Total 的文件跳过)
+    total: String,
+}
+
+/// `GET /api/record/makecards?source=` — 列该服务下带 record 关联 (`; Rec=`)
+/// 的 test_*.ini (复盘器直存产物), 供 autotest 选择「做牌+剧本」二元组。
+pub async fn makecards(Query(p): Query<ListParams>) -> Result<Json<Value>> {
+    let src = find_source(&p.source).ok_or(AppError::MissingParam("source"))?;
+    match src.kind {
+        "local" => {
+            let record_dir = std::path::Path::new(local_dir(&p.source).unwrap());
+            let svc_root = record_dir.parent().ok_or(AppError::NotFound)?;
+            let mut items = Vec::new();
+            let mut rd = tokio::fs::read_dir(svc_root).await?;
+            while let Some(e) = rd.next_entry().await? {
+                let fname = e.file_name().to_string_lossy().to_string();
+                let Some(stem) = fname.strip_prefix("test_").and_then(|s| s.strip_suffix(".ini")) else {
+                    continue;
+                };
+                let bytes = tokio::fs::read(e.path()).await.unwrap_or_default();
+                let text = crate::encoding::decode(&bytes).content;
+                let Some((src_id, record_id, round)) = parse_rec_line(&text) else {
+                    continue;
+                };
+                let total = text
+                    .lines()
+                    .find_map(|l| l.strip_prefix("Total="))
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if total.is_empty() {
+                    continue;
+                }
+                items.push(MakecardEntry {
+                    name: stem.to_string(),
+                    file: fname,
+                    source: src_id,
+                    record_id,
+                    round,
+                    total,
+                });
+            }
+            items.sort_by(|a, b| a.file.cmp(&b.file));
+            Ok(Json(json!({ "success": true, "source": p.source, "items": items })))
+        }
+        "bastion" => {
+            let proxy = bastion_proxy_url(src)?;
+            let remote = src.remote_source.unwrap();
+            let client = reqwest::Client::builder()
+                .timeout(BASTION_TIMEOUT)
+                .build()
+                .map_err(|_| AppError::ServiceUnavailable)?;
+            let resp = client
+                .get(format!("{proxy}/api/record/makecards"))
+                .query(&[("source", remote)])
+                .send()
+                .await
+                .map_err(|e| {
+                    tracing::warn!("bastion makecards {} 连接失败: {e}", src.id);
+                    AppError::ServiceUnavailable
+                })?;
+            let bytes = resp.bytes().await.map_err(|_| AppError::ServiceUnavailable)?;
+            let v: Value = serde_json::from_slice(&bytes).map_err(|_| AppError::ServiceUnavailable)?;
+            Ok(Json(v))
+        }
+        _ => Err(AppError::BadRequest("oss 源无对应服务".into())),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ActivateReq {
+    pub source: String,
+    /// 做牌短名 (test_<name>.ini)
+    pub name: String,
+}
+
+/// `POST /api/record/activate_makecard {source, name}` — 启用做牌:
+/// 读 `<服务根>/test_<name>.ini` 全文原位写 `test.ini` (GBK),
+/// 返回其 `; Rec=` 关联 (autotest 据此自动加载对应剧本)。覆盖前先备份 test.ini。
+pub async fn activate_makecard(Json(req): Json<ActivateReq>) -> Result<Json<Value>> {
+    let src = find_source(&req.source).ok_or(AppError::MissingParam("source"))?;
+    let name = req.name.trim();
+    if name.is_empty() {
+        return Err(AppError::MissingParam("name"));
+    }
+    if name.chars().any(|c| r#"\/:*?"<>|"#.contains(c)) {
+        return Err(AppError::BadRequest("名称含非法字符 (\\/:*?\"<>|)".into()));
+    }
+    match src.kind {
+        "local" => {
+            let record_dir = std::path::Path::new(local_dir(&req.source).unwrap());
+            let svc_root = record_dir.parent().ok_or(AppError::NotFound)?;
+            let src_path = svc_root.join(format!("test_{name}.ini"));
+            if !src_path.is_file() {
+                return Err(AppError::NotFound);
+            }
+            let bytes = tokio::fs::read(&src_path).await?;
+            let text = crate::encoding::decode(&bytes).content;
+            let rec = parse_rec_line(&text)
+                .map(|(s, id, r)| json!({ "source": s, "record_id": id, "round": r }));
+            let target = svc_root.join("test.ini");
+            // 覆盖前备份 (test.ini.bak 滚动单份, 不入 .config_history — 非原位写契约面)
+            if target.is_file() {
+                let _ = tokio::fs::copy(&target, svc_root.join("test.ini.bak")).await;
+            }
+            tokio::fs::write(&target, &bytes).await?;
+            tracing::info!("activate_makecard: {} → {}", src_path.display(), target.display());
+            Ok(Json(json!({
+                "success": true, "source": req.source, "file": "test.ini",
+                "from": format!("test_{name}.ini"), "rec": rec,
+            })))
+        }
+        "bastion" => {
+            let proxy = bastion_proxy_url(src)?;
+            let remote = src.remote_source.unwrap();
+            let client = reqwest::Client::builder()
+                .timeout(BASTION_TIMEOUT)
+                .build()
+                .map_err(|_| AppError::ServiceUnavailable)?;
+            let body = serde_json::to_string(&json!({ "source": remote, "name": name }))
+                .map_err(|_| AppError::ServiceUnavailable)?;
+            let resp = client
+                .post(format!("{proxy}/api/record/activate_makecard"))
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(body)
+                .send()
+                .await
+                .map_err(|e| {
+                    tracing::warn!("bastion activate_makecard {} 连接失败: {e}", src.id);
+                    AppError::ServiceUnavailable
+                })?;
+            let bytes = resp.bytes().await.map_err(|_| AppError::ServiceUnavailable)?;
+            let mut v: Value = serde_json::from_slice(&bytes).map_err(|_| AppError::ServiceUnavailable)?;
+            if !v.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
+                return Err(AppError::ServiceUnavailable);
+            }
+            v["source"] = json!(req.source);
+            Ok(Json(v))
+        }
+        _ => Err(AppError::BadRequest("oss 源无对应服务".into())),
     }
 }
 
@@ -617,6 +804,235 @@ async fn get_bastion(src: &RecordSource, id: &str) -> Result<String> {
         .ok_or(AppError::ServiceUnavailable)
 }
 
+// ── 复盘剧本 (record → autotest 回放) ───────────────────────────────────────
+//
+// GET /api/record/script?source=&id=&round=
+// 解析 record 指定局 → 剧本 JSON (供 autotest 客户端逐事件驱动回放):
+//   meta { room_id, table_no, players[4], names[4], banker, timestamp }
+//   total — RawCards cardid 序列 (test.ini Total 同语义, 引擎发牌确定性复现)
+//   actions[] — 逐步动作 (时序): que/exchange/throw/catch/peng/gang{an,mn,pn}/hu
+// record 无显式 Guo 事件 — 过为推导量 (决策点非动作椅即过, 终态等价)。
+// 事件行格式 (实测):
+//   Que <chair> <suit> | Exchange <recv> <from> <cards> | Throw <c> <card>
+//   Catch <c> <card> <wallIdx?> | Peng <c> <card> <hand2> | AnGang/MnGang <c> <card> <hand3>
+//   PnGang <c> <card> | Hu <c> <card> <fan?> <F?> | Banker <c>
+
+#[derive(Serialize)]
+struct ScriptAction {
+    /// 时序号 (0 起, 按文件行序)
+    seq: usize,
+    /// que / exchange / throw / catch / peng / gang / hu / banker
+    kind: &'static str,
+    /// 动作椅 (exchange = 收牌椅)
+    chair: usize,
+    /// 牌面 (如 "7T"/"5D"); exchange = 送出牌串; que = 缺门 (W/T/D)
+    card: String,
+    /// gang 子类: an(暗) / mn(明, 点他人牌) / pn(补杠)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gang_type: Option<&'static str>,
+    /// exchange: 送牌椅
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct RecordScript {
+    source: String,
+    id: String,
+    round: usize,
+    /// 局内动作数 (不含 banker 头)
+    action_count: usize,
+    room_id: String,
+    table_no: String,
+    players: Vec<String>,
+    names: Vec<String>,
+    banker: usize,
+    timestamp: u64,
+    /// RawCards cardid 序列 ("a|b|c", test.ini Total 同语义)
+    total: String,
+    actions: Vec<ScriptAction>,
+}
+
+#[derive(Deserialize)]
+pub struct ScriptParams {
+    pub source: String,
+    pub id: String,
+    /// 局序 (0 起, 缺省 0)
+    pub round: Option<usize>,
+}
+
+/// `GET /api/record/script?source=&id=&round=` — 复盘剧本 (autotest 回放数据源)。
+pub async fn script(Query(p): Query<ScriptParams>) -> Result<Json<Value>> {
+    if p.source.is_empty() {
+        return Err(AppError::MissingParam("source"));
+    }
+    if p.id.is_empty() {
+        return Err(AppError::MissingParam("id"));
+    }
+    let text = dispatch_get(&p.source, &p.id).await?;
+    let sc = parse_script(&text, &p.source, &p.id, p.round.unwrap_or(0))
+        .ok_or(AppError::NotFound)?;
+    let mut v = serde_json::to_value(&sc).map_err(|_| AppError::ServiceUnavailable)?;
+    v["success"] = json!(true);
+    Ok(Json(v))
+}
+
+/// 从 record 文本解析指定局剧本。局以 `Version ` 行分隔; None = 无该局。
+fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<RecordScript> {
+    // 切局: Version 行界
+    let mut rounds: Vec<Vec<&str>> = Vec::new();
+    let mut cur: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        if line.starts_with("Version ") {
+            if !cur.is_empty() {
+                rounds.push(std::mem::take(&mut cur));
+            }
+        } else if !line.trim().is_empty() {
+            cur.push(line);
+        }
+    }
+    if !cur.is_empty() {
+        rounds.push(cur);
+    }
+    let lines = rounds.get(round)?;
+
+    let mut room_id = String::new();
+    let mut table_no = String::new();
+    let mut players = vec![String::new(); 4];
+    let mut names = vec![String::new(); 4];
+    let mut timestamp: u64 = 0;
+    let mut banker = 0usize;
+    let mut total = String::new();
+    let mut actions: Vec<ScriptAction> = Vec::new();
+
+    for line in lines {
+        // 事件行 "HH:MM:SS Type Rest..." (时间冒号位 2/5 + 第 9 位空格) → (Type, Rest)
+        let (kind, rest) = if line.len() > 9
+            && line.as_bytes()[2] == b':'
+            && line.as_bytes()[5] == b':'
+            && line.as_bytes()[8] == b' '
+        {
+            let body = &line[9..];
+            let mut it = body.splitn(2, ' ');
+            (it.next().unwrap_or(""), it.next().unwrap_or("").trim())
+        } else if let Some(t) = line.strip_prefix("Timestamp ") {
+            timestamp = t.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            continue;
+        } else if let Some(t) = line.strip_prefix("RoomID ") {
+            room_id = t.split_whitespace().next().unwrap_or("").to_string();
+            continue;
+        } else if let Some(t) = line.strip_prefix("TableNO ") {
+            table_no = t.split_whitespace().next().unwrap_or("").to_string();
+            continue;
+        } else if let Some(rest) = line.strip_prefix("ChairNO ") {
+            let p: Vec<&str> = rest.split_whitespace().collect();
+            if p.len() >= 2 {
+                if let Ok(i) = p[0].parse::<usize>() {
+                    if i < 4 {
+                        players[i] = p[1].to_string();
+                    }
+                }
+            }
+            continue;
+        } else if let Some(rest) = line.strip_prefix("Name ") {
+            let p: Vec<&str> = rest.splitn(2, ' ').collect();
+            if p.len() >= 2 {
+                if let Ok(i) = p[0].parse::<usize>() {
+                    if i < 4 {
+                        names[i] = p[1].to_string();
+                    }
+                }
+            }
+            continue;
+        } else {
+            continue;
+        };
+        // Raw* 双轨跳过 (剧本用牌面轨, Total 用 cardid 轨单独取)
+        if kind.starts_with("Raw") {
+            if kind == "RawCards" {
+                total = rest.split(|c| c == ',' || c == ' ')
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("|");
+            }
+            continue;
+        }
+        let pp: Vec<&str> = rest.split_whitespace().collect();
+        let chair = pp.first().and_then(|s| s.parse::<usize>().ok());
+        let mut act = |kind: &'static str, chair: usize, card: String| actions.push(ScriptAction {
+            seq: actions.len(), kind, chair, card, gang_type: None, from: None,
+        });
+        match kind {
+            "Banker" => {
+                if let Some(c) = chair {
+                    banker = c;
+                }
+            }
+            "Que" => {
+                if let Some(c) = chair {
+                    act("que", c, pp.get(1).unwrap_or(&"").to_string());
+                }
+            }
+            "Exchange" => {
+                // Exchange <recv> <from> <cards>
+                if pp.len() >= 3 {
+                    if let (Ok(r), Ok(f)) = (pp[0].parse::<usize>(), pp[1].parse::<usize>()) {
+                        actions.push(ScriptAction {
+                            seq: actions.len(), kind: "exchange", chair: r,
+                            card: pp[2].to_string(), gang_type: None, from: Some(f),
+                        });
+                    }
+                }
+            }
+            "Throw" => {
+                if let Some(c) = chair {
+                    act("throw", c, pp.get(1).unwrap_or(&"").to_string());
+                }
+            }
+            "Catch" => {
+                if let Some(c) = chair {
+                    act("catch", c, pp.get(1).unwrap_or(&"").to_string());
+                }
+            }
+            "Peng" => {
+                if let Some(c) = chair {
+                    act("peng", c, pp.get(1).unwrap_or(&"").to_string());
+                }
+            }
+            "AnGang" | "MnGang" | "PnGang" => {
+                if let Some(c) = chair {
+                    let g = match kind {
+                        "AnGang" => "an",
+                        "MnGang" => "mn",
+                        _ => "pn",
+                    };
+                    actions.push(ScriptAction {
+                        seq: actions.len(), kind: "gang", chair: c,
+                        card: pp.get(1).unwrap_or(&"").to_string(),
+                        gang_type: Some(g), from: None,
+                    });
+                }
+            }
+            "Hu" => {
+                if let Some(c) = chair {
+                    act("hu", c, pp.get(1).unwrap_or(&"").to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    if actions.is_empty() && total.is_empty() {
+        return None;
+    }
+    Some(RecordScript {
+        source: source.to_string(),
+        id: id.to_string(),
+        round,
+        action_count: actions.len(),
+        room_id, table_no, players, names, banker, timestamp, total, actions,
+    })
+}
+
 // ── 局级扫描 (scan_rounds) ──────────────────────────────────────────────────
 //
 // GET /api/record/scan_rounds?source=&date=
@@ -796,5 +1212,50 @@ Flags 7\r\nName 0 玩家A\r\nName 1 玩家B\r\nName 2 玩家C\r\nName 3 玩家D\
         assert_eq!(ts, 1750198483);
         assert_eq!(players, vec!["255452784", "259461239", "259461227", "259461213"]);
         assert_eq!(names, vec!["玩家A", "玩家B", "玩家C", "玩家D"]);
+    }
+
+    #[test]
+    fn parse_script_extracts_actions() {
+        let txt = "Version 1.1\r\n\
+Timestamp 1788156823\r\nRoomID 11783\r\nTableNO 1\r\n\
+ChairNO 0 1040720 256 -1\r\nChairNO 1 1040723 256 -1\r\n\
+Name 0 甲\r\nName 1 乙\r\n\
+00:00:01 Banker 0\r\n\
+00:00:02 RawCards 0,9,18,27\r\n\
+00:00:03 Que 0 D\r\n\
+00:00:04 Exchange 0 1 9T5T3T\r\n\
+00:00:05 Throw 0 3T\r\n\
+00:00:06 Catch 1 4T 53\r\n\
+00:00:07 Peng 2 3T 3T3T\r\n\
+00:00:08 AnGang 0 1W 1W1W1W\r\n\
+00:00:09 MnGang 3 5D 5D5D5D\r\n\
+00:00:10 PnGang 1 6D\r\n\
+00:00:11 Hu 2 6T 1 F\r\n\
+Version 1.1\r\n\
+Timestamp 1788157000\r\nRoomID 11783\r\nTableNO 1\r\n\
+ChairNO 0 1040720 256 -1\r\n\
+00:00:01 Throw 0 9W\r\n";
+        let sc = parse_script(txt, "local-xzmo2", "11783_20260831.log", 0).unwrap();
+        assert_eq!(sc.room_id, "11783");
+        assert_eq!(sc.banker, 0);
+        assert_eq!(sc.total, "0|9|18|27");
+        assert_eq!(sc.players[0], "1040720");
+        assert_eq!(sc.actions.len(), 9);
+        let a = &sc.actions;
+        assert_eq!((a[0].kind, a[0].chair, a[0].card.as_str()), ("que", 0, "D"));
+        assert_eq!((a[1].kind, a[1].chair, a[1].from), ("exchange", 0, Some(1)));
+        assert_eq!(a[1].card, "9T5T3T");
+        assert_eq!((a[2].kind, a[2].chair, a[2].card.as_str()), ("throw", 0, "3T"));
+        assert_eq!((a[3].kind, a[3].chair, a[3].card.as_str()), ("catch", 1, "4T"));
+        assert_eq!((a[4].kind, a[4].chair, a[4].card.as_str()), ("peng", 2, "3T"));
+        assert_eq!((a[5].kind, a[5].gang_type), ("gang", Some("an")));
+        assert_eq!((a[6].kind, a[6].gang_type), ("gang", Some("mn")));
+        assert_eq!((a[7].kind, a[7].gang_type), ("gang", Some("pn")));
+        assert_eq!((a[8].kind, a[8].chair, a[8].card.as_str()), ("hu", 2, "6T"));
+        // round 越界 → None; round 1 只剩 Throw
+        assert!(parse_script(txt, "s", "i", 5).is_none());
+        let sc2 = parse_script(txt, "s", "i", 1).unwrap();
+        assert_eq!(sc2.actions.len(), 1);
+        assert_eq!(sc2.timestamp, 1788157000);
     }
 }

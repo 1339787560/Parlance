@@ -373,16 +373,18 @@ def _build_autotest_msg() -> dict:
     }
 
 
-async def _broadcast_autotest_to_games():
-    """向所有连接的游戏端推送当前 autotest 状态（arm/disarm test-seq）。
+async def _broadcast_autotest_to_games(client_id: Optional[str] = None):
+    """向游戏端推送当前 autotest 状态（arm/disarm test-seq）。
 
+    client_id 省略 = 广播全部；指定 = 仅单发该连接（「当前连接启动」按钮用）。
     用于 POST /api/autotest toggle 后广播。game 连入时的初同步见 handle_game_websocket。
     _send_ws 失败的连接由其 receive 循环 finally 清理，这里不清 dead 避免遍历中改 dict。
     """
     if not clients:
         return
     msg = _build_autotest_msg()
-    for ctx in list(clients.values()):
+    targets = [clients[client_id]] if client_id and client_id in clients else list(clients.values())
+    for ctx in targets:
         await _send_ws(ctx.ws, msg)
 
 
@@ -3129,13 +3131,15 @@ async def api_autotest_get():
 
 @app.post("/api/autotest")
 async def api_autotest_set(req: Request):
-    """设置 autotest 状态 {enabled, scenario}，广播 AUTOTEST_STATE 给所有游戏端。
+    """设置 autotest 状态 {enabled, scenario, client_id?}，广播 AUTOTEST_STATE。
 
     enabled=true 时 scenario 必须指向已存在的 scenario 文件；enabled=false 清 scenario。
+    client_id 可选：指定 = 仅单发该游戏连接（「当前连接启动」）；省略 = 广播全部。
     """
     body = await req.json()
     enabled = bool(body.get("enabled", False))
     scenario = str(body.get("scenario", "") or "").strip()
+    client_id = str(body.get("client_id", "") or "").strip() or None
     scenarios = sorted(f.stem for f in AUTOTEST_DIR.glob("*.json"))
     if enabled:
         if not scenario:
@@ -3144,14 +3148,16 @@ async def api_autotest_set(req: Request):
         safe = "".join(c for c in scenario if c.isalnum() or c in "_-")
         if safe != scenario or not (AUTOTEST_DIR / f"{scenario}.json").is_file():
             return JSONResponse({"error": f"scenario not found: {scenario}", "scenarios": scenarios}, status_code=404)
+    if client_id and client_id not in clients:
+        return JSONResponse({"error": f"client not found: {client_id}"}, status_code=404)
     autotest_state["enabled"] = enabled
     autotest_state["scenario"] = scenario if enabled else ""
     arm_state.clear()  # 新一轮 arm，清旧回执（T1）
-    await _broadcast_autotest_to_games()
+    await _broadcast_autotest_to_games(client_id)
     return {
         "ok": True,
         "state": {"enabled": autotest_state["enabled"], "scenario": autotest_state["scenario"]},
-        "broadcast_to": len(clients),
+        "broadcast_to": 1 if client_id else len(clients),
         "broadcast_msg": _build_autotest_msg(),
     }
 
@@ -3182,6 +3188,135 @@ async def api_autotest_arm():
         "client_count": len(clients),
         "arms": sorted(arm_state.values(), key=lambda x: x.get("chair", -1)),
     }
+
+
+# ---- 复盘回放（SDD 复盘器联动：做牌激活 + 剧本 scenario 一键化）----
+
+def _svr_call(method: str, path: str, payload: Optional[dict] = None, timeout: float = 20.0) -> Optional[dict]:
+    """调本机 servicesvr :5000 JSON REST（GET/POST）。失败/非 success 返 None。"""
+    import urllib.request
+    svr = (_COMBATDATA_CFG.get("servicesvr_url") or "http://127.0.0.1:5000").rstrip("/")
+    url = f"{svr}{path}"
+    try:
+        data = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(url, data=data, method=method,
+                                     headers={"Content-Type": "application/json",
+                                              "User-Agent": "debugRelay/autotest-replay"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8", errors="ignore"))
+    except Exception:
+        return None
+
+
+# local 源 → 本机服务根 (读 test.ini 的 current_rec 用; bastion 无远读端点不支持)
+_LOCAL_TEST_INI = {
+    "local-xzms": "D:/game/xzms/server_game/test.ini",
+    "local-xzmo": "D:/game/xzmo/server_game/test.ini",
+    "local-xzmo2": "D:/game/xzmo2/server_game/test.ini",
+}
+
+
+@app.get("/api/autotest/current_rec")
+async def api_autotest_current_rec(source: str = ""):
+    """读本机指定服务 test.ini 的 `; Rec=` 关联（已被显式关联的做牌记录）。
+
+    source ∈ {local-xzms, local-xzmo, local-xzmo2}。bastion 源远读暂不支持。
+    """
+    ini_path = _LOCAL_TEST_INI.get(source)
+    if not ini_path:
+        return JSONResponse({"error": f"source 不支持本机读取: {source}",
+                              "supported": list(_LOCAL_TEST_INI)}, status_code=400)
+    svr = (_COMBATDATA_CFG.get("servicesvr_url") or "http://127.0.0.1:5000").rstrip("/")
+    text = await asyncio.to_thread(_fetch_log_via_servicesvr, svr, ini_path)
+    if not text or text.startswith("__FETCH_ERROR__"):
+        return JSONResponse({"error": f"读 test.ini 失败: {text}"}, status_code=502)
+    rec = None
+    for line in text.splitlines():
+        if line.startswith("; Rec="):
+            p = line[6:].split("|")
+            if len(p) == 3:
+                try:
+                    rec = {"source": p[0], "record_id": p[1], "round": int(p[2])}
+                except ValueError:
+                    rec = None
+            break
+    return {"source": source, "test_ini": ini_path, "rec": rec,
+            "has_total": bool(re.search(r"^Total=", text, re.M))}
+
+
+@app.post("/api/autotest/replay")
+async def api_autotest_replay(req: Request):
+    """复盘回放一键启动：{source, name, client_id?, enabled?=true, direct_rec?}。
+
+    两条路径:
+    - name (常规): servicesvr activate_makecard(启用做牌→test.ini, 拿 Rec 关联) → script → scenario
+    - direct_rec {source, record_id, round}: test.ini 已生效且已关联, 跳过激活直接按关联启动
+    最后写 scenario 文件 replay_<record>_<round> 并广播开启。
+    """
+    body = await req.json()
+    source = str(body.get("source", "") or "").strip()
+    name = str(body.get("name", "") or "").strip()
+    client_id = str(body.get("client_id", "") or "").strip() or None
+    enabled = bool(body.get("enabled", True))
+    direct_rec = body.get("direct_rec") or None
+    if not source or not (name or direct_rec):
+        return JSONResponse({"error": "需要 source + (name | direct_rec)"}, status_code=400)
+
+    # 1. 取 Rec 关联: 直连 (test.ini 已生效) 或 激活做牌
+    if direct_rec:
+        rec = {
+            "source": str(direct_rec.get("source") or source),
+            "record_id": str(direct_rec.get("record_id") or ""),
+            "round": int(direct_rec.get("round") or 0),
+        }
+    else:
+        act = _svr_call("POST", "/api/record/activate_makecard",
+                        {"source": source, "name": name})
+        if not act or not act.get("success"):
+            return JSONResponse({"error": f"激活做牌失败 (servicesvr): {act}"}, status_code=502)
+        rec = act.get("rec") or {}
+    record_id, round_idx = rec.get("record_id"), rec.get("round")
+    if not record_id or round_idx is None:
+        return JSONResponse({"error": "无 ; Rec= 关联 (需复盘器直存产物)"}, status_code=400)
+
+    # 2. 取剧本
+    import urllib.parse
+    q = urllib.parse.urlencode({"source": rec.get("source", source), "id": record_id, "round": round_idx})
+    sc = _svr_call("GET", f"/api/record/script?{q}", None, timeout=60.0)
+    if not sc or not sc.get("success"):
+        return JSONResponse({"error": f"取剧本失败: {sc}"}, status_code=502)
+
+    # 3. 写 scenario 文件 (名 = replay_<record stem>_r<round+1>, alnum/_- 安全)
+    stem = record_id.rsplit(".", 1)[0]
+    scenario_name = f"replay_{stem}_r{round_idx + 1}"
+    scenario = {
+        "name": scenario_name,
+        "desc": f"复盘回放 {name or '(test.ini 现有做牌)'} · {record_id} 局{round_idx + 1}",
+        "type": "replay",          # 客户端 AutotestPlayer replay 模式识别
+        "makecard_id": name,
+        "source": sc.get("source"), "record_id": record_id, "round": round_idx,
+        "meta": {"room_id": sc.get("room_id"), "table_no": sc.get("table_no"),
+                 "players": sc.get("players"), "names": sc.get("names"),
+                 "banker": sc.get("banker"), "timestamp": sc.get("timestamp")},
+        "total": sc.get("total"),
+        "actions": sc.get("actions"),
+        "expect": {},
+    }
+    f = AUTOTEST_DIR / f"{scenario_name}.json"
+    f.write_text(json.dumps(scenario, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 4. 开启广播 (client_id 可选单发)
+    broadcast_to = 0
+    if enabled:
+        autotest_state["enabled"] = True
+        autotest_state["scenario"] = scenario_name
+        arm_state.clear()
+        await _broadcast_autotest_to_games(client_id)
+        broadcast_to = 1 if client_id else len(clients)
+    return {"ok": True, "scenario": scenario_name, "file": str(f),
+            "makecard": f"test_{name}.ini" if name else "(test.ini 现有)",
+            "rec": rec, "actions": len(sc.get("actions") or []),
+            "enabled": enabled, "broadcast_to": broadcast_to}
 
 
 # ---- T4 expect 断言 + report REST（拉服务端日志 grep + merge arm 证据）----

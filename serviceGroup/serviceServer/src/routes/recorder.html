@@ -194,7 +194,7 @@
 
   <div class="app">
     <div class="meta" id="meta">未加载</div>
-    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v12</div>
+    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v13</div>
 
     <div class="table">
       <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
@@ -261,6 +261,7 @@
   let isScanning = false; // scan_rounds 进行中 (前端空列表显示"扫描中"而非"无匹配")
   let lastLoad = '';      // 最近一次 record 载入方式: 'file'(手动导入) / 'api'(数据源) — 对局按钮路由用
   let curSource = '';     // 当前 record 来源 source id (直存做牌按它定位目标服务; 手动导入为空)
+  let curRecordId = '';   // 当前 record 文件名 (直存做牌写 ; Rec= 关联, autotest 反查剧本用)
 
   const ROWS_Y = [8, 153, 301, 448, 590, 745];
   const ROWS_H = [133, 136, 131, 132, 137, 120];
@@ -735,7 +736,7 @@
   };
   document.getElementById('file-input').onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
-    try { const txt = await f.text(); parseRecord(txt); lastLoad = 'file'; curSource = ''; restoreState(); }
+    try { const txt = await f.text(); parseRecord(txt); lastLoad = 'file'; curSource = ''; curRecordId = ''; restoreState(); }
     catch (err) { document.getElementById('meta').textContent = '加载失败: ' + err; }
     e.target.value = '';
   };
@@ -804,7 +805,8 @@
     try {
       const r = await fetch('/api/record/save_makecard', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: curSource, name, content }),
+        body: JSON.stringify({ source: curSource, name, content,
+          record_id: curRecordId || undefined, round: curRecordId ? curRound : undefined }),
       }).then(r => r.json());
       if (!r.success) throw new Error(r.message || '保存失败');
       document.getElementById('savecard-modal').classList.add('hidden');
@@ -1001,6 +1003,7 @@
       parseRecord(r.content);
       lastLoad = 'api';
       curSource = source;
+      curRecordId = id;
       // 从指定局从头展示 (roundIdx 来自 scan_rounds; 无则默认 0)
       let sv = {}; try { sv = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch {}
       if (sv.perspective !== undefined) { perspective = sv.perspective; applyLayout(); }
