@@ -441,11 +441,11 @@
           if (evs[i].type==='Exchange') { const pp = evs[i].rest.split(/\s+/); recv[pp[0]] = { from: pp[1], cards: chunks(pp[2]||'') }; }
           i++;
         }
-        // 方向标签以服务端枚举为准 (MyDef.h Dir_*): 0=Dir_Clockwise 每人传给下家(椅号+1),
-        // 1=Dir_AntiClockwise 传给上家, 2=对家。diff=(from-recv+4)%4: 3→0 / 1→1 / 2→2。
-        // "传给下家/上家"为物理事实描述 (行牌方向=椅号+1), 避免顺/逆口语歧义。
+        // 方向显示 = 服务端枚举值 + 物理事实 (枚举名 Dir_Clockwise/Anti 与客户端动画视觉
+        // 历史上互为镜像, 顺/逆汉字与 ↻↺ 符号均有感知歧义 → 弃用, 只留数值+传给谁)。
+        // diff=(from-recv+4)%4: 3→dir0 传给下家 / 1→dir1 传给上家 / 2→dir2 对家 (行牌方向=椅号+1)。
         let dir = ''; const rs = Object.keys(recv);
-        if (rs.length) { const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4; dir = diff===3?'↻ 顺时针0·传给下家':diff===1?'↺ 逆时针1·传给上家':diff===2?'⇄ 对家2':'换'; }
+        if (rs.length) { const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4; dir = diff===3?'方向0·传给下家':diff===1?'方向1·传给上家':diff===2?'方向2·对家互换':'换'; }
         round.snaps.push(S({ phase: '换三张·亮牌', recv, dir }));
         for (const r in recv) for (const c of recv[r].cards) { const idx = hands[recv[r].from].indexOf(c); if (idx>=0) hands[recv[r].from].splice(idx,1); }
         for (const r in recv) hands[r].push(...recv[r].cards);
