@@ -8,7 +8,9 @@
 //!   SERVICESVR_BASTION_<host>_URL)
 //!
 //! list 返每项含头部元数据 (room_id + players[4 uid] + names[4]) — 供前端按房间/玩家筛。
-//! 索引缓存: 进程级 `RwLock<HashMap<(source,date), Vec<RecordMeta>>>`, 无 TTL。
+//! 索引缓存: 进程级 `RwLock<HashMap<(source,date), (Instant, Vec<RecordMeta>)>>`,
+//! TTL 分级 cache_ttl (空 10s / 指定日期 60s / 全日期 600s) — 2026-09-09 事故前无 TTL,
+//! 落盘前的空列表被固化致当日 record 永不可见。
 //!
 //! hostID 速查表 hardcode (参 oss_hosts.yaml roomsvr + probe 2026-08-06):
 //! record service 前缀 = `{代}svr` (gamesvr: xzms→xzmssvr / xzmo→xzmosvr),
@@ -103,7 +105,23 @@ pub struct RecordMeta {
 }
 
 type CacheKey = (String, String);
-static CACHE: LazyLock<RwLock<HashMap<CacheKey, Vec<RecordMeta>>>> =
+
+/// 缓存 TTL。2026-09-09 事故: 无 TTL 缓存把「record 落盘前查出的空列表」固化,
+/// 当日新 record 永远不可见 (用户拉不到 53 六红中当天日志)。分级:
+/// - 空列表 (负缓存) 10s — 落盘前的空态尽快过期
+/// - 指定日期 60s — 当日 record 持续落盘, 短 TTL 保新鲜 (local/bastion 扫盘本身秒级)
+/// - 全日期 (oss 慢路径 ~200s) 600s — 长缓存保加速
+fn cache_ttl(date: &str, len: usize) -> std::time::Duration {
+    if len == 0 {
+        std::time::Duration::from_secs(10)
+    } else if date.is_empty() {
+        std::time::Duration::from_secs(600)
+    } else {
+        std::time::Duration::from_secs(60)
+    }
+}
+
+static CACHE: LazyLock<RwLock<HashMap<CacheKey, (std::time::Instant, Vec<RecordMeta>)>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// local 源 Record 根目录。None = 非 local 源。
@@ -147,16 +165,21 @@ pub async fn list(Query(p): Query<ListParams>) -> Result<Json<Value>> {
 
     {
         let cache = CACHE.read().await;
-        if let Some(items) = cache.get(&key) {
-            return Ok(Json(json!({
-                "success": true, "source": key.0, "date": key.1,
-                "items": items, "cached": true,
-            })));
+        if let Some((at, items)) = cache.get(&key) {
+            if at.elapsed() < cache_ttl(&key.1, items.len()) {
+                return Ok(Json(json!({
+                    "success": true, "source": key.0, "date": key.1,
+                    "items": items, "cached": true,
+                })));
+            }
         }
     }
 
     let items = dispatch_list(&p.source, &date).await?;
-    CACHE.write().await.insert(key.clone(), items.clone());
+    CACHE
+        .write()
+        .await
+        .insert(key.clone(), (std::time::Instant::now(), items.clone()));
     Ok(Json(json!({
         "success": true, "source": key.0, "date": key.1,
         "items": items, "cached": false,
@@ -1055,8 +1078,8 @@ struct RoundScanMeta {
     players: Vec<String>,
 }
 
-/// 局扫描缓存: (source, date) → Vec<RoundScanMeta>
-static ROUND_CACHE: LazyLock<RwLock<HashMap<CacheKey, Vec<RoundScanMeta>>>> =
+/// 局扫描缓存: (source, date) → (写入时刻, 局列表)。TTL 同 CACHE (cache_ttl)。
+static ROUND_CACHE: LazyLock<RwLock<HashMap<CacheKey, (std::time::Instant, Vec<RoundScanMeta>)>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 #[derive(Deserialize)]
@@ -1072,11 +1095,13 @@ pub async fn scan_rounds(Query(p): Query<ScanParams>) -> Result<Json<Value>> {
     let date = p.date.clone().unwrap_or_default();
     let key = (p.source.clone(), date.clone());
 
-    // 缓存命中
+    // 缓存命中 (TTL 内)
     {
         let cache = ROUND_CACHE.read().await;
-        if let Some(rounds) = cache.get(&key) {
-            return Ok(Json(json!({ "success": true, "source": key.0, "date": key.1, "rounds": rounds, "cached": true })));
+        if let Some((at, rounds)) = cache.get(&key) {
+            if at.elapsed() < cache_ttl(&key.1, rounds.len()) {
+                return Ok(Json(json!({ "success": true, "source": key.0, "date": key.1, "rounds": rounds, "cached": true })));
+            }
         }
     }
 
@@ -1097,7 +1122,10 @@ pub async fn scan_rounds(Query(p): Query<ScanParams>) -> Result<Json<Value>> {
     }
     tracing::info!("scan_rounds: total {} rounds", all_rounds.len());
 
-    ROUND_CACHE.write().await.insert(key.clone(), all_rounds.clone());
+    ROUND_CACHE
+        .write()
+        .await
+        .insert(key.clone(), (std::time::Instant::now(), all_rounds.clone()));
     Ok(Json(json!({ "success": true, "source": key.0, "date": key.1, "rounds": all_rounds, "cached": false })))
 }
 

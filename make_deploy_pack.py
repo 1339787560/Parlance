@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""infoServer deploy 打包 + 推送工具 (替代 svn 更新链)。
+
+打包: 白名单收集本机验证过的运行产物 (py + 运行位 exe + 模板/静态资源) +
+      manifest.json (built_at / git_rev / files) → deploys/deploy_<ts>.zip
+推送: --push <base_url> 时 upload (multipart) + activate (host 异步编排:
+      停受影响服务 → 备份 .deploy_backup/<ts>/ → 原位替换 → 启 → 探活 →
+      失败自动恢复备份) + 轮询 deploy.log 到编排结束。
+
+用法:
+    python make_deploy_pack.py                    # 只打包
+    python make_deploy_pack.py --push http://127.0.0.1:5000      # 打包+推本机
+    python make_deploy_pack.py --push http://192.168.102.53:5000 # 打包+推 53
+
+设计约束:
+  - config.yaml 与 serviceGroup 下 config*.json/yaml 不打包 (现场配置分叉保护,
+    53 与本机值不同; manifest.skipped_configs 记录未含配置供人工核对)。
+  - exe 从 config.yaml 各服务 command/args 解析运行位路径收集 (不扫 target
+    目录, 避免中间物进包; statistic 运行位在 target/release 也能被显式路径命中)。
+"""
+
+import argparse
+import datetime
+import json
+import os
+import subprocess
+import sys
+import time
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+
+# serviceGroup 递归收集的扩展名白名单 (纯代码/资源资产)
+INCLUDE_EXT = {".py", ".html", ".js", ".css", ".json", ".yaml", ".yml",
+               ".png", ".jpg", ".svg", ".woff", ".woff2", ".ttf", ".ico", ".txt"}
+# 目录黑名单 (target 例外: 显式 exe 路径单独收集, 不走目录扫描)
+EXCLUDE_DIRS = {".svn", ".git", "__pycache__", ".venv", "venv", "node_modules",
+                "logs", "target", "deploys", "_staging", ".deploy_backup",
+                ".codegraph", ".claude", ".cursor", "tests", "docs"}
+# 不打包的现场配置 (相对根; serviceGroup 下的 config*.json 同理在收集时按名排除)
+ROOT_SKIP_FILES = {"config.yaml", "config.full.yaml"}
+CONFIG_NAME_PREFIXES = ("config",)
+
+
+def _is_config_name(p: Path) -> bool:
+    return p.name.startswith(CONFIG_NAME_PREFIXES) and p.suffix in (".json", ".yaml", ".yml")
+
+
+def _git_rev() -> str:
+    try:
+        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=10, cwd=ROOT)
+        if r.returncode == 0:
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
+# 受保护服务 (host 侧 _DEPLOY_PROTECTED 同款): 本机 AI API 网关, 误停 = 断 AI 会话。
+# 打包默认排除其文件; 要更新它需 --only statistic-server 显式指定 (53 侧同理人工评估)。
+PROTECTED_SERVICES = {"statistic-server"}
+
+
+def _plat_service_specs() -> list[dict]:
+    """config.yaml 服务声明 → [{name, command, args, cwd}] (平台键解析对齐 service_manager)。"""
+    import yaml
+    cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8")) or {}
+    plat = "win" if sys.platform.startswith("win") else ("mac" if sys.platform == "darwin" else None)
+    specs = []
+    for svc in cfg.get("services", []):
+        if plat:
+            command = svc.get(f"command_{plat}") or svc.get("command")
+            args_v = svc.get(f"args_{plat}")
+            if args_v is None:  # 空列表 [] 也是合法值
+                args_v = svc.get("args", [])
+            cwd_v = svc.get(f"cwd_{plat}") or svc.get("cwd")
+        else:
+            command = svc.get("command")
+            args_v = svc.get("args", [])
+            cwd_v = svc.get("cwd")
+        if command and not os.path.isabs(command) and ("/" in command or "\\" in command):
+            command = os.path.abspath(command)  # 相对项目根 (与 service_manager 一致)
+        specs.append({"name": svc.get("name", "unnamed"), "command": command or "",
+                      "args": list(args_v or []), "cwd": cwd_v})
+    return specs
+
+
+def _service_owners() -> dict[str, dict]:
+    """{svc_name: {"prefix": "serviceGroup/<dir>/", "runs": [运行文件 rel...]}}。
+
+    prefix = cwd 相对根 posix (服务资产域: 模板/静态/js 等归此前缀);
+    runs = command/args 对应的文件 (py/exe)。ROOT 外 (np-reader/caddy) 跳过。
+    """
+    owners = {}
+    for spec in _plat_service_specs():
+        runs, prefix = [], None
+        for entry in [spec["command"]] + spec["args"]:
+            entry = (entry or "").strip().strip('"')
+            if not entry:
+                continue
+            # command 常为相对 ROOT 全路径 (./serviceGroup/serviceServer/service-server.exe),
+            # args 常为相对 cwd 裸名 (main.py)。直接 Path(cwd)/entry 会把 ROOT 相对全路径
+            # 重复拼 cwd 目录 → is_file False → exe 漏收集 (2026-09-09 deploy 事故)。
+            if os.path.isabs(entry):
+                full = Path(entry)
+            else:
+                cand = ROOT / entry.lstrip("./\\")
+                full = cand.resolve() if cand.is_file() else Path(spec["cwd"] or ROOT) / entry
+            try:
+                rel = full.resolve().relative_to(ROOT).as_posix()
+            except ValueError:
+                continue
+            if full.is_file():
+                runs.append(rel)
+        if spec["cwd"]:
+            try:
+                c = Path(spec["cwd"])
+                c = c if c.is_absolute() else ROOT / c
+                prefix = c.resolve().relative_to(ROOT).as_posix() + "/"
+            except ValueError:
+                pass
+        if runs or prefix:
+            owners[spec["name"]] = {"prefix": prefix, "runs": runs}
+    return owners
+
+
+def _owner_of(rel: str, owners: dict[str, dict]) -> str:
+    """文件归属: 命中服务运行文件 → 该服务; 否则落在服务资产前缀下 → 该服务; 否则 shared。"""
+    for name, o in owners.items():
+        if rel in o["runs"]:
+            return name
+    for name, o in owners.items():
+        if o["prefix"] and rel.startswith(o["prefix"]):
+            return name
+    return "shared"
+
+
+def collect_files(only: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """返 (files, skipped_configs): 相对根 posix 路径。
+
+    only = 服务名列表 (含 'host' 控根级 launcher py): 只打包选中服务的文件;
+    None = 全量 (但剔除 PROTECTED_SERVICES 的文件)。
+    """
+    owners = _service_owners()
+    files, skipped = [], []
+    exclude_owners = set()
+    if only is not None:
+        keep = set(only)
+        unknown = keep - set(owners) - {"host", "shared"}
+        if unknown:
+            raise SystemExit(f"未知服务名: {sorted(unknown)}; 可选: {sorted(owners) + ['host', 'shared']}")
+    else:
+        keep = None  # 全量
+        exclude_owners = PROTECTED_SERVICES
+
+    def _want(owner: str) -> bool:
+        if keep is not None:
+            return owner in keep
+        return owner not in exclude_owners
+
+    for p in sorted(ROOT.glob("*.py")):
+        if _want("host"):
+            files.append(p.relative_to(ROOT).as_posix())
+
+    # owners.values() 是 {prefix, runs} dict, 须取 ["runs"] — 遍历 dict 本身只会得键
+    # "prefix"/"runs", exe 恒漏 (2026-09-09: 工具首次真正带上 exe)
+    for spec in owners.values():
+        for rel in spec["runs"]:
+            if rel.endswith(".exe") and _want(_owner_of(rel, owners)) and rel not in files:
+                files.append(rel)
+
+    sg = ROOT / "serviceGroup"
+    for dirpath, dirnames, filenames in os.walk(sg):
+        dirnames[:] = [d for d in dirnames
+                       if d not in EXCLUDE_DIRS and not d.startswith("_staging")]
+        for fn in sorted(filenames):
+            p = Path(dirpath) / fn
+            rel = p.relative_to(ROOT).as_posix()
+            if p.suffix.lower() not in INCLUDE_EXT:
+                continue
+            if _is_config_name(p):
+                skipped.append(rel)
+                continue
+            if _want(_owner_of(rel, owners)) and rel not in files:
+                files.append(rel)
+
+    for name in ROOT_SKIP_FILES:
+        if (ROOT / name).is_file():
+            skipped.append(name)
+    return sorted(files), sorted(skipped)
+
+
+def build_zip(files: list[str], skipped: list[str]) -> Path:
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    manifest = {
+        "built_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "git_rev": _git_rev(),
+        "files": files,
+        "skipped_configs": skipped,
+    }
+    deploy_dir = ROOT / "deploys"
+    deploy_dir.mkdir(exist_ok=True)
+    zip_path = deploy_dir / f"deploy_{ts}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
+        for rel in files:
+            zf.write(ROOT / rel, rel)
+    return zip_path
+
+
+def push(zip_path: Path, base: str, timeout: int = 180) -> int:
+    import requests
+    base = base.rstrip("/")
+    with open(zip_path, "rb") as f:
+        r = requests.post(f"{base}/api/deploy/upload",
+                          files={"file": (zip_path.name, f, "application/zip")},
+                          timeout=60)
+    print(f"[upload] {r.status_code}: {r.text[:300]}")
+    if r.status_code != 200 or not r.json().get("success"):
+        return 1
+    # 记录 activate 前的旧编排 timestamp: 轮询只认更新的 record
+    # (编排 sleep 1.5s 才动笔, 旧 done record 会先被读到导致提前退出)
+    try:
+        old_ts = (requests.get(f"{base}/api/deploy/log", timeout=15)
+                  .json().get("last") or {}).get("timestamp", "")
+    except Exception:
+        old_ts = ""
+    r = requests.post(f"{base}/api/deploy/activate",
+                      json={"zip": zip_path.name}, timeout=30)
+    print(f"[activate] {r.status_code}: {r.text[:300]}")
+    if r.status_code != 200 or not r.json().get("success"):
+        return 1
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            log = requests.get(f"{base}/api/deploy/log", timeout=15).json()
+            last = log.get("last") or {}
+            stage = last.get("stage")
+            fresh = last.get("timestamp", "") > old_ts if old_ts else True
+            print(f"[deploy] running={log.get('running')} stage={stage} "
+                  f"ok={last.get('ok')}" + ("" if fresh else " (旧record, 等新编排)"))
+            if fresh and stage in ("done", "rolled_back", "error", "aborted_dirty"):
+                print(json.dumps(last, ensure_ascii=False, indent=1)[:2000])
+                return 0 if last.get("ok") else 2
+        except Exception as e:
+            print(f"[deploy] poll error (编排停服期属正常): {e}")
+        time.sleep(5)
+    print("[deploy] 轮询超时, 手动查 /api/deploy/log")
+    return 3
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", metavar="SVCS",
+                    help="只打包指定服务 (逗号分隔; host=根级 launcher py; 缺省=全量但排除受保护服务)")
+    ap.add_argument("--push", metavar="BASE_URL",
+                    help="打包后推送到该 servicesvr 基址 (如 http://192.168.102.53:5000)")
+    args = ap.parse_args()
+
+    only = [s.strip() for s in args.only.split(",") if s.strip()] if args.only else None
+    files, skipped = collect_files(only)
+    zip_path = build_zip(files, skipped)
+    scope = f"only={','.join(only)}" if only else f"全量(排除受保护: {sorted(PROTECTED_SERVICES)})"
+    print(f"[pack] {zip_path} ({zip_path.stat().st_size} bytes, {len(files)} files, {scope})")
+    if skipped:
+        print(f"[pack] 未含现场配置 {len(skipped)} 项: {skipped[:8]}{'...' if len(skipped) > 8 else ''}")
+    if not args.push:
+        return 0
+    return push(zip_path, args.push)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
