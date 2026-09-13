@@ -112,6 +112,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/record/save_makecard",
             axum::routing::post(records::save_makecard),
         )
+        .route(
+            "/api/record/delete_makecard",
+            axum::routing::post(records::delete_makecard),
+        )
         .route("/api/config/files", get(config_files::list_files))
         .route("/api/config", get(config_files::get_config))
         .route("/api/fetch-title", get(fetch::fetch_title))

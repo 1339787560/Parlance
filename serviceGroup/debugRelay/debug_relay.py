@@ -107,6 +107,12 @@ class MsgType:
     # Relay -> Game (autotest 闭环)
     AUTOTEST_STATE = "autotest_state"      # Relay -> Game: autotest 开关 + scenario url（game 连入初同步 + toggle 广播）
     AUTOTEST_ARM_RESULT = "autotest_arm_result"  # Game -> Relay: arm 成败上报（T4，relay 聚合四家 arm 全景）
+    # Relay -> Game: 节拍控制（播放间隔 / 暂停 / 单步立即执行），仅本机连接接收
+    AUTOTEST_CTL = "autotest_ctl"
+    # Game -> Relay: 回放进度（当前步/总步 + 全局动作序号），面板步数显示
+    AUTOTEST_PROGRESS = "autotest_progress"
+    # Game -> Relay: 客户端实际生效的节拍回执（可视化回放面板显示）
+    AUTOTEST_CTL_ACK = "autotest_ctl_ack"
 
     # Relay -> Game (Device 模拟, 真机无 eval 的代码通道)
     DEVICE = "device"                    # Relay -> Game: 设备模拟/抓取/诊断 (action + payload)
@@ -182,6 +188,10 @@ class ClientCtx:
     last_seen: float = field(default_factory=time.time)
     # 客户端上报的业务身份（DebugPlugin 发送 client_info 聚合；未上报为 None）
     preview_index: Optional[int] = None
+    # 环境标签前缀（客户端显式上报）：'?'=preview(DEV) / '#'=真机·发布。取代旧的按本机 IP 猜测。
+    env_tag: Optional[str] = None
+    # 是否本机连接（relay 宿主自身地址）：仅本机连接可参与 autotest，远端连接被隔离
+    is_local: bool = False
     user_id: Optional[Any] = None
     build_version: Optional[str] = None
     console_buffer: list = field(default_factory=list)
@@ -241,6 +251,13 @@ whitelist_enabled: bool = False
 AUTOTEST_DIR = Path(__file__).parent / "autotest_scenarios"
 AUTOTEST_DIR.mkdir(exist_ok=True)
 autotest_state: dict = {"enabled": False, "scenario": ""}  # scenario = 文件名(无 .json)
+# autotest 节拍控制（播放间隔/暂停/单步）— relay 侧权威态, 变更即广播 AUTOTEST_CTL;
+# 仅本机连接接收（隔离规则见 _build_autotest_msg / _broadcast_autotest_to_games）。
+autotest_ctl: dict = {"interval_ms": 1350, "paused": False, "step": 0, "pacing": "fixed", "settle_ms": 800}
+# 客户端实际生效节拍回执: client_id -> {interval_ms, paused, ts}（可视化回放面板显示）
+autotest_ctl_ack: Dict[str, dict] = {}
+# 回放进度: client_id -> {chair, idx, total, seq, actions_total, kind, done, ts}
+autotest_progress: Dict[str, dict] = {}
 # 做牌库托管 (C3 牌局标识符): scenario.makecard_id 引用此库的 test.ini 片段
 MAKECARD_DIR = Path(__file__).parent / "makecard_scenarios"
 MAKECARD_DIR.mkdir(exist_ok=True)
@@ -250,6 +267,9 @@ arm_state: Dict[str, dict] = {}
 # {servicesvr_url, combatdata_path, flow_path}
 _COMBATDATA_CFG: dict = {}
 whitelist_ips: set = set()
+# autotest 本机地址集合（loopback + 本机网卡地址, 启动时解析 / 配置可追加）。
+# 语义：debugRelay 宿主自身的连接 = 本机; 其余（同事机器 / 手机）一律隔离出 autotest。
+local_ips: set = set()
 # whitelist 热更新持久化目标（__main__ 解析 config 后设置）
 _WHITELIST_CONFIG_PATH = None
 
@@ -286,26 +306,17 @@ def _prune_stale_clients():
         print(f"[debug-relay] pruned {len(stale)} stale clients: {stale}", flush=True)
 
 
-def _is_local_ip(ip: str) -> bool:
-    """判断来源是否本机（preview 通常从开发机本机 IP/回环连入；真机是远端 IP）。"""
-    if ip in ("127.0.0.1", "::1", "localhost"):
-        return True
-    try:
-        _, _, ips = socket.gethostbyname_ex(socket.gethostname())
-        return ip in ips
-    except Exception:
-        try:
-            return ip == socket.gethostbyname(socket.gethostname())
-        except Exception:
-            return False
-
-
 def _client_summary(c: ClientCtx, display_index: int) -> dict:
-    # preview（本机/上报 preview_index）用 ?N；真机用 #N
-    if c.preview_index is not None:
+    # 标签前缀由客户端上报的 env_tag 决定：'?'=preview(DEV) / '#'=真机·发布；N=preview_index(登录账号下标，仅 DEV 解析)。
+    # 不再用本机 IP 兜底伪装 ?N：连接序号与账号无对应关系，agent 按标签选窗口会选错。
+    if c.env_tag == "#":
+        label = f"#{display_index} · {c.ip}"
+    elif c.preview_index is not None:
+        # 新版 DEV 客户端(userName 匹配下标)或旧版客户端(URL 解析)都走 ?N
         label = f"?{c.preview_index} · {c.ip}"
-    elif _is_local_ip(c.ip):
-        label = f"?{display_index} · {c.ip}"
+    elif c.env_tag == "?":
+        # preview 账号下标未就绪/未匹配(登录后 client_info 补报会刷新)
+        label = f"? · {c.ip}"
     else:
         label = f"#{display_index} · {c.ip}"
     if c.build_version:
@@ -314,7 +325,9 @@ def _client_summary(c: ClientCtx, display_index: int) -> dict:
         "id": c.id,
         "label": label,
         "ip": c.ip,
+        "is_local": c.is_local,
         "preview_index": c.preview_index,
+        "env_tag": c.env_tag,
         "user_id": c.user_id,
         "build_version": c.build_version,
     }
@@ -362,30 +375,83 @@ async def _send_to_subscribers(client_id: str, msg: dict):
         browsers.discard(b)
 
 
-def _build_autotest_msg() -> dict:
-    """构造 AUTOTEST_STATE 消息（初同步 + 广播复用）。scenario_url 为相对路径，客户端用 DEFAULT_HOST:PORT 绝对化。"""
+def _build_autotest_msg(is_local: bool = True) -> dict:
+    """构造 AUTOTEST_STATE 消息（初同步 + 广播复用）。scenario_url 为相对路径，客户端用 DEFAULT_HOST:PORT 绝对化。
+
+    本机隔离：is_local=False → 强制 enabled=false（远端连接永不 arm；已在跑的会被显式 disarm）。
+    """
+    if not is_local:
+        return {
+            "type": MsgType.AUTOTEST_STATE,
+            "enabled": False,
+            "scenario": "",
+            "scenario_url": "",
+            "isolated": True,
+        }
     sc = autotest_state.get("scenario", "")
     return {
         "type": MsgType.AUTOTEST_STATE,
         "enabled": bool(autotest_state.get("enabled")),
         "scenario": sc,
         "scenario_url": f"/scenarios/{sc}.json" if sc else "",
+        "isolated": False,
     }
+
+
+def _build_autotest_ctl_msg() -> dict:
+    """构造 AUTOTEST_CTL 消息（节拍控制: 播放间隔 / 暂停 / 单步 token / 节奏模式）。"""
+    return {
+        "type": MsgType.AUTOTEST_CTL,
+        "interval_ms": int(autotest_ctl.get("interval_ms", 1350)),
+        "paused": bool(autotest_ctl.get("paused", False)),
+        "step": int(autotest_ctl.get("step", 0)),
+        # 'fixed' = 固定间隔(interval_ms) / 'record' = 按 record 相邻动作时间差动态回放
+        "pacing": str(autotest_ctl.get("pacing", "fixed")),
+        # 就位时间(ms): 阶段刚开/窗口刚亮时至少等这么久才动作 (客户端再加一层兜底)
+        "settle_ms": int(autotest_ctl.get("settle_ms", 800)),
+        "ts": datetime.now().isoformat(),
+    }
+
+
+def local_client_ids() -> list:
+    """当前本机（relay 宿主）连接 id 列表 — autotest 可达范围。"""
+    return [cid for cid, c in clients.items() if c.is_local]
 
 
 async def _broadcast_autotest_to_games(client_id: Optional[str] = None):
     """向游戏端推送当前 autotest 状态（arm/disarm test-seq）。
 
     client_id 省略 = 广播全部；指定 = 仅单发该连接（「当前连接启动」按钮用）。
+    本机隔离：远端连接恒收 enabled=false（隔离态），不参与 arm。
+    非本机 client_id 由调用方（REST）先行拒绝，此处只保证不误 arm。
     用于 POST /api/autotest toggle 后广播。game 连入时的初同步见 handle_game_websocket。
     _send_ws 失败的连接由其 receive 循环 finally 清理，这里不清 dead 避免遍历中改 dict。
     """
     if not clients:
         return
-    msg = _build_autotest_msg()
     targets = [clients[client_id]] if client_id and client_id in clients else list(clients.values())
     for ctx in targets:
-        await _send_ws(ctx.ws, msg)
+        await _send_ws(ctx.ws, _build_autotest_msg(ctx.is_local))
+    # 节拍控制随 arm 一同下发（仅本机连接；远端收不到 ctl 即零行为）
+    ctl = _build_autotest_ctl_msg()
+    for ctx in targets:
+        if ctx.is_local:
+            await _send_ws(ctx.ws, ctl)
+
+
+async def _broadcast_autotest_ctl(client_id: Optional[str] = None):
+    """广播节拍控制（set_interval / pause / resume / step）给本机连接。"""
+    if not clients:
+        return 0
+    targets = [clients[client_id]] if client_id and client_id in clients else list(clients.values())
+    msg = _build_autotest_ctl_msg()
+    n = 0
+    for ctx in targets:
+        if not ctx.is_local:
+            continue
+        if await _send_ws(ctx.ws, msg):
+            n += 1
+    return n
 
 
 def _resolve_client(client_arg: Optional[str]):
@@ -422,6 +488,39 @@ def _stamp(msg: dict, client_id: str) -> dict:
 
 
 # ---- IP Whitelist ----
+
+# autotest 本机地址（**唯一**允许参与 autotest 的来源）= loopback + 开发机自身 LAN IP。
+# ⚠️ 不做网卡自动枚举: 早先版本枚举网卡, 把 Tailscale/虚拟网卡地址 (如 100.x) 也算成本机,
+#    与「非本机 IP 不受 autotest 影响」的要求冲突。需要更多地址用 config `autotest.local_ips` 追加。
+AUTOTEST_LOCAL_IPS_DEFAULT = {"127.0.0.1", "::1", "192.168.41.158"}
+
+
+def _ensure_local_ips() -> set:
+    """懒解析：__main__ 未注入（含测试/热重载路径）时用默认集。"""
+    global local_ips
+    if not local_ips:
+        local_ips = set(AUTOTEST_LOCAL_IPS_DEFAULT)
+    return local_ips
+
+
+def _is_local_ip(ip: Optional[str]) -> bool:
+    """连接来源是否「本机」—— 决定该连接是否参与 autotest。
+
+    判定 = loopback (127.0.0.0/8 整段 + ::1 + localhost) ∪ 显式本机集 (默认 192.168.41.158,
+    config `autotest.local_ips` 可追加)。**其余一切来源 (含白名单放行的 46.68 / 172.16.x 等)
+    一律判为远端 → autotest 完全隔离。**
+    处理 IPv4-mapped IPv6（::ffff:127.0.0.1）。
+    """
+    if not ip:
+        return False
+    if ip.startswith("::ffff:"):
+        ip = ip[7:]
+    if ip in ("localhost", "::1"):
+        return True
+    if ip.startswith("127."):      # loopback /8 整段 (127.0.0.2 等也认)
+        return True
+    return ip in _ensure_local_ips()
+
 
 async def _enforce_whitelist(websocket: WebSocket) -> bool:
     """白名单校验。返回 True=放行,False=已拒绝并 close。"""
@@ -2094,17 +2193,21 @@ async def handle_game_websocket(websocket: WebSocket):
 
     ip = websocket.client.host if websocket.client else "<unknown>"
     cid, label = _next_client_id(ip)
-    ctx = ClientCtx(id=cid, label=label, ip=ip, ws=websocket)
+    ctx = ClientCtx(id=cid, label=label, ip=ip, ws=websocket, is_local=_is_local_ip(ip))
 
     await websocket.accept()
     clients[cid] = ctx
-    print(f"[debug-relay] game connected: {cid} ({label})", flush=True)
+    print(f"[debug-relay] game connected: {cid} ({label})"
+          f"{' [local]' if ctx.is_local else ' [remote · autotest-isolated]'}", flush=True)
 
     # 通知所有浏览器：客户端列表变化
     await _broadcast_client_list()
 
     # 初始同步 autotest 状态给新连接的游戏端（若已 toggle on，客户端立即 arm）
-    await _send_ws(ctx.ws, _build_autotest_msg())
+    # 本机隔离：远端连接只收 enabled=false（隔离态），永不被 arm
+    await _send_ws(ctx.ws, _build_autotest_msg(ctx.is_local))
+    if ctx.is_local:
+        await _send_ws(ctx.ws, _build_autotest_ctl_msg())
 
     try:
         while True:
@@ -2267,11 +2370,12 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
         await _send_to_subscribers(cid, stamped)
 
     elif msg_type == MsgType.CLIENT_INFO:
-        # 客户端上报业务身份：preview 序号 + userId，聚合到 client_list/api_clients 供 agent 定位。
+        # 客户端上报业务身份：preview 序号(仅 DEV，登录 userName 匹配 DebugConfig.users 下标) + env_tag，聚合到 client_list/api_clients 供 agent 定位。
         ctx.preview_index = msg.get("preview_index")
+        ctx.env_tag = msg.get("env_tag")
         ctx.user_id = msg.get("user_id")
         ctx.build_version = msg.get("build_version")
-        print(f"[debug-relay] {cid} client_info: preview_index={ctx.preview_index} user_id={ctx.user_id} build_version={ctx.build_version}", flush=True)
+        print(f"[debug-relay] {cid} client_info: preview_index={ctx.preview_index} env_tag={ctx.env_tag} user_id={ctx.user_id} build_version={ctx.build_version}", flush=True)
         await _broadcast_client_list()
 
     elif msg_type in (MsgType.SCENE_TREE, MsgType.SCENE_NODE_INFO):
@@ -2281,6 +2385,11 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
 
     elif msg_type == MsgType.AUTOTEST_ARM_RESULT:
         # game → relay arm 成败上报（T4，聚合到 arm_state 供 REST 查询）
+        # 本机隔离：远端连接不应有 arm（relay 恒下发 enabled=false），若上报则丢弃不入聚合表。
+        if not ctx.is_local:
+            print(f"[debug-relay] autotest arm from REMOTE client {cid} ignored "
+                  f"(autotest is local-only)", flush=True)
+            return
         arm_state[cid] = {
             "client_id": cid,
             "ok": bool(msg.get("ok", False)),
@@ -2288,6 +2397,39 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
             "rules_count": msg.get("rules_count", 0),
             "scenario": msg.get("scenario", ""),
             "error": msg.get("error"),
+            "ts": datetime.now().isoformat(),
+        }
+        await _send_to_subscribers(cid, _stamp(msg, cid))
+
+    elif msg_type == MsgType.AUTOTEST_PROGRESS:
+        # game → relay: 回放进度（当前步/总步 + 全局动作序号）, 供面板显示播放进度
+        if not ctx.is_local:
+            return
+        autotest_progress[cid] = {
+            "client_id": cid,
+            "chair": msg.get("chair", -1),
+            "scenario": msg.get("scenario", ""),
+            "mode": msg.get("mode", ""),
+            "idx": msg.get("idx", 0),
+            "total": msg.get("total", 0),
+            "seq": msg.get("seq", -1),
+            "actions_total": msg.get("actions_total", 0),
+            "kind": msg.get("kind", ""),
+            "done": bool(msg.get("done", False)),
+            "ts": datetime.now().isoformat(),
+        }
+        await _send_to_subscribers(cid, _stamp(msg, cid))
+
+    elif msg_type == MsgType.AUTOTEST_CTL_ACK:
+        # game → relay: 客户端实际生效的节拍（间隔/暂停）回执, 供面板显示真实生效值
+        if not ctx.is_local:
+            return
+        autotest_ctl_ack[cid] = {
+            "client_id": cid,
+            "interval_ms": msg.get("interval_ms"),
+            "paused": bool(msg.get("paused", False)),
+            "pacing": msg.get("pacing", "fixed"),
+            "scenario": msg.get("scenario", ""),
             "ts": datetime.now().isoformat(),
         }
         await _send_to_subscribers(cid, _stamp(msg, cid))
@@ -3119,14 +3261,39 @@ async def api_snapshot_get(snapshot_id: str, format: str = "full"):
 
 @app.get("/api/autotest")
 async def api_autotest_get():
-    """获取 autotest 状态 + 可用 scenario 列表。"""
+    """获取 autotest 状态 + 可用 scenario 列表 + 节拍控制态（本机隔离范围）。"""
     scenarios = sorted(f.stem for f in AUTOTEST_DIR.glob("*.json"))
+    locals_ = local_client_ids()
     return {
         "enabled": autotest_state["enabled"],
         "scenario": autotest_state["scenario"],
         "scenarios": scenarios,
         "broadcast_msg": _build_autotest_msg(),
+        "ctl": _build_autotest_ctl_msg(),
+        # 本机隔离可视化: 本机 = 可 arm 范围, 远端连接一律隔离
+        "local_client_ids": locals_,
+        "local_client_count": len(locals_),
+        "remote_client_ids": [c for c in clients if c not in locals_],
+        "ctl_ack": sorted(autotest_ctl_ack.values(), key=lambda x: x.get("client_id", "")),
     }
+
+
+def _reject_remote_client(client_id: Optional[str]):
+    """本机隔离守卫: 指定 client_id 时该连接必须本机, 否则 403。
+
+    返回 None=放行 / JSONResponse=拒绝。
+    """
+    if not client_id:
+        return None
+    ctx = clients.get(client_id)
+    if ctx is None:
+        return JSONResponse({"error": f"client not found: {client_id}"}, status_code=404)
+    if not ctx.is_local:
+        return JSONResponse({
+            "error": f"autotest is local-only: client {client_id} ({ctx.ip}) is remote → isolated",
+            "client_id": client_id, "ip": ctx.ip, "is_local": False,
+        }, status_code=403)
+    return None
 
 
 @app.post("/api/autotest")
@@ -3134,7 +3301,8 @@ async def api_autotest_set(req: Request):
     """设置 autotest 状态 {enabled, scenario, client_id?}，广播 AUTOTEST_STATE。
 
     enabled=true 时 scenario 必须指向已存在的 scenario 文件；enabled=false 清 scenario。
-    client_id 可选：指定 = 仅单发该游戏连接（「当前连接启动」）；省略 = 广播全部。
+    client_id 可选：指定 = 仅单发该游戏连接（「当前连接启动」）；省略 = 广播全部本机连接。
+    本机隔离：非本机 client_id → 403；广播时远端连接恒收 enabled=false（不 arm）。
     """
     body = await req.json()
     enabled = bool(body.get("enabled", False))
@@ -3150,15 +3318,75 @@ async def api_autotest_set(req: Request):
             return JSONResponse({"error": f"scenario not found: {scenario}", "scenarios": scenarios}, status_code=404)
     if client_id and client_id not in clients:
         return JSONResponse({"error": f"client not found: {client_id}"}, status_code=404)
+    err = _reject_remote_client(client_id)
+    if err:
+        return err
     autotest_state["enabled"] = enabled
     autotest_state["scenario"] = scenario if enabled else ""
-    arm_state.clear()  # 新一轮 arm，清旧回执（T1）
+    arm_state.clear()      # 新一轮 arm，清旧回执（T1）
+    autotest_ctl_ack.clear()
+    autotest_progress.clear()
     await _broadcast_autotest_to_games(client_id)
     return {
         "ok": True,
         "state": {"enabled": autotest_state["enabled"], "scenario": autotest_state["scenario"]},
-        "broadcast_to": 1 if client_id else len(clients),
+        "broadcast_to": 1 if client_id else len(local_client_ids()),
+        "isolated_remotes": 0 if client_id else len(clients) - len(local_client_ids()),
         "broadcast_msg": _build_autotest_msg(),
+    }
+
+
+class AutotestCtlRequest(BaseModel):
+    """节拍控制请求。action: set_interval | set_pacing | set_settle | pause | resume | step。"""
+    action: str
+    interval_ms: Optional[int] = None
+    pacing: Optional[str] = None
+    settle_ms: Optional[int] = None
+    client_id: Optional[str] = None
+
+
+@app.post("/api/autotest/ctl")
+async def api_autotest_ctl(req: AutotestCtlRequest):
+    """节拍控制（可视化回放）：播放间隔 / 暂停 / 恢复 / 单步立即执行。
+
+    - set_interval: interval_ms 生效（0=最快, 上限 60000）
+    - pause / resume: 暂停后不再按节拍自驱（step 仍可单步）
+    - step: step token +1 → 各本机客户端立即执行一次动作（暂停态单步 / 播放态抢一拍）
+    client_id 可选（单发）；本机隔离：远端 client_id → 403，广播只发本机连接。
+    """
+    action = (req.action or "").strip()
+    client_id = (req.client_id or "").strip() or None
+    err = _reject_remote_client(client_id)
+    if err:
+        return err
+    if action == "set_interval":
+        if req.interval_ms is None:
+            return JSONResponse({"error": "set_interval 需 interval_ms"}, status_code=400)
+        autotest_ctl["interval_ms"] = max(0, min(int(req.interval_ms), 60000))
+    elif action == "set_pacing":
+        p = (req.pacing or "").strip()
+        if p not in ("fixed", "record"):
+            return JSONResponse({"error": "set_pacing 需 fixed|record"}, status_code=400)
+        autotest_ctl["pacing"] = p
+    elif action == "set_settle":
+        if req.settle_ms is None:
+            return JSONResponse({"error": "set_settle 需 settle_ms"}, status_code=400)
+        autotest_ctl["settle_ms"] = max(0, min(int(req.settle_ms), 60000))
+    elif action == "pause":
+        autotest_ctl["paused"] = True
+    elif action == "resume":
+        autotest_ctl["paused"] = False
+    elif action == "step":
+        autotest_ctl["step"] = int(autotest_ctl.get("step", 0)) + 1
+    else:
+        return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)
+    sent = await _broadcast_autotest_ctl(client_id)
+    return {
+        "ok": True,
+        "action": action,
+        "ctl": _build_autotest_ctl_msg(),
+        "sent_to": sent,
+        "isolated_remotes": len(clients) - len(local_client_ids()) if not client_id else 0,
     }
 
 
@@ -3180,20 +3408,78 @@ async def api_autotest_arm():
 
     返回当前激活 scenario + 各客户端 arm 结果（ok/chair/rules_count/error/ts）。
     未上报的客户端不在 map 中（前端可对照 /api/clients 查连入数 vs arm 数）。
+    本机隔离：arm_state 只可能含本机连接（远端上报被 handle_game_message 丢弃）。
     """
+    locals_ = local_client_ids()
+    arms = []
+    for a in sorted(arm_state.values(), key=lambda x: x.get("chair", -1)):
+        ctx = clients.get(a.get("client_id", ""))
+        arms.append({**a, "is_local": bool(ctx.is_local) if ctx else False,
+                     "ip": ctx.ip if ctx else ""})
+    # 回放进度: 全局步 = 各椅已触发动作的 record 全局序号最大值 (0 起 → 显示 +1)
+    progress = sorted(autotest_progress.values(), key=lambda x: x.get("chair", -1))
+    global_seq = max([p.get("seq", -1) for p in progress], default=-1)
+    actions_total = max([p.get("actions_total", 0) for p in progress], default=0)
     return {
         "scenario": autotest_state.get("scenario", ""),
         "enabled": bool(autotest_state.get("enabled")),
         "arm_count": len(arm_state),
-        "client_count": len(clients),
-        "arms": sorted(arm_state.values(), key=lambda x: x.get("chair", -1)),
+        "client_count": len(locals_),
+        "remote_client_count": len(clients) - len(locals_),
+        "arms": arms,
+        "ctl": _build_autotest_ctl_msg(),
+        "ctl_ack": sorted(autotest_ctl_ack.values(), key=lambda x: x.get("client_id", "")),
+        "progress": progress,
+        "global_step": global_seq + 1,
+        "global_total": actions_total,
     }
 
 
 # ---- 复盘回放（SDD 复盘器联动：做牌激活 + 剧本 scenario 一键化）----
 
+def _svr_call_raw(method: str, path: str, payload: Optional[dict] = None,
+                  timeout: float = 20.0) -> tuple:
+    """调本机 servicesvr JSON REST, **保留失败响应体**。
+
+    返回 `(status_code, body或None, error或None)` —— 与 `_svr_call` 的区别: 后者只在
+    success 时给结果、失败一律 None(报错信息丢失, 曾把「文件不存在」显示成 `None`)。
+    servicesvr 的错误体形如 `{"success": false, "message": "..."}`, HTTP 4xx/5xx。
+    """
+    import urllib.request, urllib.error
+    svr = (_COMBATDATA_CFG.get("servicesvr_url") or "http://127.0.0.1:5000").rstrip("/")
+    url = f"{svr}{path}"
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(url, data=data, method=method,
+                                 headers={"Content-Type": "application/json",
+                                          "User-Agent": "debugRelay/autotest-replay"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", errors="ignore")
+            try:
+                return r.status, json.loads(raw), None
+            except Exception:
+                return r.status, None, raw
+    except urllib.error.HTTPError as e:
+        raw = ""
+        try:
+            raw = e.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+        body = None
+        try:
+            body = json.loads(raw)
+        except Exception:
+            pass
+        msg = (body or {}).get("message") or (body or {}).get("error") or raw or f"HTTP {e.code}"
+        return e.code, body, msg
+    except Exception as e:
+        return 0, None, str(e)
+
+
 def _svr_call(method: str, path: str, payload: Optional[dict] = None, timeout: float = 20.0) -> Optional[dict]:
-    """调本机 servicesvr :5000 JSON REST（GET/POST）。失败/非 success 返 None。"""
+    """调本机 servicesvr :5000 JSON REST（GET/POST）。失败/非 success 返 None。
+
+    需要失败原因时用 `_svr_call_raw` (它保留错误体)。"""
     import urllib.request
     svr = (_COMBATDATA_CFG.get("servicesvr_url") or "http://127.0.0.1:5000").rstrip("/")
     url = f"{svr}{path}"
@@ -3244,6 +3530,42 @@ async def api_autotest_current_rec(source: str = ""):
             "has_total": bool(re.search(r"^Total=", text, re.M))}
 
 
+@app.get("/api/autotest/makecards")
+async def api_autotest_makecards(source: str = ""):
+    """复盘回放做牌列表代理: debugRelay UI 同源 fetch → 转发本机 servicesvr /api/record/makecards。
+
+    2026-09-09: UI 原直连 :5000 servicesvr 跨源 — 其无 CORS (代码注释『CORS 已放开』不实,
+    axum 无中间件) → 浏览器拦 → 下拉恒『拉取失败』。改走本代理 (debugRelay 同源, 有 ACAO:*)。"""
+    import urllib.parse
+    if not source:
+        return JSONResponse({"error": "缺 source"}, status_code=400)
+    q = urllib.parse.urlencode({"source": source})
+    r = _svr_call("GET", f"/api/record/makecards?{q}")
+    if not r or not r.get("success"):
+        return JSONResponse({"success": False, "items": [],
+                             "error": f"servicesvr makecards 失败: {r}"}, status_code=502)
+    return JSONResponse({"success": True, "items": r.get("items") or []})
+
+
+@app.delete("/api/autotest/makecards")
+async def api_autotest_makecards_delete(source: str = "", name: str = ""):
+    """删除做牌存档 (代理 servicesvr `POST /api/record/delete_makecard`)。
+
+    只删 `<服务根>/test_<name>.ini` —— **不会碰到生效中的 test.ini**;
+    名称含路径分隔/`..` 由 servicesvr 侧拒绝。"""
+    if not source or not name:
+        return JSONResponse({"error": "需 source + name"}, status_code=400)
+    status, body, err = _svr_call_raw("POST", "/api/record/delete_makecard",
+                                      {"source": source, "name": name})
+    if body and body.get("success"):
+        return JSONResponse(body)
+    # 把 servicesvr 的失败原因原样带出 (曾因 _svr_call 失败返 None 显示成「删除失败: None」)
+    return JSONResponse({"success": False,
+                         "error": f"servicesvr 删除失败: {err or body or 'HTTP ' + str(status)}",
+                         "servicesvr_status": status},
+                        status_code=502)
+
+
 @app.post("/api/autotest/replay")
 async def api_autotest_replay(req: Request):
     """复盘回放一键启动：{source, name, client_id?, enabled?=true, direct_rec?}。
@@ -3261,6 +3583,10 @@ async def api_autotest_replay(req: Request):
     direct_rec = body.get("direct_rec") or None
     if not source or not (name or direct_rec):
         return JSONResponse({"error": "需要 source + (name | direct_rec)"}, status_code=400)
+    # 本机隔离：远端连接不可作为回放目标
+    err = _reject_remote_client(client_id)
+    if err:
+        return err
 
     # 1. 取 Rec 关联: 直连 (test.ini 已生效) 或 激活做牌
     if direct_rec:
@@ -3305,14 +3631,15 @@ async def api_autotest_replay(req: Request):
     f = AUTOTEST_DIR / f"{scenario_name}.json"
     f.write_text(json.dumps(scenario, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 4. 开启广播 (client_id 可选单发)
+    # 4. 开启广播 (client_id 可选单发; 仅本机连接参与, 远端隔离)
     broadcast_to = 0
     if enabled:
         autotest_state["enabled"] = True
         autotest_state["scenario"] = scenario_name
         arm_state.clear()
+        autotest_ctl_ack.clear()
         await _broadcast_autotest_to_games(client_id)
-        broadcast_to = 1 if client_id else len(clients)
+        broadcast_to = 1 if client_id else len(local_client_ids())
     return {"ok": True, "scenario": scenario_name, "file": str(f),
             "makecard": f"test_{name}.ini" if name else "(test.ini 现有)",
             "rec": rec, "actions": len(sc.get("actions") or []),
@@ -3697,6 +4024,16 @@ if __name__ == "__main__":
     cli_ips = {ip.strip() for ip in args.whitelist_ips.split(",") if ip.strip()}
     whitelist_ips = cli_ips if cli_ips else cfg_ip_set
     whitelist_enabled = bool(args.whitelist_enable) or cfg_enabled
+    # autotest 本机隔离地址集: 显式默认 (loopback + 192.168.41.158) + config autotest.local_ips 追加。
+    # 不做网卡自动枚举 —— 见 AUTOTEST_LOCAL_IPS_DEFAULT 注释。
+    _at_cfg = (cfg.get("autotest") or {}) if isinstance(cfg, dict) else {}
+    _extra_local = _at_cfg.get("local_ips") or []
+    if not isinstance(_extra_local, list):
+        _extra_local = []
+    _extra_set = {str(x).strip() for x in _extra_local if str(x).strip()}
+    local_ips = set(AUTOTEST_LOCAL_IPS_DEFAULT) | _extra_set
+    print(f"[debug-relay] autotest local-only guard: local ips = {sorted(local_ips)}"
+          f" (+loopback 127.0.0.0/8, ::1); whitelist 放行 ≠ autotest 放行", flush=True)
     wl_source_parts = []
     if args.whitelist_enable or cli_ips:
         wl_source_parts.append("CLI")

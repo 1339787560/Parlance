@@ -43,9 +43,12 @@
     "leftCount": 80,           // 牌堆剩余张数（精确匹配）
     "needThrow": true,         // 当前轮到自己出牌
     "dingque":   true,         // 局前定缺阶段
-    "card":      21            // 杠/出牌目标 cardidx（shape*10+value，一筒=21 九筒=29 一万=1）
+    "card":      21,           // 杠/出牌目标 cardidx（shape*10+value，一筒=21 九筒=29 一万=1）
+    "cards":     "9D6D5D",     // 换三张：送出的三张牌面串（do=exchange 时用）
+    "gangType":  "pn",         // 杠型定点：an(暗杠)/pn(补杠) 直发协议绕多杠型选择 UI；mn 唯一无需定点
+    "giving":    true          // 濒死态（破产未放弃，GameInfo.isPlayerGiving）
   },
-  "do":     "gang",            // dingque | gang | hu | guo | throw | peng | chi | pass
+  "do":     "gang",            // dingque | exchange | gang | hu | guo | throw | peng | chi | giveUp | resurrect | pass
   "once":   true,              // true=每局只触发一次（默认）；false=可重触发（dingque/throw 用）
   "_fired": false              // 运行时状态（_onBoutStart 重置）；落档时省略
 }
@@ -53,16 +56,32 @@
 
 ### do 枚举
 
+> 2026-09-10 起 replay 与 policy 收敛为**同一张动作表**（`AutotestPlayer._drive`）——每个动作 = 一次「模拟触摸」（调对应 UI 回调 + 牌参）。
+
 | 动作 | 行为 | 典型 once |
 |---|---|---|
 | `dingque` | emit `onAutoFixMiss`（客户端推荐定缺） | false（每局局前） |
-| `gang` | 走 `_doGang(cardidx)`：暗杠指定 cardidx 直选 `sendAnGangCard`，绕选择 UI | true |
-| `hu` | 调 `mgr.onBtnHuClicked()` | true |
+| `exchange` | 选牌 `GameInfo.setSelectCards` → emit `onAutoExchangeCard` → `panel_exchange3.onClickButtonConfirm` → `sendExchange3Cards`（需 `when.cards` 三张牌面串，手牌匹配不上=做牌失步则停） | true |
+| `gang` | 按钮路径（`onBtnGangClicked`）；带 `when.gangType=an/pn` + `when.card=cardidx` 时定点直发协议（`sendAnGangCard`/`sendPnGangCard`），绕多杠型 `onShowChooseGangUnits` 选择 UI；`mn` 无歧义 | true |
+| `hu` | 调 `mgr.onBtnHuClicked()`（自摸/点炮/抢杠同一入口，客户端不区分） | true |
 | `guo` | 调 `mgr.onBtnGuoClicked()`（过牌/让杠让胡） | false |
 | `throw` | 走 `_doThrow(cardidx)`：scenario 指定 cardidx → 定缺张 → 非红中首张 → 首张兜底 | false |
 | `peng` | 调 `mgr.onBtnPengClicked()` | true |
-| `chi` | 调 `mgr.onBtnChiClicked()` | true |
+| `chi` | 调 `mgr.onBtnChiClicked()`（血流血战无吃，xzms/xzmo 用不到） | true |
+| `giveUp` | `GameConnect.sendGiveUp(false)`（认输/血流离场） | true |
+| `resurrect` | 濒死处置：`free` 免费复活（`ResurrectHelp_Game.reqForFreeResurrect`）/ 免费次数为 0 或 `giveUp` → 放弃离场 | true |
 | `pass` | 占位（不做操作，等其他规则） | — |
+
+### replay 模式的隐式动作（record 里没有，客户端按状态推）
+
+| 动作 | 判据 | 行为 |
+|---|---|---|
+| 过 (`guo`) | ① 回合上下文 = `claim`（`GameInfo.getCurrentFlags() != 0`；**抢杠窗口也在其中** —— 10 号规格：抢杠走 `setPlayerPGCHFlags(my, dwResults[my])`）**且** ② **过按钮可见**（09 号规格：已胡过 `getMyReadyHu` / 剩四必胡 `lastFourMustHu` 时「过」被隐藏 = 服务端不允许过，此时不发生过，只告警）**且** ③ 下一条 record 动作不是此刻可认领的那个。认领窗口内**只过一次**，窗口位模式变化/归零重新武装 | 主动 `onBtnGuoClicked()` |
+| 濒死 (`resurrect`) | `GameInfo.isPlayerGiving(chair)`（= 未认输 && `nDeposit <= 0`）+ `isResurrectViewExist()`（14 号规格：濒死=服务端等待窗口，三选一 免费复活/付费复活/认输） | **后续还有本椅动作 → 免费复活；已无 → 放弃离场**；免费次数为 0 不自动付费（付费走礼包支付链，自动化不花钱） |
+
+**告警**（跑局时看这三条即可定位问题）：`replay 认领停滞 N 拍未推进`（被 `GR_WAIT_FEW_SECONDS` 挂起 / 规则不允许）、`本窗口禁止过(胡不可过)`（record 与房间规则冲突）、`replay 失步`（做牌与 record 不一致）。
+
+**回合上下文 `_turnContext()`**（2026-09-11 用户口径）：`myThrow` 轮到本家出牌 = 摸牌后 / **碰·杠之后仍是本家**（`isClockToSelf() && getNeedThrow(myDrawIndex)`）；`claim` = 服务端在等本椅认领；`wait` = **胡之后轮到下家**，本家此刻零动作。过只在 `claim` 下发。决策快照经 console 落 relay：`[AutoTest][decision] chair=N ctx=.. flags=.. btns(p/g/h/guo/chi)=.. next=.. → fire/pass/retry`（变化才记）。
 
 ### cardidx 映射（encoding B，权威）
 

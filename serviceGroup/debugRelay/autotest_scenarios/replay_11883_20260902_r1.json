@@ -1,0 +1,1007 @@
+{
+  "name": "replay_11883_20260902_r1",
+  "desc": "复盘回放 173034多牌少牌 · 11883_20260902.log 局1",
+  "type": "replay",
+  "makecard_id": "173034多牌少牌",
+  "source": "bastion-53-xzms",
+  "record_id": "11883_20260902.log",
+  "round": 0,
+  "meta": {
+    "room_id": "11883",
+    "table_no": "0",
+    "players": [
+      "1124898",
+      "1180520",
+      "1180578",
+      "1182930"
+    ],
+    "names": [
+      "玩家1124898",
+      "玩家1180520",
+      "玩家1180578",
+      "liz2000"
+    ],
+    "banker": 3,
+    "timestamp": 1788279441
+  },
+  "total": "99|17|69|101|66|24|12|94|26|97|74|4|22|55|21|112|73|103|35|43|98|41|86|89|75|109|44|62|104|110|79|37|52|106|23|46|6|61|68|105|65|13|87|64|39|63|82|3|8|88|71|93|14|48|60|59|2|34|19|25|32|27|1|49|40|57|7|31|83|53|51|76|10|28|5|29|15|70|56|100|80|107|78|33|18|9|95|58|42|30|16|102|77|0|11|54|92|111|20|45|81|72|36|38|47|67|90|91|108|96|84|113|50|85",
+  "actions": [
+    {
+      "seq": 0,
+      "kind": "exchange",
+      "chair": 0,
+      "card": "4T5T9T",
+      "from": 1
+    },
+    {
+      "seq": 1,
+      "kind": "exchange",
+      "chair": 1,
+      "card": "1T8T3T",
+      "from": 2
+    },
+    {
+      "seq": 2,
+      "kind": "exchange",
+      "chair": 2,
+      "card": "7T2T3T",
+      "from": 3
+    },
+    {
+      "seq": 3,
+      "kind": "exchange",
+      "chair": 3,
+      "card": "6W1W1W",
+      "from": 0
+    },
+    {
+      "seq": 4,
+      "kind": "que",
+      "chair": 0,
+      "card": "W"
+    },
+    {
+      "seq": 5,
+      "kind": "que",
+      "chair": 1,
+      "card": "T"
+    },
+    {
+      "seq": 6,
+      "kind": "que",
+      "chair": 2,
+      "card": "D"
+    },
+    {
+      "seq": 7,
+      "kind": "que",
+      "chair": 3,
+      "card": "T"
+    },
+    {
+      "seq": 8,
+      "kind": "throw",
+      "chair": 3,
+      "card": "7D"
+    },
+    {
+      "seq": 9,
+      "kind": "catch",
+      "chair": 2,
+      "card": "1W"
+    },
+    {
+      "seq": 10,
+      "kind": "throw",
+      "chair": 2,
+      "card": "2D"
+    },
+    {
+      "seq": 11,
+      "kind": "catch",
+      "chair": 1,
+      "card": "3W"
+    },
+    {
+      "seq": 12,
+      "kind": "throw",
+      "chair": 1,
+      "card": "1T"
+    },
+    {
+      "seq": 13,
+      "kind": "catch",
+      "chair": 0,
+      "card": "1T"
+    },
+    {
+      "seq": 14,
+      "kind": "throw",
+      "chair": 0,
+      "card": "3D"
+    },
+    {
+      "seq": 15,
+      "kind": "catch",
+      "chair": 3,
+      "card": "3D"
+    },
+    {
+      "seq": 16,
+      "kind": "throw",
+      "chair": 3,
+      "card": "3D"
+    },
+    {
+      "seq": 17,
+      "kind": "catch",
+      "chair": 2,
+      "card": "5F"
+    },
+    {
+      "seq": 18,
+      "kind": "throw",
+      "chair": 2,
+      "card": "2D"
+    },
+    {
+      "seq": 19,
+      "kind": "catch",
+      "chair": 1,
+      "card": "3W"
+    },
+    {
+      "seq": 20,
+      "kind": "throw",
+      "chair": 1,
+      "card": "8T"
+    },
+    {
+      "seq": 21,
+      "kind": "catch",
+      "chair": 0,
+      "card": "1T"
+    },
+    {
+      "seq": 22,
+      "kind": "throw",
+      "chair": 0,
+      "card": "5D"
+    },
+    {
+      "seq": 23,
+      "kind": "catch",
+      "chair": 3,
+      "card": "1D"
+    },
+    {
+      "seq": 24,
+      "kind": "throw",
+      "chair": 3,
+      "card": "1D"
+    },
+    {
+      "seq": 25,
+      "kind": "catch",
+      "chair": 2,
+      "card": "1D"
+    },
+    {
+      "seq": 26,
+      "kind": "throw",
+      "chair": 2,
+      "card": "1D"
+    },
+    {
+      "seq": 27,
+      "kind": "catch",
+      "chair": 1,
+      "card": "1T"
+    },
+    {
+      "seq": 28,
+      "kind": "throw",
+      "chair": 1,
+      "card": "3T"
+    },
+    {
+      "seq": 29,
+      "kind": "catch",
+      "chair": 0,
+      "card": "3T"
+    },
+    {
+      "seq": 30,
+      "kind": "throw",
+      "chair": 0,
+      "card": "6D"
+    },
+    {
+      "seq": 31,
+      "kind": "catch",
+      "chair": 3,
+      "card": "6W"
+    },
+    {
+      "seq": 32,
+      "kind": "throw",
+      "chair": 3,
+      "card": "4W"
+    },
+    {
+      "seq": 33,
+      "kind": "catch",
+      "chair": 2,
+      "card": "5T"
+    },
+    {
+      "seq": 34,
+      "kind": "throw",
+      "chair": 2,
+      "card": "2T"
+    },
+    {
+      "seq": 35,
+      "kind": "catch",
+      "chair": 1,
+      "card": "1D"
+    },
+    {
+      "seq": 36,
+      "kind": "throw",
+      "chair": 1,
+      "card": "1T"
+    },
+    {
+      "seq": 37,
+      "kind": "peng",
+      "chair": 0,
+      "card": "1T"
+    },
+    {
+      "seq": 38,
+      "kind": "throw",
+      "chair": 0,
+      "card": "6D"
+    },
+    {
+      "seq": 39,
+      "kind": "catch",
+      "chair": 3,
+      "card": "2D"
+    },
+    {
+      "seq": 40,
+      "kind": "throw",
+      "chair": 3,
+      "card": "2D"
+    },
+    {
+      "seq": 41,
+      "kind": "catch",
+      "chair": 2,
+      "card": "5F"
+    },
+    {
+      "seq": 42,
+      "kind": "throw",
+      "chair": 2,
+      "card": "3T"
+    },
+    {
+      "seq": 43,
+      "kind": "catch",
+      "chair": 1,
+      "card": "7D"
+    },
+    {
+      "seq": 44,
+      "kind": "throw",
+      "chair": 1,
+      "card": "9W"
+    },
+    {
+      "seq": 45,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4D"
+    },
+    {
+      "seq": 46,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4D"
+    },
+    {
+      "seq": 47,
+      "kind": "peng",
+      "chair": 1,
+      "card": "4D"
+    },
+    {
+      "seq": 48,
+      "kind": "throw",
+      "chair": 1,
+      "card": "8W"
+    },
+    {
+      "seq": 49,
+      "kind": "peng",
+      "chair": 3,
+      "card": "8W"
+    },
+    {
+      "seq": 50,
+      "kind": "throw",
+      "chair": 3,
+      "card": "5W"
+    },
+    {
+      "seq": 51,
+      "kind": "catch",
+      "chair": 2,
+      "card": "5F"
+    },
+    {
+      "seq": 52,
+      "kind": "throw",
+      "chair": 2,
+      "card": "4T"
+    },
+    {
+      "seq": 53,
+      "kind": "peng",
+      "chair": 0,
+      "card": "4T"
+    },
+    {
+      "seq": 54,
+      "kind": "throw",
+      "chair": 0,
+      "card": "3T"
+    },
+    {
+      "seq": 55,
+      "kind": "hu",
+      "chair": 2,
+      "card": "3T"
+    },
+    {
+      "seq": 56,
+      "kind": "catch",
+      "chair": 1,
+      "card": "6T"
+    },
+    {
+      "seq": 57,
+      "kind": "throw",
+      "chair": 1,
+      "card": "6T"
+    },
+    {
+      "seq": 58,
+      "kind": "hu",
+      "chair": 2,
+      "card": "6T"
+    },
+    {
+      "seq": 59,
+      "kind": "hu",
+      "chair": 2,
+      "card": "6T"
+    },
+    {
+      "seq": 60,
+      "kind": "hu",
+      "chair": 2,
+      "card": "6T"
+    },
+    {
+      "seq": 61,
+      "kind": "hu",
+      "chair": 2,
+      "card": "6T"
+    },
+    {
+      "seq": 62,
+      "kind": "hu",
+      "chair": 0,
+      "card": "6T"
+    },
+    {
+      "seq": 63,
+      "kind": "catch",
+      "chair": 1,
+      "card": "5D"
+    },
+    {
+      "seq": 64,
+      "kind": "throw",
+      "chair": 1,
+      "card": "5W"
+    },
+    {
+      "seq": 65,
+      "kind": "catch",
+      "chair": 0,
+      "card": "1D"
+    },
+    {
+      "seq": 66,
+      "kind": "throw",
+      "chair": 0,
+      "card": "1D"
+    },
+    {
+      "seq": 67,
+      "kind": "catch",
+      "chair": 3,
+      "card": "3D"
+    },
+    {
+      "seq": 68,
+      "kind": "throw",
+      "chair": 3,
+      "card": "3D"
+    },
+    {
+      "seq": 69,
+      "kind": "catch",
+      "chair": 2,
+      "card": "7T"
+    },
+    {
+      "seq": 70,
+      "kind": "hu",
+      "chair": 2,
+      "card": "7T"
+    },
+    {
+      "seq": 71,
+      "kind": "catch",
+      "chair": 1,
+      "card": "9W"
+    },
+    {
+      "seq": 72,
+      "kind": "throw",
+      "chair": 1,
+      "card": "7W"
+    },
+    {
+      "seq": 73,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4T"
+    },
+    {
+      "seq": 74,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4T"
+    },
+    {
+      "seq": 75,
+      "kind": "hu",
+      "chair": 2,
+      "card": "4T"
+    },
+    {
+      "seq": 76,
+      "kind": "catch",
+      "chair": 1,
+      "card": "7W"
+    },
+    {
+      "seq": 77,
+      "kind": "throw",
+      "chair": 1,
+      "card": "7W"
+    },
+    {
+      "seq": 78,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4W"
+    },
+    {
+      "seq": 79,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4W"
+    },
+    {
+      "seq": 80,
+      "kind": "catch",
+      "chair": 3,
+      "card": "9W"
+    },
+    {
+      "seq": 81,
+      "kind": "throw",
+      "chair": 3,
+      "card": "9W"
+    },
+    {
+      "seq": 82,
+      "kind": "catch",
+      "chair": 2,
+      "card": "5D"
+    },
+    {
+      "seq": 83,
+      "kind": "throw",
+      "chair": 2,
+      "card": "5D"
+    },
+    {
+      "seq": 84,
+      "kind": "catch",
+      "chair": 1,
+      "card": "8D"
+    },
+    {
+      "seq": 85,
+      "kind": "throw",
+      "chair": 1,
+      "card": "5D"
+    },
+    {
+      "seq": 86,
+      "kind": "catch",
+      "chair": 0,
+      "card": "3D"
+    },
+    {
+      "seq": 87,
+      "kind": "throw",
+      "chair": 0,
+      "card": "3D"
+    },
+    {
+      "seq": 88,
+      "kind": "catch",
+      "chair": 3,
+      "card": "2D"
+    },
+    {
+      "seq": 89,
+      "kind": "throw",
+      "chair": 3,
+      "card": "2D"
+    },
+    {
+      "seq": 90,
+      "kind": "catch",
+      "chair": 2,
+      "card": "5W"
+    },
+    {
+      "seq": 91,
+      "kind": "throw",
+      "chair": 2,
+      "card": "5W"
+    },
+    {
+      "seq": 92,
+      "kind": "catch",
+      "chair": 1,
+      "card": "2T"
+    },
+    {
+      "seq": 93,
+      "kind": "throw",
+      "chair": 1,
+      "card": "2T"
+    },
+    {
+      "seq": 94,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4W"
+    },
+    {
+      "seq": 95,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4W"
+    },
+    {
+      "seq": 96,
+      "kind": "catch",
+      "chair": 3,
+      "card": "5D"
+    },
+    {
+      "seq": 97,
+      "kind": "throw",
+      "chair": 3,
+      "card": "5D"
+    },
+    {
+      "seq": 98,
+      "kind": "catch",
+      "chair": 2,
+      "card": "5W"
+    },
+    {
+      "seq": 99,
+      "kind": "throw",
+      "chair": 2,
+      "card": "5W"
+    },
+    {
+      "seq": 100,
+      "kind": "catch",
+      "chair": 1,
+      "card": "5F"
+    },
+    {
+      "seq": 101,
+      "kind": "throw",
+      "chair": 1,
+      "card": "9W"
+    },
+    {
+      "seq": 102,
+      "kind": "catch",
+      "chair": 0,
+      "card": "9W"
+    },
+    {
+      "seq": 103,
+      "kind": "throw",
+      "chair": 0,
+      "card": "9W"
+    },
+    {
+      "seq": 104,
+      "kind": "catch",
+      "chair": 3,
+      "card": "9D"
+    },
+    {
+      "seq": 105,
+      "kind": "throw",
+      "chair": 3,
+      "card": "9D"
+    },
+    {
+      "seq": 106,
+      "kind": "peng",
+      "chair": 1,
+      "card": "9D"
+    },
+    {
+      "seq": 107,
+      "kind": "throw",
+      "chair": 1,
+      "card": "1D"
+    },
+    {
+      "seq": 108,
+      "kind": "catch",
+      "chair": 0,
+      "card": "8T"
+    },
+    {
+      "seq": 109,
+      "kind": "throw",
+      "chair": 0,
+      "card": "8T"
+    },
+    {
+      "seq": 110,
+      "kind": "hu",
+      "chair": 2,
+      "card": "8T"
+    },
+    {
+      "seq": 111,
+      "kind": "catch",
+      "chair": 1,
+      "card": "6T"
+    },
+    {
+      "seq": 112,
+      "kind": "throw",
+      "chair": 1,
+      "card": "6T"
+    },
+    {
+      "seq": 113,
+      "kind": "hu",
+      "chair": 0,
+      "card": "6T"
+    },
+    {
+      "seq": 114,
+      "kind": "hu",
+      "chair": 2,
+      "card": "6T"
+    },
+    {
+      "seq": 115,
+      "kind": "catch",
+      "chair": 1,
+      "card": "6D"
+    },
+    {
+      "seq": 116,
+      "kind": "hu",
+      "chair": 1,
+      "card": "6D"
+    },
+    {
+      "seq": 117,
+      "kind": "catch",
+      "chair": 0,
+      "card": "9D"
+    },
+    {
+      "seq": 118,
+      "kind": "throw",
+      "chair": 0,
+      "card": "9D"
+    },
+    {
+      "seq": 119,
+      "kind": "hu",
+      "chair": 1,
+      "card": "9D"
+    },
+    {
+      "seq": 120,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4D"
+    },
+    {
+      "seq": 121,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4D"
+    },
+    {
+      "seq": 122,
+      "kind": "catch",
+      "chair": 3,
+      "card": "5F"
+    },
+    {
+      "seq": 123,
+      "kind": "throw",
+      "chair": 3,
+      "card": "1W"
+    },
+    {
+      "seq": 124,
+      "kind": "hu",
+      "chair": 2,
+      "card": "1W"
+    },
+    {
+      "seq": 125,
+      "kind": "catch",
+      "chair": 1,
+      "card": "9T"
+    },
+    {
+      "seq": 126,
+      "kind": "throw",
+      "chair": 1,
+      "card": "9T"
+    },
+    {
+      "seq": 127,
+      "kind": "hu",
+      "chair": 2,
+      "card": "9T"
+    },
+    {
+      "seq": 128,
+      "kind": "catch",
+      "chair": 1,
+      "card": "9T"
+    },
+    {
+      "seq": 129,
+      "kind": "throw",
+      "chair": 1,
+      "card": "9T"
+    },
+    {
+      "seq": 130,
+      "kind": "hu",
+      "chair": 2,
+      "card": "9T"
+    },
+    {
+      "seq": 131,
+      "kind": "catch",
+      "chair": 1,
+      "card": "6D"
+    },
+    {
+      "seq": 132,
+      "kind": "hu",
+      "chair": 1,
+      "card": "6D"
+    },
+    {
+      "seq": 133,
+      "kind": "catch",
+      "chair": 0,
+      "card": "5F"
+    },
+    {
+      "seq": 134,
+      "kind": "hu",
+      "chair": 0,
+      "card": "5F"
+    },
+    {
+      "seq": 135,
+      "kind": "catch",
+      "chair": 3,
+      "card": "8D"
+    },
+    {
+      "seq": 136,
+      "kind": "throw",
+      "chair": 3,
+      "card": "1W"
+    },
+    {
+      "seq": 137,
+      "kind": "hu",
+      "chair": 2,
+      "card": "1W"
+    },
+    {
+      "seq": 138,
+      "kind": "catch",
+      "chair": 1,
+      "card": "2T"
+    },
+    {
+      "seq": 139,
+      "kind": "throw",
+      "chair": 1,
+      "card": "2T"
+    },
+    {
+      "seq": 140,
+      "kind": "catch",
+      "chair": 0,
+      "card": "8T"
+    },
+    {
+      "seq": 141,
+      "kind": "throw",
+      "chair": 0,
+      "card": "8T"
+    },
+    {
+      "seq": 142,
+      "kind": "hu",
+      "chair": 2,
+      "card": "8T"
+    },
+    {
+      "seq": 143,
+      "kind": "catch",
+      "chair": 1,
+      "card": "8D"
+    },
+    {
+      "seq": 144,
+      "kind": "hu",
+      "chair": 1,
+      "card": "8D"
+    },
+    {
+      "seq": 145,
+      "kind": "catch",
+      "chair": 0,
+      "card": "3T"
+    },
+    {
+      "seq": 146,
+      "kind": "throw",
+      "chair": 0,
+      "card": "3T"
+    },
+    {
+      "seq": 147,
+      "kind": "hu",
+      "chair": 2,
+      "card": "3T"
+    },
+    {
+      "seq": 148,
+      "kind": "catch",
+      "chair": 1,
+      "card": "2T"
+    },
+    {
+      "seq": 149,
+      "kind": "throw",
+      "chair": 1,
+      "card": "2T"
+    },
+    {
+      "seq": 150,
+      "kind": "catch",
+      "chair": 0,
+      "card": "7W"
+    },
+    {
+      "seq": 151,
+      "kind": "throw",
+      "chair": 0,
+      "card": "7W"
+    },
+    {
+      "seq": 152,
+      "kind": "catch",
+      "chair": 2,
+      "card": "8T"
+    },
+    {
+      "seq": 153,
+      "kind": "hu",
+      "chair": 2,
+      "card": "8T"
+    },
+    {
+      "seq": 154,
+      "kind": "catch",
+      "chair": 1,
+      "card": "6T"
+    },
+    {
+      "seq": 155,
+      "kind": "throw",
+      "chair": 1,
+      "card": "6T"
+    },
+    {
+      "seq": 156,
+      "kind": "hu",
+      "chair": 0,
+      "card": "6T"
+    },
+    {
+      "seq": 157,
+      "kind": "hu",
+      "chair": 0,
+      "card": "6T"
+    },
+    {
+      "seq": 158,
+      "kind": "hu",
+      "chair": 0,
+      "card": "6T"
+    },
+    {
+      "seq": 159,
+      "kind": "hu",
+      "chair": 2,
+      "card": "6T"
+    },
+    {
+      "seq": 160,
+      "kind": "catch",
+      "chair": 1,
+      "card": "7D"
+    },
+    {
+      "seq": 161,
+      "kind": "hu",
+      "chair": 1,
+      "card": "7D"
+    }
+  ],
+  "expect": {}
+}

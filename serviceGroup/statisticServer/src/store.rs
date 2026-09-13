@@ -59,12 +59,16 @@ pub fn init_db(path: &Path) -> rusqlite::Result<Connection> {
     migrate_add_column(&conn, "credits", "REAL DEFAULT 0")?;
     migrate_add_column(&conn, "source", "TEXT DEFAULT 'unknown'")?;
     migrate_add_column(&conn, "tool_calls", "INTEGER DEFAULT 0")?;
+    // cost 回填 + credits 回填 + 定价版本迁移：合并进单个事务。
+    // 逐条 autocommit 时每行一次 fsync，3.5 万行启动要数分钟；单事务提交后为秒级。
+    let tx = conn.unchecked_transaction()?;
     // cost 回填：旧行补算
-    backfill_cost(&conn)?;
+    backfill_cost(&tx)?;
     // credits 回填：旧行按公式补算（超算平台表，无峰谷）
-    backfill_credits(&conn)?;
+    backfill_credits(&tx)?;
     // 定价版本迁移：变化时按当前价格表重算所有历史 cost
-    migrate_pricing_version(&conn)?;
+    migrate_pricing_version(&tx)?;
+    tx.commit()?;
     Ok(conn)
 }
 
@@ -295,7 +299,7 @@ mod tests {
         let cost: f64 = conn
             .query_row("SELECT cost FROM requests WHERE id='req_test'", [], |row| row.get(0))
             .unwrap();
-        let expect = (7.0 * 0.44 + 3.0 * 0.014 + 5.0 * 1.32) / 1_000_000.0;
+        let expect = (7.0 * 2.0 + 3.0 * 0.04 + 5.0 * 8.0) / 1_000_000.0;
         assert!((cost - expect).abs() < 1e-12, "cost={cost} expect={expect}");
     }
 

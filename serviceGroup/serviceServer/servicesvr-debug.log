@@ -1,3 +1,8 @@
 kind=ok args=["--source", "oss", "--service", "xzmosvr", "--host", "3718", "--subdir", "Record", "--json", "--no-download", "2025-06-18", "2025-06-18"] stderr=stdout_len=1915
 kind=ok args=["--source", "oss", "--service", "xzmosvr", "--host", "3718", "--subdir", "Record", "--json", "--no-download", "2026-08-03", "2026-08-03"] stderr=stdout_len=1922
 kind=ok args=["--source", "oss", "--subdir", "Record", "--fetch", "xzmosvr/3718/Record/xzmosvr-20260803023003-Record.zip::game/xzmosvr/Record/31966_20260803.log"] stderr=stdout_len=28384370
+kind=exit args=["--source", "oss", "--service", "xzmssvr", "--host", "3291", "--subdir", "Record", "--json", "--no-download", "2020-01-01"] stderr=Traceback (most recent call last):
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 13, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+

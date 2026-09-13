@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import signal
@@ -6,9 +7,29 @@ import sys
 
 import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def wait_writable(path: str, timeout: float = 15, interval: float = 0.5) -> bool:
+    """轮询到 path 能打开写句柄为止 (最多 timeout 秒)。
+
+    进程退出后 Windows 释放 image section 有延迟 (本地实测偶发 >2s, 既有 handoff
+    记为 14s 量级), 固定 sleep 赌不过去。文件不存在视为可写 (新建场景)。
+    """
+    deadline = time.time() + timeout
+    while True:
+        if not os.path.exists(path):
+            return True
+        try:
+            with open(path, "r+b"):
+                return True
+        except OSError:
+            if time.time() >= deadline:
+                return False
+            time.sleep(interval)
 
 # ── Windows Job Object (foreground/managed mode only) ─────────────────────
 _WIN_JOB = None
@@ -145,52 +166,115 @@ class ManagedService:
     @staticmethod
     def _get_parent_pid(pid: int) -> Optional[int]:
         """Get parent PID via wmic."""
-        try:
-            out = subprocess.run(
-                ["wmic", "process", "where", f"processid={pid}", "get", "parentprocessid"],
-                capture_output=True, text=True, timeout=5,
-            ).stdout
-            for line in out.splitlines():
-                line = line.strip()
-                if line.isdigit():
-                    return int(line)
-        except:
-            pass
-        return None
+        return ManagedService._get_parent_info(pid)[0]
 
     @staticmethod
-    def _free_port(port: int) -> bool:
-        """Kill all processes holding the port via netstat + taskkill /T."""
-        if os.name != "nt":
-            return False
+    def _get_parent_info(pid: int) -> tuple:
+        """(parent_pid, parent_image_name); 失败返 (None, None)。
+
+        wmic 在 Win11 已被移除 (本机实测 FileNotFoundError), 故回退 PowerShell CIM。
+        """
+        # 1) wmic (老系统)
+        try:
+            out = subprocess.run(
+                ["wmic", "process", "where", f"processid={pid}",
+                 "get", "parentprocessid,name"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout
+            ppid, name = None, ""
+            for line in out.splitlines():
+                toks = line.split()
+                if not toks:
+                    continue
+                num = next((t for t in toks if t.isdigit()), None)
+                img = next((t for t in toks if t.lower().endswith(".exe")), None)
+                if num is None:
+                    continue
+                ppid = int(num)
+                name = (img or "").lower()
+                break
+            if ppid is not None:
+                return ppid, name
+        except Exception:
+            pass
+        # 2) PowerShell CIM 回退
+        try:
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}') | "
+                 f"Select-Object -Property ParentProcessId,Name | ConvertTo-Json -Compress"],
+                capture_output=True, text=True, timeout=15,
+            ).stdout.strip()
+            if out:
+                d = json.loads(out)
+                if isinstance(d, list):
+                    d = d[0] if d else {}
+                return d.get("ParentProcessId"), (d.get("Name") or "").lower()
+        except Exception:
+            pass
+        return None, None
+
+    @staticmethod
+    def _netstat_listeners(port: int) -> List[int]:
+        """监听该端口的 PID 列表 (netstat -ano)。端口列末段精确比较, 避免 :500 撞 :5002。"""
+        pids: List[int] = []
+        if os.name != "nt" or port is None:
+            return pids
         try:
             out = subprocess.run(
                 ["netstat", "-ano"], capture_output=True, text=True, timeout=10
             ).stdout
+        except Exception:
+            return pids
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) < 5 or "LISTENING" not in parts:
+                continue
+            if parts[1].rsplit(":", 1)[-1] != str(port):
+                continue
+            try:
+                pid = int(parts[-1])
+            except ValueError:
+                continue
+            if pid and pid not in pids:
+                pids.append(pid)
+        return pids
+
+    def _free_port(self, port: int, kill_parent: bool = True) -> bool:
+        """Kill all processes holding the port via netstat + taskkill /T。
+
+        kill_parent: 连父进程一起杀 —— 仅对"父进程与自己同镜像"的情况生效 (python
+        reloader 的父进程也是 python.exe)。旧实现无条件杀父进程 (除 SYSTEM), 在
+        端口被非本宿主进程占用时可能顺着 PPID 误杀无关进程 (PPID 不随父进程退出
+        而更新, 可能已被系统复用) — 2026-09-13 收窄。
+        """
+        if os.name != "nt":
+            return False
+        own_image = os.path.basename((self.command or "").strip().strip('"')).lower()
+        try:
             killed = False
-            for line in out.splitlines():
-                if "LISTENING" in line and f":{port}" in line:
-                    pid_str = line.strip().split()[-1]
-                    if not pid_str or pid_str == "0":
-                        continue
-                    pid = int(pid_str)
-                    # Kill child process tree
-                    subprocess.run(
-                        ["taskkill", "/F", "/T", "/PID", str(pid)],
-                        capture_output=True, timeout=5,
-                    )
-                    # Kill parent (reloader) too
-                    parent = ManagedService._get_parent_pid(pid)
-                    if parent and parent != 1:  # not SYSTEM
+            for pid in self._netstat_listeners(port):
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True, timeout=5,
+                )
+                parent, parent_img = (None, "")
+                if kill_parent:
+                    parent, parent_img = self._get_parent_info(pid)
+                    if parent and parent != 1 and parent != os.getpid() \
+                            and own_image and parent_img == own_image:
                         subprocess.run(
                             ["taskkill", "/F", "/T", "/PID", str(parent)],
                             capture_output=True, timeout=5,
                         )
-                    logger.info("[svc] Killed PID %s (parent %s) to free port %d",
-                               pid_str, parent or "?", port)
-                    killed = True
+                    elif parent:
+                        logger.info("[svc] skip parent kill PID %s (%s ≠ %s)",
+                                    parent, parent_img or "?", own_image or "?")
+                logger.info("[svc] Killed PID %s (parent %s/%s) to free port %d",
+                            pid, parent or "-", parent_img or "-", port)
+                killed = True
             return killed
-        except:
+        except Exception:
             pass
         return False
 
@@ -278,6 +362,12 @@ class ManagedService:
                 logger.warning("[svc] '%s' skipped: %s", self.name, self._last_error)
                 self.enabled = False
                 return
+            except OSError as e:
+                # exe 被独占锁住时 Popen 直接 WinError32; 不能让启动失败炸掉调用方
+                # (deploy 编排 / 管道 RPC 都经这里), 记 _last_error 后如实返回。
+                self._last_error = f"{e.__class__.__name__}: {e}"
+                logger.error("[svc] '%s' start failed: %s", self.name, self._last_error)
+                return
 
     def stop(self, timeout: float = 15):
         if not self.managed:
@@ -304,21 +394,55 @@ class ManagedService:
             self._last_error = str(e)
             logger.error("Error stopping service '%s': %s", self.name, e)
 
-    def restart(self, timeout: float = 15):
+    def stop_verified(self, timeout: float = 15, force_port: bool = True) -> Dict[str, Any]:
+        """停服 + **校验真的停了**。返回 {name, ok, how, pid, port_pids, detail}。
+
+        stop() 对两种情况会静默空转: ① `managed=false` (daemon) ② `_process is None`
+        (进程不是本宿主 spawn 的 — 孤儿/手工起/上一代宿主遗留)。此时日志照样写
+        "stopped", 文件锁却还在, 替换阶段才以 WinError32 暴露, 排查成本极高。
+        这里以"端口是否还有 LISTENING"为唯一判据, 不空则按端口强杀兜底
+        (kill_parent=False — 不能把宿主自己的进程树当 reloader 顺手杀掉)。
+        """
+        info: Dict[str, Any] = {"name": self.name, "ok": False, "how": None,
+                                "pid": self.pid, "port_pids": [], "detail": ""}
         self.stop(timeout=timeout)
+        info["port_pids"] = self._netstat_listeners(self.port)
+        if not info["port_pids"]:
+            info["ok"] = True
+            info["how"] = "handle" if info["pid"] else "dead"
+            return info
+        info["detail"] = f"stop() 未生效, 端口 {self.port} 仍被 PID {info['port_pids']} 占用"
+        if not force_port:
+            info["how"] = "still_listening"
+            return info
+        self._free_port(self.port, kill_parent=False)
+        info["port_pids"] = self._netstat_listeners(self.port)
+        if not info["port_pids"]:
+            info["ok"] = True
+            info["how"] = "port_kill"
+            return info
+        info["how"] = "port_kill_failed"
+        info["detail"] += " → 按端口强杀仍失败 (权限不足?)"
+        return info
+
+    def restart(self, timeout: float = 15, force_port: bool = True):
+        """停 (带校验, 端口判据兜底) → 启。句柄丢了也能停掉 (2026-09-13)。"""
+        info = self.stop_verified(timeout=timeout, force_port=force_port)
         self.start()
+        return info
 
     # ── swap_exe: 热替换子服务 exe (规避 Windows 文件占用) ────────────────
-    # 对齐 service-server update 简单模式: stop → sleep 2s → cp target/release
-    # 同名 exe → start。无 verify/回滚 (失败手动处理)。仅 .exe 业务子服务。
+    # stop(带校验) → 等到运行位可写 → cp 新 exe → start。
+    # 源缺省 = 同项目 target/release/{basename}; src 显式给出时用它 (deploy 从
+    # staging 换 exe 走这条)。句柄永远留在宿主: 停/起都经本对象, 不外部 Popen。
 
-    def swap_exe(self, timeout: float = 15) -> Dict[str, Any]:
-        """简单热替换: stop → sleep 2s → cp target/release/{exe} → start。
+    def swap_exe(self, timeout: float = 15, src: Optional[str] = None) -> Dict[str, Any]:
+        """热替换运行位 exe。
 
-        源 = exe 同项目 target/release/{basename} (cargo build --release 输出,
-        agent 构建后直接落位)。目标 = config command 指向的运行位 exe。
-        对齐 service-server update: 杀子服务 + 等 OS 释放句柄 + cp + 启,
-        无 verify/回滚 (简单优先, 失败手动处理)。
+        src 缺省 = exe 同项目 target/release/{basename} (cargo build --release 输出);
+        src 显式给出 (绝对路径或相对 infoServer 根) → 用该文件, 供 deploy 编排
+        从 staging 换 exe。停服走 stop_verified (端口判据 + 强杀兜底), 替换前
+        轮询等文件可写 (进程退出后 image section 释放有延迟, 固定 sleep 2s 不够)。
         """
         import shutil
 
@@ -326,25 +450,46 @@ class ManagedService:
         if exe_path is None or not exe_path.lower().endswith(".exe"):
             return {"error": f"服务 '{self.name}' command '{self.command}' 非 .exe 业务路径, 不支持 swap_exe"}
 
-        # 源 = exe 同项目 target/release/{basename}
         basename = os.path.basename(exe_path)
-        project_dir = os.path.dirname(exe_path)
-        new_exe = os.path.join(project_dir, "target", "release", basename)
+        if src:
+            cand = Path(src)
+            if not cand.is_absolute():
+                cand = Path(os.getcwd()) / src
+            new_exe = str(cand)
+        else:
+            new_exe = os.path.join(os.path.dirname(exe_path), "target", "release", basename)
         if not os.path.isfile(new_exe):
-            return {"error": f"新 exe 不存在: {new_exe} (需先 cargo build --release)"}
+            return {"error": f"新 exe 不存在: {new_exe}"
+                             + ("" if src else " (需先 cargo build --release)")}
 
         logger.info("[svc] swap_exe '%s': %s <- %s", self.name, exe_path, new_exe)
 
-        # 1) stop 释放 exe 占用
-        self.stop(timeout=timeout)
-        # 2) 等 OS 释放文件句柄 (对齐 service-server sleep 2s)
-        time.sleep(2)
-        # 3) cp 新 exe 到运行位 (不 mv .bak, 无回滚)
+        # 1) stop + 校验 (孤儿/句柄丢失也能靠端口强杀停掉)
+        stop_info = self.stop_verified(timeout=timeout)
+        # 2) 等到运行位真的可写 (替代固定 sleep 2s)
+        if not wait_writable(exe_path, timeout=15):
+            self.start()  # 别把服务留在停着的状态
+            return {"error": f"运行位 exe 仍被占用, 未替换: {exe_path}"
+                             f" (占用者非本宿主可停的进程, 需人工处理)",
+                    "name": self.name, "port": self.port,
+                    "restart_error": self._last_error, "stop": stop_info}
+        # 3) 备份旧 exe → cp 新 exe 到运行位
+        backup = None
+        if os.path.isfile(exe_path):
+            try:
+                bdir = os.path.join(os.getcwd(), ".deploy_backup", time.strftime("%Y%m%d%H%M%S") + "_swap")
+                os.makedirs(bdir, exist_ok=True)
+                backup = os.path.join(bdir, basename)
+                shutil.copy2(exe_path, backup)
+            except OSError as e:
+                logger.warning("[svc] swap_exe '%s' 备份旧 exe 失败 (继续): %s", self.name, e)
         try:
             shutil.copyfile(new_exe, exe_path)
         except OSError as e:
             logger.error("[svc] swap_exe '%s' cp 失败: %s", self.name, e)
-            return {"error": f"exe 替换失败: {e}", "name": self.name}
+            self.start()
+            return {"error": f"exe 替换失败: {e}", "name": self.name,
+                    "backup": backup, "stop": stop_info}
         # 4) start 拉新 exe
         self.start()
 
@@ -356,6 +501,8 @@ class ManagedService:
             "pid": self.pid,
             "exe": exe_path,
             "new_exe": new_exe,
+            "backup": backup,
+            "stop": stop_info,
         }
 
     def _resolve_exe_path(self) -> Optional[str]:
@@ -392,6 +539,8 @@ class ManagedService:
             "port": self.port,
             "tags": self.tags,
             "command": f"{self.command} {' '.join(self.args)}",
+            "exe_path": self._resolve_exe_path(),  # 运行位 exe 绝对路径 (非 .exe 服务为 None);
+                                                   # deploy 编排靠它把包内文件映射到 port
             "health_check_url": self.health_check.get("url") if self.health_check else None,
             "crash_restart_count": self._crash_restart_count,
             "in_backoff": self._crash_restart_count > self._max_quick_retries,

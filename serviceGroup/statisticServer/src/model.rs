@@ -27,16 +27,17 @@ pub const MODEL_MAP: [(&str, &str); 4] = [
     ("deepseek-reasoner", "deepseek-v4-flash"),
 ];
 
-/// 价格表（USD/百万 token，DeepSeek V4 官方刊例，**数值为高峰价**，错峰 5 折）。
+/// 价格表（CNY/百万 token，DeepSeek 官方中文刊例，**数值为高峰价**，空闲时段 5 折）。
 pub struct Pricing {
     pub miss: f64,
     pub hit: f64,
     pub out: f64,
 }
 
-/// V4 价格：flash 与 pro（api-docs.deepseek.com/quick_start/pricing，2026-09 核实）。
-pub const PRICING_FLASH: Pricing = Pricing { miss: 0.44, hit: 0.014, out: 1.32 };
-pub const PRICING_PRO: Pricing = Pricing { miss: 1.32, hit: 0.044, out: 3.96 };
+/// V4.1 价格：flash 与 pro（api-docs.deepseek.com/zh-cn/quick_start/pricing，2026-09-10 核实）。
+/// flash 空闲 ¥1/¥0.02/¥4、高峰 ¥2/¥0.04/¥8；pro 空闲 ¥4.5/¥0.15/¥13.5、高峰 ¥9/¥0.30/¥27。
+pub const PRICING_FLASH: Pricing = Pricing { miss: 2.0, hit: 0.04, out: 8.0 };
+pub const PRICING_PRO: Pricing = Pricing { miss: 9.0, hit: 0.3, out: 27.0 };
 
 /// 超算平台 credits 定价（每 1M token，用户提供，折扣已含）。
 ///
@@ -91,7 +92,12 @@ pub const GLM_PEAK_WINDOWS: [(u32, u32); 1] = [(14, 18)];
 pub const GLM_MCP_TOOL_CREDITS: f64 = 1.2;
 
 /// 定价版本：修改 PRICING 后递增，启动时据此重算所有历史 cost。
-pub const PRICING_VERSION: &str = "2026-09-02-v3-usd";
+/// v4-cny：USD 刊例 → CNY 刊例（币种变更必须全量重算，否则总额混币种）。
+pub const PRICING_VERSION: &str = "2026-09-10-v4-cny";
+
+/// Pro 有序下线切换点：北京时间 2026-09-14 12:00（本地朴素 ISO，同 ts 落库格式）。
+/// 官方公告：此后至 V4.1 Pro 上线前，deepseek-v4-pro 请求全部路由到 V4.1 Flash 并按 Flash 计费。
+pub const PRO_RETIRE_TS: &str = "2026-09-14T12:00:00";
 
 /// 将 Claude 模型名映射为 DeepSeek V4 模型名。
 pub fn map_model(m: &str) -> &str {
@@ -114,6 +120,22 @@ pub fn get_pricing(model: &str) -> &'static Pricing {
     } else {
         &PRICING_FLASH
     }
+}
+
+/// 取指定时刻生效的价格档：Pro 自 [`PRO_RETIRE_TS`] 起按 Flash 价计费
+/// （官方：请求全部路由到 V4.1 Flash）。其余模型与 Pro 切换前不变。
+/// ts 为本地朴素 ISO：空格归一化为 `T` 后字典序即时间序（落库格式恒带秒与毫秒）；
+/// ts 缺失时不切换（落库路径恒带 ts，缺失只出现在无时刻的补算）。
+pub fn get_pricing_at(model: &str, ts: Option<&str>) -> &'static Pricing {
+    let p = get_pricing(model);
+    if std::ptr::eq(p, &PRICING_PRO) {
+        if let Some(t) = ts {
+            if t.replace(' ', "T").as_str() >= PRO_RETIRE_TS {
+                return &PRICING_FLASH;
+            }
+        }
+    }
+    p
 }
 
 /// 是否 GLM 系模型（走 GLM 计费分支：cost=0、credits=coding plan 折算）。
@@ -159,15 +181,16 @@ fn peak_in_windows(ts: &str, windows: &[(u32, u32)]) -> bool {
     weekday && windows.iter().any(|(lo, hi)| *lo <= h && h < *hi)
 }
 
-/// 费用（USD）= 未命中×未命中价 + 命中×命中价 + 输出×输出价（基准=高峰价），
-/// 错峰时段 ×OFF_PEAK_DISCOUNT。GLM 模型不计按量 cost（D2 决策）。
+/// 费用（CNY）= 未命中×未命中价 + 命中×命中价 + 输出×输出价（基准=高峰价），
+/// 空闲时段 ×OFF_PEAK_DISCOUNT。GLM 模型不计按量 cost（D2 决策）。
+/// Pro 自 [`PRO_RETIRE_TS`] 起按 Flash 档（见 [`get_pricing_at`]）。
 ///
 /// prompt 为总输入（含命中），miss = prompt - hit，避免缓存命中段重复计费。
 pub fn calc_cost(model: &str, prompt: i64, hit: i64, out: i64, ts: Option<&str>) -> f64 {
     if is_glm_model(model) {
         return 0.0;
     }
-    let p = get_pricing(model);
+    let p = get_pricing_at(model, ts);
     let miss = (prompt - hit).max(0);
     let mut cost =
         (miss as f64 * p.miss + hit as f64 * p.hit + out as f64 * p.out) / 1_000_000.0;
@@ -398,16 +421,16 @@ mod tests {
     #[test]
     fn pricing_flash_v4() {
         let p = get_pricing("deepseek-v4-flash");
-        assert_eq!(p.miss, 0.44);
-        assert_eq!(p.hit, 0.014);
-        assert_eq!(p.out, 1.32);
+        assert_eq!(p.miss, 2.0);
+        assert_eq!(p.hit, 0.04);
+        assert_eq!(p.out, 8.0);
     }
 
     #[test]
     fn calc_cost_flash_1m_peak() {
-        // 100万未命中输入 = 0.44 USD（基准=高峰价；无 ts 按峰算保守值）
+        // 100万未命中输入 = 2.0 CNY（基准=高峰价；无 ts 按峰算保守值）
         let c = calc_cost("deepseek-v4-flash", 1_000_000, 0, 0, None);
-        assert!((c - 0.44).abs() < 1e-9);
+        assert!((c - 2.0).abs() < 1e-9);
     }
 
     #[test]
@@ -415,14 +438,50 @@ mod tests {
         // 工作日 08:00 非高峰：峰价 ×0.5
         let ts = "2026-08-20T08:00:00";
         let c = calc_cost("deepseek-v4-flash", 1_000_000, 0, 0, Some(ts));
-        assert!((c - 0.22).abs() < 1e-9);
+        assert!((c - 1.0).abs() < 1e-9);
     }
 
     #[test]
     fn cost_v4_pro_pricing() {
+        // 9/14 12:00 前 pro 仍按 Pro 档：100万未命中输入 = 9.0 CNY（高峰）
         let ts_peak = "2026-08-20T10:00:00";
         let c = calc_cost("deepseek-v4-pro", 1_000_000, 0, 0, Some(ts_peak));
-        assert!((c - 1.32).abs() < 1e-9);
+        assert!((c - 9.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pro_routed_to_flash_after_retire() {
+        // 2026-09-14 = 周一（高峰窗口 9-12/14-18 生效）
+        // 切换点（含）起按 Flash 档计费；切换前仍按 Pro 档
+        let pro_off_before = calc_cost("deepseek-v4-pro", 1_000_000, 0, 0, Some("2026-09-14T08:00:00"));
+        assert!((pro_off_before - 4.5).abs() < 1e-9, "切换前非峰 = Pro ¥4.5");
+        let pro_peak_before = calc_cost("deepseek-v4-pro", 1_000_000, 0, 0, Some("2026-09-14T11:59:59"));
+        assert!((pro_peak_before - 9.0).abs() < 1e-9, "切换前高峰 = Pro ¥9");
+
+        // 12:00 整为切换点，且该时刻属非峰（12:00 不含在 9-12 窗口）→ Flash 非峰 ¥1
+        let at_cutoff = calc_cost("deepseek-v4-pro", 1_000_000, 0, 0, Some("2026-09-14T12:00:00"));
+        assert!((at_cutoff - 1.0).abs() < 1e-9, "切换点（含）按 Flash 非峰 ¥1");
+
+        let pro_peak_after = calc_cost("deepseek-v4-pro", 1_000_000, 0, 0, Some("2026-09-14T14:00:00"));
+        assert!((pro_peak_after - 2.0).abs() < 1e-9, "切换后高峰 = Flash ¥2");
+        let pro_off_after = calc_cost("deepseek-v4-pro", 1_000_000, 0, 0, Some("2026-09-15T08:00:00"));
+        assert!((pro_off_after - 1.0).abs() < 1e-9, "切换后非峰 = Flash ¥1");
+
+        // flash 自身与切换无关
+        let flash_after = calc_cost("deepseek-v4-flash", 1_000_000, 0, 0, Some("2026-09-15T14:00:00"));
+        assert!((flash_after - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_at_switches_pro_tier() {
+        assert_eq!(get_pricing_at("deepseek-v4-pro", Some("2026-09-13T10:00:00")).miss, 9.0, "切换前 Pro 档");
+        assert_eq!(get_pricing_at("deepseek-v4-pro", Some("2026-09-14T12:00:00")).miss, 2.0, "切换点（含）Flash 档");
+        assert_eq!(get_pricing_at("deepseek-v4-pro", Some("2026-09-14T14:00:00")).miss, 2.0, "切换后 Flash 档");
+        assert_eq!(get_pricing_at("deepseek-v4-pro", None).miss, 9.0, "无时刻不切换");
+        // 空格分隔的落库格式与 T 分隔等价
+        assert_eq!(get_pricing_at("deepseek-v4-pro", Some("2026-09-14 14:00:00")).miss, 2.0);
+        // 非 pro 恒 Flash
+        assert_eq!(get_pricing_at("deepseek-v4-flash", Some("2026-09-14T14:00:00")).miss, 2.0);
     }
 
     #[test]
@@ -449,10 +508,10 @@ mod tests {
 
     #[test]
     fn miss_excludes_hit() {
-        // prompt=100, hit=40 → miss=60；费用 = miss*0.44 + hit*0.014（峰）
+        // prompt=100, hit=40 → miss=60；费用 = miss*2.0 + hit*0.04（峰）
         let ts = "2026-08-20T10:00:00";
         let c = calc_cost("deepseek-v4-flash", 100, 40, 0, Some(ts));
-        let expect = (60.0 * 0.44 + 40.0 * 0.014) / 1_000_000.0;
+        let expect = (60.0 * 2.0 + 40.0 * 0.04) / 1_000_000.0;
         assert!((c - expect).abs() < 1e-9);
     }
 
@@ -531,7 +590,7 @@ mod tests {
         assert!(cr > 0.0, "GLM 记 coding plan 积分");
 
         let (c2, cr2) = calc_charges("deepseek-v4-flash", 1_000_000, 0, 0, 0, Some(ts));
-        assert!((c2 - 0.44).abs() < 1e-9);
+        assert!((c2 - 2.0).abs() < 1e-9);
         assert!((cr2 - 1200.0).abs() < 1e-6);
     }
 

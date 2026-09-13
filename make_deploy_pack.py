@@ -58,6 +58,51 @@ def _git_rev() -> str:
     return "unknown"
 
 
+def _svn_rev() -> str:
+    """本机 infoServer 工作副本 revision (部署留痕; 目标机将来可据此比对)。"""
+    try:
+        r = subprocess.run(["svn", "info", "--show-item", "revision"],
+                           capture_output=True, text=True, timeout=20, cwd=ROOT)
+        if r.returncode == 0 and (r.stdout or "").strip():
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
+def svn_commit(files: list[str], message: str) -> int:
+    """把本次部署涉及、且受 svn 版本控制且有改动的文件提交进 svn (推送后的备份动作)。
+
+    只提 manifest 里的路径 —— 不做全工作副本 commit (本地常驻其它未完成的改动)。
+    未纳入版本控制的 (? 状态) 只提示不代加, 避免误把临时文件塞进仓库。
+    """
+    versioned, unversioned = [], []
+    for rel in files:
+        if not (ROOT / rel).is_file():
+            continue
+        r = subprocess.run(["svn", "status", "-q", rel],
+                           capture_output=True, text=True, timeout=20, cwd=ROOT)
+        out = (r.stdout or "").strip()
+        if not out:
+            continue                    # 无改动, 已是最新
+        if out.startswith("?"):
+            unversioned.append(rel)
+        else:
+            versioned.append(rel)
+    if unversioned:
+        print(f"[svn] 未纳入版本控制, 跳过 {len(unversioned)} 项: {unversioned[:5]}")
+    if not versioned:
+        print("[svn] 无需提交 (manifest 内文件均无本地改动)")
+        return 0
+    r = subprocess.run(["svn", "commit", "--non-interactive", "-m", message, *versioned],
+                       capture_output=True, text=True, timeout=180, cwd=ROOT)
+    print(f"[svn] commit rc={r.returncode} files={len(versioned)}")
+    print((r.stdout or "").strip()[-800:])
+    if r.returncode != 0:
+        print((r.stderr or "").strip()[-800:])
+    return r.returncode
+
+
 # 受保护服务 (host 侧 _DEPLOY_PROTECTED 同款): 本机 AI API 网关, 误停 = 断 AI 会话。
 # 打包默认排除其文件; 要更新它需 --only statistic-server 显式指定 (53 侧同理人工评估)。
 PROTECTED_SERVICES = {"statistic-server"}
@@ -197,6 +242,8 @@ def build_zip(files: list[str], skipped: list[str]) -> Path:
     manifest = {
         "built_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "git_rev": _git_rev(),
+        "svn_rev": _svn_rev(),
+        "platform": sys.platform,
         "files": files,
         "skipped_configs": skipped,
     }
@@ -210,38 +257,46 @@ def build_zip(files: list[str], skipped: list[str]) -> Path:
     return zip_path
 
 
-def push(zip_path: Path, base: str, timeout: int = 180) -> int:
+def push(zip_path: Path, base: str, timeout: int = 180, token: str = "") -> int:
     import requests
     base = base.rstrip("/")
+    headers = {"X-Deploy-Token": token} if token else {}
+    if not token:
+        token = os.environ.get("DEPLOY_TOKEN", "").strip()
+        if token:
+            headers = {"X-Deploy-Token": token}
+    # 直连 legacy (:5099) 优先 —— 换 exe 时前端 (:5000) 本身就是被停目标,
+    # 走前端轮询在停机窗口必然断 (2026-09-13 起 deploy 编排已在 legacy 侧)
     with open(zip_path, "rb") as f:
         r = requests.post(f"{base}/api/deploy/upload",
                           files={"file": (zip_path.name, f, "application/zip")},
-                          timeout=60)
+                          headers=headers, timeout=60)
     print(f"[upload] {r.status_code}: {r.text[:300]}")
     if r.status_code != 200 or not r.json().get("success"):
         return 1
     # 记录 activate 前的旧编排 timestamp: 轮询只认更新的 record
     # (编排 sleep 1.5s 才动笔, 旧 done record 会先被读到导致提前退出)
     try:
-        old_ts = (requests.get(f"{base}/api/deploy/log", timeout=15)
+        old_ts = (requests.get(f"{base}/api/deploy/log", headers=headers, timeout=15)
                   .json().get("last") or {}).get("timestamp", "")
     except Exception:
         old_ts = ""
     r = requests.post(f"{base}/api/deploy/activate",
-                      json={"zip": zip_path.name}, timeout=30)
+                      json={"zip": zip_path.name}, headers=headers, timeout=30)
     print(f"[activate] {r.status_code}: {r.text[:300]}")
     if r.status_code != 200 or not r.json().get("success"):
         return 1
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            log = requests.get(f"{base}/api/deploy/log", timeout=15).json()
+            log = requests.get(f"{base}/api/deploy/log", headers=headers, timeout=15).json()
             last = log.get("last") or {}
             stage = last.get("stage")
             fresh = last.get("timestamp", "") > old_ts if old_ts else True
             print(f"[deploy] running={log.get('running')} stage={stage} "
                   f"ok={last.get('ok')}" + ("" if fresh else " (旧record, 等新编排)"))
-            if fresh and stage in ("done", "rolled_back", "error", "aborted_dirty"):
+            if fresh and stage in ("done", "rolled_back", "error", "aborted_dirty",
+                                   "aborted_locked", "aborted_stop_failed"):
                 print(json.dumps(last, ensure_ascii=False, indent=1)[:2000])
                 return 0 if last.get("ok") else 2
         except Exception as e:
@@ -256,7 +311,14 @@ def main() -> int:
     ap.add_argument("--only", metavar="SVCS",
                     help="只打包指定服务 (逗号分隔; host=根级 launcher py; 缺省=全量但排除受保护服务)")
     ap.add_argument("--push", metavar="BASE_URL",
-                    help="打包后推送到该 servicesvr 基址 (如 http://192.168.102.53:5000)")
+                    help="打包后推送到该基址。**优先直连 legacy :5099** "
+                         "(如 http://192.168.102.53:5099); 走 :5000 前端在换 exe 时会自断")
+    ap.add_argument("--token", metavar="TOK",
+                    help="部署口令 (缺省取 env DEPLOY_TOKEN); 目标机回环可免, 远端必填")
+    ap.add_argument("--svn-commit", action="store_true",
+                    help="推送成功后, 把本次涉及且已版本控制、有改动的文件提交进 svn (备份)")
+    ap.add_argument("--svn-message", metavar="MSG", default="",
+                    help="svn 提交信息 (缺省自动生成)")
     args = ap.parse_args()
 
     only = [s.strip() for s in args.only.split(",") if s.strip()] if args.only else None
@@ -268,7 +330,11 @@ def main() -> int:
         print(f"[pack] 未含现场配置 {len(skipped)} 项: {skipped[:8]}{'...' if len(skipped) > 8 else ''}")
     if not args.push:
         return 0
-    return push(zip_path, args.push)
+    rc = push(zip_path, args.push, token=args.token or "")
+    if rc == 0 and args.svn_commit:
+        msg = args.svn_message or f"deploy pack {zip_path.name} → {args.push} (推送后备份)"
+        svn_commit(files, msg)
+    return rc
 
 
 if __name__ == "__main__":

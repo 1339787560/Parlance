@@ -6,10 +6,11 @@
   <title>DQ-WorkFlow Web Reader</title>
   <link rel="stylesheet" href="http://localhost:5001/static/style.css?v=20260828e" />
   <link rel="stylesheet" href="vendor/highlight-styles/github.css" />
-  <link rel="stylesheet" href="style.css?v=20260828h" />
+  <link rel="stylesheet" href="style.css?v=20260909a" />
   <link rel="stylesheet" href="vendor/vditor/index.css" />
   <!-- 首帧主题：读 ?theme= 参数（iframe 嵌入方传），在首帧绘制前设置 data-theme，
-       避免深色模式下白闪。无参数 → 回退 localStorage 或系统偏好。 -->
+       避免深色模式下白闪。无参数 → 回退 localStorage；均无 → 默认浅色（不跟随系统深色，
+       对外分享页面对深色系统访客保持浅色）。 -->
   <script>
     (function () {
       try {
@@ -19,7 +20,7 @@
           t = localStorage.getItem('reader.theme');
           if (!valid.includes(t)) t = null;
         }
-        if (t) document.documentElement.dataset.theme = t;
+        document.documentElement.dataset.theme = t || 'light';
       } catch (e) {}
     })();
   </script>
@@ -287,6 +288,6 @@
   <script src="http://localhost:5001/static/skin-manifest.js"></script>
   <script src="http://localhost:5001/static/shader-runner.js"></script>
   <script src="http://localhost:5001/static/skin-runner.js?v=20260828f"></script>
-  <script type="module" src="app.js?v=20260828h"></script>
+  <script type="module" src="app.js?v=20260909a"></script>
 </body>
 </html>

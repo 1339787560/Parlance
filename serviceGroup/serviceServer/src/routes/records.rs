@@ -395,6 +395,62 @@ pub struct ActivateReq {
     pub name: String,
 }
 
+/// `POST /api/record/delete_makecard {source, name}` — 删除做牌存档 `<服务根>/test_<name>.ini`。
+///
+/// 名称仅允许非路径分隔字符 (防 `..\` 穿越), 且只删 `test_<name>.ini` 形态
+/// (**不会碰到生效中的 test.ini**)。bastion 源代理到远端同路由 (做牌文件在该机器上)。
+pub async fn delete_makecard(Json(req): Json<ActivateReq>) -> Result<Json<Value>> {
+    let src = find_source(&req.source).ok_or(AppError::MissingParam("source"))?;
+    let name = req.name.trim();
+    if name.is_empty() {
+        return Err(AppError::MissingParam("name"));
+    }
+    if name.contains("..") || name.chars().any(|c| r#"\/:*?"<>|"#.contains(c)) {
+        return Err(AppError::BadRequest("名称含非法字符".into()));
+    }
+    match src.kind {
+        "local" => {
+            let record_dir = std::path::Path::new(local_dir(&req.source).unwrap());
+            let svc_root = record_dir.parent().ok_or(AppError::NotFound)?;
+            let file_name = format!("test_{name}.ini");
+            let path = svc_root.join(&file_name);
+            if !path.is_file() {
+                return Err(AppError::NotFound);
+            }
+            tokio::fs::remove_file(&path).await?;
+            tracing::info!("delete_makecard: {} → {}", src.id, path.display());
+            Ok(Json(json!({
+                "success": true, "source": req.source, "file": file_name,
+                "path": path.display().to_string(),
+            })))
+        }
+        "bastion" => {
+            let proxy = bastion_proxy_url(src)?;
+            let remote = src.remote_source.unwrap();
+            let client = reqwest::Client::builder()
+                .timeout(BASTION_TIMEOUT)
+                .build()
+                .map_err(|_| AppError::ServiceUnavailable)?;
+            let body = serde_json::to_string(&json!({ "source": remote, "name": name }))
+                .map_err(|_| AppError::ServiceUnavailable)?;
+            let resp = client
+                .post(format!("{proxy}/api/record/delete_makecard"))
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(body)
+                .send()
+                .await
+                .map_err(|e| {
+                    tracing::warn!("bastion delete_makecard {} 连接失败: {e}", src.id);
+                    AppError::ServiceUnavailable
+                })?;
+            let bytes = resp.bytes().await.map_err(|_| AppError::ServiceUnavailable)?;
+            let v: Value = serde_json::from_slice(&bytes).map_err(|_| AppError::ServiceUnavailable)?;
+            Ok(Json(v))
+        }
+        _ => Err(AppError::BadRequest("oss 源无对应服务".into())),
+    }
+}
+
 /// `POST /api/record/activate_makecard {source, name}` — 启用做牌:
 /// 读 `<服务根>/test_<name>.ini` 全文原位写 `test.ini` (GBK),
 /// 返回其 `; Rec=` 关联 (autotest 据此自动加载对应剧本)。覆盖前先备份 test.ini。
@@ -832,6 +888,9 @@ async fn get_bastion(src: &RecordSource, id: &str) -> Result<String> {
 struct ScriptAction {
     /// 时序号 (0 起, 按文件行序)
     seq: usize,
+    /// 局内时间 (ms, 取该行 `HH:MM:SS` 前缀; 缺时间戳的行沿用上一动作值)。
+    /// 客户端按相邻动作差 `t_ms[i]-t_ms[i-1]` 做「按原时间回放」的动态节拍。
+    t_ms: u64,
     /// que / exchange / throw / catch / peng / gang / hu / banker
     kind: &'static str,
     /// 动作椅 (exchange = 收牌椅; from = 送牌椅)
@@ -894,6 +953,18 @@ pub async fn script(Query(p): Query<ScriptParams>) -> Result<Json<Value>> {
 
 const TOTAL_CHAIRS_W: usize = 4;
 
+/// record 行前缀 `HH:MM:SS` → 局内毫秒 (回放动态节拍用)。格式不符返 None。
+fn parse_hms_ms(s: &str) -> Option<u64> {
+    let b = s.as_bytes();
+    if b.len() != 8 || b[2] != b':' || b[5] != b':' {
+        return None;
+    }
+    let h: u64 = s[0..2].parse().ok()?;
+    let m: u64 = s[3..5].parse().ok()?;
+    let sec: u64 = s[6..8].parse().ok()?;
+    Some(((h * 60 + m) * 60 + sec) * 1000)
+}
+
 /// 从 record 文本解析指定局剧本。局以 `Version ` 行分隔; None = 无该局。
 fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<RecordScript> {
     // 切局: Version 行界
@@ -922,6 +993,7 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
     let mut total = String::new();
     let mut exchange3: Option<u8> = None;
     let mut actions: Vec<ScriptAction> = Vec::new();
+    let mut cur_t_ms: u64 = 0;   // 当前行时间戳 (局内 ms); 无时间戳行沿用上一值
 
     for line in lines {
         // 事件行 "HH:MM:SS Type Rest..." (时间冒号位 2/5 + 第 9 位空格) → (Type, Rest)
@@ -930,6 +1002,9 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
             && line.as_bytes()[5] == b':'
             && line.as_bytes()[8] == b' '
         {
+            if let Some(t) = parse_hms_ms(&line[..8]) {
+                cur_t_ms = t;
+            }
             let body = &line[9..];
             let mut it = body.splitn(2, ' ');
             (it.next().unwrap_or(""), it.next().unwrap_or("").trim())
@@ -978,7 +1053,7 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
         let pp: Vec<&str> = rest.split_whitespace().collect();
         let chair = pp.first().and_then(|s| s.parse::<usize>().ok());
         let mut act = |kind: &'static str, chair: usize, card: String| actions.push(ScriptAction {
-            seq: actions.len(), kind, chair, card, gang_type: None, from: None,
+            seq: actions.len(), t_ms: cur_t_ms, kind, chair, card, gang_type: None, from: None,
         });
         match kind {
             "Banker" => {
@@ -1008,7 +1083,7 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
                             };
                         }
                         actions.push(ScriptAction {
-                            seq: actions.len(), kind: "exchange", chair: r,
+                            seq: actions.len(), t_ms: cur_t_ms, kind: "exchange", chair: r,
                             card: pp[2].to_string(), gang_type: None, from: Some(f),
                         });
                     }
@@ -1037,7 +1112,7 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
                         _ => "pn",
                     };
                     actions.push(ScriptAction {
-                        seq: actions.len(), kind: "gang", chair: c,
+                        seq: actions.len(), t_ms: cur_t_ms, kind: "gang", chair: c,
                         card: pp.get(1).unwrap_or(&"").to_string(),
                         gang_type: Some(g), from: None,
                     });
@@ -1046,6 +1121,13 @@ fn parse_script(text: &str, source: &str, id: &str, round: usize) -> Option<Reco
             "Hu" => {
                 if let Some(c) = chair {
                     act("hu", c, pp.get(1).unwrap_or(&"").to_string());
+                }
+            }
+            "GiveUp" => {
+                // 血流认输 (离场旁观): record 记 "GiveUp <chair>"。复现必需 — 不认输的
+                // 椅会继续摸打改牌序, 后续事件 (Hu/Gang) 不再复现 (2026-09-09 复盘补录)
+                if let Some(c) = chair {
+                    act("giveUp", c, String::new());
                 }
             }
             _ => {}

@@ -633,8 +633,9 @@ body {
   color: #6b6b00;
   word-break: break-all;
 }
+/* 跟随系统深色仅在无显式主题时生效（noscript 等边缘）；显式 light/个性主题不被污染 */
 @media (prefers-color-scheme: dark) {
-  .history-banner { background: #3d3417; border-color: #5a4a1f; color: #d4c97a; }
+  html:not([data-theme]) .history-banner { background: #3d3417; border-color: #5a4a1f; color: #d4c97a; }
 }
 
 /* 历史恢复按钮 */
@@ -895,7 +896,7 @@ html[data-theme="odette"] #viewer pre {
   color: var(--fg);
 }
 @media (prefers-color-scheme: dark) {
-  #viewer pre { background: #2d2d2d; }
+  html:not([data-theme]) #viewer pre { background: #2d2d2d; }
 }
 #viewer pre code { background: transparent; padding: 0; }
 

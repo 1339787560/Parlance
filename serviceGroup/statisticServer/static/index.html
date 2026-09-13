@@ -299,7 +299,7 @@ html[data-theme="odette"] {
       </div>
       <div class="card-sub">未命中 / 缓存命中 / 输出 token</div>
     </div>
-    <div class="card"><div class="card-label">总费用 (USD)</div><div class="card-value purple" id="s-cost">-</div></div>
+    <div class="card"><div class="card-label">总费用 (¥)</div><div class="card-value purple" id="s-cost">-</div></div>
     <div class="card"><div class="card-label">总 Credits</div><div class="card-value" id="s-credits" style="color:#f0c674">-</div></div>
     <div class="card"><div class="card-label">平均用时</div><div class="card-value cyan" id="s-lat">-</div></div>
   </div>
@@ -679,7 +679,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Stats
 function fmt(n){return n===null||n===undefined?'-':n.toLocaleString()}
-function fmtCost(n){if(n===null||n===undefined)return'-';if(n<.001)return'$'+n.toFixed(6);if(n<1)return'$'+n.toFixed(4);return'$'+n.toFixed(2)}
+function fmtCost(n){if(n===null||n===undefined)return'-';if(n<.001)return'¥'+n.toFixed(6);if(n<1)return'¥'+n.toFixed(4);return'¥'+n.toFixed(2)}
 // 峰谷徽标：高峰=基准价（DS 工作日9-12/14-18；GLM 工作日14-18），错峰 ×0.5
 function peakBadge(p, n){
   if(!n) return '';
@@ -725,13 +725,13 @@ function fillCards(data){
       const p=lm.includes('glm')
         ? {label:'GLM', glm:true}
         : (lm.includes('reason')||lm.includes('pro')
-          ? {miss:1.32, hit:0.044, out:3.96, label:'Pro'}
-          : {miss:0.44, hit:0.014, out:1.32, label:'Flash'});
+          ? {miss:9.0, hit:0.30, out:27.0, label:'Pro'}
+          : {miss:2.0, hit:0.04, out:8.0, label:'Flash'});
       const cr = (data.model_credits&&data.model_credits[m]!=null)?data.model_credits[m]:null;
       const crHtml = (cr!=null)?` · <span style="color:#f0c674">${fmt(Math.round(cr))} credits</span>`:'';
       const body = p.glm
         ? `Coding Plan 按积分计费（不计 cost）${crHtml}`
-        : `输入命中 $${p.hit}/M · 输入未命中 $${p.miss}/M · 输出 $${p.out}/M → <span style="color:var(--purple)">${fmtCost(c)}</span>${crHtml}`;
+        : `输入命中 ¥${p.hit}/M · 输入未命中 ¥${p.miss}/M · 输出 ¥${p.out}/M → <span style="color:var(--purple)">${fmtCost(c)}</span>${crHtml}`;
       return `<div style="margin-bottom:4px"><strong>${p.label}</strong> ${m}: ${body}</div>`;
     }).join('');
   } else { mc.innerHTML='<span style="color:var(--dim)">暂无数据</span>'; }

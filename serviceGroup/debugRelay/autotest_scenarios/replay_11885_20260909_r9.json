@@ -1,0 +1,1077 @@
+{
+  "name": "replay_11885_20260909_r9",
+  "desc": "复盘回放 173611 · 11885_20260909.log 局9",
+  "type": "replay",
+  "makecard_id": "173611",
+  "source": "bastion-53-xzms",
+  "record_id": "11885_20260909.log",
+  "round": 8,
+  "meta": {
+    "room_id": "11885",
+    "table_no": "2",
+    "players": [
+      "1039378",
+      "1134468",
+      "1123074",
+      "1185882"
+    ],
+    "names": [
+      "玩家1039378",
+      "玩家1134468",
+      "蔡徐坤",
+      "crab25"
+    ],
+    "banker": 3,
+    "timestamp": 1788937545
+  },
+  "total": "36|59|10|72|0|68|79|74|83|110|48|49|25|58|70|54|63|28|9|111|15|62|73|5|92|31|78|100|51|47|45|46|30|108|18|6|69|42|52|71|61|80|90|77|104|27|96|43|107|20|14|4|12|113|93|103|76|56|7|64|84|57|32|41|23|105|40|37|88|102|81|85|26|16|95|87|35|24|33|99|112|8|67|17|53|50|89|22|29|3|38|106|94|60|55|66|21|1|13|2|19|101|34|75|91|82|11|86|65|98|109|39|97|44",
+  "actions": [
+    {
+      "seq": 0,
+      "t_ms": 25000,
+      "kind": "que",
+      "chair": 0,
+      "card": "D"
+    },
+    {
+      "seq": 1,
+      "t_ms": 25000,
+      "kind": "que",
+      "chair": 1,
+      "card": "W"
+    },
+    {
+      "seq": 2,
+      "t_ms": 25000,
+      "kind": "que",
+      "chair": 2,
+      "card": "T"
+    },
+    {
+      "seq": 3,
+      "t_ms": 25000,
+      "kind": "que",
+      "chair": 3,
+      "card": "T"
+    },
+    {
+      "seq": 4,
+      "t_ms": 33000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "6T"
+    },
+    {
+      "seq": 5,
+      "t_ms": 34000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "9T"
+    },
+    {
+      "seq": 6,
+      "t_ms": 37000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "7T"
+    },
+    {
+      "seq": 7,
+      "t_ms": 44000,
+      "kind": "peng",
+      "chair": 1,
+      "card": "7T"
+    },
+    {
+      "seq": 8,
+      "t_ms": 49000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "8W"
+    },
+    {
+      "seq": 9,
+      "t_ms": 49000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "8T"
+    },
+    {
+      "seq": 10,
+      "t_ms": 53000,
+      "kind": "gang",
+      "chair": 0,
+      "card": "1T",
+      "gang_type": "an"
+    },
+    {
+      "seq": 11,
+      "t_ms": 53000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "9D"
+    },
+    {
+      "seq": 12,
+      "t_ms": 57000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "8D"
+    },
+    {
+      "seq": 13,
+      "t_ms": 61000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "1D"
+    },
+    {
+      "seq": 14,
+      "t_ms": 62000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "9T"
+    },
+    {
+      "seq": 15,
+      "t_ms": 63000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "6D"
+    },
+    {
+      "seq": 16,
+      "t_ms": 65000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "9T"
+    },
+    {
+      "seq": 17,
+      "t_ms": 66000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "6D"
+    },
+    {
+      "seq": 18,
+      "t_ms": 68000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "2D"
+    },
+    {
+      "seq": 19,
+      "t_ms": 70000,
+      "kind": "gang",
+      "chair": 2,
+      "card": "2D",
+      "gang_type": "mn"
+    },
+    {
+      "seq": 20,
+      "t_ms": 70000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "1W"
+    },
+    {
+      "seq": 21,
+      "t_ms": 74000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "8D"
+    },
+    {
+      "seq": 22,
+      "t_ms": 78000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "8D"
+    },
+    {
+      "seq": 23,
+      "t_ms": 79000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "7D"
+    },
+    {
+      "seq": 24,
+      "t_ms": 81000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "9D"
+    },
+    {
+      "seq": 25,
+      "t_ms": 83000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "9D"
+    },
+    {
+      "seq": 26,
+      "t_ms": 83000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "8T"
+    },
+    {
+      "seq": 27,
+      "t_ms": 86000,
+      "kind": "gang",
+      "chair": 0,
+      "card": "8T",
+      "gang_type": "an"
+    },
+    {
+      "seq": 28,
+      "t_ms": 86000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "9D"
+    },
+    {
+      "seq": 29,
+      "t_ms": 89000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "7D"
+    },
+    {
+      "seq": 30,
+      "t_ms": 91000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "3W"
+    },
+    {
+      "seq": 31,
+      "t_ms": 93000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "2W"
+    },
+    {
+      "seq": 32,
+      "t_ms": 95000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "2W"
+    },
+    {
+      "seq": 33,
+      "t_ms": 95000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "6W"
+    },
+    {
+      "seq": 34,
+      "t_ms": 99000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "6W"
+    },
+    {
+      "seq": 35,
+      "t_ms": 100000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "5W"
+    },
+    {
+      "seq": 36,
+      "t_ms": 103000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "9D"
+    },
+    {
+      "seq": 37,
+      "t_ms": 105000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "9D"
+    },
+    {
+      "seq": 38,
+      "t_ms": 105000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4W"
+    },
+    {
+      "seq": 39,
+      "t_ms": 112000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "2T"
+    },
+    {
+      "seq": 40,
+      "t_ms": 113000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "5F"
+    },
+    {
+      "seq": 41,
+      "t_ms": 115000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "1D"
+    },
+    {
+      "seq": 42,
+      "t_ms": 116000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "4D"
+    },
+    {
+      "seq": 43,
+      "t_ms": 118000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "4D"
+    },
+    {
+      "seq": 44,
+      "t_ms": 119000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "5D"
+    },
+    {
+      "seq": 45,
+      "t_ms": 121000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "5D"
+    },
+    {
+      "seq": 46,
+      "t_ms": 122000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "5D"
+    },
+    {
+      "seq": 47,
+      "t_ms": 126000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "5D"
+    },
+    {
+      "seq": 48,
+      "t_ms": 127000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "5D"
+    },
+    {
+      "seq": 49,
+      "t_ms": 128000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "3T"
+    },
+    {
+      "seq": 50,
+      "t_ms": 133000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "9T"
+    },
+    {
+      "seq": 51,
+      "t_ms": 135000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "8W"
+    },
+    {
+      "seq": 52,
+      "t_ms": 137000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "1W"
+    },
+    {
+      "seq": 53,
+      "t_ms": 138000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "2T"
+    },
+    {
+      "seq": 54,
+      "t_ms": 139000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "2T"
+    },
+    {
+      "seq": 55,
+      "t_ms": 141000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "4D"
+    },
+    {
+      "seq": 56,
+      "t_ms": 143000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "4D"
+    },
+    {
+      "seq": 57,
+      "t_ms": 144000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4T"
+    },
+    {
+      "seq": 58,
+      "t_ms": 146000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "5W"
+    },
+    {
+      "seq": 59,
+      "t_ms": 148000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "6W"
+    },
+    {
+      "seq": 60,
+      "t_ms": 150000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "1W"
+    },
+    {
+      "seq": 61,
+      "t_ms": 151000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "6T"
+    },
+    {
+      "seq": 62,
+      "t_ms": 152000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "6T"
+    },
+    {
+      "seq": 63,
+      "t_ms": 154000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "6W"
+    },
+    {
+      "seq": 64,
+      "t_ms": 155000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "6W"
+    },
+    {
+      "seq": 65,
+      "t_ms": 155000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "7D"
+    },
+    {
+      "seq": 66,
+      "t_ms": 160000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "7D"
+    },
+    {
+      "seq": 67,
+      "t_ms": 161000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "5T"
+    },
+    {
+      "seq": 68,
+      "t_ms": 163000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "5T"
+    },
+    {
+      "seq": 69,
+      "t_ms": 164000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "2T"
+    },
+    {
+      "seq": 70,
+      "t_ms": 165000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "2T"
+    },
+    {
+      "seq": 71,
+      "t_ms": 167000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "8D"
+    },
+    {
+      "seq": 72,
+      "t_ms": 169000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "8D"
+    },
+    {
+      "seq": 73,
+      "t_ms": 170000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4D"
+    },
+    {
+      "seq": 74,
+      "t_ms": 177000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4D"
+    },
+    {
+      "seq": 75,
+      "t_ms": 177000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "1D"
+    },
+    {
+      "seq": 76,
+      "t_ms": 180000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "7W"
+    },
+    {
+      "seq": 77,
+      "t_ms": 182000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "7W"
+    },
+    {
+      "seq": 78,
+      "t_ms": 182000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "5D"
+    },
+    {
+      "seq": 79,
+      "t_ms": 185000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "5D"
+    },
+    {
+      "seq": 80,
+      "t_ms": 186000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "9W"
+    },
+    {
+      "seq": 81,
+      "t_ms": 192000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "6T"
+    },
+    {
+      "seq": 82,
+      "t_ms": 194000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "8W"
+    },
+    {
+      "seq": 83,
+      "t_ms": 195000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "1W"
+    },
+    {
+      "seq": 84,
+      "t_ms": 196000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "6D"
+    },
+    {
+      "seq": 85,
+      "t_ms": 198000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "6D"
+    },
+    {
+      "seq": 86,
+      "t_ms": 200000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "6D"
+    },
+    {
+      "seq": 87,
+      "t_ms": 201000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "7D"
+    },
+    {
+      "seq": 88,
+      "t_ms": 206000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "7D"
+    },
+    {
+      "seq": 89,
+      "t_ms": 208000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "9W"
+    },
+    {
+      "seq": 90,
+      "t_ms": 210000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "7W"
+    },
+    {
+      "seq": 91,
+      "t_ms": 212000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "7W"
+    },
+    {
+      "seq": 92,
+      "t_ms": 212000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "7W"
+    },
+    {
+      "seq": 93,
+      "t_ms": 215000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "7W"
+    },
+    {
+      "seq": 94,
+      "t_ms": 217000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "7W"
+    },
+    {
+      "seq": 95,
+      "t_ms": 217000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "7W"
+    },
+    {
+      "seq": 96,
+      "t_ms": 220000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "7W"
+    },
+    {
+      "seq": 97,
+      "t_ms": 221000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "7W"
+    },
+    {
+      "seq": 98,
+      "t_ms": 222000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "1D"
+    },
+    {
+      "seq": 99,
+      "t_ms": 223000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "1D"
+    },
+    {
+      "seq": 100,
+      "t_ms": 223000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "5F"
+    },
+    {
+      "seq": 101,
+      "t_ms": 235000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "9W"
+    },
+    {
+      "seq": 102,
+      "t_ms": 237000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "9W"
+    },
+    {
+      "seq": 103,
+      "t_ms": 239000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "2W"
+    },
+    {
+      "seq": 104,
+      "t_ms": 241000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "2W"
+    },
+    {
+      "seq": 105,
+      "t_ms": 343000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "2W"
+    },
+    {
+      "seq": 106,
+      "t_ms": 343000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "5T"
+    },
+    {
+      "seq": 107,
+      "t_ms": 346000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "5T"
+    },
+    {
+      "seq": 108,
+      "t_ms": 346000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "9W"
+    },
+    {
+      "seq": 109,
+      "t_ms": 349000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "2W"
+    },
+    {
+      "seq": 110,
+      "t_ms": 352000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "2W"
+    },
+    {
+      "seq": 111,
+      "t_ms": 352000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "9T"
+    },
+    {
+      "seq": 112,
+      "t_ms": 356000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "9T"
+    },
+    {
+      "seq": 113,
+      "t_ms": 358000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "6T"
+    },
+    {
+      "seq": 114,
+      "t_ms": 359000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4W"
+    },
+    {
+      "seq": 115,
+      "t_ms": 362000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "4W"
+    },
+    {
+      "seq": 116,
+      "t_ms": 362000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "9D"
+    },
+    {
+      "seq": 117,
+      "t_ms": 365000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "9D"
+    },
+    {
+      "seq": 118,
+      "t_ms": 366000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "5W"
+    },
+    {
+      "seq": 119,
+      "t_ms": 368000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4W"
+    },
+    {
+      "seq": 120,
+      "t_ms": 371000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "4W"
+    },
+    {
+      "seq": 121,
+      "t_ms": 371000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "3W"
+    },
+    {
+      "seq": 122,
+      "t_ms": 374000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "3W"
+    },
+    {
+      "seq": 123,
+      "t_ms": 376000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "4W"
+    },
+    {
+      "seq": 124,
+      "t_ms": 378000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "3T"
+    },
+    {
+      "seq": 125,
+      "t_ms": 379000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "3T"
+    },
+    {
+      "seq": 126,
+      "t_ms": 381000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "3T"
+    },
+    {
+      "seq": 127,
+      "t_ms": 382000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "8D"
+    },
+    {
+      "seq": 128,
+      "t_ms": 383000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "8D"
+    },
+    {
+      "seq": 129,
+      "t_ms": 386000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "8D"
+    },
+    {
+      "seq": 130,
+      "t_ms": 386000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "5D"
+    },
+    {
+      "seq": 131,
+      "t_ms": 389000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "5D"
+    },
+    {
+      "seq": 132,
+      "t_ms": 391000,
+      "kind": "hu",
+      "chair": 1,
+      "card": "5D"
+    },
+    {
+      "seq": 133,
+      "t_ms": 392000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "7T"
+    },
+    {
+      "seq": 134,
+      "t_ms": 394000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "4T"
+    },
+    {
+      "seq": 135,
+      "t_ms": 396000,
+      "kind": "catch",
+      "chair": 3,
+      "card": "2T"
+    },
+    {
+      "seq": 136,
+      "t_ms": 398000,
+      "kind": "throw",
+      "chair": 3,
+      "card": "2T"
+    },
+    {
+      "seq": 137,
+      "t_ms": 400000,
+      "kind": "catch",
+      "chair": 2,
+      "card": "4T"
+    },
+    {
+      "seq": 138,
+      "t_ms": 401000,
+      "kind": "throw",
+      "chair": 2,
+      "card": "4T"
+    },
+    {
+      "seq": 139,
+      "t_ms": 403000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "4W"
+    },
+    {
+      "seq": 140,
+      "t_ms": 404000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "4W"
+    },
+    {
+      "seq": 141,
+      "t_ms": 405000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "4W"
+    },
+    {
+      "seq": 142,
+      "t_ms": 406000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "2W"
+    },
+    {
+      "seq": 143,
+      "t_ms": 409000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "2W"
+    },
+    {
+      "seq": 144,
+      "t_ms": 410000,
+      "kind": "hu",
+      "chair": 2,
+      "card": "2W"
+    },
+    {
+      "seq": 145,
+      "t_ms": 410000,
+      "kind": "catch",
+      "chair": 1,
+      "card": "5W"
+    },
+    {
+      "seq": 146,
+      "t_ms": 412000,
+      "kind": "throw",
+      "chair": 1,
+      "card": "5W"
+    },
+    {
+      "seq": 147,
+      "t_ms": 412000,
+      "kind": "catch",
+      "chair": 0,
+      "card": "3W"
+    },
+    {
+      "seq": 148,
+      "t_ms": 415000,
+      "kind": "throw",
+      "chair": 0,
+      "card": "9W"
+    }
+  ],
+  "expect": {}
+}

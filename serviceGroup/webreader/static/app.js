@@ -276,10 +276,10 @@ window.addEventListener('message', (e) => {
 });
 
 // 显式主题（父窗口 Castflow 设置跟随）：html[data-theme] 覆盖 prefers-color-scheme。
-// 未设置（无 reader.theme）→ 跟随系统。
+// 未设置（无 reader.theme）→ 默认浅色（index.html 首帧已设 data-theme=light）。
 const READER_DARK_THEMES = new Set(['dark', 'furina', 'hysilens', 'geniusclub', 'silverwolf', 'odette']);
 function isDarkReaderTheme(t) {
-  const theme = t || document.documentElement.dataset.theme || 'dark';
+  const theme = t || document.documentElement.dataset.theme || 'light';
   return READER_DARK_THEMES.has(theme);
 }
 function editorThemeForCurrent() {

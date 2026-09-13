@@ -1,0 +1,177 @@
+{
+  "name": "replay_11885_20260909_r4",
+  "desc": "复盘回放 (test.ini 现有做牌) · 11885_20260909.log 局4",
+  "type": "replay",
+  "makecard_id": "",
+  "source": "bastion-53-xzms",
+  "record_id": "11885_20260909.log",
+  "round": 3,
+  "meta": {
+    "room_id": "11885",
+    "table_no": "1",
+    "players": [
+      "1039378",
+      "737181",
+      "1185882",
+      "1131343"
+    ],
+    "names": [
+      "玩家1039378",
+      "福宛玥",
+      "crab25",
+      "hijk"
+    ],
+    "banker": 0,
+    "timestamp": 1788923456
+  },
+  "total": "46|4|13|22|37|55|25|34|108|109|110|111|63|11|20|29|31|72|81|90|8|17|26|35|73|82|91|100|3|12|49|41|99|79|88|97|51|52|62|112|74|83|92|101|69|57|44|53|106|60|113|75|71|0|38|9|64|23|58|21|84|19|16|59|66|6|102|94|28|15|65|54|56|61|27|18|85|76|93|70|68|14|2|33|78|89|98|32|30|80|40|7|50|5|42|67|36|47|1|103|104|43|10|48|107|77|86|39|95|24|45|87|96|105",
+  "actions": [
+    {
+      "seq": 0,
+      "kind": "que",
+      "chair": 0,
+      "card": "T"
+    },
+    {
+      "seq": 1,
+      "kind": "que",
+      "chair": 1,
+      "card": "D"
+    },
+    {
+      "seq": 2,
+      "kind": "que",
+      "chair": 2,
+      "card": "W"
+    },
+    {
+      "seq": 3,
+      "kind": "que",
+      "chair": 3,
+      "card": "D"
+    },
+    {
+      "seq": 4,
+      "kind": "throw",
+      "chair": 0,
+      "card": "2T"
+    },
+    {
+      "seq": 5,
+      "kind": "peng",
+      "chair": 3,
+      "card": "2T"
+    },
+    {
+      "seq": 6,
+      "kind": "throw",
+      "chair": 3,
+      "card": "5F"
+    },
+    {
+      "seq": 7,
+      "kind": "catch",
+      "chair": 2,
+      "card": "1W"
+    },
+    {
+      "seq": 8,
+      "kind": "throw",
+      "chair": 2,
+      "card": "1W"
+    },
+    {
+      "seq": 9,
+      "kind": "catch",
+      "chair": 1,
+      "card": "3T"
+    },
+    {
+      "seq": 10,
+      "kind": "throw",
+      "chair": 1,
+      "card": "4T"
+    },
+    {
+      "seq": 11,
+      "kind": "catch",
+      "chair": 0,
+      "card": "1W"
+    },
+    {
+      "seq": 12,
+      "kind": "throw",
+      "chair": 0,
+      "card": "7T"
+    },
+    {
+      "seq": 13,
+      "kind": "catch",
+      "chair": 3,
+      "card": "2T"
+    },
+    {
+      "seq": 14,
+      "kind": "gang",
+      "chair": 3,
+      "card": "2T",
+      "gang_type": "pn"
+    },
+    {
+      "seq": 15,
+      "kind": "catch",
+      "chair": 3,
+      "card": "6W"
+    },
+    {
+      "seq": 16,
+      "kind": "throw",
+      "chair": 3,
+      "card": "8W"
+    },
+    {
+      "seq": 17,
+      "kind": "catch",
+      "chair": 2,
+      "card": "5T"
+    },
+    {
+      "seq": 18,
+      "kind": "hu",
+      "chair": 2,
+      "card": "5T"
+    },
+    {
+      "seq": 19,
+      "kind": "catch",
+      "chair": 3,
+      "card": "4W"
+    },
+    {
+      "seq": 20,
+      "kind": "gang",
+      "chair": 3,
+      "card": "9W",
+      "gang_type": "an"
+    },
+    {
+      "seq": 21,
+      "kind": "catch",
+      "chair": 3,
+      "card": "4D"
+    },
+    {
+      "seq": 22,
+      "kind": "throw",
+      "chair": 3,
+      "card": "4D"
+    },
+    {
+      "seq": 23,
+      "kind": "hu",
+      "chair": 2,
+      "card": "4D"
+    }
+  ],
+  "expect": {}
+}

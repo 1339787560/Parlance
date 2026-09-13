@@ -1,8 +1,8 @@
 //! 全页面面包屑注入中间件 — service-server 附属界面统一导航。
 //!
 //! HTML 响应（rust 内嵌页 + legacy 反代页）注入顶部条:
-//!   `service-server / [当前页 ▾]`
-//! 第二层为 select 下拉, 列全部页面直达切换, 免经 index。
+//!   `首页 / [当前页 ▾]`
+//! 根标签"首页"可点击返回 /; 第二层为 select 下拉, 列全部页面直达切换。
 //!
 //! - 非 HTML 响应（JSON API/静态资源/图片）直通零开销。
 //! - 注入点 `<body...>` 后; 无 body 标签 / 非 UTF-8 页面跳过（保底不破坏）。
@@ -15,19 +15,22 @@ use axum::middleware::Next;
 use axum::response::Response;
 
 /// 页面清单（path, 名称）— 面包屑第二层下拉项。
-/// fileontimer/AIManager/A2AManager/ragQA 已在 proxy DEAD_PREFIXES 退役（:5000 404），不列。
+/// 首页不列（根标签"首页"本身即返回入口）; fileontimer/AIManager/A2AManager/ragQA 已在 proxy DEAD_PREFIXES 退役（:5000 404），不列。
 const PAGES: &[(&str, &str)] = &[
-    ("/", "首页"),
-    ("/sequence", "去哪序列"),
-    ("/deposit", "Deposit 测试"),
+    ("/sequence", "设置启动序列"),
+    ("/deposit", "设置数据"),
     ("/makecard", "做牌器"),
+    ("/recorder", "复盘器"),
     ("/onlineConfigModify", "在线配置修改"),
     ("/serverstatus", "服务状态"),
-    ("/cardtracker", "记牌器"),
-    ("/recorder", "复盘器"),
 ];
 
 const BAR_H: &str = "26px";
+
+/// 首页路径判定 — "/" 与 "" 均视为首页, 不注入面包屑。
+fn is_homepage(path: &str) -> bool {
+    path == "/" || path.is_empty()
+}
 
 /// 注入中间件主函数。
 pub async fn inject(req: Request<Body>, next: Next) -> Response {
@@ -41,6 +44,11 @@ pub async fn inject(req: Request<Body>, next: Next) -> Response {
         .map(|v| v.contains("text/html"))
         .unwrap_or(false);
     if !is_html {
+        return resp;
+    }
+
+    // 首页不注入面包屑（用户要求: 首页保持原样, 仅子页面带导航）
+    if is_homepage(&path) {
         return resp;
     }
 
@@ -101,10 +109,11 @@ fn build_snippet(path: &str) -> String {
         String::new()
     };
     format!(
-        r#"<div id="svc-crumb-bar"><span class="scb-root">service-server</span><span class="scb-sep">/</span><select id="svc-crumb-sel" class="scb-sel" title="切换页面"></select></div>
+        r#"<div id="svc-crumb-bar"><a class="scb-root" href="/" title="返回首页">首页</a><span class="scb-sep">/</span><select id="svc-crumb-sel" class="scb-sel" title="切换页面"></select></div>
 <style>
 #svc-crumb-bar{{position:fixed;top:0;left:0;right:0;height:{BAR_H};z-index:2147483000;display:flex;align-items:center;gap:6px;padding:0 10px;background:rgba(16,24,20,.95);border-bottom:1px solid rgba(255,255,255,.14);font:12px/1 "Microsoft YaHei",sans-serif;color:#cdd;backdrop-filter:blur(6px);box-sizing:border-box}}
-#svc-crumb-bar .scb-root{{color:#8fd49a;font-weight:600;letter-spacing:.5px}}
+#svc-crumb-bar .scb-root{{color:#8fd49a;font-weight:600;letter-spacing:.5px;text-decoration:none;cursor:pointer}}
+#svc-crumb-bar .scb-root:hover{{color:#c9f5d1}}
 #svc-crumb-bar .scb-sep{{color:#5a6a5f}}
 #svc-crumb-bar .scb-sel{{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);border-radius:6px;color:#eef;font-size:12px;padding:1px 6px;height:20px;cursor:pointer;outline:none}}
 #svc-crumb-bar .scb-sel:hover{{border-color:#8fd49a}}
@@ -120,7 +129,7 @@ html{{padding-top:{BAR_H}}}
   var matched=false;
   PAGES.forEach(function(p){{
     var o=document.createElement('option');o.value=p[0];o.textContent=p[1];
-    var hit=(p[0]===cur)||(p[0]==='/'&&cur==='')||(p[0]==='/recorder'&&cur.indexOf('/recorder')===0);
+    var hit=(p[0]===cur)||(p[0]==='/recorder'&&cur.indexOf('/recorder')===0);
     if(hit){{o.selected=true;matched=true}}
     sel.appendChild(o);
   }});
@@ -151,6 +160,15 @@ mod tests {
     }
 
     #[test]
+    fn skips_homepage() {
+        // 首页路径不注入面包屑条（inject() 中间件按此纯函数短路）
+        assert!(is_homepage("/"));
+        assert!(is_homepage(""));
+        assert!(!is_homepage("/makecard"));
+        assert!(!is_homepage("/recorder"));
+    }
+
+    #[test]
     fn skips_without_body() {
         let mut html = String::from("<div>fragment</div>");
         assert!(inject_into(&mut html, "/x").is_err());
@@ -159,7 +177,7 @@ mod tests {
 
     #[test]
     fn pages_table_sanity() {
-        assert_eq!(PAGES.len(), 8);
+        assert_eq!(PAGES.len(), 6);
         assert!(PAGES.iter().all(|(p, _)| p.starts_with('/')));
         let mut paths: Vec<&str> = PAGES.iter().map(|(p, _)| *p).collect();
         paths.sort();

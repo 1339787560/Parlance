@@ -396,7 +396,7 @@ pub async fn aggregate(
         }
     }
 
-    // 按来源汇总（GLM cost=0 只积分，DS 走 USD；同 where 过滤）
+    // 按来源汇总（GLM cost=0 只积分，DS 走 CNY；同 where 过滤）
     let mut stmt = conn
         .prepare(&format!(
             "SELECT source, COUNT(*), COALESCE(SUM(cost),0), COALESCE(SUM(credits),0)
@@ -582,7 +582,8 @@ pub async fn session_advice(
     let hits: Vec<i64> = rows.iter().map(|r| r.2).collect();
     let recent_hit = hits.iter().rev().take(WINDOW).max().copied().unwrap_or(0);
 
-    let pricing = crate::model::get_pricing(&rows.last().unwrap().1);
+    let last = rows.last().unwrap();
+    let pricing = crate::model::get_pricing_at(&last.1, Some(&last.0));
     let reset_cost = total_miss as f64 * pricing.miss / 1_000_000.0;
     let per_req_hit_cost = recent_hit as f64 * pricing.hit / 1_000_000.0;
     let continue_cost = HORIZON as f64 * per_req_hit_cost;
@@ -594,12 +595,12 @@ pub async fn session_advice(
     } else if reset_cost < continue_cost {
         (
             "reset",
-            &format!("未命中总额 ${:.3} < {}次请求命中 ${:.3}, 重启会话更省", reset_cost, HORIZON, continue_cost)[..],
+            &format!("未命中总额 ¥{:.3} < {}次请求命中 ¥{:.3}, 重启会话更省", reset_cost, HORIZON, continue_cost)[..],
         )
     } else {
         (
             "continue",
-            &format!("未命中总额 ${:.3} ≥ {}次请求命中 ${:.3}, 继续更省", reset_cost, HORIZON, continue_cost)[..],
+            &format!("未命中总额 ¥{:.3} ≥ {}次请求命中 ¥{:.3}, 继续更省", reset_cost, HORIZON, continue_cost)[..],
         )
     };
     let break_even = if per_req_hit_cost > 0.0 {

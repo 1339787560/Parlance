@@ -10,6 +10,14 @@ whitelist:
     - 192.168.41.158
     - 192.168.46.68
     - 172.16.40.96
+    - 192.168.0.253
+
+# autotest 本机隔离（与 whitelist 正交: whitelist 只管"能否连 relay", 这里管"能否参与 autotest"）
+# 非本机来源的连接一律收到 enabled=false（不 arm/不控节拍/不可作回放目标, 指定则 403）。
+autotest:
+  # 本机地址追加项。默认已含 loopback(127.0.0.0/8, ::1) + 192.168.41.158，无需重复。
+  # 例: 若开发机还有别的 IP 需要算本机（第二网卡/特定网段），在此追加。
+  local_ips: []
 
 # 源码目录（Sources 面板，不依赖设备，以本机代码为准；--src 可覆盖）
 source_dir: "D:/Codlib/douque/xzmx/ClientEngineGame/trunk/assets"

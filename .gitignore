@@ -34,3 +34,7 @@ _cache*/
 # 机器本地配置文件（跨平台差异，不入库）
 config.mac.json
 serviceGroup/webreader/config.mac.json
+# deploy 产物包直推 (make_deploy_pack.py)
+deploys/
+.deploy_backup/
+deploy.log

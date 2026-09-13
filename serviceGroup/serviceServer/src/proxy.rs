@@ -75,6 +75,8 @@ pub fn compose_proxy_url(backend: &str, uri: &str) -> String {
 }
 
 /// 死功能路径前缀 (RAG/A2A/AI 块), 命中即 404 不反代 legacy。
+/// 注: `/api/makedeal` 曾在此列, 2026-09-13 移除 — 做牌接口 (caiyf svn r58900/r59114/r59912)
+/// 已回填 legacy ServiceRoute.py 且仍在用, 放行反代。
 const DEAD_PREFIXES: &[&str] = &[
     "/ai-manager",
     "/rag-qa",
@@ -82,7 +84,6 @@ const DEAD_PREFIXES: &[&str] = &[
     "/api/benchmark",
     "/api/claude",
     "/api/ai-proxy",
-    "/api/makedeal",
     "/A2AManager",
     "/a2a",
     "/fileontimer",
@@ -129,6 +130,7 @@ mod tests {
     #[case("/api/config/files", false)]
     #[case("/deposit", false)]
     #[case("/api/services/status", false)]
+    #[case("/api/makedeal/start", false)]
     #[case("/fileontimer", true)]
     #[case("/api/fileontimer/list", true)]
     fn test_is_dead_path_matrix(#[case] path: &str, #[case] dead: bool) {

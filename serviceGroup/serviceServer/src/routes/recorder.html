@@ -263,6 +263,7 @@
   let lastLoad = '';      // 最近一次 record 载入方式: 'file'(手动导入) / 'api'(数据源) — 对局按钮路由用
   let curSource = '';     // 当前 record 来源 source id (直存做牌按它定位目标服务; 手动导入为空)
   let curRecordId = '';   // 当前 record 文件名 (直存做牌写 ; Rec= 关联, autotest 反查剧本用)
+  let srcList = [];       // /api/record/sources 原始清单 (含 game 字段, 供残局 TOTAL 判定牌库)
 
   const ROWS_Y = [8, 153, 301, 448, 590, 745];
   const ROWS_H = [133, 136, 131, 132, 137, 120];
@@ -397,7 +398,9 @@
     }
     if (!rounds.length) {
       const events = rawEntries.filter(e => e.kind === 'event').map(e => ({ time: e.time, type: e.type, rest: e.rest }));
-      if (events.length) rounds.push({ events, snaps: [], meta, startSec: 0 });
+      // 零事件残局 (纯 header, 如断线只落了 Timestamp/ChairNO) 也合成空局:
+      // meta 栏/座位 uid 照常显示, 快照序列仅含初始态, 步进列表给"无事件数据"提示
+      rounds.push({ events, snaps: [], meta, startSec: 0 });
     }
     for (const r of rounds) buildSnapshots(r);
     return rounds;
@@ -413,11 +416,17 @@
   function buildSnapshots(round) {
     const hands = [[],[],[],[]], que = ['','','',''], discards=[[],[],[],[]], melds=[[],[],[],[]], hu=[[],[],[],[]], exchanges = [];
     const deposit = [null,null,null,null], depositInit = [null,null,null,null];
-    // 牌堆总数按玩法区分 (六红中 xzms=114 含红中, 血流血战 xzmo=108); 取当前局 Cards 张数, 无 Cards 兜底 114
+    // 牌堆总数按玩法区分 (六红中 xzms=114 含红中, 血流血战 xzmo=108); 取当前局 Cards 张数,
+    // 无 Cards 残局按数据源 game 判定 (xzmo=108), 源缺失/手动导入兜底 114
+    const gameOfSource = () => (srcList.find(s => s.id === curSource) || {}).game || '';
     const cardsEv = round.events.find(e => e.type === 'Cards');
-    const TOTAL = cardsEv ? chunks(cardsEv.rest).length : 114;
+    const TOTAL = cardsEv ? chunks(cardsEv.rest).length : (gameOfSource() === 'xzmo' ? 108 : 114);
     const evs = round.events, n = evs.length;
     let wallOffset = 0;  // 杠后无显式 Catch 的隐式补摸 (杠牌堆减 1; 碰不变, 杠减一)
+    // 最近一次真实打出的牌 (椅 + 牌面) — 认领类事件 (碰/明杠/胡) 据此精确定位"从谁弃牌区取走"。
+    // record 的 Peng/MnGang **不带**来源座位 (CPP RecordPeng/RecordMnGang 只写 chairno);
+    // 只有 Hu 带 (第 3 字段 cardchair)。故统一以"最近一次 Throw"为权威源, 弃用旧的 k=0..3 扫描。
+    let lastThrow = null;
     const wallNow = () => TOTAL - sumLen(hands) - sumLen(discards) - sumLen(melds) - sumLen(hu) + wallOffset;
     const S = (extra = {}) => snapOf(hands, que, discards, melds, hu, exchanges, wallNow(), deposit, depositInit, extra);
     round.snaps.length = 0;
@@ -446,11 +455,12 @@
           if (evs[i].type==='Exchange') { const pp = evs[i].rest.split(/\s+/); recv[pp[0]] = { from: pp[1], cards: chunks(pp[2]||'') }; }
           i++;
         }
-        // 方向叫法 = 用户口径 (与服务端枚举名 Dir_Clockwise/Anti 互为镜像, 枚举名仅代码命名):
-        // 顺时针 = 1传0 (dir1, 服务端 Dir_AntiClockwise) / 逆时针 = 0传1 (dir0, Dir_Clockwise) / 对家 = 0传2 (dir2)。
-        // diff=(send-recv+4)%4: dir1 时 send=recv+1 → 1顺; dir0 → 3逆; 对家 → 2。
+        // 方向表述 (用户 2026-09-10 口径): 0顺 1逆 2对。
+        // Exchange3 键值 (diff 映射 3→0 / 1→1 / 2→2): 值0=顺(0传1) 值1=逆(1传0) 值2=对(0传2)。
+        // 与服务端枚举名 Dir_Clockwise/Anti 互为镜像 (枚举名仅代码命名, 不顺延到表述)。
+        // diff=(send-recv+4)%4: 0传1 → 3 → 键0顺; 1传0 → 1 → 键1逆; 0传2 → 2 → 键2对。
         let dir = ''; const rs = Object.keys(recv);
-        if (rs.length) { const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4; dir = diff===1?'顺时针(1)':diff===3?'逆时针(0)':diff===2?'对家(2)':'换'; }
+        if (rs.length) { const diff = (+recv[rs[0]].from - +rs[0] + 4) % 4; dir = diff===3?'0顺':diff===1?'1逆':diff===2?'2对':'换'; }
         // 亮牌阶段: 送出的牌已离手 (手牌先扣, 弃牌区亮各家送出的三张); 入牌阶段才加收到的牌
         for (const r in recv) for (const c of recv[r].cards) { const idx = hands[recv[r].from].indexOf(c); if (idx>=0) hands[recv[r].from].splice(idx,1); }
         round.snaps.push(S({ phase: '换三张·亮牌', recv, dir }));
@@ -473,14 +483,40 @@
         }
         round.snaps.push(S({ phase: '结算' })); continue;
       }
-      // 碰: caught(来自弃牌) + 手牌2 -> meld 3 张; 从打出者弃牌末位移除被碰牌
+      // 碰: caught(来自弃牌) + 手牌2 -> meld 3 张; 从**打出者**弃牌末位移除被碰牌。
+      // record 的 Peng 行不带来源座位 → 用 lastThrow(最近一次真实打出) 定位; 扫描仅作兜底。
       if (t === 'Peng') {
         const pp = ev.rest.split(/\s+/), cc = +pp[0], caught = pp[1], hand2 = chunks(pp[2]||'');
         if (cc>=0&&cc<4) {
           for (const x of hand2) { const idx = hands[cc].indexOf(x); if (idx>=0) hands[cc].splice(idx,1); }
           melds[cc].push([caught, ...hand2]);
-          for (let k=0;k<4;k++) { if (discards[k].length && discards[k][discards[k].length-1]===caught) { discards[k].pop(); break; } }
+          if (lastThrow && lastThrow.card === caught && discards[lastThrow.chair].length
+              && discards[lastThrow.chair][discards[lastThrow.chair].length-1] === caught) {
+            discards[lastThrow.chair].pop();
+          } else {
+            for (let k=0;k<4;k++) { if (discards[k].length && discards[k][discards[k].length-1]===caught) { discards[k].pop(); break; } }
+          }
+          lastThrow = null;
         }
+        round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
+      }
+      // 明杠(点杠): 引杠牌来自打出者弃牌末位 + 手牌3张 -> meld 4 张; 引杠牌从弃牌区拿走 (同 Peng 末位扫描;
+      // record 无 from-chair 字段)。MjTable.cpp RecordMnGang: "MnGang <cc> <cardid> <baseids3>" 与 AnGang 同构
+      if (t === 'MnGang') {
+        const pp = ev.rest.split(/\s+/), cc = +pp[0], tile = pp[1], hand3 = chunks(pp[2]||'');
+        if (cc>=0&&cc<4) {
+          for (const x of hand3) { const idx = hands[cc].indexOf(x); if (idx>=0) hands[cc].splice(idx,1); }
+          melds[cc].push([tile, ...hand3]);
+          if (lastThrow && lastThrow.card === tile && discards[lastThrow.chair].length
+              && discards[lastThrow.chair][discards[lastThrow.chair].length-1] === tile) {
+            discards[lastThrow.chair].pop();
+          } else {
+            for (let k=0;k<4;k++) { if (discards[k].length && discards[k][discards[k].length-1]===tile) { discards[k].pop(); break; } }
+          }
+          lastThrow = null;
+        }
+        // 杠后补摸: 紧接 Catch 显式则按 catch, 无则隐式 wall 减 1
+        if (!evs[i+1] || evs[i+1].type !== 'Catch') wallOffset -= 1;
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
       // 暗杠: 4 张全来自手牌 -> meld 4 张
@@ -507,20 +543,39 @@
         if (!evs[i+1] || evs[i+1].type !== 'Catch') wallOffset -= 1;
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
-      // 胡: winning tile 入胡牌区; 自摸 tile 在手牌移除, 点炮 tile 在某弃牌末位移除 (避 discard+hu 双计)
+      // 胡: winning tile 入胡牌区。**来源按 record 的 cardchair 精确定位** ——
+      // record 行 `Hu <chair> <tile> <cardchair> <type>` (CPP MyTbl.cpp RecordHu)。
+      // 旧实现: 先查自己手牌 → 再扫 k=0..3 首个"末尾同牌面"的玩家。两种取错 (2026-09-11, 22 局实测 152 处):
+      //   ① 点炮胡时胡家手里恰有同牌面 (血流继续打) → 误从自己手牌扣, 弃牌区那张留着 (双重错误) 136 处
+      //   ② 扫到"椅号更小但末尾同牌面"的玩家 → 抽走他人/对面的牌                                          16 处
+      // ⚠️ 一炮多响 (血流): 同一张被多家胡 —— 第一个 Hu 已把牌取走, 后续 Hu 必须**什么都不取**
+      //    (牌物理上已离桌)。故**不再保留盲扫描兜底** —— 那会去偷别家的陈旧同牌面牌 (实测 2 处)。
       if (t === 'Hu') {
         const pp = ev.rest.split(/\s+/), cc = +pp[0], tile = pp[1];
+        const src = pp.length >= 3 ? parseInt(pp[2], 10) : NaN;   // 点炮者座位 (自摸时=自己或无效)
+        const ht = (pp[3] || '').trim();                          // Z 自摸 / F 点炮 / Q 抢杠 / 空
         if (cc>=0&&cc<4) {
-          const idx = hands[cc].indexOf(tile);
-          if (idx>=0) hands[cc].splice(idx,1);
-          else { for (let k=0;k<4;k++) { if (discards[k].length && discards[k][discards[k].length-1]===tile) { discards[k].pop(); break; } } }
+          const tailIs = ch => discards[ch].length && discards[ch][discards[ch].length-1] === tile;
+          if (ht === 'Z') {
+            const idx = hands[cc].indexOf(tile);
+            if (idx>=0) hands[cc].splice(idx,1);                                          // 自摸: 在自己手牌
+            else if (src>=0 && src<4 && tailIs(src)) discards[src].pop();                 // 兜底: 记成点炮式
+          } else if (src>=0 && src<4 && tailIs(src)) {
+            discards[src].pop();                                                          // 点炮: 点炮者弃牌末位
+          } else if (lastThrow && lastThrow.card === tile && tailIs(lastThrow.chair)) {
+            discards[lastThrow.chair].pop();                                              // 兜底: 最近一次真实打出的那张
+          } else if (src>=0 && src<4 && hands[src].indexOf(tile) >= 0) {
+            hands[src].splice(hands[src].indexOf(tile), 1);                               // 抢杠(Q): 被抢的杠牌在杠者手牌
+          }
+          // else: 一炮多响的后续家 / 已取走 → 不取任何牌 (牌已离桌)
           hu[cc].push(tile);
         }
+        lastThrow = null;
         round.snaps.push(S({ ev, lastCatch: null, lastThrow: null })); i++; continue;
       }
       const p = ev.rest.split(/\s+/);
       const c = p[0] !== '' ? parseInt(p[0], 10) : NaN;
-      if (t === 'Throw') { if (c>=0&&c<4) { const idx = hands[c].indexOf(p[1]); if (idx>=0) hands[c].splice(idx,1); discards[c].push(p[1]); } }
+      if (t === 'Throw') { if (c>=0&&c<4) { const idx = hands[c].indexOf(p[1]); if (idx>=0) hands[c].splice(idx,1); discards[c].push(p[1]); lastThrow = { chair: c, card: p[1] }; } }
       else if (t === 'Catch') { if (c>=0&&c<4) hands[c].push(p[1]); }
       round.snaps.push(S({ ev, lastCatch: t==='Catch' ? { chair: c, card: p[1] } : null, lastThrow: t==='Throw' ? { chair: c, card: p[1] } : null }));
       i++;
@@ -530,9 +585,9 @@
   function curRoundObj() { return rec.rounds[curRound]; }
   function curSnaps() { return curRoundObj().snaps; }
   function posOf(chair) { return (chair - perspective + 4) % 4; }
-  // 方位排布 (用户口径): 南=当前玩家, 左=上家(椅-1), 右=下家(椅+1), 上=对家 —
-  // posOf=+1 (下家) 映射 pos-right; 切视角时座位随椅号轮动, 手牌/胡牌/弃牌数据按 data-chair 绑定不变。
-  const POS_CLASS = ['pos-bottom', 'pos-right', 'pos-top', 'pos-left'];
+  // 方位排布 (用户口径, 逆时针出牌): 南=当前玩家, 左=下家(椅+1), 右=上家(椅-1), 上=对家 —
+  // posOf=+1 (下家) 映射 pos-left; 切视角时座位随椅号轮动, 手牌/胡牌/弃牌数据按 data-chair 绑定不变。
+  const POS_CLASS = ['pos-bottom', 'pos-left', 'pos-top', 'pos-right'];
 
   function applyLayout() {
     for (let c = 0; c < 4; c++) {
@@ -548,7 +603,12 @@
 
   function renderMeta() {
     const h = rec.header;
-    (h.ChairNO || []).forEach((s, c) => { if (c>=4) return; const uid = s.split(/\s+/)[1]; const el = document.querySelector(`.chair[data-chair="${c}"] .uid`); if (el) { el.textContent = uid ? `uid ${uid}` : ''; el.style.cursor = uid ? 'pointer' : ''; el.title = uid ? '点击复制 UID' : ''; el.onclick = uid ? () => { navigator.clipboard.writeText(uid).then(() => { const orig = el.textContent; el.textContent = `uid ${uid} ✓`; setTimeout(() => { el.textContent = orig; }, 1200); }).catch(() => {}); } : null; } });
+    // 座位 uid 取当前局 meta.players (散人桌每局重新匹配, 局间四人不同);
+    // 全局 header.ChairNO 是 last-round-wins, 仅在局 meta 缺失时兜底 (单局文件/旧缓存)
+    const ro = rec.rounds.length ? rec.rounds[curRound] : null;
+    const mPlayers = ro && ro.meta && (ro.meta.players || []).some(Boolean) ? ro.meta.players : null;
+    const chairSrc = mPlayers || (h.ChairNO || []).map(s => (s.split(/\s+/)[1] || ''));
+    chairSrc.forEach((uid, c) => { if (c>=4) return; const el = document.querySelector(`.chair[data-chair="${c}"] .uid`); if (el) { el.textContent = uid ? `uid ${uid}` : ''; el.style.cursor = uid ? 'pointer' : ''; el.title = uid ? '点击复制 UID' : ''; el.onclick = uid ? () => { navigator.clipboard.writeText(uid).then(() => { const orig = el.textContent; el.textContent = `uid ${uid} ✓`; setTimeout(() => { el.textContent = orig; }, 1200); }).catch(() => {}); } : null; } });
     updateRoundsButton();
   }
   // 对局按钮唯一设值入口: 数据源有列表 → 过滤计数; 空 → 已载入 record (手动导入/在线) 显示局数
@@ -686,7 +746,7 @@
         html += `<div class="step" data-snap="${i}"><span class="t">${ev.time}</span> <span class="ty">${ev.type.padEnd(8)}</span> <span class="body">${esc}</span></div>`;
       }
     }
-    list.innerHTML = html;
+    list.innerHTML = html || '<div class="step phase">★ 无事件数据（残局：仅头部元数据）</div>';
     list.querySelectorAll('.step').forEach(el => el.addEventListener('click', () => renderSnap(parseInt(el.dataset.snap, 10))));
     listBuilt = true;
   }
@@ -755,10 +815,10 @@
   // record 的 RawCards 行 = cardid 牌堆序列, 与 test.ini Total 同布局
   // (三轮48 [r*16+i*4+k] + 庄补[48-49] + 闲补[50-52] + 墙[53..]);
   // 转成 test.ini [Card] 段写剪贴板, 粘贴到做牌器「导入做牌信息」框即完成做牌。
-  // 换三张方向 → exchange3 键 (服务端枚举值; 叫法按用户口径: 0=逆时针[0传1] 1=顺时针[1传0] 2=对家,
-  // 用户叫法与枚举名 Dir_Clockwise/Anti 镜像)。record "Exchange <recv> <send> <recv 收到的三张>"
+  // 换三张方向 → exchange3 键 (表述按用户 2026-09-10 口径: 0=顺[0传1] 1=逆[1传0] 2=对[0传2])。
+  // record "Exchange <recv> <send> <recv 收到的三张>"
   // (RecordExchange 权威: ExchangeCards 先 memcpy 翻转为收到语义再落盘)。
-  // diff=(send-recv+4)%4: 3→0 / 1→1 / 2→2 (值=枚举, 恒定)。
+  // diff=(send-recv+4)%4: 3→0顺 / 1→1逆 / 2→2对 (值=Exchange3 键, 恒定)。
   function exchange3Of(round) {
     const ev = round.events.find(e => e.type === 'Exchange');
     if (!ev) return null;
@@ -890,6 +950,7 @@
     try {
       const r = await fetch('/api/record/sources').then(r => r.json());
       myHostId = r.my_host_id || 'local';
+      srcList = r.sources || [];
       const sel = document.getElementById('src-sel');
       sel.innerHTML = '';
       // 分组陈列: 内网环境 (local/bastion) / 金币场 / 银子场 (oss ver)

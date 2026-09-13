@@ -206,6 +206,14 @@
             border: none; border-radius: 3px; cursor: pointer;
         }
         .zone-reset:hover { background: rgba(200,40,40,1); }
+        /* 单椅手牌拷贝（数组） */
+        .zone-copy {
+            position: absolute; top: 3px; right: 46px; z-index: 10;
+            font-size: 10px; padding: 2px 8px;
+            background: rgba(23,162,184,.9); color: #fff;
+            border: none; border-radius: 3px; cursor: pointer;
+        }
+        .zone-copy:hover { background: rgba(20,140,160,1); }
         .target-zone.catch-zone { padding: 4px; }
         .select-left .target-zone { flex: 1; }
 
@@ -328,6 +336,7 @@
         </div>
         <button class="btn ghost icon" onclick="saveAs()" title="另存为新文件（文件名可用中文，如 test_清一色.ini）">另存</button>
         <button class="btn ok icon" id="activate-btn" onclick="activateFile()" title="设为生效（复制覆盖 test.ini，旧文件备份 remove/）" disabled>生效</button>
+        <button class="btn ghost icon" id="made-toggle-btn" onclick="toggleMade()" title="做牌开关：改生效 test.ini 的 [Card] Made（1=按 Total 布局做牌 0=不做牌，引擎每局重读）" disabled>做牌:—</button>
         <div class="sep"></div>
         <button class="btn ok icon" onclick="randomDeal()" title="随机发牌">随机发牌</button>
         <button class="btn warn icon" onclick="resetAll()" title="重置">重置</button>
@@ -362,21 +371,25 @@
                     <div class="chair-block target-zone" id="tz-chair-0" data-zone="chair-0"
                          onclick="setActive('chair-0')" ondblclick="onZoneDbl('chair-0', event)">
                         <button class="zone-reset" onclick="event.stopPropagation(); resetZone('chair-0')">重置</button>
+                        <button class="zone-copy" onclick="event.stopPropagation(); copyChairHand(0)" title="拷贝椅0手牌为数组（按当前视图：cardid→数字数组 / 花色→牌面数组）">拷贝</button>
                         <div class="dropzone empty" id="zone-0"></div>
                     </div>
                     <div class="chair-block target-zone" id="tz-chair-1" data-zone="chair-1"
                          onclick="setActive('chair-1')" ondblclick="onZoneDbl('chair-1', event)">
                         <button class="zone-reset" onclick="event.stopPropagation(); resetZone('chair-1')">重置</button>
+                        <button class="zone-copy" onclick="event.stopPropagation(); copyChairHand(1)" title="拷贝椅1手牌为数组（按当前视图：cardid→数字数组 / 花色→牌面数组）">拷贝</button>
                         <div class="dropzone empty" id="zone-1"></div>
                     </div>
                     <div class="chair-block target-zone" id="tz-chair-2" data-zone="chair-2"
                          onclick="setActive('chair-2')" ondblclick="onZoneDbl('chair-2', event)">
                         <button class="zone-reset" onclick="event.stopPropagation(); resetZone('chair-2')">重置</button>
+                        <button class="zone-copy" onclick="event.stopPropagation(); copyChairHand(2)" title="拷贝椅2手牌为数组（按当前视图：cardid→数字数组 / 花色→牌面数组）">拷贝</button>
                         <div class="dropzone empty" id="zone-2"></div>
                     </div>
                     <div class="chair-block target-zone" id="tz-chair-3" data-zone="chair-3"
                          onclick="setActive('chair-3')" ondblclick="onZoneDbl('chair-3', event)">
                         <button class="zone-reset" onclick="event.stopPropagation(); resetZone('chair-3')">重置</button>
+                        <button class="zone-copy" onclick="event.stopPropagation(); copyChairHand(3)" title="拷贝椅3手牌为数组（按当前视图：cardid→数字数组 / 花色→牌面数组）">拷贝</button>
                         <div class="dropzone empty" id="zone-3"></div>
                     </div>
                 </div>
@@ -399,6 +412,7 @@
                 <div class="view-tabs">
                     <button id="id-tab-suit" class="active" onclick="setIdSort('suit')">花色</button>
                     <button id="id-tab-cardid" onclick="setIdSort('cardid')">cardid</button>
+                    <button id="id-tab-original" onclick="setIdSort('original')">原始</button>
                 </div>
                 <span class="id-stats" id="id-stats"></span>
             </div>
@@ -851,6 +865,7 @@
             resetAll();
             await loadFiles();
             if (currentFile) await readFile();   // 切服务后自动读默认 test.ini
+            refreshMadeState();
             savePrefs();
         }
         let fileList = [];   // 服务目录下的做牌记录（含 remove/ 备份）
@@ -965,6 +980,43 @@
         function updateActivateBtn() {
             const btn = document.getElementById('activate-btn');
             btn.disabled = !currentFile || currentFile === 'test.ini';
+        }
+        // ---- 做牌开关（生效 test.ini 的 [Card] Made：1=按布局做牌 0=不做牌） ----
+        async function refreshMadeState() {
+            const btn = document.getElementById('made-toggle-btn');
+            try {
+                const r = await fetch(`/api/makecard/made?service=${currentService}`);
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                const on = d.made > 0;
+                btn.textContent = on ? '做牌:开' : '做牌:关';
+                btn.className = 'btn icon ' + (on ? 'ok' : 'ghost');
+                btn.disabled = false;
+            } catch (e) {
+                btn.textContent = '做牌:?';
+                btn.className = 'btn ghost icon';
+                btn.disabled = true;
+            }
+        }
+        async function toggleMade() {
+            const btn = document.getElementById('made-toggle-btn');
+            const on = btn.textContent.endsWith('开');
+            const tip = on
+                ? '关闭做牌？\n（生效 test.ini Made=0：不再按布局发牌，随机发\n关闭后引擎会把每局实况写回 Total 覆盖原布局——当前布局将先自动备份到 remove/，可从「保存▾」列表激活恢复）'
+                : '开启做牌？\n（生效 test.ini Made=1：按当前 Total 布局发牌）';
+            if (!confirm(tip)) return;
+            try {
+                const r = await fetch('/api/makecard/toggle', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ service: currentService, made: on ? 0 : 1 })
+                });
+                const d = await r.json();
+                if (!d.success) throw new Error(d.message);
+                toast(d.message, 'ok');
+                await refreshMadeState();
+                await refreshFileList();   // 关闭会产生 remove/ 备份记录，刷新列表可见
+                renderFileMenu();
+            } catch (e) { toast('切换失败: ' + e.message, 'err'); }
         }
         async function activateFile() {
             if (!currentFile || currentFile === 'test.ini') { toast('test.ini 已是生效', 'err'); return; }
@@ -1186,6 +1238,21 @@
             if (!ok) throw new Error('剪贴板不可用，请手动复制');
         }
 
+        // ---- 单椅手牌拷贝（按 cardid 数组）----
+        // 固定输出 cardid 数字数组 [18,27,1,...]（不随 花色/cardid 视图变）；
+        // 顺序与牌桌显示一致（按牌面排序 cmpFace），便于与手牌 tile/record 逐张比对。
+        function chairHandArrayText(i) {
+            return JSON.stringify((state.chairs[i] || []).slice().sort(cmpFace));
+        }
+        async function copyChairHand(i) {
+            const arr = state.chairs[i] || [];
+            if (!arr.length) { toast(`椅${i} 手牌为空`, 'err'); return; }
+            try {
+                await copyText(chairHandArrayText(i));
+                toast(`已拷贝椅${i} 手牌 ${arr.length} 张（cardid 数组）`, 'ok');
+            } catch (e) { toast('拷贝失败: ' + e.message, 'err'); }
+        }
+
         // 导入悬浮窗：在线编辑 ini 文本 + 校验 + 纠正后应用
         function openImportModal() {
             document.getElementById('import-modal').classList.add('show');
@@ -1323,6 +1390,7 @@
             idSort = mode;
             document.getElementById('id-tab-suit').classList.toggle('active', mode === 'suit');
             document.getElementById('id-tab-cardid').classList.toggle('active', mode === 'cardid');
+            document.getElementById('id-tab-original').classList.toggle('active', mode === 'original');
             translateIds();
             savePrefs();
         }
@@ -1341,7 +1409,9 @@
             const max = hasJoker ? 114 : 108;
             const valid = ids.filter(id => id >= 0 && id < max);
             const outOfRange = ids.length - valid.length;
-            valid.sort(idSort === 'suit' ? cmpFace : cmpCardid);
+            // original: 保持输入顺序（filter 保序，不排序；勿给 sort 传 undefined——会退化成字典序）
+            if (idSort === 'suit') valid.sort(cmpFace);
+            else if (idSort === 'cardid') valid.sort(cmpCardid);
             const container = document.getElementById('id-result');
             container.innerHTML = '';
             container.classList.toggle('empty', valid.length === 0);
@@ -1397,6 +1467,7 @@
             }
             document.getElementById('service-sel').value = currentService;
             await loadFiles();
+            refreshMadeState();
             if (prefs.file && fileList.includes(prefs.file)) currentFile = prefs.file;
             syncFileUI();
             if (prefs.viewMode) setView(prefs.viewMode); else renderAllDOM();

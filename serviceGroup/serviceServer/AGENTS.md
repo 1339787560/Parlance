@@ -74,4 +74,5 @@ python D:/Codlib/VscodeCodlib/Python/infoServer/ctl_client.py --socket svc updat
 - `CustomRoute/ServiceRoute.py` — 路由逻辑与契约源头
 - `Service.py` — `get_all_service_status` / `read_file_content` / `save_file_content` (逻辑参照, 实现重写规避旧 bug)
 - `JsonConfigParser.py` — config.json schema
-- 死功能 (不迁): `CommonTools/ragKnowledge/`, `CommonTools/agent/`, `src/A2AFile/`, `src/CTWL-GAMESVR-SKILL/`, AI 路由 (/ai-manager, /api/benchmark/*, /api/claude/*, /api/ai-proxy/*, /api/makedeal/*, /rag-qa, /api/rag/*)
+- 死功能 (不迁): `CommonTools/ragKnowledge/`, `CommonTools/agent/`, `src/A2AFile/`, `src/CTWL-GAMESVR-SKILL/`, AI 路由 (/ai-manager, /api/benchmark/*, /api/claude/*, /api/ai-proxy/*, /rag-qa, /api/rag/*)
+- 例外: `/api/makedeal/*` (做牌接口) 曾列入死功能, 2026-09-13 从 `proxy.rs` DEAD_PREFIXES 摘除放行 — 该接口仍在用, 实现在 legacy `CustomRoute/ServiceRoute.py` 末尾 (源: svn scriptTools/serviceServer caiyf r58900/r59114/r59912)
