@@ -38,3 +38,5 @@ serviceGroup/webreader/config.mac.json
 deploys/
 .deploy_backup/
 deploy.log
+
+temp/*
