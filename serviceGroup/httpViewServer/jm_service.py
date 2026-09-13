@@ -18,8 +18,9 @@ import shutil
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
-from const import SHARE_DIR
+from const import SHARE_DIR, ALLOWED_EXT
 
 try:
     from jmcomic import JmModuleConfig
@@ -215,6 +216,17 @@ def _sanitize(name):
     return re.sub(r'[\\/:*?"<>|]+', '_', (name or '').strip()) or 'unknown'
 
 
+def _chapter_trailing_num(name):
+    """章节名尾部序号: 'xx 10(完)'->10 / 'xx 2'->2 / 无尾号->None (简繁变体兜底匹配用)。"""
+    m = re.search(r'(\d+)\D*$', (name or '').strip())
+    return int(m.group(1)) if m else None
+
+
+def _chapter_name_prefix(name):
+    """章节名 '[' 前缀部分: 'xx[汉化组]'->'xx' (无尾号章节按前缀对齐用)。"""
+    return (name or '').split('[')[0].strip()
+
+
 def _count_images(target_dir):
     if not target_dir or not os.path.isdir(target_dir):
         return 0
@@ -236,6 +248,7 @@ def _resolve_target(album):
 
 LAST_READ_FILE = '.jm_last_read'  # 记录最近阅读时间, 供 temp 回收判断
 AID_FILE = '.jm_aid'  # 根目录专辑 aid 标记(供 aid 反查, 应对名称变体不一致如简繁)
+PROGRESS_FILE = '.read_progress.json'  # 阅读进度(专辑目录, 点开头不会被 build_directory_items 当条目)
 
 
 def _merge_move(src, dst, include_placeholders=False):
@@ -290,6 +303,23 @@ def _merge_move(src, dst, include_placeholders=False):
     return {'moved': moved, 'skipped': skipped}
 
 
+def _fix_persisted_progress(dst_dir):
+    """持久化后剥离 .read_progress.json 中 path 的 temp/ 前缀(文件已随 _merge_move 迁移)。"""
+    p = os.path.join(dst_dir, PROGRESS_FILE)
+    if not os.path.isfile(p):
+        return
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        path = str(data.get('path', ''))
+        if path.startswith('temp/'):
+            data['path'] = path[len('temp/'):]
+            with open(p, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
 def persist_temp(path):
     """
     把 temp 下的阅读缓存持久化到 share 根目录(移动语义)。
@@ -327,6 +357,7 @@ def persist_temp(path):
             moved += r['moved']
             skipped += r['skipped']
             _write_aid(dst, aid)
+            _fix_persisted_progress(dst)
         # 清理空作者目录
         try:
             os.rmdir(src_abs)
@@ -340,6 +371,7 @@ def persist_temp(path):
         moved += r['moved']
         skipped += r['skipped']
         _write_aid(dst, aid)
+        _fix_persisted_progress(dst)
     return {'moved': moved, 'skipped': skipped}
 
 
@@ -451,6 +483,137 @@ def check_album(aid):
     }
 
 
+def _locate_album_dir(aid):
+    """
+    定位专辑本地目录: 持久化优先(名称匹配 + aid 反查兜底), 其次 temp(同款兜底)。
+    与 check_album 探测逻辑一致但不要求有真实图片, 返回目录存在的路径; 均不存在返回 None。
+    """
+    album = _cached_album(aid)
+    author = _sanitize(album.author)
+    name = _sanitize(album.name)
+    persist_dir = os.path.join(SHARE_DIR, author, name)
+    if os.path.isdir(persist_dir):
+        return persist_dir
+    found = _find_album_dir_by_aid(aid, SHARE_DIR, skip_dirs=('temp',))
+    if found:
+        return found
+    temp_dir = os.path.join(SHARE_DIR, 'temp', author, name)
+    if os.path.isdir(temp_dir):
+        return temp_dir
+    found = _find_album_dir_by_aid(aid, os.path.join(SHARE_DIR, 'temp'))
+    if found:
+        return found
+    return None
+
+
+def _chapter_images_ready(ch_dir):
+    """章节就绪判定(零网络): 目录内图片文件 >= 1 且无任何 0 字节占位图。"""
+    if not os.path.isdir(ch_dir):
+        return False
+    n = 0
+    for f in os.listdir(ch_dir):
+        if f.startswith('.') or os.path.splitext(f)[1].lower() not in ALLOWED_EXT:
+            continue
+        n += 1
+        if os.path.getsize(os.path.join(ch_dir, f)) == 0:
+            return False
+    return n >= 1
+
+
+def chapter_status(aid):
+    """
+    章节就绪状态: 返回 {'chapters': [{'key': pid(str), 'title', 'ready', 'path'}]}。
+    - 章节列表来自本地缓存的专辑详情(episode_list), 就绪判定纯本地
+    - 章节目录名解析链: meta.chapters 反查(dir→pid) 优先 → pname 非空用
+      _sanitize(pname) → pname 为空懒取 _cached_photo(aid, pid).name(下载器
+      {Pname} 同源名, _sanitize 后对上目录)。JM 专辑详情 API 的 pname 常为空,
+      不能单独作为目录名依据
+    - 展示 title: pname → photo.name → meta 目录名 → `第{pindex}话` 逐级回退;
+      photo 详情请求失败的章节不炸端点, 仅回退展示名且目录匹配失败(path=None)
+    - pname 为空的章节并发(ThreadPoolExecutor max_workers=4)拉 photo 详情,
+      避免多章节专辑首次打开弹窗串行 N 次请求; 结果进 _photo_cache 进程内缓存
+    - 单章节(episode_list 长度 1 或 meta.single): 专辑目录本身即章节目录
+    - path 为相对 share 的 gallery 路径(/ 分隔), 目录不存在时 None
+    """
+    album = _cached_album(aid)
+    episodes = [(str(pid), pindex, (pname or '').strip())
+                for pid, pindex, pname in album.episode_list]
+    album_dir = _locate_album_dir(aid)
+    meta = _online_load_meta(album_dir) if album_dir else None
+    # meta.chapters 是 {目录名: pid}, 反查 pid -> 目录名
+    pid2dir = {}
+    if meta and isinstance(meta.get('chapters'), dict):
+        for dname, pid in meta['chapters'].items():
+            pid2dir.setdefault(str(pid), dname)
+    single = len(episodes) == 1 or bool(meta and meta.get('single'))
+
+    # pname 为空且 meta 无目录名映射的章节: 并发懒取 photo.name 补名字
+    # (仅名字解析用途, 不改 _cached_photo 自身锁语义; 失败静默回退展示名)
+    missing = [pid for pid, _, pname in episodes
+               if not pname and pid not in pid2dir]
+    name_map = {}  # pid(str) -> photo.name
+    if missing:
+        def _fetch_name(pid):
+            try:
+                return _cached_photo(aid, pid).name
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for pid, nm in zip(missing, ex.map(_fetch_name, missing)):
+                if nm:
+                    name_map[pid] = nm
+
+    chapters = []
+    entries = []  # [pid, title, ch_name, exact_dir_exists]
+    for pid, pindex, pname in episodes:
+        # 目录名解析链: meta 反查 → pname → photo.name
+        ch_name = pid2dir.get(pid) or (_sanitize(pname) if pname else None) \
+            or (_sanitize(name_map[pid]) if pid in name_map else None)
+        # 展示名: pname → photo.name(原始名, 未 sanitize) → meta 目录名 → 第N话
+        title = pname or name_map.get(pid) or pid2dir.get(pid) or f'第{pindex}话'
+        exists = bool(album_dir and ch_name
+                      and os.path.isdir(os.path.join(album_dir, ch_name)))
+        entries.append([pid, title, ch_name, exists])
+
+    # 精确目录缺失兜底: 按尾部章节号(无号则按'['前缀)在专辑子目录中匹配,
+    # 应对 API 简繁变体与下载时实际目录名不一致(如 不咕鳥漢化組 vs 不咕鸟汉化组)。
+    # 仅当候选唯一且未被其他章节的精确目录占用时才认领, 防错配。
+    if album_dir and not single:
+        try:
+            subdirs = [d for d in os.listdir(album_dir)
+                       if os.path.isdir(os.path.join(album_dir, d))]
+        except OSError:
+            subdirs = []
+        claimed = {e[2] for e in entries if e[3]}
+        for e in entries:
+            if e[3] or not e[2]:
+                continue
+            num = _chapter_trailing_num(e[2])
+            cands = [d for d in subdirs if d not in claimed
+                     and _chapter_trailing_num(d) == num
+                     and (num is not None
+                          or _chapter_name_prefix(d) == _chapter_name_prefix(e[2]))]
+            if len(cands) == 1:
+                e[2] = cands[0]
+                claimed.add(cands[0])
+
+    for pid, title, ch_name, _exists in entries:
+        if single:
+            ch_dir = album_dir
+        elif album_dir and ch_name:
+            ch_dir = os.path.join(album_dir, ch_name)
+        else:
+            ch_dir = None
+        chapters.append({
+            'key': pid,
+            'title': title,
+            'ready': _chapter_images_ready(ch_dir) if ch_dir else False,
+            'path': os.path.relpath(ch_dir, SHARE_DIR).replace('\\', '/')
+                    if ch_dir and os.path.isdir(ch_dir) else None,
+        })
+    return {'chapters': chapters}
+
+
 def _download_worker():
     while True:
         tid = None
@@ -470,6 +633,49 @@ def _download_worker():
 
         try:
             base_dir = os.path.join(SHARE_DIR, 'temp') if task['mode'] == 'temp' else SHARE_DIR
+
+            # ===== 单章节下载 =====
+            # 弃用 download_photo: 其 dir_rule 依赖 album 上下文 token({Aname}), 对 photo
+            # 独立下载是否成立不可靠; 改手写循环, dest 命名与 _online_prep_chapter 一致
+            # (image.img_file_name + img_file_suffix), 已有真实文件跳过(增量), 逐页计数。
+            if task.get('pid'):
+                aid = task['aid']
+                album = _cached_album(aid)
+                photo = _cached_photo(aid, task['pid'])
+                page_arr = photo.page_arr or []
+                multi_chapter = len(album.episode_list) > 1
+                target = _resolve_target(album)
+                ch_dir = os.path.join(base_dir, target)
+                if multi_chapter:
+                    ch_dir = os.path.join(ch_dir, _sanitize(photo.name))
+                with _task_lock:
+                    task['target'] = target
+                    task['total'] = len(page_arr)
+                # persist 增量: temp 下该章节已物化的真实文件先合并到目标目录
+                if task['mode'] == 'persist':
+                    temp_ch = os.path.join(SHARE_DIR, 'temp', target)
+                    if multi_chapter:
+                        temp_ch = os.path.join(temp_ch, _sanitize(photo.name))
+                    if os.path.isdir(temp_ch):
+                        _merge_move(temp_ch, ch_dir)
+                count = 0
+                for i in range(1, len(page_arr) + 1):
+                    image = photo.create_image_detail(i - 1)  # 0 基
+                    dest = os.path.join(ch_dir, image.img_file_name + image.img_file_suffix)
+                    if os.path.exists(dest) and os.path.getsize(dest) > 0:
+                        count += 1
+                        with _task_lock:
+                            task['count'] = count
+                        continue
+                    _download_image_to(aid, task['pid'], i, dest)
+                    count += 1
+                    with _task_lock:
+                        task['count'] = count
+                _write_aid(os.path.join(base_dir, target), aid)
+                # target 保持专辑相对路径(不指向章节), 供前端完成后刷新
+                with _task_lock:
+                    task['status'] = 'done'
+                continue
 
             # 预取详情: 提前确定目标目录与总页数, 使进度条可用;
             # 分集漫画(多章节)在专辑目录下按章节名建子目录, 避免同名图片互相覆盖
@@ -531,10 +737,11 @@ def _download_worker():
                 task['error'] = str(e)
 
 
-def start_download(aid, title, author, mode):
+def start_download(aid, title, author, mode, pid=None):
     """
     创建下载任务。
     mode: 'temp'=阅读（share/temp 下）/ 'persist'=持久化（share 根下）
+    pid: 可选, 非空时只下载该章节(手写循环), 空则整本下载。
     返回 tid。
     """
     global _worker_started
@@ -543,15 +750,15 @@ def start_download(aid, title, author, mode):
 
     tid = uuid.uuid4().hex[:12]
     with _task_lock:
-        # 同一 album + mode 的运行中任务直接复用
+        # 同一 album + mode + pid 的运行中任务直接复用
         for old_tid, t in _tasks.items():
-            if (t['aid'] == aid and t['mode'] == mode
+            if (t['aid'] == aid and t['mode'] == mode and t.get('pid') == pid
                     and t['status'] in ('queued', 'running')):
                 return old_tid
         _tasks[tid] = {
             'tid': tid, 'aid': aid, 'title': title, 'author': author,
             'mode': mode, 'status': 'queued', 'error': None,
-            'target': None, 'count': 0, 'total': 0,
+            'target': None, 'count': 0, 'total': 0, 'pid': pid,
         }
         _queue.append(tid)
         if not _worker_started:
@@ -565,8 +772,10 @@ def task_status(tid):
         task = _tasks.get(tid)
         if task is None:
             return None
-        # 运行中实时统计已落盘图片数
-        if task['status'] == 'running' and task.get('target'):
+        # 运行中实时统计已落盘图片数(单章任务不重算: count 由 worker 逐页维护,
+        # 按整本目录统计会混入其他章节图片导致超过 total)
+        if (task['status'] == 'running' and task.get('target')
+                and not task.get('pid')):
             t = dict(task)
             t['count'] = _count_images(
                 os.path.join(
@@ -680,25 +889,55 @@ def _online_prep_chapter(aid, pid, album_dir, meta):
     return ch_dir
 
 
-def prepare_online(aid):
+def _persist_chapter_rel(aid, pid):
+    """持久化专辑内 pid 对应章节目录(相对 share): 复用 chapter_status 的三级
+    解析链(meta 反查 → pname → photo.name + 简繁变体兜底)。
+    目录不存在/解析失败返回 None, 由调用方回退专辑目录。"""
+    try:
+        for c in chapter_status(aid)['chapters']:
+            if c['key'] == str(pid):
+                return c['path']
+    except Exception:
+        pass
+    return None
+
+
+def prepare_online(aid, pid=None):
     """
     在线阅读入口: 在 share/temp/<作者>/<标题>/ 下 touch 空占位文件,
     返回可直接交给 /gallery/ 的相对路径。
-    首章节同步准备(秒级, 只需 1 次章节详情请求), 其余章节后台补齐,
+    pid 为空: 首章节同步准备(秒级, 只需 1 次章节详情请求), 其余章节后台补齐;
+    pid 非空: 同步准备指定章节, 其余章节(含首章)后台补齐 —— 点击未就绪章节直读。
+    pid 不在该专辑 episode_list → ValueError。
     gallery 漫画模式滚动到结尾时能自动拼上后续章节。
-    若 share/<作者>/<标题> 已有真实图片(已持久化), 直接返回持久化路径, 不建占位。
+    若 share/<作者>/<标题> 已有真实图片(已持久化), 直接返回持久化路径, 不建占位;
+    多章节专辑带 pid 时返回对应章节子目录(解析链复用 chapter_status,
+    定位不到则回退专辑目录交给 browse 逻辑兜底)。
     """
     album = _cached_album(aid)
+    episodes = [str(p) for p, _, _ in album.episode_list]
+    if pid is not None:
+        pid = str(pid)
+        if pid not in episodes:
+            raise ValueError('章节不属于该专辑')
+
     author = _sanitize(album.author)
     name = _sanitize(album.name)
+
+    def _persist_path(album_rel):
+        # 持久化命中: 带 pid 的多章节专辑指向章节子目录, 定位不到回退专辑目录
+        if pid and len(episodes) > 1:
+            return _persist_chapter_rel(aid, pid) or album_rel
+        return album_rel
 
     # 已持久化: 直接指向根目录(名称匹配 + aid 反查兜底), 跳过 temp 物化
     persist_dir = os.path.join(SHARE_DIR, author, name)
     if _has_real_images(persist_dir):
-        return {'path': f'{author}/{name}'.replace('\\', '/')}
+        return {'path': _persist_path(f'{author}/{name}'.replace('\\', '/'))}
     found = _find_album_dir_by_aid(aid, SHARE_DIR, skip_dirs=('temp',))
     if found and _has_real_images(found):
-        return {'path': os.path.relpath(found, SHARE_DIR).replace('\\', '/')}
+        rel = os.path.relpath(found, SHARE_DIR).replace('\\', '/')
+        return {'path': _persist_path(rel)}
 
     # temp 物化: 名称匹配; 目录不存在时 aid 反查复用旧目录(名称变体不一致场景)
     album_dir = os.path.join(SHARE_DIR, 'temp', author, name)
@@ -714,19 +953,19 @@ def prepare_online(aid):
         if meta is None or meta.get('aid') != aid:
             meta = {'aid': aid, 'chapters': {},
                     'single': len(album.episode_list) == 1}
-        first_pid = album.episode_list[0][0]
-        ch_dir = _online_prep_chapter(aid, first_pid, album_dir, meta)
+        target_pid = pid or episodes[0]
+        ch_dir = _online_prep_chapter(aid, target_pid, album_dir, meta)
 
-    remaining = [pid for pid, _, _ in album.episode_list[1:]]
+    remaining = [p for p in episodes if p != target_pid]
     if remaining:
         def prep_rest():
-            for pid in list(remaining):
+            for p in list(remaining):
                 try:
                     with _online_prep_lock:
                         meta = _online_load_meta(album_dir)
                         if meta is None:
                             return
-                        _online_prep_chapter(aid, pid, album_dir, meta)
+                        _online_prep_chapter(aid, p, album_dir, meta)
                 except Exception:
                     pass
         threading.Thread(target=prep_rest, daemon=True).start()

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""infoServer — pure ServiceGroup launcher (走法 A: 无 HTTP, 不占端口).
+"""infoServer — pure ServiceGroup manager (sgManager) (走法 A: 无 HTTP, 不占端口).
 
 读 config.yaml → ServiceGroupManager.start_all → 阻塞等 SIGINT → stop_all。
-host 不监听任何 TCP 端口; 所有子服务(含 parlanceChat) 由 config.yaml services 声明,
+sgManager 不监听任何 TCP 端口; 所有子服务(含 parlanceChat) 由 config.yaml services 声明,
 按 enabled 开关即装/卸 → 可拆卸性。
 
 服务级控制面 (ServiceControlServer):
-  host 虽无 HTTP, 但开一个跨平台控制 socket (multiprocessing.connection, 同 run.py 模式),
+  sgManager 虽无 HTTP, 但开一个跨平台控制 socket (multiprocessing.connection, 同 run.py 模式),
   供外部 agent (cwd-mcp) 查询托管服务清单 / 按端口重启单个子服务:
     services → ServiceGroupManager.status_all()   (每个托管子服务实时状态)
     restart  → 按 port 找服务 → svc.restart()      (stop+start, 不触发 auto_restart 计数)
-  这是子服务的唯一权威所有者视图; run.py 只负责拉起本 host, 不管理子服务。
+  这是子服务的唯一权威所有者视图; run.py 只负责拉起本 sgManager, 不管理子服务。
 """
 
 import json
@@ -115,12 +115,12 @@ class ServiceControlServer:
         try:
             self._listener = Listener(self._address, family=self._family)
         except Exception as e:
-            # 控制管道被占 = 另有 host 持有。不退出 (host 可能刚被 run.py 拉起,
-            # 旧 host 尚未释放管道), 转后台每 10s 重试接管, 让最后存活的 host
+            # 控制管道被占 = 另有 sgManager 持有。不退出 (sgManager 可能刚被 run.py 拉起,
+            # 旧 sgManager 尚未释放管道), 转后台每 10s 重试接管, 让最后存活的 sgManager
             # 自动成为控制面所有者 (2026-08-19 双实例事故根因修复的接管侧)。
             logger.warning(
                 "ServiceControlServer bind failed (%s): %s — retrying every 10s "
-                "to take over the control pipe when the old host exits.",
+                "to take over the control pipe when the old sgManager exits.",
                 self._address, e,
             )
             retry = threading.Thread(
@@ -1023,14 +1023,14 @@ def main():
         except (ValueError, OSError):
             pass
 
-    logger.info("ServiceGroup launcher running (no HTTP). Ctrl+C to stop.")
+    logger.info("ServiceGroup manager (sgManager) running (no HTTP). Ctrl+C to stop.")
     try:
         while not stop_event.is_set():
             time.sleep(0.5)
     finally:
         ctl.stop()
         svc_mgr.stop_all()
-        logger.info("Launcher shut down")
+        logger.info("sgManager shut down")
 
 
 if __name__ == "__main__":

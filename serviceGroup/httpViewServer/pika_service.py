@@ -24,8 +24,8 @@ from const import SHARE_DIR
 from jm_service import (
     _sanitize, _merge_move, _has_real_images, _touch_last_read,
     _find_album_dir_by_aid, _write_aid, _count_images,
-    _config_get, _config_set,
-    ONLINE_META_FILE, LAST_READ_FILE, AID_FILE,
+    _config_get, _config_set, _fix_persisted_progress,
+    ONLINE_META_FILE, LAST_READ_FILE, AID_FILE, PROGRESS_FILE, ALLOWED_EXT,
 )
 
 # ===== 常量（picacg-qt 硬编码, 全网公开） =====
@@ -363,19 +363,21 @@ _queue = []
 _worker_started = False
 
 
-def start_download(book_id, title, author, mode):
-    """创建下载任务。mode: temp=阅读(share/temp) / persist=持久化(share 根)。返回 tid。"""
+def start_download(book_id, title, author, mode, eps=None):
+    """创建下载任务。mode: temp=阅读(share/temp) / persist=持久化(share 根)。
+    eps: 可选, 非空时只下载该章节(order)。返回 tid。"""
     global _worker_started
     tid = uuid.uuid4().hex[:12]
     with _task_lock:
+        # 同一 album + mode + eps 的运行中任务直接复用
         for old_tid, t in _tasks.items():
-            if (t['aid'] == book_id and t['mode'] == mode
+            if (t['aid'] == book_id and t['mode'] == mode and t.get('eps') == eps
                     and t['status'] in ('queued', 'running')):
                 return old_tid
         _tasks[tid] = {
             'tid': tid, 'aid': book_id, 'title': title, 'author': author,
             'mode': mode, 'status': 'queued', 'error': None,
-            'target': None, 'count': 0, 'total': 0,
+            'target': None, 'count': 0, 'total': 0, 'eps': eps,
         }
         _queue.append(tid)
         if not _worker_started:
@@ -389,7 +391,10 @@ def task_status(tid):
         task = _tasks.get(tid)
         if task is None:
             return None
-        if task['status'] == 'running' and task.get('target'):
+        # 运行中实时统计已落盘图片数(单章任务不重算: count 由 worker 逐页维护,
+        # 按整本目录统计会混入其他章节图片导致超过 total)
+        if (task['status'] == 'running' and task.get('target')
+                and task.get('eps') is None):
             t = dict(task)
             base = os.path.join(SHARE_DIR, 'temp') if task['mode'] == 'temp' else SHARE_DIR
             t['count'] = _count_images(os.path.join(base, task['target']))
@@ -413,12 +418,58 @@ def _download_worker():
         if task is None:
             continue
         try:
+            base_dir = os.path.join(SHARE_DIR, 'temp') if task['mode'] == 'temp' else SHARE_DIR
+
+            # ===== 单章节下载 =====
+            # dest 规则与整本一致: <base>/<作者>/<标题>[/<eps标题>]/%05d.jpg,
+            # 已有真实文件跳过(增量), 逐页计数; target 保持专辑相对路径(不指向章节)。
+            if task.get('eps') is not None:
+                album = album_detail(task['aid'])
+                eps_list = album['eps']
+                ep = next((e for e in eps_list
+                           if int(e['order']) == int(task['eps'])), None)
+                if ep is None:
+                    raise RuntimeError('章节不存在: ' + str(task['eps']))
+                multi = len(eps_list) > 1
+                target = f"{_sanitize(album['author'])}/{_sanitize(album['title'])}"
+                eps_dir = os.path.join(base_dir, target)
+                if multi:
+                    eps_dir = os.path.join(eps_dir, _sanitize(ep['title']))
+                pages = _eps_pages(task['aid'], ep['order'])
+                with _task_lock:
+                    task['target'] = target
+                    task['total'] = len(pages)
+                # persist 增量: temp 下该章节已物化的真实文件先合并到目标目录
+                if task['mode'] == 'persist':
+                    temp_ch = os.path.join(SHARE_DIR, 'temp', target)
+                    if multi:
+                        temp_ch = os.path.join(temp_ch, _sanitize(ep['title']))
+                    if os.path.isdir(temp_ch):
+                        _merge_move(temp_ch, eps_dir, include_placeholders=False)
+                count = 0
+                for i, page in enumerate(pages, 1):
+                    dest = os.path.join(eps_dir, f'{i:05d}.jpg')
+                    if os.path.exists(dest) and os.path.getsize(dest) > 0:
+                        count += 1
+                        with _task_lock:
+                            task['count'] = count
+                        continue
+                    url, fs = _page_url(page)
+                    _fetch_image(url, fs, dest)
+                    count += 1
+                    with _task_lock:
+                        task['count'] = count
+                _write_aid(os.path.join(base_dir, target), task['aid'])
+                with _task_lock:
+                    task['status'] = 'done'
+                    task['count'] = count
+                continue
+
             album = album_detail(task['aid'])
             eps_list = album['eps']
             if not eps_list:
                 raise RuntimeError('该漫画无章节')
             multi = len(eps_list) > 1
-            base_dir = os.path.join(SHARE_DIR, 'temp') if task['mode'] == 'temp' else SHARE_DIR
             target = f"{_sanitize(album['author'])}/{_sanitize(album['title'])}"
             with _task_lock:
                 task['target'] = target
@@ -507,21 +558,48 @@ def _prep_eps(book_id, eps, album_dir, meta, single):
     return ch_dir
 
 
-def prepare_online(book_id):
+def _persist_chapter_rel(book_id, eps_order):
+    """持久化专辑内指定章节子目录(相对 share): 复用 chapter_status 的解析链
+    (meta 反查 → _sanitize(eps title))。目录不存在/解析失败返回 None,
+    由调用方回退专辑目录交给 browse 逻辑兜底。"""
+    try:
+        for c in chapter_status(book_id)['chapters']:
+            if c['key'] == str(eps_order):
+                return c['path']
+    except Exception:
+        pass
+    return None
+
+
+def prepare_online(book_id, eps=None):
     """
     在线阅读入口: 根目录已下载直接返回根路径; 否则 temp 下 touch 空占位 + meta,
-    返回 /gallery 相对路径。首章节同步, 其余后台补齐。
+    返回 /gallery 相对路径。
+    eps 为空: 首章节同步, 其余后台补齐; eps 非空(int order): 同步准备指定章节,
+    其余章节(含首章)后台补齐 —— 点击未就绪章节直读。eps 不属于该专辑 → ValueError。
+    持久化命中且带 eps 的多章节专辑: 返回对应章节子目录(定位不到回退专辑目录)。
     """
     album = _cached_album(book_id)
     author = _sanitize(album['author'])
     name = _sanitize(album['title'])
+    eps_list = album['eps']
+    if eps is not None:
+        eps = int(eps)
+        if not any(int(e['order']) == eps for e in eps_list):
+            raise ValueError('章节不属于该专辑')
+
+    def _persist_path(album_rel):
+        if eps is not None and len(eps_list) > 1:
+            return _persist_chapter_rel(book_id, eps) or album_rel
+        return album_rel
 
     persist_dir = os.path.join(SHARE_DIR, author, name)
     if _has_real_images(persist_dir):
-        return {'path': f'{author}/{name}'.replace('\\', '/')}
+        return {'path': _persist_path(f'{author}/{name}'.replace('\\', '/'))}
     found = _find_album_dir_by_aid(book_id, SHARE_DIR, skip_dirs=('temp',))
     if found and _has_real_images(found):
-        return {'path': os.path.relpath(found, SHARE_DIR).replace('\\', '/')}
+        rel = os.path.relpath(found, SHARE_DIR).replace('\\', '/')
+        return {'path': _persist_path(rel)}
 
     album_dir = os.path.join(SHARE_DIR, 'temp', author, name)
     if not os.path.isdir(album_dir):
@@ -531,23 +609,23 @@ def prepare_online(book_id):
     os.makedirs(album_dir, exist_ok=True)
     _touch_last_read(album_dir)
 
-    eps_list = album['eps']
     single = len(eps_list) == 1
     meta = _load_meta(album_dir)
     if meta is None or meta.get('aid') != book_id or meta.get('source') != 'pika':
         meta = {'source': 'pika', 'aid': book_id, 'chapters': {}, 'single': single}
-    first = eps_list[0]
-    ch_dir = _prep_eps(book_id, first, album_dir, meta, single)
+    target = next((e for e in eps_list if eps is not None and int(e['order']) == eps),
+                  eps_list[0])
+    ch_dir = _prep_eps(book_id, target, album_dir, meta, single)
 
-    remaining = eps_list[1:]
+    remaining = [e for e in eps_list if e is not target]
     if remaining:
         def prep_rest():
-            for eps in list(remaining):
+            for e in list(remaining):
                 try:
                     m = _load_meta(album_dir)
                     if m is None:
                         return
-                    _prep_eps(book_id, eps, album_dir, m, single)
+                    _prep_eps(book_id, e, album_dir, m, single)
                 except Exception:
                     pass
         threading.Thread(target=prep_rest, daemon=True).start()
@@ -624,6 +702,80 @@ def check_album(book_id):
     }
 
 
+def _locate_album_dir(book_id):
+    """
+    定位专辑本地目录: 持久化优先(名称匹配 + aid 反查兜底), 其次 temp(同款兜底)。
+    与 check_album 探测逻辑一致但不要求有真实图片, 返回目录存在的路径; 均不存在返回 None。
+    """
+    album = _cached_album(book_id)
+    author = _sanitize(album['author'])
+    name = _sanitize(album['title'])
+    persist_dir = os.path.join(SHARE_DIR, author, name)
+    if os.path.isdir(persist_dir):
+        return persist_dir
+    found = _find_album_dir_by_aid(book_id, SHARE_DIR, skip_dirs=('temp',))
+    if found:
+        return found
+    temp_dir = os.path.join(SHARE_DIR, 'temp', author, name)
+    if os.path.isdir(temp_dir):
+        return temp_dir
+    found = _find_album_dir_by_aid(book_id, os.path.join(SHARE_DIR, 'temp'))
+    if found:
+        return found
+    return None
+
+
+def _chapter_images_ready(ch_dir):
+    """章节就绪判定(零网络): 目录内图片文件 >= 1 且无任何 0 字节占位图。"""
+    if not os.path.isdir(ch_dir):
+        return False
+    n = 0
+    for f in os.listdir(ch_dir):
+        if f.startswith('.') or os.path.splitext(f)[1].lower() not in ALLOWED_EXT:
+            continue
+        n += 1
+        if os.path.getsize(os.path.join(ch_dir, f)) == 0:
+            return False
+    return n >= 1
+
+
+def chapter_status(book_id):
+    """
+    章节就绪状态: 返回 {'chapters': [{'key': order(str), 'title', 'ready', 'path'}]}。
+    - 章节列表来自本地缓存的专辑详情(eps), 就绪判定纯本地零网络
+    - 章节目录名优先读 meta(chapters: {目录名: order} 反查 order -> 目录名), 缺失兜底 _sanitize(title)
+    - 单章节(eps 长度 1 或 meta.single): 专辑目录本身即章节目录
+    - path 为相对 share 的 gallery 路径(/ 分隔), 目录不存在时 None
+    """
+    album = _cached_album(book_id)
+    eps_list = album['eps']
+    album_dir = _locate_album_dir(book_id)
+    if album_dir is None:
+        return {'chapters': [{'key': str(e['order']), 'title': e['title'],
+                              'ready': False, 'path': None} for e in eps_list]}
+    meta = _load_meta(album_dir)
+    # meta.chapters 是 {目录名: eps_order}, 反查 order -> 目录名
+    order2dir = {}
+    if meta and isinstance(meta.get('chapters'), dict):
+        for dname, order in meta['chapters'].items():
+            order2dir.setdefault(str(order), dname)
+    single = len(eps_list) == 1 or bool(meta and meta.get('single'))
+    chapters = []
+    for e in eps_list:
+        if single:
+            ch_dir = album_dir
+        else:
+            ch_dir = os.path.join(album_dir, order2dir.get(str(e['order'])) or _sanitize(e['title']))
+        chapters.append({
+            'key': str(e['order']),
+            'title': e['title'],
+            'ready': _chapter_images_ready(ch_dir),
+            'path': os.path.relpath(ch_dir, SHARE_DIR).replace('\\', '/')
+                    if os.path.isdir(ch_dir) else None,
+        })
+    return {'chapters': chapters}
+
+
 def persist_temp(path):
     """把 temp 下 pika 阅读缓存持久化到根目录（移动语义, 复用 _merge_move）。"""
     share_abs = os.path.abspath(SHARE_DIR)
@@ -653,6 +805,7 @@ def persist_temp(path):
             moved += r['moved']
             skipped += r['skipped']
             _write_aid(dst, aid)
+            _fix_persisted_progress(dst)
         try:
             os.rmdir(src_abs)
         except OSError:
@@ -664,6 +817,7 @@ def persist_temp(path):
         moved += r['moved']
         skipped += r['skipped']
         _write_aid(dst, aid)
+        _fix_persisted_progress(dst)
     return {'moved': moved, 'skipped': skipped}
 
 

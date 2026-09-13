@@ -179,6 +179,39 @@
         background: #bbdefb;
     }
 
+    /* 底部章节翻页按钮：圆形半透明黑底白字，低透明度不干扰阅读 */
+    .chapter-nav-btn {
+        position: fixed;
+        z-index: 999;
+        width: 56px;
+        height: 56px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.45);
+        color: white;
+        font-size: 30px;
+        line-height: 56px;
+        text-align: center;
+        padding: 0;
+        cursor: pointer;
+        opacity: 0.25;
+        transition: opacity 0.2s;
+    }
+    .chapter-nav-btn:hover {
+        opacity: 0.8;
+    }
+    /* 置灰态：不可跳转 */
+    .chapter-nav-btn.disabled {
+        opacity: 0.15;
+        cursor: not-allowed;
+    }
+    .chapter-nav-btn.disabled:hover {
+        opacity: 0.15;
+    }
+    /* prev 上移避开左下角自动滚动面板 */
+    #chapter-prev-btn { left: 16px; bottom: 140px; }
+    #chapter-next-btn { right: 16px; bottom: 20px; }
+
     </style>
 </head>
 <!-- 在 body 开始后添加返回按钮 -->
@@ -207,12 +240,18 @@
                        box-shadow: 0 2px 5px rgba(177, 45, 45, 0.562);
                        cursor: pointer;">返回</button>
         <button id="bookmark-btn" 
-onmousedown="startLongPress()" 
-                onmouseup="cancelLongPress()" 
-                onmouseleave="cancelLongPress()" 
-                ontouchstart="startLongPress()" 
-                ontouchend="cancelLongPress()">☆</button>
+ onmousedown="startLongPress()" 
+                 onmouseup="cancelLongPress()" 
+                 onmouseleave="cancelLongPress()" 
+                 ontouchstart="startLongPress()" 
+                 ontouchend="cancelLongPress()">☆</button>
     </div>
+
+    <!-- 底部章节翻页按钮（仅漫画模式显示，显隐/置灰由 initChapterNavButtons 控制） -->
+    <button id="chapter-prev-btn" class="chapter-nav-btn" style="display:none;"
+            onclick="chapterNavGo(-1)" title="上一章节">‹</button>
+    <button id="chapter-next-btn" class="chapter-nav-btn" style="display:none;"
+            onclick="chapterNavGo(1)" title="下一章节">›</button>
 
     <div style="position: fixed;
            bottom: 20px;
@@ -768,6 +807,49 @@ onmousedown="startLongPress()"
             chapterTitleElement.title = `当前加载章节: ${lastLoadedFolder}`;
         }
     }
+    // 拉取并排序章节目录列表（当前章节父目录下的 folder/gallery 子项）
+    // loadNextEpisode 自动续载 与 底部翻页按钮 共用，避免重复造轮子
+    async function fetchChapterFolders() {
+        const currentFolder = lastLoadedFolder; // 使用最后加载的文件夹作为当前文件夹
+        const parentPath = currentFolder.substring(0, currentFolder.lastIndexOf('/')) || '/';
+
+        // 请求父目录的文件夹列表，传递comic_mode参数以确保正确的排序
+        const response = await fetch(`/browse/${encodeURIComponent(parentPath)}?comic_mode=${isEnableComicMode}`);
+        const htmlText = await response.text();
+
+        // 解析HTML以获取文件夹列表
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlText, 'text/html');
+
+        // 提取所有文件夹名称及其排序信息（解码JSON字符串，处理引号和Unicode转义序列）
+        let foldersWithNumbers = [];
+        doc.querySelectorAll('.folder-item').forEach(item => {
+            const folderName = decodeJsonString(item.getAttribute('data-name'));
+            const folderType = decodeJsonString(item.getAttribute('data-type'));
+            if (folderType === 'folder' || folderType === 'gallery') {
+                // 提取文件夹名称中的第一个数字
+                const numberMatch = folderName.match(/\d+/);
+                foldersWithNumbers.push({
+                    name: folderName,
+                    number: numberMatch ? parseInt(numberMatch[0]) : Infinity
+                });
+            }
+        });
+
+        // 按数字排序（漫画模式），否则按名称排序
+        if (isEnableComicMode) {
+            foldersWithNumbers.sort((a, b) => {
+                if (a.number !== b.number) {
+                    return a.number - b.number;
+                }
+                return a.name.localeCompare(b.name);
+            });
+        } else {
+            foldersWithNumbers.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        return { folders: foldersWithNumbers, parentPath: parentPath };
+    }
+
     // 加载下一话的主要函数
     async function loadNextEpisode() { 
         if (loadingNextEpisode) return; 
@@ -775,68 +857,21 @@ onmousedown="startLongPress()"
         loadingNextEpisode = true; 
          
         try { 
-            // 获取当前文件夹列表，找到当前文件夹的下一个文件夹 
-            const currentFolder = lastLoadedFolder; // 使用最后加载的文件夹作为当前文件夹
-            const parentPath = currentFolder.substring(0, currentFolder.lastIndexOf('/')) || '/'; 
-            const currentFolderName = currentFolder.split('/').pop(); 
-            
-            // 对当前文件夹名称进行解码，因为它可能也是通过tojson传入的
-            const decodedCurrentFolderName = decodeJsonString(currentFolderName);
-             
-            // 请求父目录的文件夹列表，传递comic_mode参数以确保正确的排序
-            const response = await fetch(`/browse/${encodeURIComponent(parentPath)}?comic_mode=${isEnableComicMode}`);
-            const htmlText = await response.text(); 
-             
-            // 解析HTML以获取文件夹列表 
-            const parser = new DOMParser(); 
-            const doc = parser.parseFromString(htmlText, 'text/html'); 
-            const folderItems = doc.querySelectorAll('.folder-item'); 
-             
-            // 提取所有文件夹名称及其排序信息 
-            let foldersWithNumbers = []; 
-            folderItems.forEach(item => { 
-                let folderName = item.getAttribute('data-name'); 
-                let folderType = item.getAttribute('data-type'); 
-                
-                // 解码JSON字符串（处理引号和Unicode转义序列）
-                folderName = decodeJsonString(folderName);
-                folderType = decodeJsonString(folderType);
-                 
-                if (folderType === 'folder' || folderType === 'gallery') { 
-                    // 提取文件夹名称中的第一个数字 
-                    const numberMatch = folderName.match(/\d+/); 
-                    const firstNumber = numberMatch ? parseInt(numberMatch[0]) : Infinity; 
-                     
-                    foldersWithNumbers.push({ 
-                        name: folderName, 
-                        number: firstNumber, 
-                        element: item 
-                    }); 
-                } 
-            }); 
-             
-            // 按数字排序（漫画模式） 
-            if (isEnableComicMode) { 
-                foldersWithNumbers.sort((a, b) => { 
-                    if (a.number !== b.number) { 
-                        return a.number - b.number; 
-                    } 
-                    return a.name.localeCompare(b.name); 
-                }); 
-            } else { 
-                // 按名称排序 
-                foldersWithNumbers.sort((a, b) => a.name.localeCompare(b.name)); 
-            } 
-             
+            // 获取当前文件夹列表，找到当前文件夹的下一个文件夹（共用逻辑见 fetchChapterFolders）
+            const { folders: foldersWithNumbers, parentPath } = await fetchChapterFolders();
+            const decodedCurrentFolderName = decodeJsonString(lastLoadedFolder.split('/').pop());
+              
             // 找到当前文件夹的索引 
             const currentIndex = foldersWithNumbers.findIndex(item => item.name === decodedCurrentFolderName); 
-             
+              
             // 检查是否存在下一话 
             if (currentIndex === -1 || currentIndex >= foldersWithNumbers.length - 1) { 
                 console.log("没有更多话数可加载"); 
+                // 已到末章：同步刷新底部翻页按钮置灰态 
+                updateChapterNavState(); 
                 loadingNextEpisode = false; 
                 return; 
-            } 
+            }
              
             const nextFolder = foldersWithNumbers[currentIndex + 1]; 
             const nextFolderPath = parentPath === '/' ? `/${nextFolder.name}` : `${parentPath}/${nextFolder.name}`; 
@@ -846,7 +881,7 @@ onmousedown="startLongPress()"
             const galleryHtml = await galleryResponse.text(); 
              
             // 解析下一话的图片 
-            const galleryDoc = parser.parseFromString(galleryHtml, 'text/html'); 
+            const galleryDoc = new DOMParser().parseFromString(galleryHtml, 'text/html'); 
             const nextImages = galleryDoc.querySelectorAll('.comic-viewer img'); 
              
             if (nextImages.length === 0) { 
@@ -881,6 +916,10 @@ onmousedown="startLongPress()"
              
             // 更新最后加载的文件夹为当前加载的下一话
             lastLoadedFolder = nextFolderPath;
+            // 章节续载即进度路径变化，立即上报新 path
+            reportReadProgress();
+            // 当前章节变化，同步刷新底部翻页按钮置灰态
+            updateChapterNavState();
             
             // 更新已加载话数 
             loadedEpisodes++; 
@@ -1141,6 +1180,9 @@ onmousedown="startLongPress()"
     
     // 修改初始化跳转逻辑
     window.addEventListener('load', () => {
+        // 阅读进度恢复：URL 带 #y=<n>（搜索页跳转）优先按滚动位置恢复，跳过旧页码书签逻辑
+        if (restoreProgressFromHash()) return;
+
         const folderKey = `bookmark_${encodeURIComponent('{{ folder }}')}`;
         const savedPage = localStorage.getItem(folderKey);
         
@@ -1225,6 +1267,138 @@ onmousedown="startLongPress()"
             window.location.href = url;
         }, 100);
     }
+    </script>
+
+    <script>
+    // ===== 阅读进度上报/恢复（仅漫画模式；视频库/文本库为独立模板不渲染本页） =====
+    // 上报门控判断：现有漫画模式开关 isEnableComicMode
+    let lastProgressReportTs = 0;
+
+    // 页面实际滚动容器为 window/documentElement（参考 checkBottomReached/autoScroll 取法）
+    function galleryScrollTop() {
+        return Math.round(window.pageYOffset || document.documentElement.scrollTop
+            || (document.scrollingElement && document.scrollingElement.scrollTop) || 0);
+    }
+
+    // 上报当前章节路径 + 滚动位置（章节自动续载后 lastLoadedFolder 变化即上报新 path）
+    function reportReadProgress() {
+        if (!isEnableComicMode) return;
+        lastProgressReportTs = Date.now();
+        fetch('/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: lastLoadedFolder, y: galleryScrollTop() })
+        }).catch(() => {});
+    }
+
+    // 离开页面上报：sendBeacon 保证页面卸载时仍可达（JSON Blob 维持 application/json）
+    function reportReadProgressOnUnload() {
+        if (!isEnableComicMode) return;
+        const payload = JSON.stringify({ path: lastLoadedFolder, y: galleryScrollTop() });
+        let ok = false;
+        try {
+            ok = !!(navigator.sendBeacon &&
+                navigator.sendBeacon('/progress', new Blob([payload], { type: 'application/json' })));
+        } catch (e) { ok = false; }
+        if (!ok) reportReadProgress();
+    }
+
+    // 滚动节流：~2s 上报一次
+    window.addEventListener('scroll', () => {
+        if (Date.now() - lastProgressReportTs >= 2000) reportReadProgress();
+    }, { passive: true });
+    window.addEventListener('pagehide', reportReadProgressOnUnload);
+    window.addEventListener('beforeunload', reportReadProgressOnUnload);
+
+    // 恢复：解析 location.hash `#y=<n>` → scrollTo(0, n)；hash 缺失不动
+    function restoreProgressFromHash() {
+        const m = location.hash.match(/^#y=(\d+)$/);
+        if (!m) return false;
+        const y = parseInt(m[1], 10);
+        if (!y || y <= 0) return false;
+        // 懒加载图片逐张撑开布局高度，多次延迟滚动补偿定位
+        const doScroll = () => window.scrollTo(0, y);
+        doScroll();
+        setTimeout(doScroll, 300);
+        setTimeout(doScroll, 1200);
+        return true;
+    }
+    </script>
+
+    <script>
+    // ===== 底部章节左右翻页按钮（仅漫画模式启用时显示，与 isEnableComicMode 门控一致） =====
+    // 章节目录 = 当前 folder 父目录的子列表，复用 fetchChapterFolders（与 loadNextEpisode 自动续载同一份列表）
+    let chapterNavList = [];      // 排序后的章节目录 [{name, number}]
+    let chapterNavReady = false;  // 列表是否拉取成功
+
+    // 当前章节在列表中的索引（随自动续载的 lastLoadedFolder 变化联动）
+    function chapterNavCurrentIdx() {
+        const name = decodeJsonString(lastLoadedFolder.split('/').pop());
+        return chapterNavList.findIndex(it => it.name === name);
+    }
+
+    // 显隐/置灰判定：
+    //   非漫画模式 → 隐藏
+    //   拉取失败   → 显示但两键置灰（不误隐藏，保留重试=重新进页）
+    //   列表≤1     → 单章节漫画（无章节兄弟目录）→ 隐藏
+    //   正常       → 首章 prev 置灰 / 末章 next 置灰；当前章不在列表 → 两键置灰
+    function updateChapterNavState() {
+        const prev = document.getElementById('chapter-prev-btn');
+        const next = document.getElementById('chapter-next-btn');
+        if (!isEnableComicMode) {
+            prev.style.display = 'none';
+            next.style.display = 'none';
+            return;
+        }
+        if (!chapterNavReady) {
+            prev.style.display = '';
+            next.style.display = '';
+            prev.classList.add('disabled');
+            next.classList.add('disabled');
+            return;
+        }
+        if (chapterNavList.length <= 1) {
+            prev.style.display = 'none';
+            next.style.display = 'none';
+            return;
+        }
+        prev.style.display = '';
+        next.style.display = '';
+        const idx = chapterNavCurrentIdx();
+        prev.classList.toggle('disabled', idx <= 0);
+        next.classList.toggle('disabled', idx === -1 || idx >= chapterNavList.length - 1);
+    }
+
+    async function initChapterNavButtons() {
+        if (!isEnableComicMode) return; // 非漫画模式：按钮保持初始隐藏
+        try {
+            const { folders } = await fetchChapterFolders();
+            chapterNavList = folders;
+            chapterNavReady = true;
+        } catch (e) {
+            chapterNavReady = false; // 拉取失败 → 置灰
+            console.warn('章节目录拉取失败:', e);
+        }
+        updateChapterNavState();
+    }
+
+    // 翻页跳转：整页 location 跳转，新页 lastLoadedFolder 即新章节，
+    // 进度上报自然切到新 path（无需额外处理）
+    function chapterNavGo(delta) {
+        const btn = delta < 0
+            ? document.getElementById('chapter-prev-btn')
+            : document.getElementById('chapter-next-btn');
+        if (btn.classList.contains('disabled')) return; // 置灰 = 无跳转
+        const idx = chapterNavCurrentIdx();
+        if (idx === -1) return;
+        const target = chapterNavList[idx + delta];
+        if (!target) return;
+        const parentPath = lastLoadedFolder.substring(0, lastLoadedFolder.lastIndexOf('/')) || '/';
+        const path = parentPath === '/' ? `/${target.name}` : `${parentPath}/${target.name}`;
+        window.location.href = `/gallery/${encodeURIComponent(path)}`;
+    }
+
+    initChapterNavButtons();
     </script>
 
     <script>
