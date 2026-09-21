@@ -1642,6 +1642,16 @@
             delete c.details[module];
             try { localStorage.setItem(CP_DATA_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
         }
+        // 清空某模块成功后把该模块从数据缓存里摘掉 —— 否则刷新/切 tab 会把卡片重新还原出来
+        function cpCacheDropModule(module, userid, appcode) {
+            const c = cpCacheRead();
+            if (!c || c.userid !== userid || c.appcode !== appcode) return;
+            if (c.data && Array.isArray(c.data.modules)) {
+                c.data.modules = c.data.modules.filter(m => m.module !== module);
+            }
+            if (c.details) delete c.details[module];
+            try { localStorage.setItem(CP_DATA_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
+        }
         function cpCacheClear() {
             try { localStorage.removeItem(CP_DATA_CACHE_KEY); } catch (e) {}
         }
@@ -1665,7 +1675,7 @@
             if (mods.length === 0) {
                 html = `<p>玩家 ${cpEscape(d.userid)} 在 ${cpEscape(d.appcode)} 下无模块数据（redis 与 mysql 均无）</p>`;
             } else {
-                html = `<h3 class="cp-section-title">相关模块 (${mods.length}) <small style="font-weight:normal; color:#888;">点击模块展开 redis / mysql 明细</small></h3>`;
+                html = `<h3 class="cp-section-title">相关模块 (<span class="cp-mod-count">${mods.length}</span>) <small style="font-weight:normal; color:#888;">点击模块展开 redis / mysql 明细</small></h3>`;
                 for (const m of mods) {
                     const mismatch = m.redis_count !== m.mysql_rows;
                     html += `<div class="cp-mod-card" data-module="${encodeURIComponent(m.module)}"
@@ -1675,6 +1685,10 @@
                             <span style="font-size:12px; padding:2px 6px; border-radius:3px; background:#eef4ff; color:#1a4f9c;">redis ${m.redis_count}</span>
                             <span style="font-size:12px; padding:2px 6px; border-radius:3px; background:#eefaf0; color:#1a7a3d;">mysql ${m.mysql_rows}</span>
                             ${mismatch ? '<span style="font-size:12px; color:#856404;" title="缓存与落盘不一致">⚠ 不一致</span>' : ''}
+                            <button class="cp-mod-clear" data-module="${encodeURIComponent(m.module)}"
+                                    data-redis-count="${m.redis_count}" data-mysql-rows="${m.mysql_rows}"
+                                    title="清空该玩家此模块的数据：删除其 redis key 与 mysql 行（不可逆）"
+                                    style="font-size:12px; padding:2px 8px; border:1px solid #e0b4b4; border-radius:3px; background:#fff5f5; color:#c0392b; cursor:pointer;">清空</button>
                             <span class="cp-mod-arrow" style="color:#888;">▸</span>
                         </div>
                         <div class="cp-mod-body" style="display:none; border-top:1px solid #eee; padding:10px;"></div>
@@ -1687,6 +1701,13 @@
             out.innerHTML = html;
             out.querySelectorAll('.cp-mod-head').forEach(head => {
                 head.addEventListener('click', () => cpToggleModule(head.closest('.cp-mod-card'), userid, appcode));
+            });
+            // 折叠栏上的「清空」: 停掉冒泡, 别把卡片一起展开/收起
+            out.querySelectorAll('.cp-mod-clear').forEach(btn => {
+                btn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    cpClearModule(userid, appcode, decodeURIComponent(btn.dataset.module), btn);
+                });
             });
             cpCacheHint();
         }
@@ -1977,6 +1998,39 @@
                     cpBindDetailClicks(body, userid, appcode, module);
                 }
             } catch (e) { /* 刷新失败保留原内容，不打断用户 */ }
+        }
+
+        // 清空某模块数据: redis key 与 mysql 行两侧都清（模块是两侧并集, 只清一侧列表仍会列出它）。
+        // 成功后卡片从列表与数据缓存里一并消失; 失败保留卡片并报错, 可重试续清。
+        async function cpClearModule(userid, appcode, module, btn) {
+            const card = btn.closest('.cp-mod-card');
+            const msg = `⚠ 将清空该玩家此模块的数据（不可逆, 无快照）\n\n`
+                + `玩家ID: ${userid}\n缩写: ${appcode}\n模块: ${module}\n`
+                + `将删除: redis ${btn.dataset.redisCount} 个 key / mysql ${btn.dataset.mysqlRows} 行\n\n`
+                + `确认清空?`;
+            if (!confirm(msg)) return;
+            btn.disabled = true;
+            btn.textContent = '清空中...';
+            try {
+                const r = await cpPost('/api/cp-data/direct/clear',
+                    { userid: userid, appcode: appcode, module: module });
+                if (!r.success) throw new Error(r.message);
+                cpCacheDropModule(module, userid, appcode);   // 先落缓存再删节点, 防刷新还原
+                if (card) card.remove();
+                cpModCountSync();
+                cpCacheHint();
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = '清空';
+                alert(`清空失败: ${e.message}`);
+            }
+        }
+
+        // 卡片增删后同步标题里的模块数
+        function cpModCountSync() {
+            const out = document.getElementById('cp-module-result');
+            const el = out && out.querySelector('.cp-mod-count');
+            if (el) el.textContent = out.querySelectorAll('.cp-mod-card').length;
         }
 
         async function cpQueryRedis() { /* 自由查询面板已隐去, 保留函数供 console 调用 */

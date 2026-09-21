@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""CP 用户数据直连访问层（只读）。
+"""CP 用户数据直连访问层 — 只读查询 + 受控写 + 清空。
 
 为什么要直连：原 CP 测试面（/api/cp-data/*）借道 125 环境 exec_script，client_request
 还需 db9 五元组（mod(pick):halllogon:userid(X):hash）。该通路 2026-08-17 因 CP redis
@@ -14,8 +14,11 @@
 
     db10 = 用户模块数据；db8 = 模块配置（本项目不用，留待扩展）。
 
-只读边界：mysql 仅 SELECT / SHOW / DESC；redis 仅 SCAN / TYPE / GET / HGETALL /
-HKEYS / HLEN / SMEMBERS / LRANGE / ZRANGE。本模块不提供任何写方法。
+读写边界：
+    读 —— mysql 仅 SELECT / COUNT；redis 仅 SCAN / TYPE / GET / HGETALL / HKEYS /
+          HLEN / SMEMBERS / LRANGE / ZRANGE。
+    写 —— prepare_write / commit_write（存在即写，见「受控写」段）；clear_module
+          （整模块 redis+mysql 两侧清空，见「清空」段）。两者都只动上述表与 key。
 
 环境限制：CP redis 为 3.0.7（不支持 RESP3），故显式 protocol=2。
 """
@@ -362,14 +365,19 @@ def _str_or_none(v):
     return None if v is None else str(v)
 
 
-def _redis_write_target(r, key, uid, appcode, module) -> dict:
-    """校验 redis key 归属，返回 {key, exists, type, value, ttl}。归属不符抛 ValueError。"""
+def _assert_redis_key_owner(key, uid, appcode, module):
+    """校验 redis key 归属（模块 / 缩写 / 玩家）。不符抛 ValueError。受控写与清空共用。"""
     m, ac = _module_of(key)
     if m != module or ac != appcode:
         raise ValueError(f'key 不归属 模块 {module} / 缩写 {appcode}: {key}')
     hit = _UID_IN_KEY_RE.search(key)
     if not hit or hit.group(1) != str(uid):
         raise ValueError(f'key 不归属玩家 {uid}: {key}')
+
+
+def _redis_write_target(r, key, uid, appcode, module) -> dict:
+    """校验 redis key 归属，返回 {key, exists, type, value, ttl}。归属不符抛 ValueError。"""
+    _assert_redis_key_owner(key, uid, appcode, module)
     if not r.exists(key):
         return {'key': key, 'exists': False}
     t, v = _redis_value(r, key)
@@ -552,6 +560,81 @@ def commit_write(userid, appcode, module, value, redis_key=None, mysql_name=None
 
     return {'userid': uid, 'appcode': appcode, 'module': module,
             'written': written, 'snapshot': snapshot, 'warnings': warnings}
+
+
+# ---------------------------------------------------------------- 清空
+#
+# 「模块」在本页是 redis + mysql 的**并集**（任一侧有数据即列出，见 list_modules）。所以
+# 「让该模块消失」必须两侧一起清 —— 只清一侧的话，重新查询还会把该模块列出来。
+#
+# 安全纪律沿用受控写那套：模块名/缩写先过标识符白名单（表名靠它拼）；redis 每个 key 先过
+# 归属校验再 DEL；mysql 只删候选表（模块专表 / appcode-only 表按 name 过滤）里该玩家的行。
+#
+# 不可逆：本操作无快照、无回滚（未要求）。删前的计数随响应返回，供调用方核对。
+
+def clear_module(userid, appcode, module, redis_db=DEFAULT_REDIS_DB) -> dict:
+    """清空该玩家在该模块下的数据 —— redis key 与 mysql 行**两侧都清**。
+
+    返回 {'userid','appcode','module','cleared':{'redis','mysql'},'keys','tables'}
+    （keys = 被删的 redis key 列表；tables = [{'table','rows'}...]）。
+
+    两侧都无数据时抛 ValueError（无可清空内容）；任一侧失败抛 RuntimeError（已删的另一
+    侧不回滚，重试即可续清 —— DEL / DELETE 各自原子）。
+    """
+    uid = int(userid)
+    _ident(appcode, '缩写')
+    _ident(module, '模块名')
+    keys = []
+    tables = []
+    errors = []
+
+    # --- redis: 先逐 key 校验归属（不符即抛，不会误删别人的 key），再一次性 DEL ---
+    try:
+        r = _redis_conn(redis_db)
+        try:
+            keys = [k for k in _redis_keys(r, uid, appcode)
+                    if _module_of(k) == (module, appcode)]
+            for k in keys:
+                _assert_redis_key_owner(k, uid, appcode, module)
+            if keys:
+                r.delete(*keys)
+        finally:
+            r.close()
+    except Exception as e:  # noqa: BLE001 —— 单侧失败不吞掉另一侧结论
+        errors.append(f'redis 清空失败: {e}')
+
+    # --- mysql: 候选表里该玩家的行 ---
+    try:
+        conn = _mysql_conn()
+        try:
+            cur = conn.cursor()
+            for m, t in _tables_for(appcode):
+                if m == module:
+                    cur.execute(f'DELETE FROM `{t}` WHERE userid = %s', (uid,))
+                elif m is None:
+                    # appcode-only 表（friendroom 用）：模块名在 name 列，按 name 过滤
+                    cur.execute(f'DELETE FROM `{t}` WHERE userid = %s AND name = %s',
+                                (uid, module))
+                else:
+                    continue
+                if cur.rowcount and cur.rowcount > 0:
+                    tables.append({'table': t, 'rows': int(cur.rowcount)})
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001
+        errors.append(f'mysql 清空失败: {e}')
+
+    if errors:
+        raise RuntimeError('；'.join(errors))
+    if not keys and not tables:
+        raise ValueError('该玩家在此模块下 redis 与 mysql 均无数据，无需清空')
+
+    return {'userid': uid, 'appcode': appcode, 'module': module,
+            'cleared': {'redis': len(keys),
+                        'mysql': sum(t['rows'] for t in tables)},
+            'keys': keys, 'tables': tables}
 
 
 if __name__ == '__main__':

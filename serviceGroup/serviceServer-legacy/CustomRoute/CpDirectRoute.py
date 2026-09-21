@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""CP 直连查询路由（只读）— deposit 页 Creator 组「CP 数据」tab 的后端。
+"""CP 直连查询路由 — deposit 页 Creator 组「CP 数据」tab 的后端。
 
 与 CpDataRoute.py 的区别（2026-09 改版）：
     旧  /api/cp-data/*      借道 125 环境 exec_script；client_request 还依赖 db9 五元组
@@ -8,10 +8,10 @@
                             不触 125、不读 db9、不依赖玩家是否登录过 —— 因此不会再
                             产生「无五元组记录」这类报错。
 
-安全边界：本模块只读。mysql 仅 SELECT/COUNT，redis 仅 SCAN/TYPE/GET/HGETALL/
-LRANGE/SMEMBERS/ZRANGE（见 CpUserData）。没有写端点 —— 若将来要开放改写，请沿用旧
-CpDataRoute 受控写纪律（模块白名单 + key 归属校验 + 写前 redis/mysql 双快照），
-不要在本模块直接开裸写。
+安全边界：查询只读 —— mysql 仅 SELECT/COUNT，redis 仅 SCAN/TYPE/GET/HGETALL/
+LRANGE/SMEMBERS/ZRANGE（见 CpUserData）。写入（/direct/write*、/direct/clear）由
+CP_DIRECT_WRITE_ENABLED 单独管控，并沿用旧 CpDataRoute 受控写纪律（模块白名单 +
+key 归属校验），不要在本模块直接开裸写。
 """
 from flask import request, jsonify
 
@@ -195,3 +195,39 @@ def api_cp_direct_write():
         return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:  # noqa: BLE001
         return jsonify({'success': False, 'message': f'写入失败: {e}'}), 500
+
+
+@app.route('/api/cp-data/direct/clear', methods=['POST'])
+def api_cp_direct_clear():
+    """清空该玩家该模块的数据 —— redis key 与 mysql 行**两侧都清**。
+
+    body: {userid, appcode, module}
+    ⚠ 不可逆、无快照；调用前应由用户确认（前端已二次确认）。
+
+    为什么两侧都清：本页模块列表是 redis + mysql 的并集（任一侧有数据即列出），只清一侧
+    的话重新查询仍会列出该模块 —— 达不到「清空」的效果。
+
+    返回 data: {userid, appcode, module, cleared:{redis, mysql},
+                keys:[被删 key...], tables:[{table, rows}...]}
+    """
+    if not CP_DIRECT_ENABLED:
+        return jsonify({'success': False, 'message': 'CP 直连查询已关闭'}), 503
+    if not CP_DIRECT_WRITE_ENABLED:
+        return jsonify({'success': False, 'message': 'CP 直连写入已关闭（查询不受影响）'}), 503
+    data = request.json or {}
+    userid, err = _parse_userid(data.get('userid'))
+    if err:
+        return err
+    appcode, err = _parse_appcode(data.get('appcode'))
+    if err:
+        return err
+    module, err = _parse_module(data.get('module'))
+    if err:
+        return err
+    try:
+        return jsonify({'success': True,
+                        'data': CpUserData.clear_module(userid, appcode, module)})
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'success': False, 'message': f'清空失败: {e}'}), 500
