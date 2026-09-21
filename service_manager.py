@@ -506,7 +506,7 @@ class ManagedService:
         }
 
     def _resolve_exe_path(self) -> Optional[str]:
-        """解析 self.command 到 exe 绝对路径 (相对 host 进程 cwd)。
+        """解析 self.command 到 exe 绝对路径 (相对 sgManager 进程 cwd)。
 
         返 None = 不支持 swap (裸 PATH 名如 python/node, 或路径不存在)。
         基准: command 必须是显式文件路径 (绝对或相对含分隔符), 区分编译型

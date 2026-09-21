@@ -113,8 +113,27 @@ def build_html_items(folder_path, parent_path=''):
     return items
 
 # 在browse_directory函数前添加以下代码
+def count_chapter_dirs(item_path):
+    """统计章节目录数: 直接子目录中浅层含图片文件的个数(排除隐藏目录与 ServerData)。
+    多章节漫画(分集)在专辑目录下按章节名建子目录, 子目录浅层即图片文件。"""
+    try:
+        subs = [f for f in os.listdir(item_path)
+                if not f.startswith('.') and f != 'ServerData'
+                and os.path.isdir(os.path.join(item_path, f))]
+    except OSError:
+        return 0
+    count = 0
+    for f in subs:
+        try:
+            if any(is_image_file(x) for x in os.listdir(os.path.join(item_path, f))):
+                count += 1
+        except OSError:
+            pass
+    return count
+
 def build_directory_items(current_path, subpath):
-    """构建目录条目"""
+    """构建目录条目, 每项为 (type, name, parent, chapters)。
+    chapters = 章节目录数(>=2 时为多章节条目, 否则 0, 模板据此显示徽标)。"""
     dir_items = []
     text_items = []
     
@@ -126,13 +145,14 @@ def build_directory_items(current_path, subpath):
         item_path = os.path.join(current_path, item)
         if os.path.isdir(item_path):
             if is_aggsearch_dir(item):
-                dir_items.append(('aggsearch', item, subpath))
+                dir_items.append(('aggsearch', item, subpath, 0))
             elif contains_media(item_path):
-                dir_items.append(('gallery', item, subpath))
+                chapters = count_chapter_dirs(item_path)
+                dir_items.append(('gallery', item, subpath, chapters if chapters >= 2 else 0))
             else:
-                dir_items.append(('folder', item, subpath))
+                dir_items.append(('folder', item, subpath, 0))
         elif is_text_file(item):
-            text_items.append(('text', item, subpath))
+            text_items.append(('text', item, subpath, 0))
     
     # 定义提取第一个数字的函数
     def extract_number_prefix(name):

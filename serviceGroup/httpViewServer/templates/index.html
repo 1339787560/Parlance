@@ -30,6 +30,19 @@
         transform: translateY(-3px);
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
+    /* 多章节条目徽标：右侧浮动显示章节数 */
+    .chapter-badge {
+        float: right;
+        margin-left: 8px;
+        padding: 1px 8px;
+        background: #fff3e0;
+        border: 1px solid #ffb74d;
+        border-radius: 10px;
+        color: #e65100;
+        font-size: 12px;
+        font-weight: bold;
+        white-space: nowrap;
+    }
     /* 聚合搜索目录样式：蓝色文件夹 + 放大镜 */
     .folder-item-aggsearch {
         background: #e3f2fd;
@@ -100,8 +113,8 @@
     .jm-card .jm-actions button {
         flex: 1; padding: 6px 4px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
     }
-    .jm-btn-online { background: #9c27b0; color: white; }
     .jm-btn-read { background: #ff9800; color: white; }
+    .jm-btn-chapters { background: #2196F3; color: white; }
     .jm-btn-dl { background: #4caf50; color: white; }
     .jm-card .jm-progress { font-size: 12px; color: #2196F3; margin-top: 6px; text-align: center; }
     .jm-bar-track { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; margin-top: 4px; }
@@ -145,6 +158,45 @@
     .persist-menu-item:hover {
         background: #f5f5f5;
     }
+
+    /* ===== 章节悬浮窗（章节浏览 / 单章下载 共用同一列表） ===== */
+    .jm-ch-tabs { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .jm-ch-tab {
+        padding: 6px 16px; border: 1px solid #ddd; background: #f5f5f5;
+        border-radius: 5px; cursor: pointer; font-size: 13px; color: #666;
+    }
+    .jm-ch-tab.active { background: #2196F3; color: white; border-color: #2196F3; }
+    #jmChDownloadAll {
+        margin-left: auto; padding: 6px 14px; border: none; border-radius: 5px;
+        background: #4caf50; color: white; cursor: pointer; font-size: 13px;
+    }
+    #jmChDownloadAll:disabled { opacity: 0.5; cursor: default; }
+    .jm-ch-summary { font-size: 12px; color: #666; margin-bottom: 8px; }
+    .jm-ch-tip { font-size: 12px; color: #e65100; margin-bottom: 8px; min-height: 1em; }
+    /* 网格自适应：每章一行/一格 */
+    .jm-ch-list {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 8px; max-height: 50vh; overflow-y: auto;
+    }
+    .jm-ch-item {
+        position: relative; display: flex; align-items: center; gap: 6px;
+        padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px;
+        font-size: 12px; cursor: pointer; background: #fafafa;
+    }
+    .jm-ch-item:hover { background: #e3f2fd; }
+    .jm-ch-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 14px; }
+    /* 已就绪徽标：✓ 绝对定位右下角，绿色 */
+    .jm-ch-item.jm-ch-ready::after {
+        content: '✓'; position: absolute; right: 6px; bottom: 2px;
+        color: #4caf50; font-weight: bold;
+    }
+    .jm-ch-dlbtn {
+        border: none; border-radius: 4px; background: #4caf50; color: white;
+        font-size: 11px; padding: 3px 8px; cursor: pointer; white-space: nowrap; min-width: 44px;
+    }
+    .jm-ch-dlbtn:disabled { background: #c8e6c9; cursor: default; }
+    /* 整本下载进度（弹窗底部条，复用 jm-bar-track/jm-bar-fill） */
+    .jm-ch-bulk { margin-top: 12px; font-size: 12px; color: #2196F3; }
     </style>
 </head>
 <body>
@@ -166,7 +218,7 @@
         </div>
 
         <div class="folder-list">
-            {% for type, name, parent in items %}
+            {% for type, name, parent, chapters in items %}
             <div class="folder-item {% if type == 'aggsearch' %}folder-item-aggsearch{% endif %}"
                 data-type='{{ type|tojson }}'
                 data-parent='{{ parent|tojson }}'
@@ -174,6 +226,7 @@
                 onclick="handleFolderClick(this)"
                 {% if type == 'aggsearch' %}onmousedown="startAggLongPress(this)" onmouseup="cancelAggLongPress()" onmouseleave="cancelAggLongPress()" ontouchstart="startAggLongPress(this)" ontouchend="cancelAggLongPress()"{% endif %}>
                 {% if type == 'aggsearch' %}🔍 {{ name|replace('__aggsearch__', '') }}{% else %}📁 {{ name|safe }}{% endif %}
+                {% if chapters %}<span class="chapter-badge" title="共 {{ chapters }} 个章节">📚 {{ chapters }}</span>{% endif %}
             </div>
             {% endfor %}
         </div>
@@ -274,6 +327,30 @@
             </div>
             <div class="modal-footer">
                 <button onclick="closeJmSettings()" style="padding: 10px 20px; background: #f5f5f5; border: none; border-radius: 5px; cursor: pointer;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 章节悬浮窗（📑章节 / ⬇下载 共用，tab 切换模式） -->
+    <div id="jmChapterModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 720px;">
+            <div class="modal-header">
+                <h2 id="jmChapterTitle" style="font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">章节</h2>
+                <button onclick="closeJmChapters()" style="border: none; background: none; font-size: 20px; cursor: pointer;">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="jm-ch-tabs">
+                    <button id="jmChTabChapters" class="jm-ch-tab" onclick="jmChSwitchMode('chapters')">📑 章节</button>
+                    <button id="jmChTabDownload" class="jm-ch-tab" onclick="jmChSwitchMode('download')">⬇ 下载</button>
+                    <button id="jmChDownloadAll" onclick="jmDownloadAllChapters()" style="display:none;">⬇ 全选/整本下载</button>
+                </div>
+                <div id="jmChapterSummary" class="jm-ch-summary"></div>
+                <div id="jmChapterTip" class="jm-ch-tip"></div>
+                <div id="jmChapterList" class="jm-ch-list"><div class="jm-hint">加载章节中…</div></div>
+                <div id="jmChapterBulkBox" class="jm-ch-bulk" style="display:none;">
+                    <span id="jmChapterBulkText"></span>
+                    <div class="jm-bar-track"><div id="jmChapterBulkFill" class="jm-bar-fill"></div></div>
+                </div>
             </div>
         </div>
     </div>
@@ -746,9 +823,9 @@
                     <div class="jm-title">${jmEscape(item.title)}</div>
                     <div class="jm-author" title="双击按作者搜索" data-author="${jmEscape(item.author || '未知作者')}">👤 ${jmEscape(item.author || '未知作者')}</div>
                     <div class="jm-actions">
-                        <button class="jm-btn-online" onclick="jmStartOnline('${item.id}', this)">⚡ 在线</button>
-                        <button class="jm-btn-read" onclick="jmStartDownload('${item.id}', 'temp', this)">📖 阅读</button>
-                        <button class="jm-btn-dl" onclick="jmStartDownload('${item.id}', 'persist', this)">⬇ 下载</button>
+                        <button class="jm-btn-read" onclick="jmRead('${item.id}', this)">📖 阅读</button>
+                        <button class="jm-btn-chapters" onclick="jmOpenChapters('${item.id}', this, 'chapters')">📑 章节</button>
+                        <button class="jm-btn-dl" onclick="jmOpenChapters('${item.id}', this, 'download')">⬇ 下载</button>
                     </div>
                     <div class="jm-progress" style="display:none;">
                         <span class="jm-progress-text"></span>
@@ -770,140 +847,298 @@
             jmDoSearch(1);
         });
 
-        function jmStartOnline(aid, btn) {
-            // 在线阅读: 预置空占位文件后跳转原生 gallery 阅读器,
-            // 图片由 /file 按需物化(滚到哪张拉哪张)
+        // ===== 📖 阅读：进度恢复 > 本地/临时 > 在线秒开（原 ⚡在线 逻辑并入） =====
+        async function jmRead(aid, btn) {
             const card = btn.closest('.jm-card');
             const source = card.dataset.source || 'jm';
             const prog = card.querySelector('.jm-progress');
+            const text = prog.querySelector('.jm-progress-text');
             prog.style.display = 'block';
-            prog.querySelector('.jm-progress-text').textContent = '打开中…';
-            const url = source === 'pika' ? `/pika/online?aid=${aid}` : `/jm/online?aid=${aid}`;
-            fetch(url)
-                .then(r => r.json())
-                .then(data => {
-                    const path = data && (data.path || (data.success && data.path));
-                    if (!path) {
-                        prog.querySelector('.jm-progress-text').textContent = '✗ ' + ((data && data.error) || '打开失败');
+            text.textContent = '打开中…';
+            const jumpTo = (path, y) => {
+                sessionStorage.setItem('jmFromSearch', '1');
+                window.location.href = `/gallery/${encodeURIComponent(path)}` + (y ? `#y=${y}` : '');
+            };
+            try {
+                // 1. 上次阅读进度优先：有记录则直接跳到最后位置
+                try {
+                    const pr = await (await fetch(`/${source}/progress?aid=${encodeURIComponent(aid)}`)).json();
+                    if (pr && pr.success && pr.path) {
+                        jumpTo(pr.path, parseInt(pr.y, 10) || 0);
                         return;
                     }
-                    sessionStorage.setItem('jmFromSearch', '1');
-                    window.location.href = `/gallery/${encodeURIComponent(path)}`;
+                } catch (e) { /* 无进度记录/接口异常 → 继续常规流程 */ }
+                // 2. 本地已下载或 temp 中存在 → 直接打开（多章节条目跳专辑目录，browse 逻辑处理）
+                const ck = await (await fetch(`/${source}/check?aid=${encodeURIComponent(aid)}`)).json();
+                const local = (ck && ck.downloaded && ck.path) || (ck && ck.in_temp && ck.temp_path);
+                if (local) { jumpTo(local); return; }
+                // 3. 在线秒开：预置占位文件后跳 gallery 阅读器, 图片按需物化, 不整本下载
+                const on = await (await fetch(`/${source}/online?aid=${encodeURIComponent(aid)}`)).json();
+                if (on && on.path) { jumpTo(on.path); return; }
+                text.textContent = '✗ ' + ((on && on.error) || (ck && ck.error) || '打开失败');
+            } catch (err) {
+                text.textContent = '✗ ' + err;
+            }
+        }
+
+        // ===== 章节悬浮窗（📑章节 / ⬇下载 共用同一列表, tab 切换模式） =====
+        let jmChState = { aid: '', source: 'jm', title: '', author: '', mode: 'chapters', chapters: [] };
+
+        function jmOpenChapters(aid, btn, mode) {
+            const card = btn.closest('.jm-card');
+            jmChState.aid = aid;
+            jmChState.source = card.dataset.source || 'jm';
+            jmChState.title = card.querySelector('.jm-title').textContent;
+            jmChState.author = card.querySelector('.jm-author').textContent.replace('👤 ', '');
+            jmChState.mode = (mode === 'download') ? 'download' : 'chapters';
+            jmChState.chapters = [];
+            document.getElementById('jmChapterTitle').textContent = jmChState.title;
+            document.getElementById('jmChapterTitle').title = jmChState.title;
+            document.getElementById('jmChapterSummary').textContent = '';
+            document.getElementById('jmChapterTip').textContent = '';
+            document.getElementById('jmChapterList').innerHTML = '<div class="jm-hint">加载章节中…</div>';
+            document.getElementById('jmChapterBulkBox').style.display = 'none';
+            document.getElementById('jmChapterModal').classList.add('active');
+            document.body.style.overflow = 'hidden';
+            jmUpdateChTabs();
+            jmFetchChapterStatus();
+        }
+
+        function closeJmChapters() {
+            document.getElementById('jmChapterModal').classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // 点遮罩关闭（content 内点击冒泡时 target 不是遮罩本身）
+        document.getElementById('jmChapterModal').addEventListener('click', function(e) {
+            if (e.target === this) closeJmChapters();
+        });
+
+        function jmFetchChapterStatus() {
+            fetch(`/${jmChState.source}/chapter_status?aid=${encodeURIComponent(jmChState.aid)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || !data.success) {
+                        document.getElementById('jmChapterList').innerHTML =
+                            '<div class="jm-hint">✗ ' + jmEscape((data && data.error) || '章节加载失败') + '</div>';
+                        return;
+                    }
+                    jmChState.chapters = data.chapters || [];
+                    jmRenderChapterList();
                 })
                 .catch(err => {
-                    prog.querySelector('.jm-progress-text').textContent = '✗ ' + err;
+                    document.getElementById('jmChapterList').innerHTML =
+                        '<div class="jm-hint">✗ 章节加载失败: ' + jmEscape(String(err)) + '</div>';
                 });
         }
 
-        function jmStartDownload(aid, mode, btn) {
-            const card = btn.closest('.jm-card');
-            const source = card.dataset.source || 'jm';
-            const title = card.querySelector('.jm-title').textContent;
-            const author = card.querySelector('.jm-author').textContent.replace('👤 ', '');
-
-            if (source === 'pika') {
-                if (mode === 'temp') {
-                    // pika 阅读优先：已下载则直接读，否则走临时下载流程
-                    fetch(`/pika/check?aid=${aid}`)
-                        .then(r => r.json())
-                        .then(data => {
-                            const target = (data && data.downloaded && data.path) ||
-                                           (data && data.in_temp && data.temp_path);
-                            if (target) {
-                                sessionStorage.setItem('jmFromSearch', '1');
-                                window.location.href = `/gallery/${encodeURIComponent(target)}`;
-                                return;
-                            }
-                            pikaDoDownload(aid, title, author, 'temp', btn);
-                        })
-                        .catch(() => pikaDoDownload(aid, title, author, 'temp', btn));
-                    return;
-                }
-                pikaDoDownload(aid, title, author, mode, btn);
-                return;
-            }
-
-            if (mode === 'temp') {
-                // 📖 阅读优先：已下载则直接读，否则走临时下载流程
-                fetch(`/jm/check?aid=${aid}`)
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.success && data.downloaded && data.path) {
-                            sessionStorage.setItem('jmFromSearch', '1');
-                            window.location.href = `/gallery/${encodeURIComponent(data.path)}`;
-                            return;
-                        }
-                        jmDoDownload(aid, title, author, 'temp', btn);
-                    })
-                    .catch(() => jmDoDownload(aid, title, author, 'temp', btn));
-                return;
-            }
-            jmDoDownload(aid, title, author, mode, btn);
+        function jmChSwitchMode(mode) {
+            if (jmChState.mode === mode) return;
+            jmChState.mode = mode;
+            document.getElementById('jmChapterTip').textContent = '';
+            jmUpdateChTabs();
+            jmRenderChapterList();
         }
 
-        function pikaDoDownload(aid, title, author, mode, btn) {
-            const card = btn.closest('.jm-card');
-            fetch('/pika/download', {
+        function jmUpdateChTabs() {
+            const isDl = jmChState.mode === 'download';
+            document.getElementById('jmChTabChapters').classList.toggle('active', !isDl);
+            document.getElementById('jmChTabDownload').classList.toggle('active', isDl);
+            document.getElementById('jmChDownloadAll').style.display = isDl ? '' : 'none';
+        }
+
+        function jmUpdateChSummary() {
+            const chs = jmChState.chapters;
+            const readyCount = chs.filter(c => c.ready).length;
+            document.getElementById('jmChapterSummary').textContent =
+                `共 ${chs.length} 章 · 已就绪 ${readyCount} 章`;
+        }
+
+        function jmRenderChapterList() {
+            const list = document.getElementById('jmChapterList');
+            const chs = jmChState.chapters;
+            jmUpdateChSummary();
+            if (!chs.length) {
+                list.innerHTML = '<div class="jm-hint">没有章节信息</div>';
+                return;
+            }
+            const isDl = jmChState.mode === 'download';
+            list.innerHTML = chs.map((c, i) => {
+                // 行内下载按钮仅下载模式显示；点击统一走行 onclick（避免按钮+行双触发）
+                const btn = isDl
+                    ? (c.ready
+                        ? '<button class="jm-ch-dlbtn" disabled>✓ 已下载</button>'
+                        : '<button class="jm-ch-dlbtn">下载</button>')
+                    : '';
+                return `<div class="jm-ch-item${c.ready ? ' jm-ch-ready' : ''}" data-idx="${i}" ` +
+                       `onclick="jmChapterRowClick(${i})" title="${jmEscape(c.title)}">` +
+                       `<span class="jm-ch-name">${jmEscape(c.title)}</span>${btn}</div>`;
+            }).join('');
+        }
+
+        // 章节模式：点击行 → 就绪直跳，未下载走在线秒开；下载模式：点击行 = 下载本章
+        function jmChapterRowClick(idx) {
+            const ch = jmChState.chapters[idx];
+            if (!ch) return;
+            const row = document.querySelector(`#jmChapterList .jm-ch-item[data-idx="${idx}"]`);
+            if (jmChState.mode === 'download') {
+                // 行点击与行内按钮同流程；就绪提示已下载，下载中(btn disabled)防重复
+                const btn = row && row.querySelector('.jm-ch-dlbtn');
+                if (!btn) return;
+                if (ch.ready) {
+                    document.getElementById('jmChapterTip').textContent =
+                        `"${ch.title}" 已下载，可切到「章节」页签阅读`;
+                    return;
+                }
+                if (btn.disabled) return;
+                jmDownloadChapter(idx, btn);
+                return;
+            }
+            // 章节模式：本地已有目录 → 直接跳
+            if (ch.path) {
+                sessionStorage.setItem('jmFromSearch', '1');
+                window.location.href = `/gallery/${encodeURIComponent(ch.path)}`;
+                return;
+            }
+            // 未下载 → 在线秒开本章：GET /{source}/online?aid&key 同步准备占位目录
+            if (!row || row.dataset.busy) return; // 加载中防重复点击
+            row.dataset.busy = '1';
+            const nameEl = row.querySelector('.jm-ch-name');
+            nameEl.textContent = '⏳ 打开中…';
+            const showFail = (msg) => {
+                nameEl.textContent = '✗ ' + msg;
+                setTimeout(() => {
+                    nameEl.textContent = ch.title;
+                    delete row.dataset.busy;
+                }, 2500);
+            };
+            fetch(`/${jmChState.source}/online?aid=${encodeURIComponent(jmChState.aid)}&key=${encodeURIComponent(ch.key)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.path) {
+                        sessionStorage.setItem('jmFromSearch', '1');
+                        window.location.href = `/gallery/${encodeURIComponent(data.path)}`;
+                        return;
+                    }
+                    showFail((data && data.error) || '打开失败');
+                })
+                .catch(err => showFail(String(err)));
+        }
+
+        // 单章下载：POST download 带 key → 轮询 status → 行内进度 → done 点亮 ✓
+        function jmDownloadChapter(idx, btn) {
+            const ch = jmChState.chapters[idx];
+            if (!ch || ch.ready) return;
+            btn.disabled = true;
+            btn.textContent = '排队…';
+            fetch(`/${jmChState.source}/download`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ aid: aid, title: title, author: author, mode: mode })
+                body: JSON.stringify({
+                    aid: jmChState.aid, title: jmChState.title,
+                    author: jmChState.author, mode: 'persist', key: ch.key
+                })
             })
                 .then(r => r.json())
                 .then(data => {
                     if (!data || !data.tid) {
-                        alert('下载失败: ' + ((data && data.error) || '未知错误'));
+                        btn.disabled = false;
+                        btn.textContent = '✗ 失败';
+                        setTimeout(() => { btn.textContent = '下载'; }, 2500);
                         return;
                     }
-                    jmPollTask(data.tid, card, mode, 'pika');
+                    jmPollDownload(data.tid, jmChState.source,
+                        (t) => {
+                            if (t.status === 'queued') { btn.textContent = '排队…'; return; }
+                            const pct = t.total > 0 ? Math.min(100, Math.round(t.count * 100 / t.total)) : 0;
+                            btn.textContent = t.total > 0 ? pct + '%' : (t.count ? t.count + ' 张' : '…');
+                        },
+                        () => {
+                            ch.ready = true;
+                            btn.textContent = '✓ 已下载';
+                            btn.disabled = true;
+                            const row = btn.closest('.jm-ch-item');
+                            if (row) row.classList.add('jm-ch-ready');
+                            jmUpdateChSummary();
+                        },
+                        () => {
+                            btn.disabled = false;
+                            btn.textContent = '✗ 失败';
+                            setTimeout(() => { btn.textContent = '下载'; }, 2500);
+                        }
+                    );
                 })
-                .catch(err => alert('下载失败: ' + err));
+                .catch(() => {
+                    btn.disabled = false;
+                    btn.textContent = '下载';
+                });
         }
 
-        function jmDoDownload(aid, title, author, mode, btn) {
-            const card = btn.closest('.jm-card');
-            fetch('/jm/download', {
+        // 全选/整本下载：POST download 不带 key → 进度显示在弹窗底部条
+        function jmDownloadAllChapters() {
+            const box = document.getElementById('jmChapterBulkBox');
+            const text = document.getElementById('jmChapterBulkText');
+            const fill = document.getElementById('jmChapterBulkFill');
+            const allBtn = document.getElementById('jmChDownloadAll');
+            allBtn.disabled = true;
+            box.style.display = 'block';
+            text.textContent = '整本下载排队中…';
+            fill.style.width = '0%';
+            fetch(`/${jmChState.source}/download`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ aid: aid, title: title, author: author, mode: mode })
+                body: JSON.stringify({
+                    aid: jmChState.aid, title: jmChState.title,
+                    author: jmChState.author, mode: 'persist'
+                })
             })
                 .then(r => r.json())
                 .then(data => {
-                    if (!data.success) { alert('下载失败: ' + (data.error || '未知错误')); return; }
-                    jmPollTask(data.tid, card, mode, 'jm');
+                    if (!data || !data.tid) {
+                        text.textContent = '✗ ' + ((data && data.error) || '启动失败');
+                        allBtn.disabled = false;
+                        return;
+                    }
+                    jmPollDownload(data.tid, jmChState.source,
+                        (t) => {
+                            const pct = t.total > 0 ? Math.min(100, Math.round(t.count * 100 / t.total)) : 0;
+                            if (t.status === 'queued') text.textContent = '排队中…';
+                            else {
+                                text.textContent = t.total > 0
+                                    ? `下载中 ${pct}%（${t.count}/${t.total} 张）`
+                                    : '下载中' + (t.count ? ` (${t.count} 张)` : '…');
+                                if (t.total > 0) fill.style.width = pct + '%';
+                            }
+                        },
+                        (t) => {
+                            text.textContent = '✓ 整本下载完成 (' + (t.count || 0) + ' 张)';
+                            fill.style.width = '100%';
+                            allBtn.disabled = false;
+                            jmFetchChapterStatus(); // 刷新各章就绪状态
+                        },
+                        (msg) => {
+                            text.textContent = '✗ 失败: ' + msg;
+                            allBtn.disabled = false;
+                        }
+                    );
                 })
-                .catch(err => alert('下载失败: ' + err));
+                .catch(err => {
+                    text.textContent = '✗ ' + err;
+                    allBtn.disabled = false;
+                });
         }
 
-        function jmPollTask(tid, card, mode, source) {
-            const prog = card.querySelector('.jm-progress');
-            const text = prog.querySelector('.jm-progress-text');
-            const fill = prog.querySelector('.jm-bar-fill');
-            prog.style.display = 'block';
+        // 通用下载任务轮询（单章行内 / 整本底部条共用）
+        function jmPollDownload(tid, source, onUpdate, onDone, onError) {
             const statusUrl = source === 'pika' ? `/pika/status?tid=${tid}` : `/jm/status?tid=${tid}`;
             const timer = setInterval(() => {
                 fetch(statusUrl)
                     .then(r => r.json())
                     .then(task => {
-                        if (!task.success) { clearInterval(timer); text.textContent = '✗ ' + (task.error || '任务丢失'); return; }
-                        const pct = task.total > 0 ? Math.min(100, Math.round(task.count * 100 / task.total)) : 0;
-                        if (task.status === 'queued') text.textContent = '排队中…';
-                        else if (task.status === 'running') {
-                            text.textContent = task.total > 0
-                                ? `下载中 ${pct}%（${task.count}/${task.total} 张）`
-                                : '下载中' + (task.count ? ` (${task.count} 张)` : '…');
-                            if (task.total > 0) fill.style.width = pct + '%';
-                        }
-                        else if (task.status === 'error') { clearInterval(timer); text.textContent = '✗ 失败: ' + task.error; }
-                        else if (task.status === 'done') {
-                            clearInterval(timer);
-                            text.textContent = `✓ 完成 (${task.count} 张)`;
-                            fill.style.width = '100%';
-                            if (mode === 'temp' && task.target) {
-                                // 阅读模式: 直接跳转到临时库中的漫画阅读页
-                                sessionStorage.setItem('jmFromSearch', '1');
-                                window.location.href = `/gallery/${encodeURIComponent(task.target)}`;
-                            }
-                        }
+                        if (!task.success) { clearInterval(timer); onError(task.error || '任务丢失'); return; }
+                        onUpdate(task);
+                        if (task.status === 'done') { clearInterval(timer); onDone(task); }
+                        else if (task.status === 'error') { clearInterval(timer); onError(task.error || '下载失败'); }
                     })
                     .catch(() => {});
             }, 2000);

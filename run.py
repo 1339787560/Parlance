@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive foreground launcher for infoServer.
+"""Interactive foreground sgmController for infoServer.
 
 Usage:
     python run.py            # Start infoServer and listen for hotkeys
@@ -8,7 +8,7 @@ Usage:
 
 Hotkeys:
     r / R   Reload infoServer (stop fully then start)
-    q / Q   Stop service and quit launcher
+    q / Q   Stop service and quit sgmController
     s / S   Show current status
     h / H   Show this help
 """
@@ -78,10 +78,10 @@ class _MethodNotFound(Exception):
 
 
 class ControlServer:
-    """JSON-RPC control server, coexisting with the Launcher keyboard loop."""
+    """JSON-RPC control server, coexisting with the SgmController keyboard loop."""
 
-    def __init__(self, launcher: "Launcher"):
-        self.launcher = launcher
+    def __init__(self, controller: "SgmController"):
+        self.controller = controller
         self._listener: Optional[Listener] = None
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
@@ -101,11 +101,11 @@ class ControlServer:
         try:
             self._listener = Listener(self._address, family=self._family)
         except Exception as e:
-            # 单实例锁: 控制管道被占 = 已有 launcher 在跑。直接退出, 让已有实例
+            # 单实例锁: 控制管道被占 = 已有 sgmController 在跑。直接退出, 让已有实例
             # 独占服务 (2026-08-19 双实例事故根因: 第二套实例静默降级继续跑,
             # 导致 cwd-mcp 状态视图失真 + 端口互相抢占)。
             logger.error(
-                "Control pipe %s already in use (%s) — another infoServer launcher "
+                "Control pipe %s already in use (%s) — another infoServer sgmController "
                 "is running; exiting to keep single instance.",
                 self._address, e,
             )
@@ -183,7 +183,7 @@ class ControlServer:
         return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
     def _dispatch(self, method: str, params: dict) -> dict:
-        lc = self.launcher
+        lc = self.controller
         if method == "reload":
             lc.reload()
             return {"ok": True}
@@ -323,7 +323,7 @@ def _ensure_port_free(port: int, timeout: float = 15) -> bool:
     return not _listeners(port) and _can_bind(port)
 
 
-class Launcher:
+class SgmController:
     def __init__(self):
         self.port = _load_port()
         self.python = _find_python()
@@ -398,7 +398,7 @@ class Launcher:
             """
 Hotkeys:
   r / R   Reload infoServer (stop fully then start)
-  q / Q   Stop service and quit launcher
+  q / Q   Stop service and quit sgmController
   s / S   Show current status
   h / H   Show this help
 """
@@ -453,9 +453,9 @@ Hotkeys:
     def run(self):
         no_input = "--no-input" in sys.argv
 
-        # 单实例锁: 先绑定 launcher 控制管道再启动 host。管道已被占 =
-        # 已有 launcher 在跑, ControlServer.start() 内部 raise SystemExit(1),
-        # 不会启动第二套 host/子服务 (2026-08-19 双实例事故根因修复)。
+        # 单实例锁: 先绑定 sgmController 控制管道再启动 sgManager。管道已被占 =
+        # 已有 sgmController 在跑, ControlServer.start() 内部 raise SystemExit(1),
+        # 不会启动第二套 sgManager/子服务 (2026-08-19 双实例事故根因修复)。
         self._ctl_server = ControlServer(self)
         self._ctl_server.start()
 
@@ -475,11 +475,11 @@ Hotkeys:
             if self._ctl_server is not None:
                 self._ctl_server.stop()
             self.shutdown()
-            logger.info("Launcher exited")
+            logger.info("SgmController exited")
 
 
 def main():
-    Launcher().run()
+    SgmController().run()
 
 
 if __name__ == "__main__":

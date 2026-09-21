@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Control client for the infoServer Launcher.
+"""Control client for the infoServer sgmController.
 
-Sends a single JSON-RPC 2.0 request to the running Launcher's control socket
+Sends a single JSON-RPC 2.0 request to the running sgmController's control socket
 (Named Pipe on Windows, UDS on POSIX) and prints the response as JSON.
 
-The socket address must match the Launcher's ControlServer (see run.py).
+The socket address must match the sgmController's ControlServer (see run.py).
 Wire format is multiprocessing.connection; this client is the canonical front-end.
 
 Usage:
@@ -18,11 +18,11 @@ Usage:
     python ctl_client.py --socket svc restart --params '{"port": 5000}'
     python ctl_client.py --socket svc swap_exe --params '{"port": 5000}'
 
---socket: ctl=launcher (run.py, 默认) / svc=服务组 (main.py, services|restart|swap_exe|update)
+--socket: ctl=sgmController (run.py, 默认) / svc=服务组 (main.py, services|restart|swap_exe|update)
 
 Exit codes:
     0  success (response carries no JSON-RPC error)
-    1  connection / usage error (Launcher not running, bad params)
+    1  connection / usage error (sgmController not running, bad params)
     2  JSON-RPC error response received
 """
 
@@ -60,7 +60,7 @@ def main(argv=None) -> int:
     parser.add_argument("--id", type=int, default=1,
                         help="request id (default 1)")
     parser.add_argument("--socket", choices=["ctl", "svc"], default="ctl",
-                        help="target control socket: ctl=launcher (run.py, default), "
+                        help="target control socket: ctl=sgmController (run.py, default), "
                              "svc=service group (main.py, services/restart)")
     args = parser.parse_args(argv)
 
@@ -82,7 +82,7 @@ def main(argv=None) -> int:
         conn = Client(address, family=family)
     except (FileNotFoundError, ConnectionRefusedError, OSError) as e:
         print(f"cannot connect to control socket {address}: {e}", file=sys.stderr)
-        print("is the infoServer Launcher running?", file=sys.stderr)
+        print("is the infoServer sgmController running?", file=sys.stderr)
         return 1
 
     try:

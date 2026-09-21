@@ -388,7 +388,7 @@
             <!-- 视频元素 -->
             <video class="lazy-video" preload="none" data-src="{% if full_path_mode %}{{ file|urlencode }}{% else %}{{ folder|urlencode }}/{{ file|urlencode }}{% endif %}"
                 onclick="togglePlay(this)">
-                <source src="" type="video/{{ file.split('.')[-1] }}">
+                <source src="" type="video/{{ {'mkv': 'x-matroska', 'mov': 'quicktime'}.get(file.split('.')[-1]|lower, file.split('.')[-1]) }}">
             </video>
 
             <!-- 统一控制容器（唯一） -->

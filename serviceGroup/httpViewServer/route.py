@@ -6,6 +6,7 @@ from flask import Flask, abort, make_response, redirect, render_template, reques
 import os
 import json
 import shutil
+import time
 
 try:
     from docx import Document
@@ -577,7 +578,8 @@ def jm_cover(album_id):
 
 @app.route('/jm/download', methods=['POST'])
 def jm_download():
-    """创建下载任务。body: {aid, title, author, mode: temp|persist}。"""
+    """创建下载任务。body: {aid, title, author, mode: temp|persist, key?}。
+    key=章节 pid(数字字符串)时只下载该章节, 非法/缺省回退整本。"""
     if not HAS_JM:
         return jsonify({'success': False, 'error': 'jmcomic 未安装'})
     data = request.get_json(silent=True) or {}
@@ -587,8 +589,11 @@ def jm_download():
         return jsonify({'success': False, 'error': '无效的 album id'})
     if mode not in ('temp', 'persist'):
         mode = 'temp'
+    key = str(data.get('key', '')).strip()
+    pid = key if key.isdigit() else None  # 非法 key 回退整本
     try:
-        tid = jm_service.start_download(aid, data.get('title', ''), data.get('author', ''), mode)
+        tid = jm_service.start_download(aid, data.get('title', ''), data.get('author', ''),
+                                        mode, pid=pid)
         return jsonify({'success': True, 'tid': tid})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -609,14 +614,17 @@ def jm_status():
 
 @app.route('/jm/online')
 def jm_online():
-    """在线阅读入口: 预置占位文件, 返回 /gallery 路径。aid=album_id。"""
+    """在线阅读入口: 预置占位文件, 返回 /gallery 路径。aid=album_id,
+    key=可选数字 pid(指定同步准备的章节, 非法 key 忽略回退整本)。"""
     if not HAS_JM:
         return jsonify({'success': False, 'error': 'jmcomic 未安装'})
     aid = request.args.get('aid', '').strip()
     if not aid.isdigit():
         return jsonify({'success': False, 'error': '无效的 album id'})
+    key = request.args.get('key', '').strip()
+    pid = key if key.isdigit() else None
     try:
-        return jsonify({'success': True, **jm_service.prepare_online(aid)})
+        return jsonify({'success': True, **jm_service.prepare_online(aid, pid)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -700,6 +708,24 @@ def jm_chapters():
         return jsonify({'success': False, 'error': '无效的 album id'})
     try:
         return jsonify({'success': True, **jm_service.album_chapters(aid)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/jm/chapter_status')
+def jm_chapter_status():
+    """章节就绪状态(零网络本地判定): aid=album_id。
+    返回 {success, source, chapters:[{key,title,ready,path}]}。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    aid = request.args.get('aid', '').strip()
+    if not aid.isdigit():
+        return jsonify({'success': False, 'error': '无效的 album id'})
+    try:
+        result = jm_service.chapter_status(aid)
+        result['success'] = True
+        result['source'] = 'jm'
+        return jsonify(result)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -795,7 +821,8 @@ def pika_cover(book_id):
 
 @app.route('/pika/download', methods=['POST'])
 def pika_download():
-    """创建下载任务。body: {aid, title, author, mode: temp|persist}。"""
+    """创建下载任务。body: {aid, title, author, mode: temp|persist, key?}。
+    key=章节 order(数字字符串)时只下载该章节, 非法/缺省回退整本。"""
     if not HAS_PIKA:
         return _pika_unavailable()
     data = request.get_json(silent=True) or {}
@@ -805,8 +832,11 @@ def pika_download():
         return jsonify({'success': False, 'error': '无效的 book id'})
     if mode not in ('temp', 'persist'):
         mode = 'temp'
+    key = str(data.get('key', '')).strip()
+    eps = int(key) if key.isdigit() else None  # 非法 key 回退整本
     try:
-        tid = pika_service.start_download(aid, data.get('title', ''), data.get('author', ''), mode)
+        tid = pika_service.start_download(aid, data.get('title', ''), data.get('author', ''),
+                                          mode, eps=eps)
         return jsonify({'success': True, 'tid': tid})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -830,14 +860,17 @@ def pika_status():
 
 @app.route('/pika/online')
 def pika_online():
-    """在线阅读入口: 预置占位文件, 返回 gallery 路径。aid/book_id。"""
+    """在线阅读入口: 预置占位文件, 返回 gallery 路径。aid/book_id,
+    key=可选数字 eps order(指定同步准备的章节, 非法 key 忽略回退整本)。"""
     if not HAS_PIKA:
         return _pika_unavailable()
     book_id = (request.args.get('aid') or request.args.get('book_id') or '').strip()
     if not book_id:
         return jsonify({'success': False, 'error': '无效的 book id'})
+    key = request.args.get('key', '').strip()
+    eps = int(key) if key.isdigit() else None
     try:
-        return jsonify({'success': True, **pika_service.prepare_online(book_id)})
+        return jsonify({'success': True, **pika_service.prepare_online(book_id, eps)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -853,6 +886,24 @@ def pika_check():
         return jsonify({'success': False, 'error': '无效的 book id'})
     try:
         return jsonify({'success': True, **pika_service.check_album(book_id)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/pika/chapter_status')
+def pika_chapter_status():
+    """章节就绪状态(零网络本地判定): aid/book_id=book_id。
+    返回 {success, source, chapters:[{key,title,ready,path}]}。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    book_id = (request.args.get('aid') or request.args.get('book_id') or '').strip()
+    if not book_id:
+        return jsonify({'success': False, 'error': '无效的 book id'})
+    try:
+        result = pika_service.chapter_status(book_id)
+        result['success'] = True
+        result['source'] = 'pika'
+        return jsonify(result)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -884,6 +935,88 @@ def pika_config():
         return jsonify({'success': True, **cfg})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+# ===== 阅读进度 =====
+
+PROGRESS_FILE = '.read_progress.json'  # 专辑目录下进度文件(点开头不会被 build_directory_items 当条目)
+
+
+def _read_progress(album_dir):
+    """读专辑目录下 .read_progress.json, 无/损坏返回 None。"""
+    if not album_dir:
+        return None
+    try:
+        with open(os.path.join(album_dir, PROGRESS_FILE), 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+@app.route('/progress', methods=['POST'])
+def save_progress():
+    """保存阅读进度。body: {path, y}。path=当前章节 gallery 相对路径(相对 share),
+    y=滚动偏移(像素)。定位专辑目录(章节目录内含 meta/aid 标记则为专辑目录, 否则取父目录),
+    写 <专辑目录>/.read_progress.json。"""
+    data = request.get_json(silent=True) or {}
+    path = str(data.get('path', '')).strip().strip('/')
+    if not path:
+        return jsonify({'success': False, 'error': '缺少 path 参数'})
+    try:
+        y = int(data.get('y', 0))
+    except (TypeError, ValueError):
+        y = 0
+    safe = _safe_within_share(path)
+    if not safe:
+        return jsonify({'success': False, 'error': '非法路径'})
+    full, _ = safe
+    # 当前目录下有在线/aid 元数据标记 → 本目录即专辑目录(单章节), 否则取父目录(章节的上一级)
+    if any(os.path.isfile(os.path.join(full, m)) for m in ('.jm_online', '.jm_aid')):
+        album_dir = full
+    else:
+        album_dir = os.path.dirname(full)
+    if not os.path.isdir(album_dir):
+        return jsonify({'success': False, 'error': '专辑目录不存在'})
+    try:
+        with open(os.path.join(album_dir, PROGRESS_FILE), 'w', encoding='utf-8') as f:
+            json.dump({'path': path, 'y': y, 'ts': time.time()}, f, ensure_ascii=False)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+    return jsonify({'success': True})
+
+
+@app.route('/jm/progress')
+def jm_progress():
+    """读取阅读进度: aid=album_id。返回 {success, path, y}, 无进度 success False。"""
+    if not HAS_JM:
+        return jsonify({'success': False, 'error': 'jmcomic 未安装'})
+    aid = request.args.get('aid', '').strip()
+    if not aid.isdigit():
+        return jsonify({'success': False, 'error': '无效的 album id'})
+    try:
+        data = _read_progress(jm_service._locate_album_dir(aid))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+    if data is None:
+        return jsonify({'success': False, 'error': 'no progress'})
+    return jsonify({'success': True, 'path': data.get('path'), 'y': data.get('y', 0)})
+
+
+@app.route('/pika/progress')
+def pika_progress():
+    """读取阅读进度: aid/book_id=book_id。返回 {success, path, y}, 无进度 success False。"""
+    if not HAS_PIKA:
+        return _pika_unavailable()
+    book_id = (request.args.get('aid') or request.args.get('book_id') or '').strip()
+    if not book_id:
+        return jsonify({'success': False, 'error': '无效的 book id'})
+    try:
+        data = _read_progress(pika_service._locate_album_dir(book_id))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+    if data is None:
+        return jsonify({'success': False, 'error': 'no progress'})
+    return jsonify({'success': True, 'path': data.get('path'), 'y': data.get('y', 0)})
 
 
 # ===== 双源合并搜索 =====

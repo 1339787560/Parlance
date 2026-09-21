@@ -1,7 +1,9 @@
 # infoServer · 可插拔服务组托管框架
 
-> **纯进程启动器（host，无 HTTP、不占端口）+ ServiceGroupManager（Job Object 托管）+ 一组自包含子服务。**
+> **纯进程启动器（sgManager，无 HTTP、不占端口）+ ServiceGroupManager（Job Object 托管）+ 一组自包含子服务。**
 > 所有子服务由 `config.yaml` 声明，`enabled` 即装/卸 → 可拆卸。
+>
+> **术语说明**：旧称 launcher/host，2026-09-13 起代码改名 sgmController（run.py 前台进程）/sgManager（main.py 服务组进程）；管道名与 status JSON 字段保持原样。
 
 原 Service-Svr-Dev 于 2026-07-16 并入。技术栈：Python 3（FastAPI / Flask）+ Rust 1.x（service-server）。
 
@@ -10,7 +12,7 @@
 ## 架构
 
 ```
-infoServer host (main.py — 纯启动器, 无 HTTP, 不占端口)
+infoServer sgManager (main.py — 纯启动器, 无 HTTP, 不占端口)
   └─ ServiceGroupManager (service_manager.py — Job Object 托管, 父退出→子终止)
      ├─ parlance-chat    :5001  serviceGroup/parlanceChat        局域网聊天/文件共享 (FastAPI+SSE)
      ├─ serviceServer    :5000  serviceGroup/serviceServer        Rust 工具服务 (前台)
@@ -22,9 +24,9 @@ infoServer host (main.py — 纯启动器, 无 HTTP, 不占端口)
      └─ cocos-creator    :3000  外部                             Cocos 编辑器 (默认 disabled)
 ```
 
-- **纯壳原则**：host 对子服务零硬 import / 零初始化依赖。
-- **可拆卸**：只想用某子服务 → `config.yaml` 关其余 `enabled=false`，或跳过 host 直跑子服务入口（如 `python serviceGroup/debugRelay/debug_relay.py`）。
-- **host 不再有 HTTP**：原 `/api/services/*` `/api/cocos-mcp/*` 管理 SPA 已删（2026-07-16）；管理 = 改 `config.yaml` + 重启。
+- **纯壳原则**：sgManager 对子服务零硬 import / 零初始化依赖。
+- **可拆卸**：只想用某子服务 → `config.yaml` 关其余 `enabled=false`，或跳过 sgManager 直跑子服务入口（如 `python serviceGroup/debugRelay/debug_relay.py`）。
+- **sgManager 不再有 HTTP**：原 `/api/services/*` `/api/cocos-mcp/*` 管理 SPA 已删（2026-07-16）；管理 = 改 `config.yaml` + 重启。
 
 ---
 
@@ -55,12 +57,12 @@ python start.py --no-input # 服务模式 (无键盘监听)
 
 ## 配置 (`config.yaml`)
 
-单一开关板。**改完必调 `cwd_infoserver_reload()` 或键盘 `r` 重启 host 生效**（host 不热读 config）。
+单一开关板。**改完必调 `cwd_infoserver_reload()` 或键盘 `r` 重启 sgManager 生效**（sgManager 不热读 config）。
 
 ```yaml
 server:
   host: 0.0.0.0
-  port: 5001    # run.py 预清理此端口 (为 parlanceChat 让出); host 自身不绑定
+  port: 5001    # run.py 预清理此端口 (为 parlanceChat 让出); sgManager 自身不绑定
 
 services:
   - name: serviceServer-rust
@@ -87,8 +89,8 @@ services:
 
 | 工具 | 等价 CLI | 用途 |
 |---|---|---|
-| `cwd_infoserver_reload` | `ctl_client reload` | stop+start launcher，子服务全重启（~15-30s） |
-| `cwd_infoserver_status` | `ctl_client status` | launcher 状态 + 托管服务清单 |
+| `cwd_infoserver_reload` | `ctl_client reload` | stop+start sgmController，子服务全重启（~15-30s） |
+| `cwd_infoserver_status` | `ctl_client status` | sgmController 状态 + 托管服务清单 |
 | `cwd_infoserver_services` | `--socket svc services` | 查询托管服务清单（config 权威） |
 | `cwd_infoserver_restart(port)` | `--socket svc restart` | **按端口重启单个子服务**（不影响其他） |
 | `cwd_infoserver_swap_exe(port)` | `--socket svc swap_exe` | **热替换 .exe 二进制**（stop+sleep2+cp target/release+start，规避文件占用） |
@@ -99,15 +101,15 @@ services:
 ### 2. CLI (`ctl_client.py`)
 
 ```bash
-python ctl_client.py reload                                              # launcher 重载
-python ctl_client.py status                                              # launcher 状态
+python ctl_client.py reload                                              # sgmController 重载
+python ctl_client.py status                                              # sgmController 状态
 python ctl_client.py --socket svc services                               # 服务组清单
 python ctl_client.py --socket svc restart --params '{"port": 5000}'      # 重启单服务
 python ctl_client.py --socket svc swap_exe --params '{"port": 5000}'     # 热换 exe
 python ctl_client.py --socket svc update                                 # svn 更新编排 (停→svn up→启)
 ```
 
-`--socket`：`ctl`=launcher (run.py, 默认) / `svc`=服务组 (main.py)。底层 = JSON-RPC 2.0 over `multiprocessing.connection`（Win Named Pipe `\\.\pipe\infoserver_{ctl,svc}` / POSIX UDS）。
+`--socket`：`ctl`=sgmController (run.py, 默认) / `svc`=服务组 (main.py)。底层 = JSON-RPC 2.0 over `multiprocessing.connection`（Win Named Pipe `\\.\pipe\infoserver_{ctl,svc}` / POSIX UDS）。
 
 ---
 
@@ -160,7 +162,7 @@ Rust 重写（`serviceGroup/serviceServer/`），前台 :5000 自处理路由，
 | 脚本 | 用途 |
 |---|---|
 | `start.py` | **跨平台入口**（win/mac 共用）。解析 `.venv` 解释器 → 启动 `run.py`，argv 透传 |
-| `run.py` | **前台 launcher**。键盘循环（`r`重载 / `q`退出 / `s`状态 / `h`帮助）+ launcher 控制 socket（`\\.\pipe\infoserver_ctl`） |
+| `run.py` | **前台 sgmController**。键盘循环（`r`重载 / `q`退出 / `s`状态 / `h`帮助）+ sgmController 控制 socket（`\\.\pipe\infoserver_ctl`） |
 | `main.py` | **纯启动器**（无 HTTP）。读 config → `ServiceGroupManager.start_all` → 阻塞等 SIGINT → stop_all。开服务级控制 socket（`\\.\pipe\infoserver_svc`）供 `services`/`restart`/`swap_exe` |
 | `service_manager.py` | **Job Object 托管核心**。Win ctypes 绑 Job Object（父退出→子终止）；`ManagedService` 封装启停/健康检查/auto_restart/崩溃退避 |
 | `ctl_client.py` | **控制面 CLI**。JSON-RPC 2.0 over `multiprocessing.connection`，`--socket ctl/svc` 分流（见上） |
@@ -201,7 +203,7 @@ python ctl_client.py --socket svc swap_exe --params '{"port": 5000}'
 
 ```
 infoServer/
-├── start.py / run.py / main.py            # 跨平台入口 + 前台 launcher + 纯启动器
+├── start.py / run.py / main.py            # 跨平台入口 + 前台 sgmController + 纯启动器
 ├── ctl_client.py / service_manager.py      # 控制面 CLI + Job Object 托管
 ├── config.yaml                            # 子服务开关板 (单一真相源)
 ├── serviceGroup/
@@ -216,7 +218,7 @@ infoServer/
 │   ├── serviceServer-legacy/              # :5099 旧 Flask (被 Rust 反代, 渐进瘦身)
 │   ├── statisticServer/                   # :5002 DeepSeek 代理统计
 │   └── debugRelay/                        # :5003 真机调试中继
-├── tests/                                 # launcher 控制面测试
+├── tests/                                 # sgmController 控制面测试
 └── docs/ / skills/ / QA.md
 ```
 

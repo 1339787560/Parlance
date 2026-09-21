@@ -2,7 +2,7 @@
 """Unit tests for infoServer control surface.
 
 Covers run.py::ControlServer dispatch + request handling, and start.py
-venv resolution. Integration (real Launcher + socket round-trip) is left
+venv resolution. Integration (real SgmController + socket round-trip) is left
 to manual smoke; see README and BDD SC01/SC02/SC04.
 """
 
@@ -21,9 +21,9 @@ import run as run_mod  # noqa: E402
 import start as start_mod  # noqa: E402
 
 
-# ── Fake Launcher ────────────────────────────────────────────────────────────
+# ── Fake SgmController ─────────────────────────────────────────────────────────
 
-class _FakeLauncher:
+class _FakeSgmController:
     """Stand-in exposing only the surface ControlServer touches."""
 
     def __init__(self):
@@ -64,23 +64,23 @@ class _FakeLauncher:
 
 
 @pytest.fixture
-def launcher():
-    return _FakeLauncher()
+def controller():
+    return _FakeSgmController()
 
 
 @pytest.fixture
-def server(launcher):
-    return run_mod.ControlServer(launcher)
+def server(controller):
+    return run_mod.ControlServer(controller)
 
 
 # ── _dispatch ────────────────────────────────────────────────────────────────
 
-def test_dispatch_reload(server, launcher):
+def test_dispatch_reload(server, controller):
     assert server._dispatch("reload", {}) == {"ok": True}
-    assert launcher.reloaded == 1
+    assert controller.reloaded == 1
 
 
-def test_dispatch_status_returns_dict(server, launcher):
+def test_dispatch_status_returns_dict(server, controller):
     out = server._dispatch("status", {})
     assert out["pid"] == 12345
     assert out["status"] == "running"
@@ -88,14 +88,14 @@ def test_dispatch_status_returns_dict(server, launcher):
     assert out["uptime"] == 42.5
 
 
-def test_dispatch_start(server, launcher):
+def test_dispatch_start(server, controller):
     assert server._dispatch("start", {}) == {"ok": True}
-    assert launcher.started == 1
+    assert controller.started == 1
 
 
-def test_dispatch_stop(server, launcher):
+def test_dispatch_stop(server, controller):
     assert server._dispatch("stop", {}) == {"ok": True}
-    assert launcher.stopped == 1
+    assert controller.stopped == 1
 
 
 def test_dispatch_unknown_raises(server):
@@ -103,17 +103,17 @@ def test_dispatch_unknown_raises(server):
         server._dispatch("nope", {})
 
 
-def test_dispatch_quit_defers_shutdown(server, launcher):
+def test_dispatch_quit_defers_shutdown(server, controller):
     out = server._dispatch("quit", {})
     assert out == {"ok": True}
     # shutdown scheduled on a 0.2s-deferred daemon thread
     time.sleep(0.4)
-    assert launcher.shutdown_calls == 1
+    assert controller.shutdown_calls == 1
 
 
 # ── _handle_request ──────────────────────────────────────────────────────────
 
-def test_handle_request_valid(server, launcher):
+def test_handle_request_valid(server, controller):
     raw = {"jsonrpc": "2.0", "id": 7, "method": "status"}
     resp = server._handle_request(raw)
     assert resp["jsonrpc"] == "2.0"
@@ -122,12 +122,12 @@ def test_handle_request_valid(server, launcher):
     assert "error" not in resp
 
 
-def test_handle_request_notification_no_id(server, launcher):
+def test_handle_request_notification_no_id(server, controller):
     # JSON-RPC notification (no id) → server MUST NOT respond
     raw = {"jsonrpc": "2.0", "method": "reload"}
     resp = server._handle_request(raw)
     assert resp is None
-    assert launcher.reloaded == 1
+    assert controller.reloaded == 1
 
 
 def test_handle_request_unknown_method(server):
@@ -149,8 +149,8 @@ def test_handle_request_missing_method(server):
 
 
 def test_handle_request_dispatch_exception_returns_internal_error(server):
-    # Force _dispatch to blow up by patching launcher.status_dict
-    server.launcher.status_dict = mock.Mock(side_effect=RuntimeError("boom"))
+    # Force _dispatch to blow up by patching controller.status_dict
+    server.controller.status_dict = mock.Mock(side_effect=RuntimeError("boom"))
     resp = server._handle_request({"jsonrpc": "2.0", "id": 9, "method": "status"})
     assert resp["error"]["code"] == run_mod._ERR_INTERNAL
     assert "boom" in resp["error"]["message"]
