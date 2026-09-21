@@ -40,12 +40,9 @@ const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 const DEPOSIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// RobotToolD.exe 单次命令超时（legacy `communicate(timeout=3)`）。
 const GOLD_TIMEOUT: Duration = Duration::from_secs(3);
-/// 助手解释器（默认走 PATH —— 与 legacy 同源；env 可钉定，如 D:\Compiler\python\python.exe）。
-const PYTHON_DEFAULT: &str = "python";
 /// 助手脚本名（与 `serviceServer-legacy/` 同目录，随发布包发布）。
+/// 解释器选择、超时与编码纪律统一在 `crate::pybridge`（与资源抓取端点共用）。
 const HELPER_NAME: &str = "luaDataTool.py";
-/// 助手整体超时（DB 慢查询留足余量）。
-const HELPER_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn err(status: u16, msg: &str) -> (StatusCode, Json<Value>) {
     (
@@ -447,113 +444,22 @@ pub async fn set_newplayer_gift(
     helper_response(&state, "set-newplayer-gift", body).await
 }
 
-/// 调 `luaDataTool.py`：参数 JSON 走 stdin，结果 JSON 走 stdout（契约见脚本头）。
+/// 调 `luaDataTool.py`（契约见脚本头）—— 子进程桥的公共实现见 `crate::pybridge`，
+/// 与资源抓取端点（`routes/assets.rs` → `assetTool.py`）共用同一份编码/超时/解释器纪律。
 async fn helper_response(
     state: &AppState,
     action: &str,
     body: Value,
 ) -> Result<(StatusCode, Json<Value>)> {
-    match call_helper(state, action, body).await {
-        Ok(HelperOut::Body(b)) => Ok((StatusCode::OK, Json(b))),
-        Ok(HelperOut::Error(status, msg)) => Ok(err(status, &msg)),
+    let root = match state.config_path.parent() {
+        Some(p) => p.to_path_buf(),
+        None => return Ok(err(500, "无法定位 legacy 目录")),
+    };
+    match crate::pybridge::call_helper(&root, HELPER_NAME, action, body).await {
+        Ok(crate::pybridge::HelperOut::Body(b)) => Ok((StatusCode::OK, Json(b))),
+        Ok(crate::pybridge::HelperOut::Error(status, msg)) => Ok(err(status, &msg)),
         Err((status, msg)) => Ok(err(status, &msg)),
     }
-}
-
-enum HelperOut {
-    /// 成功：原 Flask 响应体（含 success/message/results…）
-    Body(Value),
-    /// 失败：状态码 + 文案
-    Error(u16, String),
-}
-
-async fn call_helper(
-    state: &AppState,
-    action: &str,
-    body: Value,
-) -> std::result::Result<HelperOut, (u16, String)> {
-    let dir = state
-        .config_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .ok_or((500, "无法定位 legacy 目录".to_string()))?;
-    let python = std::env::var("SERVICESVR_PYTHON").unwrap_or_else(|_| PYTHON_DEFAULT.to_string());
-    let payload = body.to_string();
-    let action = action.to_string();
-
-    let task = tokio::task::spawn_blocking(move || -> std::result::Result<std::process::Output, String> {
-        use std::io::Write;
-        let mut child = std::process::Command::new(&python)
-            .arg(HELPER_NAME)
-            .arg(&action)
-            .current_dir(&dir)
-            // 管道下 Python 默认可能落到 ANSI 代码页 → 中文 JSON 变非 UTF-8，显式钉死
-            .env("PYTHONIOENCODING", "utf-8")
-            .env("PYTHONUTF8", "1")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("启动助手失败 (python={python}): {e}"))?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin
-                .write_all(payload.as_bytes())
-                .map_err(|e| format!("写入助手 stdin 失败: {e}"))?;
-        }
-        drop(child.stdin.take());
-        child.wait_with_output().map_err(|e| format!("等待助手失败: {e}"))
-    });
-
-    let out = match tokio::time::timeout(HELPER_TIMEOUT, task).await {
-        Ok(Ok(Ok(o))) => o,
-        Ok(Ok(Err(e))) => return Err((500, e)),
-        Ok(Err(e)) => return Err((500, format!("助手任务失败: {e}"))),
-        Err(_) => return Err((500, format!("助手超时 (>{HELPER_TIMEOUT:?})"))),
-    };
-
-    // 严格 UTF-8：失败说明编码没对齐（比默默替换字符更早暴露）
-    let stdout = match std::str::from_utf8(&out.stdout) {
-        Ok(s) => s.trim(),
-        Err(e) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            return Err((
-                500,
-                format!("助手输出不是 UTF-8 ({e})；stderr: {}", truncate(&stderr, 300)),
-            ));
-        }
-    };
-    let parsed: Value = match serde_json::from_str(stdout) {
-        Ok(v) => v,
-        Err(e) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            return Err((
-                500,
-                format!(
-                    "助手返回无法解析为 JSON: {e}；stdout: {}；stderr: {}",
-                    truncate(stdout, 200),
-                    truncate(&stderr, 300)
-                ),
-            ));
-        }
-    };
-    if parsed.get("ok").and_then(Value::as_bool) == Some(true) {
-        Ok(HelperOut::Body(parsed.get("body").cloned().unwrap_or(Value::Null)))
-    } else {
-        let status = parsed.get("status").and_then(Value::as_u64).unwrap_or(500) as u16;
-        let msg = parsed
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or("助手执行失败")
-            .to_string();
-        Ok(HelperOut::Error(status, msg))
-    }
-}
-
-fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        return s.to_string();
-    }
-    s.chars().take(n).collect::<String>() + "…"
 }
 
 #[cfg(test)]

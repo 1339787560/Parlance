@@ -14,6 +14,7 @@ mod path_check;
 mod path_map;
 mod ports_probe;
 mod proxy;
+mod pybridge;
 mod pyval;
 mod routes;
 mod state;
@@ -31,7 +32,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{branches, config_file, config_files, fetch, files, makecard, money, pages, recorder, records, script, services, spideorder, templates as tpl};
+use crate::routes::{assets, branches, config_file, config_files, fetch, files, makecard, money, pages, recorder, records, script, services, spideorder, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -135,6 +136,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/config/files", get(config_files::list_files))
         .route("/api/config", get(config_files::get_config))
         .route("/api/fetch-title", get(fetch::fetch_title))
+        // 资源抓取 (U4 收尾, 2026-09-22): 抓取与缓存在 assetTool.py (requests/bs4/playwright),
+        // 前台只做参数校验与响应整形 —— 顺带把 playwright 从服务启动链里摘出去 (SDD N9)。
+        // 注意: 返回的 /static/* 仍由 legacy 提供, 前台不收编该前缀。
+        .route("/api/fetch-background", get(assets::fetch_background))
+        .route("/api/fetch-metadata", get(assets::fetch_metadata))
         // /api/svn/* 暂留 legacy 反代: svnPath 是 URL 非本地路径, 旧码语义混乱
         // (读 svnPath 未传 cwd), 待 auto-update SDD 重新设计 svn 编排。
         .route("/api/config/file/content", get(config_file::get_content))

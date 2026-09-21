@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod branches;
 pub mod checks;
 pub mod config_file;
