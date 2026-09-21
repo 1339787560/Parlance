@@ -55,6 +55,27 @@ impl TemplateStore {
         Ok(conn.last_insert_rowid())
     }
 
+    /// 覆盖已有模板（name/type/data 全量替换），返是否命中 —— 对齐 legacy `update_template`
+    /// 的 `UPDATE ... WHERE id=?` + `rowcount > 0`（未命中由上层转 404「模板不存在」）。
+    pub fn update(
+        &self,
+        id: i64,
+        name: &str,
+        svc_type: &str,
+        data: &serde_json::Value,
+    ) -> Result<bool> {
+        let data_str = serde_json::to_string(data)
+            .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let conn = self.conn.lock().map_err(map_poison)?;
+        let affected = conn
+            .execute(
+                "UPDATE templates SET name = ?, type = ?, data = ? WHERE id = ?",
+                params![name, svc_type, data_str, id],
+            )
+            .map_err(map_err)?;
+        Ok(affected > 0)
+    }
+
     /// 全量拉取 (id 升序)。
     pub fn all(&self) -> Result<Vec<Template>> {
         let conn = self.conn.lock().map_err(map_poison)?;

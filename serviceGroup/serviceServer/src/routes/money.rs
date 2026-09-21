@@ -58,30 +58,9 @@ fn ok(body: Value) -> (StatusCode, Json<Value>) {
     (StatusCode::OK, Json(body))
 }
 
-/// Python 值语义的「truthy」：None / 空串 / 0 / false 视为假。
-/// 用于复刻 legacy `if not operation or not gold_count` 这类判定。
-fn truthy(v: Option<&Value>) -> bool {
-    match v {
-        None | Some(Value::Null) => false,
-        Some(Value::String(s)) => !s.is_empty(),
-        Some(Value::Number(n)) => n.as_f64().map(|f| f != 0.0).unwrap_or(true),
-        Some(Value::Bool(b)) => *b,
-        Some(Value::Array(a)) => !a.is_empty(),
-        Some(Value::Object(o)) => !o.is_empty(),
-    }
-}
-
-/// Python `int()` 语义（接受数字与可解析字符串）。
-fn py_int(v: &Value) -> Option<i64> {
-    match v {
-        Value::Number(n) => n
-            .as_i64()
-            .or_else(|| n.as_f64().map(|f| f as i64)),
-        Value::String(s) => s.trim().parse::<i64>().ok(),
-        Value::Bool(b) => Some(if *b { 1 } else { 0 }),
-        _ => None,
-    }
-}
+/// Python 值语义助手（`truthy` / `py_int`）见 `crate::pyval` —— 货币侧与模板侧共用同一份复刻，
+/// 避免「0 算缺参数」这类边界语义各写一份而漂移。
+use crate::pyval::{py_int, truthy};
 
 // ---------- 校验（纯函数，逐条对齐 legacy 文案） ----------
 

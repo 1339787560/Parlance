@@ -14,6 +14,7 @@ mod path_check;
 mod path_map;
 mod ports_probe;
 mod proxy;
+mod pyval;
 mod routes;
 mod state;
 mod status;
@@ -30,7 +31,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{branches, config_file, config_files, fetch, files, makecard, money, recorder, records, script, services, spideorder, templates as tpl};
+use crate::routes::{branches, config_file, config_files, fetch, files, makecard, money, pages, recorder, records, script, services, spideorder, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -98,6 +99,20 @@ async fn main() -> anyhow::Result<()> {
         .route("/recorder", get(recorder::page))
         .route("/recorder/demo", get(recorder::demo))
         .route("/recorder/mj_color0.png", get(recorder::sprite))
+        // 页面壳 + 静态数据 (U4 迁移, 2026-09-22): 模板按运行时路径从 legacy 目录读后发
+        // HTML —— 这些模板无 Jinja 语法, 静态发等价 legacy render_template (详见 routes/pages.rs)。
+        .route("/", get(pages::index))
+        .route("/sequence", get(pages::sequence))
+        .route("/deposit", get(pages::deposit))
+        .route("/makecard", get(pages::makecard))
+        .route("/serverstatus", get(pages::serverstatus))
+        .route("/onlineConfigModify", get(pages::online_config_modify))
+        .route("/api/friendlinks", get(pages::friendlinks))
+        // 补齐 /api/templates 家族最后一条 (get/save/delete 早已原生), 故该前缀已可全收编。
+        .route(
+            "/api/templates/update",
+            axum::routing::post(pages::templates_update),
+        )
         // 复盘器数据源 (SDD running/四川麻将复盘器-数据源): 三类源统一 /api/record/*
         .route("/api/record/sources", get(records::sources))
         .route("/api/record/list", get(records::list))

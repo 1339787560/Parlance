@@ -87,6 +87,8 @@ const DEAD_PREFIXES: &[&str] = &[
     // 货币与礼包 (U3): set-* 7 条 + query-costume 已迁 Rust 原生 (routes/money.rs)。
     "/api/set-",
     "/api/query-costume",
+    // 模板家族 (U4): get/save/delete/update 四条全迁原生 (routes/templates.rs + pages.rs)。
+    "/api/templates",
     "/ai-manager",
     "/rag-qa",
     "/api/rag",
@@ -148,6 +150,9 @@ mod tests {
     // U3 (routes/money.rs): set-* 与 query-costume 全迁原生。
     #[case("/api/set-gold", true)]
     #[case("/api/query-costume", true)]
+    // U4 (routes/pages.rs + templates.rs): 模板家族四条全迁原生。
+    #[case("/api/templates/update", true)]
+    #[case("/api/templates/get", true)]
     #[case("/fileontimer", true)]
     #[case("/api/fileontimer/list", true)]
     fn test_is_dead_path_matrix(#[case] path: &str, #[case] dead: bool) {

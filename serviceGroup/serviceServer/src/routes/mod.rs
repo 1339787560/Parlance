@@ -6,6 +6,7 @@ pub mod fetch;
 pub mod files;
 pub mod makecard;
 pub mod money;
+pub mod pages;
 pub mod recorder;
 pub mod records;
 pub mod script;
