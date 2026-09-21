@@ -9,6 +9,7 @@ mod breadcrumb;
 mod config;
 mod encoding;
 mod error;
+mod localtime;
 mod path_check;
 mod path_map;
 mod ports_probe;
@@ -29,7 +30,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{branches, config_file, config_files, fetch, files, recorder, records, script, services, spideorder, templates as tpl};
+use crate::routes::{branches, config_file, config_files, fetch, files, makecard, recorder, records, script, services, spideorder, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -187,6 +188,21 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(script::execute_named),
         )
         .route("/api/script/execute", axum::routing::post(script::execute))
+        // 做牌器 + 发牌配置 (U2 迁移, 2026-09-21): 直读本机服务目录 test*.ini /
+        // 写 config.json 的 makedealFilePath。前缀二者均已进 proxy DEAD_PREFIXES。
+        .route("/api/makecard/files", get(makecard::files))
+        .route("/api/makecard/read", get(makecard::read))
+        .route("/api/makecard/save", axum::routing::post(makecard::save))
+        .route("/api/makecard/activate", axum::routing::post(makecard::activate))
+        .route("/api/makecard/delete", axum::routing::post(makecard::delete))
+        .route("/api/makecard/rename", axum::routing::post(makecard::rename))
+        .route("/api/makecard/made", get(makecard::made))
+        .route("/api/makecard/toggle", axum::routing::post(makecard::toggle))
+        .route(
+            "/api/makedeal/start",
+            axum::routing::post(makecard::makedeal_start),
+        )
+        .route("/api/makedeal/randomReject", get(makecard::makedeal_random_reject))
         // services 控制簇剩余: deploy(sc create) + start-all + update(multipart 热更新)。
         .route("/api/services/deploy", axum::routing::post(services::deploy_service))
         .route("/api/services/start-all", axum::routing::post(services::start_all_services))

@@ -81,6 +81,9 @@ const DEAD_PREFIXES: &[&str] = &[
     // 启动序列 (U1): 全部 4 条已迁 Rust 原生 (routes/script.rs), 前缀整段摘除,
     // 未匹配子路径一律 404 而非回退 legacy。
     "/api/script",
+    // 做牌器 + 发牌配置 (U2): 10 条已迁 Rust 原生 (routes/makecard.rs)。
+    "/api/makecard",
+    "/api/makedeal",
     "/ai-manager",
     "/rag-qa",
     "/api/rag",
@@ -123,7 +126,7 @@ mod tests {
         assert_eq!(compose_proxy_url(backend, uri), expected);
     }
 
-    /// 死路径前缀矩阵 (RAG/A2A/AI 块拦截)。
+    /// 死路径前缀矩阵 (RAG/A2A/AI 块拦截 + 已全迁原生前缀)。
     #[rstest]
     #[case("/ai-manager", true)]
     #[case("/api/rag/query", true)]
@@ -133,7 +136,12 @@ mod tests {
     #[case("/api/config/files", false)]
     #[case("/deposit", false)]
     #[case("/api/services/status", false)]
-    #[case("/api/makedeal/start", false)]
+    // 2026-09-21: /api/makedeal 曾于 2026-09-13 摘出死名单放行反代; 随 U2 全迁
+    // Rust 原生 (routes/makecard.rs) 重新入列 —— 期望值由 false 翻为 true。
+    #[case("/api/makedeal/start", true)]
+    #[case("/api/makecard/files", true)]
+    // U1 (routes/script.rs) 同理: 四端点全迁原生, 前缀入列。
+    #[case("/api/script/get-all", true)]
     #[case("/fileontimer", true)]
     #[case("/api/fileontimer/list", true)]
     fn test_is_dead_path_matrix(#[case] path: &str, #[case] dead: bool) {

@@ -439,59 +439,11 @@ pub async fn execute(
     ))
 }
 
-// ---------- 本地时间 (无日期库依赖) ----------
+// ---------- 本地时间 (实现见 crate::localtime, 无日期库依赖) ----------
 
-/// 当前本地时间 `YYYY-MM-DD HH:MM:SS` (对齐 legacy `time.strftime`)。
-#[cfg(windows)]
+/// `script.json` 的 `created_at` 形态: `YYYY-MM-DD HH:MM:SS` (本地时间)。
 pub fn format_local_now() -> String {
-    let st = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond
-    )
-}
-
-/// 非 Windows 退化: UTC (Mac 无 serviceServer 二进制, 仅保编译与单测)。
-#[cfg(not(windows))]
-pub fn format_local_now() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    format_epoch_utc(secs)
-}
-
-/// epoch 秒 -> `YYYY-MM-DD HH:MM:SS` (UTC)。纯函数, 可测。
-/// Windows 生产路径走 `GetLocalTime`, 此函数仅非 Windows 回退与单测使用。
-#[cfg_attr(windows, allow(dead_code))]
-pub fn format_epoch_utc(secs: i64) -> String {
-    let days = secs.div_euclid(86_400);
-    let rem = secs.rem_euclid(86_400);
-    let (y, m, d) = civil_from_days(days);
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        y,
-        m,
-        d,
-        rem / 3600,
-        (rem % 3600) / 60,
-        rem % 60
-    )
-}
-
-/// Howard Hinnant civil_from_days: 1970-01-01 起的天数 -> (年, 月, 日)。
-#[cfg_attr(windows, allow(dead_code))]
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64; // [0, 146096]
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
-    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
-    (if m <= 2 { y + 1 } else { y }, m as u32, d)
+    crate::localtime::now_hms()
 }
 
 #[cfg(test)]
@@ -760,29 +712,5 @@ mod tests {
         assert_eq!(code, StatusCode::OK);
         assert_eq!(body["success"], true);
         assert_eq!(fake.calls(), vec!["xzmo_server_game"]);
-    }
-
-    // ---- 时间 ----
-
-    #[test]
-    fn test_format_epoch_utc_known_values() {
-        assert_eq!(format_epoch_utc(0), "1970-01-01 00:00:00");
-        assert_eq!(format_epoch_utc(946_684_800), "2000-01-01 00:00:00");
-        assert_eq!(format_epoch_utc(1_700_000_000), "2023-11-14 22:13:20");
-        // 2026-01-01 00:00:00 UTC (非闰年 2025 全年 365 天)
-        assert_eq!(format_epoch_utc(1_767_225_600), "2026-01-01 00:00:00");
-    }
-
-    #[test]
-    fn test_format_local_now_shape() {
-        let s = format_local_now();
-        assert_eq!(s.len(), 19, "YYYY-MM-DD HH:MM:SS: {s}");
-        assert_eq!(&s[4..5], "-");
-        assert_eq!(&s[7..8], "-");
-        assert_eq!(&s[10..11], " ");
-        assert_eq!(&s[13..14], ":");
-        assert_eq!(&s[16..17], ":");
-        let year: i32 = s[..4].parse().expect("年份应为数字");
-        assert!((2015..=2100).contains(&year), "年份应合理, got {year}");
     }
 }
