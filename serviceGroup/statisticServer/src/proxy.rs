@@ -180,7 +180,7 @@ fn map_model_for_source(model: &str, source_is_glm: bool) -> String {
     if source_is_glm {
         model.to_string()
     } else {
-        crate::model::map_model(model).to_string()
+        crate::model::map_model(model)
     }
 }
 

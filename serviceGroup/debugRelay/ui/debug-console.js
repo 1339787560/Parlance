@@ -30,7 +30,17 @@ function scrollToBottom() {
 // ---- Client Selection (多客户端) ----
 
 let selectedClient = null;      // 当前订阅的 client_id
-let availableClients = [];      // [{id,label,ip}]
+let availableClients = [];      // [{id,label,ip,user_id,build_version}]
+
+/**
+ * 下拉/状态栏展示标签：在 relay 下发的 label 后追加 userid。
+ * userid 由客户端 client_info 上报（登录后才有），relay 收到即重播 client_list
+ * → 本函数重渲染，故 uid 会自动出现，无需手动刷新。
+ */
+function clientDisplayLabel(c) {
+    if (!c) return '';
+    return c.user_id ? `${c.label} · uid:${c.user_id}` : (c.label || c.id);
+}
 
 function handleClientList(msg) {
     availableClients = msg.clients || [];
@@ -56,7 +66,7 @@ function renderClientSelect() {
         return;
     }
     sel.innerHTML = availableClients
-        .map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`)
+        .map(c => `<option value="${c.id}">${escapeHtml(clientDisplayLabel(c))}</option>`)
         .join('');
     if (selectedClient && availableClients.find(c => c.id === selectedClient)) {
         sel.value = selectedClient;
@@ -77,7 +87,7 @@ function selectClient(id) {
     if (status) {
         const c = availableClients.find(x => x.id === id);
         if (id && c) {
-            status.textContent = `客户端: ${c.label}`;
+            status.textContent = `客户端: ${clientDisplayLabel(c)}`;
             status.className = 'connected';
         } else {
             status.textContent = '游戏: 未选择';

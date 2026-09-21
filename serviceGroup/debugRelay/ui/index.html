@@ -381,6 +381,25 @@
                 </div>
             </div>
             <div class="device-section">
+                <div class="device-section-title">输入坐标缩放 K（真机-only 触摸失效复现）</div>
+                <div class="device-config-grid">
+                    <label>真机档位</label><select id="device-kscale-preset" onchange="deviceOnKPresetChange()"></select>
+                    <label>输入坐标 K</label><input id="device-kscale" type="number" step="0.001" min="0" value="0">
+                </div>
+                <div class="device-btn-row">
+                    <button class="toolbar-btn" onclick="deviceApplyK()" title="按 K 篡改输入坐标 API(getUILocation 系列); 渲染/布局/安全区不动">▶ 应用 K</button>
+                    <button class="toolbar-btn" onclick="deviceClearK()" title="还原输入坐标 API(K=关)">↩ 关闭 K</button>
+                    <span id="device-kscale-status" class="events-status"></span>
+                </div>
+                <div id="device-kscale-state"></div>
+                <div class="device-k-hint">
+                    只改「输入坐标 API 所见的世界」(ui = 屏幕 / K),不改渲染/安全区/布局。<br>
+                    <b>K &gt; 1 = 真机型</b>:ui &lt; 屏幕 ⇒ 外部框架把 ui 当屏幕坐标再转一次 ⇒ 落点仍在屏内 ⇒ 假命中 ⇒ 触摸被吞(真机症状);<br>
+                    <b>K &lt; 1 = preview 原生(≈0.52)</b>:ui &gt; 屏幕 ⇒ 双换算落点出屏 ⇒ hitTest 放行 ⇒ 问题被掩盖(所以 preview 看着正常)。<br>
+                    最省事: 先在真机上「📱 从真机抓取」→ 自动带出该机 K(frame.w / visibleSize.w) → 应用 K 即在 preview 稳定复现。
+                </div>
+            </div>
+            <div class="device-section">
                 <div class="device-section-title">模板（点击应用 + 进入编辑）</div>
                 <div id="device-templates"></div>
             </div>
@@ -391,7 +410,9 @@
             <div class="device-legend">
                 📱 从真机抓取：对选中 relay 客户端（真机/小程序/preview）调 __xzmp_captureDevice() 读实时分辨率+安全区+insets，自动存为 real_<platform> 模板并应用 → 在 preview 复现真机问题。
                 配置经 /api/eval 调 __xzmp_simDevice({w,h,inset,top,notch})。分辨率走 screen.windowSize + updatetDesignResolutionSize；安全区 mock sys.getSafeAreaRect + canvas-resize 重对齐；红条+形状 overlay 标 inset 区。
-                内置档案只读；带 * 为用户模板（localStorage 持久化，本浏览器）。窗口比例异步收敛 ~1s，快照以二次为准。
+                <br>🎯 <b>输入坐标缩放 K</b>（/api/device action=inputScale）：只篡改输入坐标 API（cc.Touch.getUILocation 系列）的换算，把「输入坐标所见的世界」按 K 缩放，渲染/布局/安全区不动 —— 用于复现「真机 scale&gt;1 ⇒ UIBarrier 假命中吞触摸」这类真机-only 问题；K=关 即还原。
+                注：K 是运行时补丁，游戏页刷新/重载后失效，需重新「应用 K」；「快照」可查当前生效值。
+                <br>内置档案只读；带 * 为用户模板（localStorage 持久化，本浏览器）。窗口比例异步收敛 ~1s，快照以二次为准。
             </div>
         </div>
     </div>
@@ -406,10 +427,11 @@
                 <option value="game">game</option>
                 <option value="both">both</option>
             </select>
-            <select id="test-category" class="theme-select" onchange="testOnCategoryChange()" title="区分 Agent 测试空间与用户测试接口">
+            <select id="test-category" class="theme-select" onchange="testOnCategoryChange()" title="区分 Agent 测试空间 / 用户测试接口 / 全局 CP">
                 <option value="all">全部分类</option>
                 <option value="agent">Agent 接口</option>
                 <option value="user" selected>用户测试接口</option>
+                <option value="cp">全局 CP</option>
             </select>
             <select id="test-subcategory" class="theme-select" onchange="testRender()" title="按归属分类进一步筛选">
                 <option value="">全部分属</option>
@@ -418,12 +440,25 @@
             <span id="test-status" class="events-status"></span>
         </div>
         <div id="test-body">
-            <div id="test-list" class="events-empty">选择客户端后点击刷新查看测试接口</div>
+            <div id="test-list-wrap">
+                <div id="test-list" class="events-empty">选择客户端后点击刷新查看测试接口</div>
+            </div>
+            <div id="test-splitter" title="拖拽调整左右占比（双击复位 7:3）"></div>
+            <div id="test-result">
+                <div id="test-result-bar">
+                    <span id="test-result-title">返回结果</span>
+                    <button class="toolbar-btn" onclick="testClearResult()" title="清空右侧结果">清空</button>
+                </div>
+                <div id="test-result-body" class="test-result-body test-result-empty">运行测试条目后，返回值显示在这里</div>
+            </div>
         </div>
         <div class="test-legend">
-            点击接口行展开参数表单，填写后点运行；执行结果以 Toast 提示。
+            点击接口行展开参数表单，填写后点运行；返回值显示在右侧结果栏（拖拽中间分隔条可调占比，双击复位 7:3）。
             Agent 接口与用户测试接口分开展示，可分别筛选。
             Agent 可用 <code>GET /api/debug-index</code> 和 <code>POST /api/test-call</code> 做相同操作。
+            <br>「全局 CP」= 模拟 client_request，走代码通道打到所选客户端（真机可用，用客户端自身全局登录态，不依赖 db9）；
+            按模块分类，标 <b>写</b> 的请求会真改玩家数据，只用测试账号。
+            Agent 可用 <code>GET /api/cp/modules</code> 和 <code>POST /api/cp/call</code> 做相同操作。
         </div>
     </div>
 
@@ -570,7 +605,7 @@
     <script src="http://localhost:5001/static/skin-manifest.js"></script>
     <script src="http://localhost:5001/static/shader-runner.js"></script>
     <script src="http://localhost:5001/static/skin-runner.js"></script>
-    <script src="debug-console.js?v=13"></script>
+    <script src="debug-console.js?v=14"></script>
     <script src="debug-build.js?v=1"></script>
     <script src="debug-sources.js?v=5"></script>
     <script src="debug-perf.js?v=6"></script>
@@ -583,7 +618,7 @@
     <script src="debug-launcher.js?v=17"></script>
     <script src="debug-autotest.js?v=10"></script>
 <script src="debug-device.js?v=5"></script>
-    <script src="debug-test.js?v=7"></script>
+    <script src="debug-test.js?v=8"></script>
     <script src="debug-theme.js?v=7"></script>
 </body>
 </html>

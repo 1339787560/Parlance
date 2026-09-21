@@ -6,3 +6,42 @@ kind=exit args=["--source", "oss", "--service", "xzmssvr", "--host", "3291", "--
     import requests
 ModuleNotFoundError: No module named 'requests'
 
+kind=exit args=["--source", "oss", "--service", "xzmssvr", "--host", "3335", "--subdir", "Record", "--json", "--no-download", "2026-09-18", "2026-09-18"] stderr=Traceback (most recent call last):
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 870, in <module>
+    main()
+    ~~~~^^
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 773, in main
+    _run_oss_source(args, dates)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 617, in _run_oss_source
+    bucket = _oss_connect()
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 422, in _oss_connect
+    import oss2
+ModuleNotFoundError: No module named 'oss2'
+
+kind=exit args=["--source", "oss", "--service", "xzmssvr", "--host", "3335", "--subdir", "Record", "--json", "--no-download", "2026-09-17", "2026-09-17"] stderr=Traceback (most recent call last):
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 870, in <module>
+    main()
+    ~~~~^^
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 773, in main
+    _run_oss_source(args, dates)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 617, in _run_oss_source
+    bucket = _oss_connect()
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 422, in _oss_connect
+    import oss2
+ModuleNotFoundError: No module named 'oss2'
+
+kind=exit args=["--source", "oss", "--service", "xzmssvr", "--host", "3153", "--subdir", "Record", "--json", "--no-download", "2026-09-17", "2026-09-17"] stderr=Traceback (most recent call last):
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 870, in <module>
+    main()
+    ~~~~^^
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 773, in main
+    _run_oss_source(args, dates)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 617, in _run_oss_source
+    bucket = _oss_connect()
+  File "D:\Codlib\VscodeCodlib\Python\infoServer\serviceGroup\serviceServer\spideOnlineLog.py", line 422, in _oss_connect
+    import oss2
+ModuleNotFoundError: No module named 'oss2'
+

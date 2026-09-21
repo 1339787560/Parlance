@@ -12,6 +12,8 @@ from .BaseRoute import *
 from .ServiceRoute import *
 from .SequenceRoute import *
 from .CpDataRoute import *
+from .CpDirectRoute import *
+from .MigrationRoute import *
 
 # 定义包的公共接口
 __all__ = [
@@ -21,6 +23,8 @@ __all__ = [
     'BaseRoute',
     'ServiceRoute',
     'SequenceRoute',
-    'CpDataRoute'
+    'CpDataRoute',
+    'CpDirectRoute',
+    'MigrationRoute'
 ]
 

@@ -1,14 +1,21 @@
 /**
- * Device 面板逻辑 — preview 模拟真机（deposit 式数值配置 + 模板管理）
+ * Device 面板逻辑 — preview 模拟真机（deposit 式数值配置 + 模板管理 + 输入坐标缩放）
  *
  * 驱动游戏端 __xzmp_simDevice（biz Init.ts）:
  * - 对象参数 {w,h,inset,top,notch} — 本面板数值配置直驱
  * - 字符串 profile — 内置档案
  * - null — 还原
  *
+ * 驱动游戏端 __xzmp_simInputScale（biz Init.ts, action='inputScale'）:
+ * - K>0 — 把输入坐标 API（cc.Touch.getUILocation 系列）换算成「scale=K 的设备」所见
+ * - K=0 — 还原真实换算
+ * - 用途: 真机 scale>1 ⇒ 外部框架 isTouchOnUI 传 getUILocation 给 hitTest ⇒ 双换算 ⇒ 假命中吞触摸;
+ *   preview 原生 scale≈0.52（<1）会把落点推出屏外 ⇒ 放行 ⇒ 问题被掩盖。注入 K>1 即稳定复现。
+ *
  * 交互（同 deposit 页模式）:
- * - 切到 Device tab 自动应用当前编辑器配置
+ * - 切到 Device tab 自动应用当前编辑器配置（frame 配置; K 不自动应用, 需显式点「应用 K」）
  * - 数值配置: w/h/inset/top + notch 形状（none/notch刘海/waterdrop水滴/hole挖孔）
+ * - 输入坐标缩放: 真机档位下拉 + K 数值; K 是运行时补丁, 游戏页刷新后失效
  * - 模板: localStorage 持久化；点击模板 = 应用 + 载入编辑模式；保存/删除
  */
 
@@ -28,6 +35,15 @@ const NOTCH_OPTIONS = [
     { value: 'notch',      label: '刘海屏' },
     { value: 'waterdrop',  label: '水滴' },
     { value: 'hole',       label: '挖孔' },
+];
+
+// 真机档位（实测值; 一键带出 K = 输入坐标缩放, 0 = 关）
+// 依据: 输入坐标 ui = (屏幕 - viewport) / scale, 其中 scale = frame.w / visibleSize.w
+const K_PRESETS = [
+    { value: '0',     label: '关（真实坐标）' },
+    { value: '1.684', label: '微信小程序 1.684（2712×1220）' },
+    { value: '1.75',  label: '安卓真机 1.75（2844×1260）' },
+    { value: '1.111', label: '安卓真机 1.111（1600×900）' },
 ];
 
 let deviceCurrent = { w: 1558, h: 720, inset: 91, top: 0, notch: 'notch' };  // 编辑器当前值
@@ -69,6 +85,19 @@ function deviceWriteEditor(cfg) {
     document.getElementById('device-notch').value = cfg.notch || 'none';
 }
 
+// ---- 输入坐标缩放 K 读写 ----
+
+function deviceReadK() {
+    const el = document.getElementById('device-kscale');
+    const k = parseFloat(el && el.value);
+    return (isFinite(k) && k > 0) ? k : 0;
+}
+
+function deviceWriteK(k) {
+    const el = document.getElementById('device-kscale');
+    if (el) el.value = (k && k > 0) ? k : 0;
+}
+
 // ---- 应用 ----
 
 async function deviceApply() {
@@ -91,10 +120,67 @@ async function deviceRestore() {
         deviceRenderSnapshot(result);
         deviceActiveName = null;
         deviceRenderTemplates();
-        deviceSetStatus('已还原真实值');
+        // 还原同时关闭输入坐标缩放（老客户端未实现 inputScale 时忽略失败, 不影响分辨率还原）
+        try { const rk = await deviceCall('inputScale', { k: 0 }); deviceRenderKState(rk); } catch (e) { /* 客户端未实现 */ }
+        deviceSetStatus('已还原真实值（含 K 关闭）');
     } catch (e) {
         deviceSetStatus('失败: ' + e.message, true);
     }
+}
+
+// ---- 输入坐标缩放 K（真机-only 触摸失效复现）----
+
+function deviceSetKStatus(text, isError) {
+    const el = document.getElementById('device-kscale-status');
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = isError ? 'var(--red)' : 'var(--dim)';
+}
+
+/** 渲染 K 生效状态（客户端返值权威: {ok, k, active, scaleReal, ...}） */
+function deviceRenderKState(r) {
+    const el = document.getElementById('device-kscale-state');
+    if (!el) return;
+    if (!r) { el.innerHTML = ''; return; }
+    if (r.error) { el.innerHTML = `<div class="device-row"><span class="device-k">K 状态</span><span class="device-v" style="color:var(--red)">${r.error}</span></div>`; return; }
+    const active = !!r.active;
+    const k = r.k || 0;
+    const real = (r.scaleReal !== undefined && r.scaleReal !== null) ? Number(r.scaleReal).toFixed(4) : '-';
+    el.innerHTML = `
+        <div class="device-row device-mono"><span class="device-k">K 状态</span><span class="device-v ${active ? 'device-on' : ''}">${active ? '● 生效中 K=' + k : '○ 未生效（真实坐标）'}</span></div>
+        <div class="device-row device-mono"><span class="device-k">view.scaleX</span><span class="device-v">${real}${active ? ` ⇒ 输入坐标按 K=${k} 换算` : ''}</span></div>
+    `;
+}
+
+async function deviceApplyK() {
+    const k = deviceReadK();
+    if (!k) { deviceSetKStatus('K 必须 > 0（要关闭请点「↩ 关闭 K」）', true); return; }
+    try {
+        deviceSetKStatus('应用中...');
+        const r = await deviceCall('inputScale', { k });
+        if (!r || r.error) throw new Error((r && r.error) || '客户端未返回结果（可能未加载新 Init.ts）');
+        deviceRenderKState(r);
+        deviceSetKStatus(`已应用 K=${r.k != null ? r.k : k}（输入坐标 = (屏幕 - viewport) / K）`);
+    } catch (e) {
+        deviceSetKStatus('失败: ' + e.message, true);
+    }
+}
+
+async function deviceClearK() {
+    try {
+        deviceSetKStatus('关闭中...');
+        const r = await deviceCall('inputScale', { k: 0 });
+        deviceRenderKState(r);
+        deviceSetKStatus('已关闭（还原真实坐标）');
+    } catch (e) {
+        deviceSetKStatus('失败: ' + e.message, true);
+    }
+}
+
+function deviceOnKPresetChange() {
+    const sel = document.getElementById('device-kscale-preset');
+    if (!sel) return;
+    deviceWriteK(parseFloat(sel.value) || 0);
 }
 
 async function deviceSnapshot() {
@@ -115,6 +201,12 @@ async function deviceCapture() {
         const c = result.simConfig || {};
         deviceCurrent = { w: c.w || 1280, h: c.h || 720, inset: c.inset || 0, top: c.top || 0, notch: c.notch || 'none' };
         deviceWriteEditor(deviceCurrent);
+        // 由真机 frame/visibleSize 反推该机坐标 scale K = frame.w / vs.w（policy 无关; 均匀缩放时 = frame.h/vs.h）
+        // 抓到真机 K 就能在 preview 直接复现它的输入坐标契约（K>1 ⇒ 双换算假命中 ⇒ 吞触摸）
+        const fw = (result.frame && result.frame.w) || 0;
+        const vw = (result.vs && result.vs.w) || 0;
+        const k = (fw && vw) ? Math.round((fw / vw) * 1000) / 1000 : 0;
+        deviceWriteK(k);
         // 自动存为模板（real_<platform>[_N], 不覆盖已有）
         const base = 'real_' + (result.platform !== undefined && result.platform !== null ? result.platform : 'device');
         let name = base;
@@ -127,7 +219,8 @@ async function deviceCapture() {
         deviceRenderTemplates();
         deviceRenderCapture(result);
         deviceApply();
-        deviceSetStatus(`已从真机抓取并保存模板 "${name}"`);
+        if (k > 0) deviceApplyK();   // 真机坐标 scale 同步应用 ⇒ 一次抓取即在 preview 复现
+        deviceSetStatus(`已从真机抓取并保存模板 "${name}"${k > 0 ? ` · 同步应用 K=${k}` : ''}`);
     } catch (e) {
         deviceSetStatus('抓取失败: ' + e.message, true);
     }
@@ -259,9 +352,13 @@ function deviceRenderSnapshot(result) {
         return;
     }
     if (result && result.drs && !result.profile) {
+        const ws = result.windowSize || {};
+        const kActive = (result.inputScaleK || 0) > 0;
         el.innerHTML = `
             <div class="device-row"><span class="device-k">designResolution</span><span class="device-v">${result.drs.width ? result.drs.width + 'x' + result.drs.height : result.drs}</span></div>
             <div class="device-row"><span class="device-k">visibleSize</span><span class="device-v">${result.vs.width ? result.vs.width.toFixed(0) + 'x' + result.vs.height.toFixed(0) : result.vs}</span></div>
+            <div class="device-row"><span class="device-k">frame / scaleX</span><span class="device-v">${ws.width ? Math.round(ws.width) + 'x' + Math.round(ws.height) : '-'} / ${result.scaleX !== undefined && result.scaleX !== null ? Number(result.scaleX).toFixed(4) : '-'}</span></div>
+            <div class="device-row"><span class="device-k">输入坐标 K</span><span class="device-v ${kActive ? 'device-on' : ''}">${kActive ? '● 生效中 K=' + result.inputScaleK : '○ 关（真实坐标）'}</span></div>
             <div class="device-row"><span class="device-k">safeArea</span><span class="device-v">x:${result.safeArea ? result.safeArea.x : '-'} w:${result.safeArea ? result.safeArea.width : '-'}</span></div>
             <div class="device-row"><span class="device-k">policy</span><span class="device-v">${result.policy || '-'}</span></div>
         `;
@@ -292,12 +389,14 @@ function deviceOnEditorInput() {
     deviceApply();
 }
 
-/** tab 切到 device: 初始化 + 直接应用当前配置 */
+/** tab 切到 device: 初始化 + 直接应用当前配置（K 属故障注入, 不自动应用, 需显式点「应用 K」） */
 function deviceOnTabShow() {
     if (!document.getElementById('device-templates').dataset.populated) {
         document.getElementById('device-templates').dataset.populated = '1';
         const sel = document.getElementById('device-notch');
         sel.innerHTML = NOTCH_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+        const ksel = document.getElementById('device-kscale-preset');
+        if (ksel) ksel.innerHTML = K_PRESETS.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
         deviceWriteEditor(deviceCurrent);
     }
     deviceRenderTemplates();
@@ -330,6 +429,8 @@ function deviceOnTabShow() {
         .device-tpl-name { font-weight:bold; min-width:90px; }
         .device-tpl-desc { color:var(--dim); font-size:11px; flex:1; }
         .device-tpl-del { background:none; border:none; color:var(--red, #ff4757); cursor:pointer; padding:0 4px; }
+        .device-k-hint { color:var(--dim); font-size:11px; line-height:1.7; margin-top:8px; max-width:560px; }
+        #device-kscale-state { margin-top:4px; }
         .device-legend { color:var(--dim); font-size:11px; padding:6px 0; border-top:1px solid var(--border); margin-top:8px; width:100%; }
     `;
     document.head.appendChild(style);

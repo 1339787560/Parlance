@@ -761,15 +761,18 @@
                     <label for="mig-userid">玩家ID（chunkSvr 采集该玩家 Lua 侧数据并组装成「推送给 CP 的载荷」）：</label>
                     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                         <input type="number" id="mig-userid" value="178999" placeholder="请输入玩家ID" style="width:150px;">
+                        <select id="mig-appcode" style="width:100px; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                            <option value="xzmp" selected>xzmp</option>
+                            <option value="xzmk">xzmk</option>
+                        </select>
+                        <input type="text" id="mig-gamevers" value="20.9.20260816" placeholder="客户端版本 GameVers" style="width:170px;">
                         <button class="submit-btn" onclick="migFetch()">获取</button>
                         <button class="submit-btn" style="background-color:#6c757d;" onclick="migClear()">清空</button>
                     </div>
                     <div style="font-size:12px; color:#888; margin-top:6px;">
                         数据源：本机 chunkSvr 调试口（<span id="mig-source">/api/migration/dryrun</span>）。
-                        <b>只读干跑</b>：不推送 CP、不写去重缓存、不改任何数据。<br>
-                        本页不经过 C++ 侧，故<b>不做</b>总开关 / 缩写版本门禁 / 去重缓存判定，也不填
-                        <code>code</code>、<code>gamevers</code> —— 这两项由 C++ 在真实推送时从客户端登录尾载荷
-                        <code>gsclientdata</code> 中取。
+                        <b>只读干跑</b>：不推送 CP、不写去重缓存、不改任何数据。
+                        缩写/版本仅用于填充载荷（真实推送时取自客户端登录尾载荷 gsclientdata）。
                     </div>
                 </div>
                 <div id="mig-result"></div>
@@ -2180,6 +2183,8 @@
 
         async function migFetch() {
             const userid = parseInt(document.getElementById('mig-userid').value);
+            const appcode = document.getElementById('mig-appcode').value;
+            const gamevers = document.getElementById('mig-gamevers').value.trim();
             const out = document.getElementById('mig-result');
             if (isNaN(userid) || userid <= 0) {
                 out.innerHTML = '<div class="result error" style="display:block;">玩家ID格式错误</div>';
@@ -2187,7 +2192,8 @@
             }
             out.innerHTML = '<p>获取中...（chunkSvr 判定 + 采集 5 项 + 组装载荷）</p>';
             try {
-                const r = await cpPost('/api/migration/dryrun', { userid: userid });
+                const r = await cpPost('/api/migration/dryrun',
+                    { userid: userid, appcode: appcode, gamevers: gamevers });
                 if (!r.success) throw new Error(r.message);
                 migRender(r.data);
             } catch (e) {

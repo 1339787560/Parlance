@@ -464,8 +464,6 @@
                 <button class="tab-button" onclick="switchTab('silver')">银两</button>
                 <!-- CP 数据: 走直连 (/api/cp-data/direct/*, 不经 125 exec_script、不依赖五元组), 已启用 -->
                 <button class="tab-button" onclick="switchTab('cpdata')">CP 数据</button>
-                <!-- 迁移数据: 走本机 chunkSvr 调试口 (/api/migration/dryrun), 采集+组装, 只读干跑 -->
-                <button class="tab-button" onclick="switchTab('migration')">获取装载迁移数据</button>
                 <!-- CP 配置 / 模拟请求 仍走旧 exec_script 通路 (CP_ENABLED=False), 暂隐藏 -->
                 <button class="tab-button" onclick="switchTab('cpconfig')" hidden>CP 配置</button>
                 <button class="tab-button" onclick="switchTab('cprequest')" hidden>模拟请求</button>
@@ -554,10 +552,8 @@
                             <option value="xzmp">xzmp</option>
                         </select>
                         <button class="submit-btn" onclick="cpLoadModules()">查询模块</button>
-                        <button class="submit-btn" style="background-color:#6c757d;" onclick="cpReloadModules()" title="忽略本地缓存，重新从 CP 库拉取">重新拉取</button>
-                        <span id="cp-cache-hint" style="font-size:12px; color:#888;"></span>
                     </div>
-                    <small style="color:#888;">直连 CP 库（mysql + redis），不依赖客户端登录 / 五元组。列出该玩家相关模块，点击模块展开 redis 与 mysql 明细 —— <b>两列数字不等即缓存与落盘不一致</b>。<br>查询优先用本地缓存（右侧显示缓存时间）；点「重新拉取」忽略缓存重新走库。</small>
+                    <small style="color:#888;">直连 CP 库（mysql + redis），不依赖客户端登录 / 五元组。列出该玩家相关模块，点击模块展开 redis 与 mysql 明细 —— <b>两列数字不等即缓存与落盘不一致</b>。</small>
                 </div>
                 <div id="cp-module-result"></div>
 
@@ -753,26 +749,6 @@
                     <textarea id="cp-req-params" rows="3" placeholder='{"roomID": 694, "channelkey": "tcyan"}'></textarea>
                 </div>
                 <div id="cp-req-result"></div>
-            </div>
-
-            <!-- 获取装载迁移数据: chunkSvr 判定 + 采集 Lua 侧 5 项 + 组装推送载荷 (只读干跑) -->
-            <div id="migration" class="tab-content">
-                <div class="form-group">
-                    <label for="mig-userid">玩家ID（chunkSvr 采集该玩家 Lua 侧数据并组装成「推送给 CP 的载荷」）：</label>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                        <input type="number" id="mig-userid" value="178999" placeholder="请输入玩家ID" style="width:150px;">
-                        <button class="submit-btn" onclick="migFetch()">获取</button>
-                        <button class="submit-btn" style="background-color:#6c757d;" onclick="migClear()">清空</button>
-                    </div>
-                    <div style="font-size:12px; color:#888; margin-top:6px;">
-                        数据源：本机 chunkSvr 调试口（<span id="mig-source">/api/migration/dryrun</span>）。
-                        <b>只读干跑</b>：不推送 CP、不写去重缓存、不改任何数据。<br>
-                        本页不经过 C++ 侧，故<b>不做</b>总开关 / 缩写版本门禁 / 去重缓存判定，也不填
-                        <code>code</code>、<code>gamevers</code> —— 这两项由 C++ 在真实推送时从客户端登录尾载荷
-                        <code>gsclientdata</code> 中取。
-                    </div>
-                </div>
-                <div id="mig-result"></div>
             </div>
         </div>
 
@@ -983,85 +959,18 @@
         
         // tab -> 所属分组 (切 tab / 模板 apply 时自动切组)
         const TAB_GROUP = {
-            points: 'creator', silver: 'creator', cpdata: 'creator', migration: 'creator',
-            cpconfig: 'creator', cprequest: 'creator',
+            points: 'creator', silver: 'creator', cpdata: 'creator', cpconfig: 'creator', cprequest: 'creator',
             gold: 'lua', tqvip: 'lua', weekcard: 'lua', monthcard: 'lua',
             costume: 'lua', newplayergift: 'lua'
         };
 
         // 切换顶层分组 (creator / lua); 已在目标组早退 (切 tab 不重复刷组)
-        // skipRestore=true 供 switchTab 跨组用 (目标 tab 由 switchTab 自己激活, 免受本组旧缓存干扰)
-        function switchGroup(groupId, skipRestore) {
+        function switchGroup(groupId) {
             const groupEl = document.getElementById('group-' + groupId);
             if (groupEl.classList.contains('active')) return;
             document.querySelectorAll('.group-button').forEach(btn => btn.classList.toggle('active',
                 btn.getAttribute('onclick') === `switchGroup('${groupId}')`));
             document.querySelectorAll('.tab-group').forEach(g => g.classList.toggle('active', g === groupEl));
-            localStorage.setItem('depositActiveGroup', groupId); // 缓存分组选择 (刷新后回到 Creator/Lua)
-            if (!skipRestore) restoreGroupTab(groupId); // 还原该组自己上次的 tab (不重查, 用已缓存内容)
-        }
-
-        // ---- tab 选择按分组分别缓存 (creator / lua 各记自己的 tab) ----
-        // 修复 (2026-09-20): 旧版只有单个全局键 depositActiveTab -> 刷新后只有一组能还原,
-        //   切到另一组时掉回静态默认 tab (Creator->积分, Lua->金币), 看不到该组上次的内容。
-        const TAB_CACHE_KEY = 'depositActiveTabByGroup';
-        function tabCacheMap() {
-            let m = {};
-            try { m = JSON.parse(localStorage.getItem(TAB_CACHE_KEY) || '{}'); } catch (e) { m = {}; }
-            if (!m || typeof m !== 'object' || Array.isArray(m)) m = {};
-            const legacy = localStorage.getItem('depositActiveTab'); // 旧单键 -> 迁移到其所属分组
-            if (legacy && TAB_GROUP[legacy] && !m[TAB_GROUP[legacy]]) m[TAB_GROUP[legacy]] = legacy;
-            return m;
-        }
-        function tabCacheGet(groupId) { return tabCacheMap()[groupId] || null; }
-        function tabCacheSet(groupId, tabId) {
-            if (!groupId || !tabId) return;
-            const m = tabCacheMap();
-            m[groupId] = tabId;
-            try { localStorage.setItem(TAB_CACHE_KEY, JSON.stringify(m)); } catch (e) { /* 超限忽略 */ }
-        }
-
-        // 组内切 tab: 只动 class + 写缓存, 不触发查询/清理 (供分组还原与 switchTab 复用)
-        function activateTab(groupEl, tabId) {
-            const target = document.getElementById(tabId);
-            groupEl.querySelectorAll('.tab-button').forEach(btn => btn.classList.toggle('active',
-                btn.getAttribute('onclick') === `switchTab('${tabId}')`));
-            groupEl.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c === target));
-            tabCacheSet(TAB_GROUP[tabId], tabId);
-        }
-
-        // 切到分组: 还原该组自己缓存过的 tab (无缓存/已隐藏 -> 退回组内静态激活项)
-        function restoreGroupTab(groupId) {
-            const groupEl = document.getElementById('group-' + groupId);
-            if (!groupEl) return;
-            const cached = tabCacheGet(groupId);
-            const btn = cached ? Array.from(groupEl.querySelectorAll('.tab-button'))
-                .find(b => b.getAttribute('onclick') === `switchTab('${cached}')`) : null;
-            const content = cached ? document.getElementById(cached) : null;
-            if (btn && !btn.hidden && content && TAB_GROUP[cached] === groupId) {
-                activateTab(groupEl, cached);
-                return;
-            }
-            ensureGroupTabActive(groupEl);
-        }
-
-        // 进入分组后保证组内有且仅有一个 tab 内容处于激活态。
-        // 修复 (2026-09-20): 静态 HTML 里 Lua 组的「金币」按钮带 active, 其内容 #gold 却不带 ->
-        //   用分组按钮直接进 Lua 组时, 按钮高亮而内容区仍是 display:none, 表现为
-        //   「切到 Lua 时金币页签内容加载不出来」(再点一下金币按钮才好, 故表现为"有时")。
-        //   根因是 switchGroup 只切换分组可见性, 从不碰组内 tab 状态。
-        function ensureGroupTabActive(groupEl) {
-            const contents = Array.from(groupEl.querySelectorAll('.tab-content'));
-            if (!contents.length) return;
-            const cur = contents.find(c => c.classList.contains('active'));
-            if (cur) { tabCacheSet(TAB_GROUP[cur.id], cur.id); return; } // 已有可见内容: 不干预, 但把缓存对齐到实际显示项
-            const btns = Array.from(groupEl.querySelectorAll('.tab-button'));
-            const btn = btns.find(b => b.classList.contains('active')) || btns[0];
-            const m = btn ? (btn.getAttribute('onclick') || '').match(/switchTab\('([^']+)'\)/) : null;
-            const target = (m && document.getElementById(m[1])) ? document.getElementById(m[1]) : contents[0];
-            btns.forEach(b => b.classList.toggle('active', b === btn));
-            contents.forEach(c => c.classList.toggle('active', c === target));
-            if (target && target.id) tabCacheSet(TAB_GROUP[target.id], target.id);
         }
 
         // 切换组内选项卡 (作用域限定在 tab 所属 group, 避免两组互串)
@@ -1070,13 +979,13 @@
             exitTemplateEditMode(); // 切 tab 退出模板编辑
             if (!skipClear) cpClearResults(); // 切 tab 清空已查询内容
             const groupId = TAB_GROUP[tabId];
-            if (groupId) switchGroup(groupId, true); // 模板 apply 跨组时自动带过去 (同组早退; 不还原本组旧 tab)
+            if (groupId) switchGroup(groupId); // 模板 apply 跨组时自动带过去 (同组早退)
             const group = document.getElementById('group-' + (groupId || 'lua'));
             const target = document.getElementById(tabId);
             group.querySelectorAll('.tab-button').forEach(btn => btn.classList.toggle('active',
                 btn.getAttribute('onclick') === `switchTab('${tabId}')`));
             group.querySelectorAll('.tab-content').forEach(content => content.classList.toggle('active', content === target));
-            tabCacheSet(groupId || 'lua', tabId); // 按分组缓存 tab 选择
+            localStorage.setItem('depositActiveTab', tabId); // 缓存 tab 选择
             // 进 CP 数据 tab: 先拉缩写清单 (从落盘表名派生), 再按 玩家ID + 缩写 自动查询
             if (tabId === 'cpdata' && !skipClear) {
                 cpInitAppcodes();
@@ -1085,8 +994,7 @@
             }
         }
 
-        // 清空 CP 各面板「已显示的」查询结果 (输入保留; 同步清状态缓存防刷新回显旧结果)
-        // 注意: 不动 cpDataCache —— 数据缓存要留着, 切回 CP 数据 tab 才能免网即显
+        // 清空 CP 各面板查询结果 (输入保留; 同步清缓存防刷新回显旧结果)
         function cpClearResults() {
             for (const id of ['cp-module-result', 'cp-config-result', 'cp-req-result']) {
                 const el = document.getElementById(id);
@@ -1095,6 +1003,7 @@
             try {
                 const state = JSON.parse(localStorage.getItem(CP_CACHE_KEY) || 'null');
                 if (state) {
+                    delete state.moduleResultHtml;
                     delete state.configResultHtml;
                     delete state.reqResultHtml;
                     localStorage.setItem(CP_CACHE_KEY, JSON.stringify(state));
@@ -1602,98 +1511,8 @@
             } catch (e) { /* 拿不到就保留默认选项, 不阻塞查询 */ }
         }
 
-        // ---- CP 数据缓存 (localStorage) ----
-        // 存「数据」而非 HTML 快照: innerHTML 往返会丢事件绑定 -> 还原后模块卡片点不动。
-        // 还原时按数据重渲染并重新绑事件, 所以缓存的模块展开依然可用。
-        const CP_DATA_CACHE_KEY = 'cpDataCache';
-        const CP_CACHE_TTL_MS = 7 * 24 * 3600 * 1000;   // 7 天; 过期即视为无缓存
-
-        function cpCacheRead() {
-            try {
-                const c = JSON.parse(localStorage.getItem(CP_DATA_CACHE_KEY) || 'null');
-                if (!c || !c.data) return null;
-                if (c.savedAt && Date.now() - c.savedAt > CP_CACHE_TTL_MS) return null;
-                return c;
-            } catch (e) { return null; }
-        }
-        function cpCacheHit(userid, appcode) {
-            const c = cpCacheRead();
-            return (c && c.userid === userid && c.appcode === appcode) ? c : null;
-        }
-        function cpCacheWrite(userid, appcode, data) {
-            // 同一玩家+缩写时保留已拉过的模块明细; 换人则丢弃
-            const old = cpCacheRead();
-            const keep = (old && old.userid === userid && old.appcode === appcode) ? (old.details || {}) : {};
-            try {
-                localStorage.setItem(CP_DATA_CACHE_KEY, JSON.stringify(
-                    { userid: userid, appcode: appcode, savedAt: Date.now(), data: data, details: keep }));
-            } catch (e) { /* 超限忽略, 不影响功能 */ }
-        }
-        function cpCacheDetail(module, detail) {
-            const c = cpCacheRead();
-            if (!c) return;
-            c.details = c.details || {};
-            c.details[module] = detail;
-            try { localStorage.setItem(CP_DATA_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
-        }
-        function cpCacheDropDetail(module) {
-            const c = cpCacheRead();
-            if (!c || !c.details) return;
-            delete c.details[module];
-            try { localStorage.setItem(CP_DATA_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
-        }
-        function cpCacheClear() {
-            try { localStorage.removeItem(CP_DATA_CACHE_KEY); } catch (e) {}
-        }
-        function cpCacheHint() {
-            const el = document.getElementById('cp-cache-hint');
-            if (!el) return;
-            const uid = parseInt(document.getElementById('cp-userid').value);
-            const appcode = document.getElementById('cp-appcode').value;
-            const c = cpCacheHit(uid, appcode);
-            if (!c) { el.textContent = ''; return; }
-            const t = new Date(c.savedAt || Date.now());
-            const p = n => String(n).padStart(2, '0');
-            el.textContent = `数据缓存于 ${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
-        }
-
-        // 渲染模块列表 (缓存还原与实时查询共用同一路径 -> 事件绑定行为一致)
-        function cpRenderModules(d, userid, appcode) {
-            const out = document.getElementById('cp-module-result');
-            const mods = d.modules || [];
-            let html = '';
-            if (mods.length === 0) {
-                html = `<p>玩家 ${cpEscape(d.userid)} 在 ${cpEscape(d.appcode)} 下无模块数据（redis 与 mysql 均无）</p>`;
-            } else {
-                html = `<h3 class="cp-section-title">相关模块 (${mods.length}) <small style="font-weight:normal; color:#888;">点击模块展开 redis / mysql 明细</small></h3>`;
-                for (const m of mods) {
-                    const mismatch = m.redis_count !== m.mysql_rows;
-                    html += `<div class="cp-mod-card" data-module="${encodeURIComponent(m.module)}"
-                                 style="border:1px solid ${mismatch ? '#e0a800' : '#ddd'}; border-radius:6px; margin-bottom:6px;">
-                        <div class="cp-mod-head" style="padding:8px 10px; cursor:pointer; display:flex; align-items:center; gap:10px;">
-                            <span style="flex:1; font-weight:bold;">${cpEscape(m.module)}</span>
-                            <span style="font-size:12px; padding:2px 6px; border-radius:3px; background:#eef4ff; color:#1a4f9c;">redis ${m.redis_count}</span>
-                            <span style="font-size:12px; padding:2px 6px; border-radius:3px; background:#eefaf0; color:#1a7a3d;">mysql ${m.mysql_rows}</span>
-                            ${mismatch ? '<span style="font-size:12px; color:#856404;" title="缓存与落盘不一致">⚠ 不一致</span>' : ''}
-                            <span class="cp-mod-arrow" style="color:#888;">▸</span>
-                        </div>
-                        <div class="cp-mod-body" style="display:none; border-top:1px solid #eee; padding:10px;"></div>
-                    </div>`;
-                }
-            }
-            if ((d.warnings || []).length) {
-                html += `<div class="result error" style="display:block; font-size:12px;">${d.warnings.map(cpEscape).join('<br>')}</div>`;
-            }
-            out.innerHTML = html;
-            out.querySelectorAll('.cp-mod-head').forEach(head => {
-                head.addEventListener('click', () => cpToggleModule(head.closest('.cp-mod-card'), userid, appcode));
-            });
-            cpCacheHint();
-        }
-
         // 查询: 玩家ID + 缩写 -> 该玩家相关模块 (redis / mysql 双源计数)
-        // force=true («重新拉取»): 清缓存并强制走库
-        async function cpLoadModules(force) {
+        async function cpLoadModules() {
             const userid = parseInt(document.getElementById('cp-userid').value);
             const appcode = document.getElementById('cp-appcode').value;
             const out = document.getElementById('cp-module-result');
@@ -1701,37 +1520,44 @@
                 out.innerHTML = '<div class="result error" style="display:block;">玩家ID格式错误</div>';
                 return;
             }
-            if (force) {
-                cpCacheClear();                 // 模块明细一并弃掉, 下一步展开会重新拉
-            } else {
-                const c = cpCacheHit(userid, appcode);
-                if (c) {                        // 命中缓存: 直接渲染, 不走网络
-                    cpRenderModules(c.data, userid, appcode);
-                    cpSaveState();
-                    return;
-                }
-            }
             out.innerHTML = '<p>查询中...（redis db10 扫 key + mysql 逐表 count）</p>';
             try {
                 const r = await cpPost('/api/cp-data/direct/modules', { userid: userid, appcode: appcode });
                 if (!r.success) throw new Error(r.message);
-                cpCacheWrite(userid, appcode, r.data);
-                cpRenderModules(r.data, userid, appcode);
+                const d = r.data;
+                const mods = d.modules || [];
+                let html = '';
+                if (mods.length === 0) {
+                    html = `<p>玩家 ${d.userid} 在 ${cpEscape(d.appcode)} 下无模块数据（redis 与 mysql 均无）</p>`;
+                } else {
+                    html = `<h3 class="cp-section-title">相关模块 (${mods.length}) <small style="font-weight:normal; color:#888;">点击模块展开 redis / mysql 明细</small></h3>`;
+                    for (const m of mods) {
+                        const mismatch = m.redis_count !== m.mysql_rows;
+                        html += `<div class="cp-mod-card" data-module="${encodeURIComponent(m.module)}"
+                                     style="border:1px solid ${mismatch ? '#e0a800' : '#ddd'}; border-radius:6px; margin-bottom:6px;">
+                            <div class="cp-mod-head" style="padding:8px 10px; cursor:pointer; display:flex; align-items:center; gap:10px;">
+                                <span style="flex:1; font-weight:bold;">${cpEscape(m.module)}</span>
+                                <span style="font-size:12px; padding:2px 6px; border-radius:3px; background:#eef4ff; color:#1a4f9c;">redis ${m.redis_count}</span>
+                                <span style="font-size:12px; padding:2px 6px; border-radius:3px; background:#eefaf0; color:#1a7a3d;">mysql ${m.mysql_rows}</span>
+                                ${mismatch ? '<span style="font-size:12px; color:#856404;" title="缓存与落盘不一致">⚠ 不一致</span>' : ''}
+                                <span class="cp-mod-arrow" style="color:#888;">▸</span>
+                            </div>
+                            <div class="cp-mod-body" style="display:none; border-top:1px solid #eee; padding:10px;"></div>
+                        </div>`;
+                    }
+                }
+                if ((d.warnings || []).length) {
+                    html += `<div class="result error" style="display:block; font-size:12px;">${d.warnings.map(cpEscape).join('<br>')}</div>`;
+                }
+                out.innerHTML = html;
+                out.querySelectorAll('.cp-mod-head').forEach(head => {
+                    head.addEventListener('click', () => cpToggleModule(head.closest('.cp-mod-card'), userid, appcode));
+                });
+                cpSaveState();
             } catch (e) {
                 out.innerHTML = `<div class="result error" style="display:block;">查询失败: ${cpEscape(e.message)}</div>`;
+                cpSaveState();
             }
-            cpSaveState();
-        }
-
-        // «重新拉取»: 忽略缓存重新走库
-        function cpReloadModules() {
-            const uid = parseInt(document.getElementById('cp-userid').value);
-            if (isNaN(uid) || uid <= 0) {
-                document.getElementById('cp-module-result').innerHTML =
-                    '<div class="result error" style="display:block;">玩家ID格式错误</div>';
-                return;
-            }
-            cpLoadModules(true);
         }
 
         // 展开/收起模块; 首次展开才拉明细
@@ -1746,21 +1572,12 @@
             body.style.display = 'block';
             arrow.textContent = '▾';
             if (body.dataset.loaded === '1') return;
-            const module = decodeURIComponent(card.dataset.module);
-            // 明细也吃缓存: 命中就省一次往返 («重新拉取» 已把明细一并清掉)
-            const cached = ((cpCacheHit(userid, appcode) || {}).details || {})[module];
-            if (cached) {
-                body.innerHTML = cpRenderModuleDetail(cached);
-                body.dataset.loaded = '1';
-                cpBindDetailClicks(body, userid, appcode, module);
-                return;
-            }
             body.innerHTML = '<p>加载中...</p>';
+            const module = decodeURIComponent(card.dataset.module);
             try {
                 const r = await cpPost('/api/cp-data/direct/module',
                     { userid: userid, appcode: appcode, module: module });
                 if (!r.success) throw new Error(r.message);
-                cpCacheDetail(module, r.data);
                 body.innerHTML = cpRenderModuleDetail(r.data);
                 body.dataset.loaded = '1';
                 cpBindDetailClicks(body, userid, appcode, module);
@@ -1961,7 +1778,6 @@
 
         // 写入后刷新已展开的模块明细（失效 + 若展开则重拉）
         async function cpRefreshModule(userid, appcode, module) {
-            cpCacheDropDetail(module);      // 刚改过, 缓存必然过期
             const card = document.querySelector(`.cp-mod-card[data-module="${encodeURIComponent(module)}"]`);
             if (!card) return;
             const body = card.querySelector('.cp-mod-body');
@@ -1971,7 +1787,6 @@
             try {
                 const r = await cpPost('/api/cp-data/direct/module', { userid, appcode, module });
                 if (r.success) {
-                    cpCacheDetail(module, r.data);
                     body.innerHTML = cpRenderModuleDetail(r.data);
                     body.dataset.loaded = '1';
                     cpBindDetailClicks(body, userid, appcode, module);
@@ -2176,82 +1991,6 @@
         }
 
         // ---- CP 面板状态缓存 (localStorage, 刷新还原) ----
-        // ---- 获取装载迁移数据: 走本机 chunkSvr 调试口 (只读干跑, 见 MigrationRoute.py) ----
-
-        async function migFetch() {
-            const userid = parseInt(document.getElementById('mig-userid').value);
-            const out = document.getElementById('mig-result');
-            if (isNaN(userid) || userid <= 0) {
-                out.innerHTML = '<div class="result error" style="display:block;">玩家ID格式错误</div>';
-                return;
-            }
-            out.innerHTML = '<p>获取中...（chunkSvr 判定 + 采集 5 项 + 组装载荷）</p>';
-            try {
-                const r = await cpPost('/api/migration/dryrun', { userid: userid });
-                if (!r.success) throw new Error(r.message);
-                migRender(r.data);
-            } catch (e) {
-                out.innerHTML = '<div class="result error" style="display:block;">获取失败: '
-                    + cpEscape(e.message) + '</div>';
-            }
-        }
-
-        function migClear() {
-            document.getElementById('mig-result').innerHTML = '';
-        }
-
-        function migRender(d) {
-            const out = document.getElementById('mig-result');
-            const p = d.payload_obj || null;
-            if (!p) {
-                out.innerHTML = '<div class="result error" style="display:block;">载荷解析失败</div><pre class="cp-json-block">'
-                    + cpEscape(d.payload || '') + '</pre>';
-                return;
-            }
-            const judge = p.judge || {};
-            const data = p.data || {};
-            const tierDesc = {
-                0: '皆无 → 非 Lua 玩家（CP 侧只置状态门）',
-                1: '金币 > 0 → Lua 老玩家',
-                2: '金币 = 0 且（经验 > 0 或 有时限装扮）→ Lua 老玩家'
-            };
-            const badge = (txt, bg, fg) =>
-                `<span style="font-size:12px; padding:2px 8px; border-radius:3px; background:${bg}; color:${fg};">${txt}</span>`;
-            let html = '';
-            html += '<h3 class="cp-section-title">判定结果</h3>';
-            html += '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">';
-            html += badge('档位 ' + p.tier, p.tier ? '#eef4ff' : '#f2f2f2', p.tier ? '#1a4f9c' : '#666');
-            html += badge(p.isLua ? 'isLua = true' : 'isLua = false',
-                p.isLua ? '#eefaf0' : '#f2f2f2', p.isLua ? '#1a7a3d' : '#666');
-            html += badge('金币 ' + p.gold, '#fff8e1', '#856404');
-            html += badge('经验 ' + (judge.experience || 0), '#fff8e1', '#856404');
-            html += badge('有时限装扮 ' + (judge.timeLimitedDeco || 0), '#fff8e1', '#856404');
-            html += badge('拥有装扮 ' + (judge.ownedDeco || 0), '#f2f2f2', '#666');
-            html += badge('载荷 ' + d.len + ' 字节', '#f2f2f2', '#666');
-            html += '</div>';
-            html += `<p style="font-size:12px; color:#888; margin:0 0 12px;">档位语义：${tierDesc[p.tier] || '未知'}</p>`;
-
-            html += '<h3 class="cp-section-title">组装载荷（推送 CP 的 req.data 原文）</h3>';
-            html += '<pre class="cp-json-block" id="mig-payload-raw">' + cpEscape(d.payload) + '</pre>';
-
-            html += '<h3 class="cp-section-title">data 五项明细</h3>';
-            const items = [
-                ['newdeposit 金币', data.newdeposit],
-                ['tqvip 荣耀特权', data.tqvip],
-                ['tqmonthcard 周月卡', data.tqmonthcard],
-                ['newplayerdailygift 新手日礼', data.newplayerdailygift],
-                ['costume 装扮', data.costume],
-            ];
-            for (const [name, val] of items) {
-                html += `<details style="margin-bottom:6px; border:1px solid #ddd; border-radius:6px;">`
-                    + `<summary style="padding:6px 10px; cursor:pointer; font-weight:bold;">${cpEscape(name)}</summary>`
-                    + '<pre class="cp-json-block">' + cpEscape(JSON.stringify(val === undefined ? null : val, null, 2)) + '</pre>'
-                    + '</details>';
-            }
-            html += `<p style="font-size:12px; color:#888;">数据源：${cpEscape(d.source || '')}</p>`;
-            out.innerHTML = html;
-        }
-
         const CP_CACHE_KEY = 'cpDataPanelState';
 
         function cpSaveState() {
@@ -2269,7 +2008,8 @@
                 reqSelect: document.getElementById('cp-req-select').value,
                 reqParams: document.getElementById('cp-req-params-group').style.display === 'none' ? null : document.getElementById('cp-req-params').value,
                 reqResultHtml: document.getElementById('cp-req-result').innerHTML,
-                // 注: CP 数据列表改由 cpDataCache 存「数据」并在还原时重渲染, 不再存 HTML 快照
+                // 查询结果 (含 html 快照, 刷新直接回显)
+                moduleResultHtml: document.getElementById('cp-module-result').innerHTML,
                 redisResultHtml: document.getElementById('cp-redis-result')?.innerHTML,
                 mysqlResultHtml: document.getElementById('cp-mysql-result')?.innerHTML,
                 configResultHtml: document.getElementById('cp-config-result').innerHTML,
@@ -2284,17 +2024,7 @@
             if (!state) return;
             cpFillConfigOptions();
             if (state.userid) document.getElementById('cp-userid').value = state.userid;
-            if (state.appcode) {
-                // 静态下拉只有 xzmp; 若上次的缩写不在选项里先补一个, 否则 sel.value 赋值会静默落空
-                const sel = document.getElementById('cp-appcode');
-                if (!Array.from(sel.options).some(o => o.value === state.appcode)) {
-                    const opt = document.createElement('option');
-                    opt.value = state.appcode;
-                    opt.textContent = state.appcode;
-                    sel.appendChild(opt);
-                }
-                sel.value = state.appcode;
-            }
+            if (state.appcode) document.getElementById('cp-appcode').value = state.appcode;
             if (state.configModule) document.getElementById('cp-config-module').value = state.configModule;
             if (state.configAppcode) document.getElementById('cp-config-appcode').value = state.configAppcode;
             if (state.reqUserid) document.getElementById('cp-req-userid').value = state.reqUserid;
@@ -2310,20 +2040,15 @@
                 }
             }
             if (state.reqResultHtml) document.getElementById('cp-req-result').innerHTML = state.reqResultHtml;
+            if (state.moduleResultHtml) document.getElementById('cp-module-result').innerHTML = state.moduleResultHtml;
             if (state.configResultHtml) document.getElementById('cp-config-result').innerHTML = state.configResultHtml;
-            // CP 数据列表: 从数据缓存重渲染 (不用 HTML 快照 -> 事件绑定完好, 模块点开仍可用)
-            const dcache = cpCacheHit(parseInt(state.userid), state.appcode);
-            if (dcache) cpRenderModules(dcache.data, dcache.userid, dcache.appcode);
-            else cpCacheHint();
         }
 
         // 输入即存 (结果在查询完成时存); CP 数据 tab 内改玩家ID -> 防抖自动重查
         document.addEventListener('input', (e) => {
             if (e.target.id && e.target.id.startsWith('cp-')) cpSaveState();
-            if (e.target.id === 'cp-userid') {
-                cpCacheHint(); // 玩家ID 变了, 缓存提示按新输入重算 (否则会显示上一个玩家的时间)
-                if (document.getElementById('cpdata').classList.contains('active')) cpScheduleReload();
-            }
+            if (e.target.id === 'cp-userid' &&
+                document.getElementById('cpdata').classList.contains('active')) cpScheduleReload();
         });
         document.getElementById('cp-appcode').addEventListener('change', () => {
             cpSaveState();
@@ -2574,20 +2299,12 @@
 
         // 页面加载完成后执行
         document.addEventListener('DOMContentLoaded', () => {
-            // 还原上次所在分组 + 组内页签。
-            // 「某 tab 是否可用」按 DOM 实际 hidden 判定, 不再写死 —— 否则刚放出来的 cpdata
-            // 会被误判成隐藏而兜底跳 points (旧 bug: CP_TABS_HIDDEN=true 的遗留)。
-            const savedGroup = localStorage.getItem('depositActiveGroup');
-            const tabBtn = (id) => Array.from(document.querySelectorAll('.tab-button'))
-                .find(b => (b.getAttribute('onclick') || '').indexOf(`switchTab('${id}')`) >= 0);
-            const tabVisible = (id) => { const b = tabBtn(id); return !!b && !b.hidden; };
-            // 分组 tab 分别缓存: 取上次分组自己的缓存 tab (旧单键 depositActiveTab 由 tabCacheMap 自动迁移)
-            const gid = (savedGroup && document.getElementById('group-' + savedGroup)) ? savedGroup : 'creator';
-            let safeTab = tabCacheGet(gid);
-            if (!safeTab || TAB_GROUP[safeTab] !== gid || !tabVisible(safeTab)) { // 缓存缺失/已隐藏 -> 该组第一个可见 tab
-                safeTab = Object.keys(TAB_GROUP).find(t => TAB_GROUP[t] === gid && tabVisible(t)) || 'points';
-            }
-            switchTab(safeTab, true); // 还原上次所在分组 + 该组 tab (skipClear 保留缓存结果回显)
+            const CP_TABS_HIDDEN = true; // CP tab 隐藏期: 缓存兜底跳 points (恢复 CP 时改 false)
+            const savedTab = localStorage.getItem('depositActiveTab');
+            const cpTabs = ['cpdata', 'cpconfig', 'cprequest'];
+            const safeTab = savedTab && TAB_GROUP[savedTab] && !(CP_TABS_HIDDEN && cpTabs.includes(savedTab))
+                ? savedTab : 'points';
+            switchTab(safeTab, true); // 还原上次 tab (skipClear 保留缓存结果回显)
             cpFillConfigOptions(); // 模块配置下拉
             cpFillReqOptions();    // 模拟请求下拉
             cpRestoreState();    // CP 面板状态还原 (输入 + 上次查询结果)

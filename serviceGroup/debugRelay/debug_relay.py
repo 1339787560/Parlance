@@ -49,6 +49,9 @@ import uvicorn
 
 from pydantic import BaseModel
 
+# CP 测试面 schema (模块 -> req 清单 + 参数样例): 单一真相源 cp_schema.py
+from cp_schema import cp_catalog, find_req
+
 
 # ---- Config ----
 
@@ -117,6 +120,10 @@ class MsgType:
     # Relay -> Game (Device 模拟, 真机无 eval 的代码通道)
     DEVICE = "device"                    # Relay -> Game: 设备模拟/抓取/诊断 (action + payload)
     DEVICE_RESULT = "device_result"      # Game -> Relay: 设备操作结果
+
+    # CP 模拟 client_request (真机/预览通用; 客户端带全局登录态, 不依赖 db9 五元组)
+    CP_REQUEST = "cp_request"            # Relay -> Game: {module, req, params}
+    CP_RESULT = "cp_result"              # Game -> Relay: {module, req, ok, resp, userid, appcode}
 
 
 # ---- State ----
@@ -2439,6 +2446,11 @@ async def handle_game_message(msg: dict, ctx: ClientCtx):
         _resolve_response_future(ctx, MsgType.DEVICE_RESULT, msg)
         await _send_to_subscribers(cid, _stamp(msg, cid))
 
+    elif msg_type == MsgType.CP_RESULT:
+        # game → relay CP client_request 结果（代码通道, 客户端带全局登录态）: resolve + 转发
+        _resolve_response_future(ctx, MsgType.CP_RESULT, msg)
+        await _send_to_subscribers(cid, _stamp(msg, cid))
+
     # eval 结果：resolve REST 等待中的 future（无 type 字段，靠 eval_result 判断），再转发
     if "eval_result" in msg:
         _resolve_response_future(ctx, MsgType.EVAL, msg)
@@ -2750,6 +2762,67 @@ async def api_device(req: DeviceRequest, client: Optional[str] = None):
     if req.payload:
         msg["payload"] = req.payload
     return await _send_game_and_await(msg, MsgType.DEVICE_RESULT, ctx, timeout=8.0)
+
+
+# ---- CP 模拟 client_request（Test 面板「全局 CP」；真机可用, 不依赖 db9） ----
+
+@app.get("/api/cp/modules")
+async def api_cp_modules():
+    """CP 模块/req 清单 + 参数样例（单一真相源 cp_schema.py, 不依赖客户端）。
+
+    形状与 /api/debug-index 同构: namespaces['cp.<module>']['<req>'] = {arity,desc,category,ro,params}。
+    params 为 dict（命名参数 -> 样例值）; ro=False 为写操作（UI 标 [写], 只用测试账号）。
+    """
+    return cp_catalog()
+
+
+class CpCallRequest(BaseModel):
+    """POST /api/cp/call 请求体。"""
+    module: str
+    req: str
+    params: Optional[dict] = None
+    client: Optional[str] = None
+    timeout: float = 18.0
+
+
+@app.post("/api/cp/call")
+async def api_cp_call(body: CpCallRequest):
+    """在所选客户端模拟一次 CP client_request（代码通道, 真机可用）。
+
+    body: {"module","req","params"?,"client"?,"timeout"?}
+    客户端收到 {type:'cp_request'} 后调 ct.CommonCPInterFace.client_request(module, cb, {req,...params}),
+    src 由客户端全局登录态自动填充 → 过 CheckRequest → 回 {type:'cp_result'}。
+
+    白名单: module/req 必须命中 cp_schema; 未登记直接 400（不做名称纠正, req 大小写敏感）。
+    """
+    module = (body.module or "").strip()
+    req_name = (body.req or "").strip()
+    if not find_req(module, req_name):
+        return JSONResponse(
+            {"ok": False, "error": f"未登记的 module/req: {module}/{req_name}"}, status_code=400,
+        )
+    ctx, err = _resolve_client(body.client)
+    if err:
+        return err
+    msg = {
+        "type": MsgType.CP_REQUEST,
+        "module": module,
+        "req": req_name,
+        "params": body.params or {},
+    }
+    res = await _send_game_and_await(msg, MsgType.CP_RESULT, ctx, timeout=max(float(body.timeout or 18.0), 5.0))
+    if isinstance(res, JSONResponse):
+        return res
+    return {
+        "ok": bool(res.get("ok", True)),
+        "client_id": ctx.id,
+        "module": module,
+        "req": req_name,
+        "userid": res.get("userid"),
+        "appcode": res.get("appcode"),
+        "data": res.get("resp"),
+        "error": res.get("error"),
+    }
 
 
 @app.get("/api/scene_tree")

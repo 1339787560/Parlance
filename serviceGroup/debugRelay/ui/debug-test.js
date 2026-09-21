@@ -80,8 +80,9 @@ const TEST_CATEGORY_ORDER = [
     'plugin.dingQueFly', 'plugin.autotest', 'plugin.other', 'device', 'meta', 'other',
 ];
 
-let testCatalog = null;
-let testExpanded = {};  // name -> true/false
+let testCatalog = null;     // 客户端注入的测试接口目录（/api/debug-index）
+let testCatalogCp = null;   // 全局 CP schema（/api/cp/modules, relay 本地, 不依赖客户端）
+let testExpanded = {};      // name -> true/false
 
 function testSetStatus(text, isError) {
     const el = document.getElementById('test-status');
@@ -91,43 +92,66 @@ function testSetStatus(text, isError) {
 }
 
 function testOnTabShow() {
+    testInitSplitter();
     testRefresh();
 }
 
 function testResetPanel() {
     testCatalog = null;
+    testCatalogCp = null;
     testExpanded = {};
     const list = document.getElementById('test-list');
     if (list) list.innerHTML = '<div class="events-empty">选择客户端后点击刷新查看测试接口</div>';
 }
 
 async function testRefresh() {
-    if (!selectedClient) {
-        testSetStatus('请先选择客户端', true);
-        return;
-    }
-    testSetStatus('拉取测试接口目录...');
     const env = document.getElementById('test-env').value || '';
-    const params = new URLSearchParams();
-    if (selectedClient) params.set('client', selectedClient);
-    if (env) params.set('env', env);
+    const notes = [];
+
+    // 1) 全局 CP schema（relay 本地, 不依赖客户端 → 没选客户端也能列目录）
+    testSetStatus('拉取目录...');
     try {
-        const resp = await fetch('/api/debug-index?' + params.toString());
+        const resp = await fetch('/api/cp/modules');
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-        testCatalog = data;
-        testPopulateSubcategories();
-        testRender();
-        testSetStatus(`已加载 ${data.count || 0} 个测试接口`);
+        testCatalogCp = data;
+        notes.push(`CP ${data.count || 0} req`);
     } catch (e) {
-        testCatalog = null;
-        const list = document.getElementById('test-list');
-        if (list) list.innerHTML = `<div class="events-empty">加载失败: ${escapeHtml(e.message)}</div>`;
-        testSetStatus('加载失败', true);
+        testCatalogCp = null;
+        notes.push('CP 加载失败: ' + e.message);
     }
+
+    // 2) 客户端注入的测试接口目录（需已选客户端）
+    if (selectedClient) {
+        const params = new URLSearchParams();
+        params.set('client', selectedClient);
+        if (env) params.set('env', env);
+        try {
+            const resp = await fetch('/api/debug-index?' + params.toString());
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+            testCatalog = data;
+            notes.push(`${data.count || 0} 个测试接口`);
+        } catch (e) {
+            testCatalog = null;
+            notes.push('接口目录: ' + e.message);
+        }
+    } else {
+        testCatalog = null;
+        notes.push('未选客户端');
+    }
+
+    testPopulateSubcategories();
+    testRender();
+    if (!testCatalog && !testCatalogCp) {
+        const list = document.getElementById('test-list');
+        if (list) list.innerHTML = '<div class="events-empty">无可用目录（CP 加载失败且未选客户端）</div>';
+    }
+    testSetStatus(notes.join(' · '), !testCatalog && !testCatalogCp);
 }
 
 function testCategoryOf(ns) {
+    if (ns === 'cp' || ns.startsWith('cp.')) return 'cp';
     return ns === 'agent' || ns.startsWith('agent.') ? 'agent' : 'user';
 }
 
@@ -149,6 +173,9 @@ function testFlattenCatalog(catalog) {
                 scope: testCategoryOf(ns),
                 category: meta.category || 'other',
                 params: Array.isArray(meta.params) ? meta.params : [],
+                // CP: params 是 dict(命名参数 -> 样例值) → 命名表单; 客户端接口是数组 → 位置表单
+                paramsObj: (meta.params && typeof meta.params === 'object' && !Array.isArray(meta.params)) ? meta.params : null,
+                ro: meta.ro === false ? false : true,
                 origName: meta.origName || '',
                 aliases: Array.isArray(meta.aliases) ? meta.aliases : [],
             });
@@ -156,6 +183,11 @@ function testFlattenCatalog(catalog) {
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
     return out;
+}
+
+/** 合并两个来源（客户端注入的测试接口 + 全局 CP），供渲染与子分类共用。 */
+function testAllItems() {
+    return [...testFlattenCatalog(testCatalog), ...testFlattenCatalog(testCatalogCp)];
 }
 
 function testParamHints(name, fallbackParams, arity) {
@@ -185,8 +217,8 @@ function testOnCategoryChange() {
 
 function testPopulateSubcategories() {
     const sel = document.getElementById('test-subcategory');
-    if (!sel || !testCatalog) return;
-    const all = testFlattenCatalog(testCatalog);
+    if (!sel || (!testCatalog && !testCatalogCp)) return;
+    const all = testAllItems();
     const scope = document.getElementById('test-category').value || 'all';
     const env = document.getElementById('test-env').value || '';
     let items = env ? all.filter(x => x.env === env || x.env === 'both') : all;
@@ -207,8 +239,8 @@ function testPopulateSubcategories() {
 function testRender() {
     const list = document.getElementById('test-list');
     if (!list) return;
-    if (!testCatalog) return;
-    const all = testFlattenCatalog(testCatalog);
+    if (!testCatalog && !testCatalogCp) return;
+    const all = testAllItems();
     const q = (document.getElementById('test-search').value || '').trim().toLowerCase();
     const scope = document.getElementById('test-category').value || 'all';
     const subcategory = document.getElementById('test-subcategory').value || '';
@@ -225,6 +257,10 @@ function testRender() {
         return;
     }
     const sections = [];
+    if (scope === 'all' || scope === 'cp') {
+        const cpItems = filtered.filter(x => x.scope === 'cp');
+        if (cpItems.length) sections.push({ title: '全局 CP（client_request · 打到所选客户端）', items: cpItems });
+    }
     if (scope === 'all' || scope === 'agent') {
         const agentItems = filtered.filter(x => x.scope === 'agent');
         if (agentItems.length) sections.push({ title: 'Agent 接口', items: agentItems });
@@ -243,14 +279,30 @@ function testRender() {
 
 function testRenderItem(item) {
     const expanded = !!testExpanded[item.name];
-    const hints = testParamHints(item.name, item.params, item.arity);
-    const paramsHtml = item.arity > 0 ? hints.map((p, i) => `
+    const isCp = item.scope === 'cp';
+    let paramsHtml;
+    if (isCp) {
+        // CP: 命名参数（键 -> 样例值）, 留空 = 不传该参数
+        const keys = Object.keys(item.paramsObj || {});
+        paramsHtml = keys.length ? keys.map(k => {
+            const sample = JSON.stringify(item.paramsObj[k]);
+            return `
+        <div class="test-param">
+            <div class="test-param-label">参数 · <b>${escapeHtml(k)}</b></div>
+            <div class="test-param-meta">样例默认值：${escapeHtml(sample)}（留空 = 不传该参数）</div>
+            <input class="test-param-input" data-param-key="${escapeHtml(k)}" placeholder="${escapeHtml(sample)}" />
+        </div>`;
+        }).join('') : '<div class="test-param-empty">无需参数，直接运行</div>';
+    } else {
+        const hints = testParamHints(item.name, item.params, item.arity);
+        paramsHtml = item.arity > 0 ? hints.map((p, i) => `
         <div class="test-param">
             <div class="test-param-label">参数 ${i + 1} · <b>${escapeHtml(p.name)}</b></div>
             <div class="test-param-meta">含义：${escapeHtml(p.desc)} · 范围：${escapeHtml(p.range)}</div>
             <input class="test-param-input" data-param-index="${i}" placeholder="输入值（JSON / 数字 / 字符串）" />
         </div>
     `).join('') : '<div class="test-param-empty">无需参数，直接运行</div>';
+    }
     const aliasNames = [item.origName, ...(item.aliases || [])].filter(Boolean).filter(x => x !== item.fn);
     const aliasHtml = aliasNames.length
         ? aliasNames.map(a => `<span class="test-item-alias" title="原函数名/别名">${escapeHtml(a)}</span>`).join('')
@@ -258,14 +310,21 @@ function testRenderItem(item) {
     const paramBadge = item.arity > 0
         ? `<span class="test-item-params-badge">⚙ 有参数 ${item.arity}</span>`
         : '<span class="test-item-params-badge no-params">无参数</span>';
+    // CP 写操作警示（发奖/扣次数/购买 → 会真改玩家数据）
+    const roBadge = (isCp && item.ro === false)
+        ? '<span class="test-item-params-badge cat-cp-write" title="写操作：会真改玩家数据，只用测试账号">写</span>'
+        : '';
+    const scopeLabel = isCp ? 'CP' : (item.scope === 'agent' ? 'Agent' : '用户');
+    const scopeCls = isCp ? 'cat-cp' : (item.scope === 'agent' ? 'cat-agent' : 'cat-user');
     return `
         <div class="test-item ${expanded ? 'test-item-open' : ''}" data-name="${escapeHtml(item.name)}">
             <div class="test-item-head" onclick="testToggleItem('${escapeHtml(item.name).replace(/'/g, "\\'")}')">
                 <span class="test-item-arrow">${expanded ? '▼' : '▶'}</span>
                 <span class="test-item-name">${escapeHtml(item.name)}</span>
                 ${aliasHtml}
-                <span class="test-item-cat ${item.scope === 'agent' ? 'cat-agent' : 'cat-user'}">${item.scope === 'agent' ? 'Agent' : '用户'}</span>
+                <span class="test-item-cat ${scopeCls}">${scopeLabel}</span>
                 <span class="test-item-env">${escapeHtml(item.env)}</span>
+                ${roBadge}
                 ${paramBadge}
                 <button class="test-item-run" onclick="event.stopPropagation();testRunItem('${escapeHtml(item.name).replace(/'/g, "\\'")}', ${item.arity})">🚀 运行</button>
             </div>
@@ -311,10 +370,41 @@ function testCollectArgs(name, arity) {
     return args.slice(0, arity);
 }
 
+/** 收集 CP 命名参数（data-param-key）; 留空 = 不传该参数（用 CP 侧默认）。 */
+function testCollectParams(item) {
+    const params = {};
+    const inputs = item ? item.querySelectorAll('.test-param-input') : [];
+    for (const input of inputs) {
+        const key = input.dataset.paramKey;
+        if (!key) continue;
+        const raw = input.value.trim();
+        if (raw === '') continue;
+        try {
+            params[key] = JSON.parse(raw);
+        } catch (_) {
+            params[key] = raw;
+        }
+    }
+    return params;
+}
+
+/** 结果格式化: JSON 美化 + 截断（对象 / JSON 字符串都吃）。maxLen=0 → 不截断（右侧结果栏用）。 */
+function testFmtJson(obj, maxLen) {
+    let text;
+    try {
+        const parsed = typeof obj === 'string' ? JSON.parse(obj) : obj;
+        text = JSON.stringify(parsed, null, 2);
+    } catch (_) {
+        text = String(obj);
+    }
+    if (text === undefined) text = String(obj);
+    const cap = maxLen === 0 ? Infinity : (maxLen || 400);
+    return text.length > cap ? text.slice(0, cap) + ' …' : text;
+}
+
 async function testRunItem(name, arity) {
+    const item = Array.from(document.querySelectorAll('.test-item')).find(x => x.dataset.name === name);
     if (arity > 0) {
-        const items = document.querySelectorAll('.test-item');
-        const item = Array.from(items).find(x => x.dataset.name === name);
         const detail = item && item.querySelector('.test-item-detail');
         if (!detail || detail.classList.contains('hidden')) {
             if (!testExpanded[name]) testToggleItem(name);
@@ -322,7 +412,41 @@ async function testRunItem(name, arity) {
             return;
         }
     }
+
+    // 全局 CP: 走代码通道（/api/cp/call → 客户端 ct.CommonCPInterFace.client_request）
+    if (name.startsWith('cp.')) {
+        const parts = name.split('.');
+        const module = parts[1];
+        const req = parts[2];
+        const params = testCollectParams(item);
+        const t0 = Date.now();
+        testToast(`正在模拟 ${module} / ${req} ...`, false, true);
+        try {
+            const resp = await fetch('/api/cp/call', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ module, req, params, client: selectedClient }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+            if (data.ok === false) throw new Error(data.error || 'CP 返回空响应');
+            const meta = `请求: ${JSON.stringify(params)}`
+                + `\n命中: userid=${data.userid ?? '?'} · appcode=${data.appcode ?? '?'} · client=${data.client_id ?? '?'}`
+                + `\n耗时: ${Date.now() - t0}ms`;
+            testToast(`✓ ${module} / ${req}`);
+            testShowResult({ ok: true, title: `${module} / ${req}`, meta, body: testFmtJson(data.data, 200000) });
+        } catch (e) {
+            testToast(`✗ ${module} / ${req} 失败：${e.message}`, true);
+            testShowResult({
+                ok: false, title: `${module} / ${req}`,
+                meta: `请求: ${JSON.stringify(params)}`, body: e.message,
+            });
+        }
+        return;
+    }
+
     const args = testCollectArgs(name, arity);
+    const t0 = Date.now();
     testToast(`正在调用 ${name} ...`, false, true);
     try {
         const resp = await fetch('/api/test-call', {
@@ -333,15 +457,118 @@ async function testRunItem(name, arity) {
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
         if (data.eval_error) throw new Error(data.eval_result || 'eval error');
-        let text = String(data.eval_result ?? 'undefined');
-        try {
-            const parsed = JSON.parse(text);
-            text = JSON.stringify(parsed, null, 2);
-        } catch (_) { /* 原样展示 */ }
-        testToast(`✓ ${name} 执行成功\n${text.length > 400 ? text.slice(0, 400) + ' …' : text}`);
+        const meta = `调用: window.${name}(${args.map(a => JSON.stringify(a === undefined ? null : a)).join(', ')})`
+            + `\n类型: ${data.eval_type ?? '?'} · client=${data.client_id ?? '?'} · 耗时: ${Date.now() - t0}ms`;
+        testToast(`✓ ${name} 执行成功`);
+        testShowResult({ ok: true, title: name, meta, body: testFmtJson(data.eval_result, 200000) });
     } catch (e) {
         testToast(`✗ ${name} 调用失败：${e.message}`, true);
+        testShowResult({ ok: false, title: name, meta: `调用: window.${name}`, body: e.message });
     }
+}
+
+// ---- 右侧结果栏 + 左右分割 ----
+
+/** 渲染一次执行的返回值到右侧结果栏（无返回值也显示状态）。 */
+function testShowResult(opts) {
+    const title = document.getElementById('test-result-title');
+    const bodyEl = document.getElementById('test-result-body');
+    if (!title || !bodyEl) return;
+    const ok = opts.ok !== false;
+    title.textContent = (ok ? '✓ ' : '✗ ') + (opts.title || '返回结果');
+    title.style.color = ok ? '#2ed573' : '#ff4757';
+    const meta = opts.meta ? `<div class="test-result-meta">${escapeHtml(opts.meta)}</div>` : '';
+    const text = (opts.body === undefined || opts.body === null || opts.body === '')
+        ? '(无返回值)' : String(opts.body);
+    bodyEl.className = 'test-result-body ' + (ok ? 'test-result-ok' : 'test-result-err');
+    bodyEl.innerHTML = meta + `<div>${escapeHtml(text)}</div>`;
+}
+
+function testClearResult() {
+    const title = document.getElementById('test-result-title');
+    const bodyEl = document.getElementById('test-result-body');
+    if (title) { title.textContent = '返回结果'; title.style.color = 'var(--dim)'; }
+    if (bodyEl) {
+        bodyEl.className = 'test-result-body test-result-empty';
+        bodyEl.textContent = '运行测试条目后，返回值显示在这里';
+    }
+}
+
+// ---- 分割占比持久化（localStorage：刷新 / 重新进入后保持） ----
+
+const TEST_SPLIT_KEY = 'debugrelay.test.splitPct';
+const TEST_SPLIT_DEFAULT = 70;   // 默认 7:3
+const TEST_SPLIT_MIN = 15;
+const TEST_SPLIT_MAX = 85;
+
+function testClampSplitPct(v) {
+    const n = Number(v);
+    if (!isFinite(n) || n <= 0) return null;
+    return Math.max(TEST_SPLIT_MIN, Math.min(TEST_SPLIT_MAX, n));
+}
+
+function testApplySplitPct(pct) {
+    const left = document.getElementById('test-list-wrap');
+    if (!left) return false;
+    const v = testClampSplitPct(pct);
+    if (v == null) return false;
+    left.style.flexBasis = v.toFixed(2) + '%';
+    return true;
+}
+
+function testSaveSplitPct(pct) {
+    const v = testClampSplitPct(pct);
+    if (v == null) return;
+    try { localStorage.setItem(TEST_SPLIT_KEY, String(v)); } catch (_) { /* 隐私模式/禁用存储：忽略 */ }
+}
+
+/** 恢复上次占比；返回生效值，无存值或不可用 → null（保持 CSS 默认 70%）。 */
+function testRestoreSplitPct() {
+    let raw = null;
+    try { raw = localStorage.getItem(TEST_SPLIT_KEY); } catch (_) { /* 忽略 */ }
+    const v = testClampSplitPct(raw);
+    if (v == null) return null;
+    return testApplySplitPct(v) ? v : null;
+}
+
+/**
+ * 左右分割条：拖拽改 #test-list-wrap 的 flex-basis（限 15%~85%），双击复位 7:3。
+ * 占比写入 localStorage，刷新与重新进入后保持。
+ */
+function testInitSplitter() {
+    const body = document.getElementById('test-body');
+    const split = document.getElementById('test-splitter');
+    const left = document.getElementById('test-list-wrap');
+    if (!body || !split || !left || split.dataset.bound) return;
+    split.dataset.bound = '1';
+    testRestoreSplitPct();   // 兜底：脚本加载早于 DOM 就位时，切 tab 时再恢复一次
+    let dragging = false;
+    const apply = (clientX) => {
+        const r = body.getBoundingClientRect();
+        if (!r.width) return;
+        const pct = Math.max(TEST_SPLIT_MIN, Math.min(TEST_SPLIT_MAX, ((clientX - r.left) / r.width) * 100));
+        left.style.flexBasis = pct.toFixed(2) + '%';
+    };
+    split.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        split.classList.add('dragging');
+        try { split.setPointerCapture(e.pointerId); } catch (_) { /* 忽略 */ }
+        e.preventDefault();
+    });
+    split.addEventListener('pointermove', (e) => { if (dragging) apply(e.clientX); });
+    const stop = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        split.classList.remove('dragging');
+        try { split.releasePointerCapture(e.pointerId); } catch (_) { /* 忽略 */ }
+        testSaveSplitPct(parseFloat(left.style.flexBasis));   // 拖拽结束落盘
+    };
+    split.addEventListener('pointerup', stop);
+    split.addEventListener('pointercancel', stop);
+    split.addEventListener('dblclick', () => {
+        left.style.flexBasis = TEST_SPLIT_DEFAULT + '%';
+        testSaveSplitPct(TEST_SPLIT_DEFAULT);
+    });
 }
 
 // ---- Toast ----
@@ -374,8 +601,20 @@ function testToast(message, isError, keep) {
     style.textContent = `
         #panel-test { flex-direction: column; }
         #test-toolbar { display:flex; gap:8px; align-items:center; padding:6px 8px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
-        #test-body { padding:8px; overflow:auto; }
+        #test-body { display:flex; flex:1 1 auto; min-height:0; overflow:hidden; }
+        #test-list-wrap { flex:0 0 70%; min-width:140px; overflow:auto; padding:8px; }
         #test-list { width:100%; }
+        #test-splitter { flex:0 0 6px; cursor:col-resize; background:var(--border); transition:background .12s; }
+        #test-splitter:hover, #test-splitter.dragging { background:var(--accent, #4a9eff); }
+        #test-result { flex:1 1 0; min-width:170px; overflow:auto; padding:8px 10px; }
+        #test-result-bar { display:flex; align-items:center; gap:8px; margin-bottom:6px; position:sticky; top:0; background:var(--bg, #1e1e1e); }
+        #test-result-title { font-weight:bold; font-size:12px; color:var(--dim); flex:1; }
+        #test-result-bar .toolbar-btn { padding:2px 8px; font-size:11px; }
+        .test-result-body { font-family:monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; }
+        .test-result-empty { color:var(--dim); font-family:inherit; }
+        .test-result-ok { border-left:3px solid #2ed573; padding-left:8px; }
+        .test-result-err { border-left:3px solid #ff4757; padding-left:8px; }
+        .test-result-meta { color:var(--dim); font-size:11px; margin-bottom:6px; white-space:pre-wrap; }
         .test-group { margin-bottom:14px; }
         .test-group-title { font-weight:bold; color:var(--dim); font-size:12px; text-transform:uppercase; margin:8px 0 6px; }
         .test-item { border:1px solid var(--border); border-radius:6px; margin-bottom:6px; overflow:hidden; }
@@ -387,6 +626,8 @@ function testToast(message, isError, keep) {
         .test-item-cat { border-radius:3px; padding:0 5px; font-size:10px; }
         .cat-agent { background:rgba(46,213,115,.15); color:#2ed573; }
         .cat-user { background:rgba(74,158,255,.15); color:var(--accent, #4a9eff); }
+        .cat-cp { background:rgba(255,165,0,.15); color:#ffa502; }
+        .cat-cp-write { background:rgba(255,71,87,.15); color:#ff4757; }
         .test-item-env { background:rgba(255,255,255,.08); color:var(--dim); border-radius:3px; padding:0 4px; font-size:10px; }
         .test-item-arity { color:var(--dim); font-size:10px; }
         .test-item-alias { background:rgba(255,193,7,.12); color:#ffc107; border-radius:3px; padding:0 4px; font-size:10px; }
@@ -410,3 +651,10 @@ function testToast(message, isError, keep) {
     `;
     document.head.appendChild(style);
 })();
+
+// 打开页面即恢复上次的分割占比（早于切到 Test tab，避免先闪默认 7:3 再跳变）
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => testRestoreSplitPct(), { once: true });
+} else {
+    testRestoreSplitPct();
+}

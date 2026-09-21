@@ -99,17 +99,29 @@ pub const PRICING_VERSION: &str = "2026-09-10-v4-cny";
 /// 官方公告：此后至 V4.1 Pro 上线前，deepseek-v4-pro 请求全部路由到 V4.1 Flash 并按 Flash 计费。
 pub const PRO_RETIRE_TS: &str = "2026-09-14T12:00:00";
 
-/// 将 Claude 模型名映射为 DeepSeek V4 模型名。
-pub fn map_model(m: &str) -> &str {
+/// 将 Claude 模型名映射为 DeepSeek V4 模型名，并做 V4 次版本归一。
+///
+/// 归一 (`deepseek-v4.<minor>-<tier>` → `deepseek-v4-<tier>`)：model 列是看板
+/// 聚合主键，次版本（v4.1 于 2026-09-14 上线）只代表档位内升级，若各占一桶，
+/// 前端按 model 字符串 GROUP 时用量会被劈开 —— v4.1-flash 曾整段从 24h 视图
+/// "消失"（911 条 / ¥13.89），而成本其实一直按 Flash 档算对了。
+/// 价格档/credits 仍按 tier 判定（`get_pricing` / `get_credits` 只看 flash|pro）。
+pub fn map_model(m: &str) -> String {
     for (pat, repl) in MODEL_MAP {
         if let Ok(re) = regex::Regex::new(pat) {
             if re.is_match(m) {
-                return repl;
+                return (*repl).to_string();
             }
         }
     }
-    // deepseek-v4-* 最新名透传，其余回退 deepseek-v4-flash（对齐旧逻辑）
-    m
+    // V4 次版本归一: deepseek-v4.<minor>-<tier> → deepseek-v4-<tier> (统一小写主键)
+    if let Ok(re) = regex::Regex::new(r"(?i)^deepseek-v4\.\d+-(.+)$") {
+        if let Some(c) = re.captures(m) {
+            return format!("deepseek-v4-{}", c[1].to_lowercase());
+        }
+    }
+    // 其余 deepseek-v4-* 最新名透传
+    m.to_string()
 }
 
 /// 取模型价格档。deepseek-v4-pro → Pro；其余（flash/chat/reasoner 旧别名）→ Flash。
@@ -416,6 +428,26 @@ mod tests {
     fn map_v4_passthrough() {
         assert_eq!(map_model("deepseek-v4-flash"), "deepseek-v4-flash");
         assert_eq!(map_model("deepseek-v4-pro"), "deepseek-v4-pro");
+    }
+
+    /// V4 次版本归一：v4.1-* 归到对应 tier 桶（2026-09-14 v4.1 上线后 911 条
+    /// 用量曾因主键名不同而从 24h 视图消失）。
+    #[test]
+    fn map_v4_minor_to_tier_bucket() {
+        assert_eq!(map_model("deepseek-v4.1-flash"), "deepseek-v4-flash");
+        assert_eq!(map_model("deepseek-v4.1-pro"), "deepseek-v4-pro");
+        assert_eq!(map_model("deepseek-v4.1-flash-0731"), "deepseek-v4-flash-0731");
+        assert_eq!(map_model("DeepSeek-V4.2-Pro"), "deepseek-v4-pro");  // 大小写不敏感 + 主键归一为小写
+        // 已知别名映射优先于归一
+        assert_eq!(map_model("claude-3-5-sonnet-20241022"), "deepseek-v4-flash");
+    }
+
+    /// 归一后价格/credits 档不受影响（都只看 tier 关键词）。
+    #[test]
+    fn normalized_model_keeps_pricing_tier() {
+        let normalized = map_model("deepseek-v4.1-flash");
+        assert_eq!(get_pricing(&normalized).miss, PRICING_FLASH.miss);
+        assert_eq!(get_credits(&normalized).input, CREDITS_FLASH.input);
     }
 
     #[test]
