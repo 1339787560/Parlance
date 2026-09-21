@@ -1753,6 +1753,8 @@
                                             <p>类型: ${serviceInfo.type}</p>
                                             <p>可执行文件: ${serviceInfo.exe}</p>
                                             <p>端口: ${serviceInfo.ports || 'N/A'}</p>
+                                            <p>exe 修改时间: <span class="svc-exe-mtime">${fmtTs(serviceInfo.exe_mtime)}</span></p>
+                                            <p>最后更新: <span class="svc-updated">${fmtTs(serviceInfo.updated_at)}</span></p>
                                             <div class="status ${statusClass}">${serviceInfo.status}</div>
                                         </div>
                                         <div class="service-actions">
@@ -1788,6 +1790,15 @@
         }
 
         let lastServiceFingerprint = '';
+
+        // Unix 秒 → 本地 YYYY-MM-DD HH:MM:SS (空值显示 —)
+        function fmtTs(ts) {
+            if (ts === null || ts === undefined || ts === '') return '—';
+            const d = new Date(Number(ts) * 1000);
+            if (isNaN(d.getTime())) return '—';
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        }
 
         function statusClassFor(status) {
             if (status === '运行中') return 'status-running';
@@ -1832,6 +1843,10 @@
                     badge.className = 'status ' + statusClassFor(info.status);
                     badge.textContent = info.status;
                 }
+                const em = item.querySelector('.svc-exe-mtime');
+                if (em) em.textContent = fmtTs(info.exe_mtime);
+                const up = item.querySelector('.svc-updated');
+                if (up) up.textContent = fmtTs(info.updated_at);
                 const wasDeployed = item.dataset.deployed === '1';
                 if (wasDeployed !== isDeployed) {
                     item.dataset.deployed = isDeployed ? '1' : '0';

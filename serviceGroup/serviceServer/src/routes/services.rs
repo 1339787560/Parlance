@@ -17,6 +17,46 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+/// 「最后更新」口径纳入的产物扩展名 (只看这些, 免得日志/缓存/临时文件扰动)。
+const ARTIFACT_EXTS: &[&str] = &["exe", "pdb", "dll", "ini", "json", "lua", "html", "js", "css", "png"];
+
+/// SystemTime → Unix 秒 (前端按本地时区格式化; Rust 侧不引日期库)。
+fn epoch_secs(t: std::time::SystemTime) -> Option<u64> {
+    t.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+}
+
+/// 单文件 mtime (Unix 秒); 不存在/不可读 → None。
+fn mtime_epoch(p: &std::path::Path) -> Option<u64> {
+    std::fs::metadata(p).ok()?.modified().ok().and_then(epoch_secs)
+}
+
+/// 服务目录内**产物文件**的最晚修改时间 (非递归, 只 stat 一级文件)。
+///
+/// 「最后更新」= 该服务产物最近一次被写盘的时间: 整包直推 (非 exe 就地替换) 与
+/// multipart 热更新都会刷新被替换文件的 mtime, 因此它就是「这服务上次被更新」。
+/// 不看子目录 (日志/缓存/target 都在子目录或不在白名单内)。
+fn newest_artifact_epoch(dir: &std::path::Path) -> Option<u64> {
+    let mut newest: Option<u64> = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let p = entry.path();
+        let ext_ok = p
+            .extension()
+            .and_then(|x| x.to_str())
+            .map(|x| x.to_lowercase())
+            .map(|x| ARTIFACT_EXTS.iter().any(|a| *a == x))
+            .unwrap_or(false);
+        if !ext_ok {
+            continue;
+        }
+        if let Some(ts) = mtime_epoch(&p) {
+            newest = Some(newest.map_or(ts, |n: u64| n.max(ts)));
+        }
+    }
+    newest
+}
+
 /// GET /api/services/status — 全服务状态。
 pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_json::Value>> {
     state.path_map.refresh(&state.config_path)?;
@@ -31,9 +71,13 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
             .get_or_query(&svc.service_id, provider);
         // shape 对齐 legacy Service.py get_all_service_status:
         //   status / type / exe / name / display_name / path / exe_path / ports
+        //   + exe_mtime / updated_at (2026-09-21 加: 卡片展示「exe 修改时间 / 最后更新」,
+        //     均为 Unix 秒, 前端本地化; None = 无该文件 / 目录不可读)
         let display_name = format!("同城游_{}_{}", svc.name, svc.svc_type);
         let exe_path = svc.path.join(&svc.exe);
         let ports = ports_str(st, &exe_path, &svc.exe, &ports_probe);
+        let exe_mtime = mtime_epoch(&exe_path);
+        let updated_at = newest_artifact_epoch(&svc.path);
         map.insert(
             svc.service_id.clone(),
             serde_json::json!({
@@ -45,6 +89,8 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
                 "path": svc.path.display().to_string(),
                 "exe_path": exe_path.display().to_string(),
                 "ports": ports,
+                "exe_mtime": exe_mtime,
+                "updated_at": updated_at,
             }),
         );
     }
@@ -82,6 +128,9 @@ fn self_service_entry() -> (String, serde_json::Value) {
         .and_then(|n| n.to_str())
         .unwrap_or("service-server.exe")
         .to_string();
+    // 时间字段与游戏服务同口径: exe mtime + 目录内产物最晚 mtime (换代/落位后立即反映)
+    let exe_mtime = mtime_epoch(&exe_path);
+    let updated_at = exe_path.parent().and_then(newest_artifact_epoch);
     let entry = serde_json::json!({
         "status": "运行中",
         "type": SELF_SERVICE_TYPE,
@@ -91,6 +140,8 @@ fn self_service_entry() -> (String, serde_json::Value) {
         "path": path,
         "exe_path": exe_path.display().to_string(),
         "ports": SELF_SERVICE_PORT.to_string(),
+        "exe_mtime": exe_mtime,
+        "updated_at": updated_at,
         "self": true,
     });
     (self_service_id(), entry)
@@ -764,6 +815,45 @@ mod tests {
             exe_path("D:/game/", "xzmo", "server_game", "xzmoSvr.exe"),
             PathBuf::from("D:/game/xzmo/server_game/xzmoSvr.exe")
         );
+    }
+
+    /// 「最后更新」口径矩阵: 只认产物扩展名, 更新的非产物文件 (日志) 不得抬高结果。
+    #[test]
+    fn test_newest_artifact_epoch_ignores_non_artifact_newer_file() {
+        // Arrange: exe → sleep → html → sleep → log (log 最新, 但不在白名单)
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("svc.exe"), b"x").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        std::fs::write(dir.path().join("page.html"), b"y").unwrap();
+        let html_ts = mtime_epoch(&dir.path().join("page.html")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        std::fs::write(dir.path().join("svc.log"), b"z").unwrap();
+
+        // Act
+        let got = newest_artifact_epoch(dir.path());
+
+        // Assert: 取 html 的 mtime, 不被更新的 log 抬高
+        assert_eq!(got, Some(html_ts));
+    }
+
+    /// 空目录 → None (卡片显示「—」)。
+    #[test]
+    fn test_newest_artifact_epoch_empty_dir_is_none() {
+        // Arrange
+        let dir = tempfile::tempdir().unwrap();
+
+        // Act + Assert
+        assert_eq!(newest_artifact_epoch(dir.path()), None);
+    }
+
+    /// exe 不存在时 mtime 为 None (未部署服务的卡片不得显示假时间)。
+    #[test]
+    fn test_mtime_epoch_missing_file_is_none() {
+        // Arrange
+        let dir = tempfile::tempdir().unwrap();
+
+        // Act + Assert
+        assert_eq!(mtime_epoch(&dir.path().join("nope.exe")), None);
     }
 }
 

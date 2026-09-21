@@ -67,6 +67,7 @@ cargo run            # 跑 :5000 (需 config.json, 默认 cwd, 或 SERVICESVR_CO
 - 🟡 services 控制簇: start/stop/restart/delete Rust 化 (SCM ControlService + StartService + DeleteService), deploy/start-all/update 留 legacy
 - ✅ templates 簇 Rust 化 (rusqlite bundled, 复用 legacy templates.db, 3 路由 save/get/delete)
 - ✅ status shape 全对齐: display_name + exe_path + ports 真值 (PID toolhelp32 + IP Helper, 28 服务 ports 全 match legacy)
+- ✅ [2026-09-21] 卡片时间字段: `exe_mtime` (exe 文件 mtime) + `updated_at` (服务目录内产物最晚 mtime, 非递归, 白名单 exe/pdb/dll/ini/json/lua/html/js/css/png) —— 均 Unix 秒, 前端 `fmtTs` 本地化; 未部署或无产物则 null (卡片显「—」)
 - ✅ [2026-08-04] 文件访问簇放开 + download 新增: `list_files`/`get_content` 不限扩展名 (任意文件读/列, 含 exe/dll/dmp/log); 新增 `GET /api/config/file/download` (二进制兜底, 上限 200MB, RFC 5987 pct-encode 中文文件名); `save_file` 保持 ini/json/lua 白名单; error 加 `TooLarge(u64)`
 - ⬜ 货币调控留 legacy (DB 依赖)
 - ⬜ T4 PyO3 (待触发) + legacy 死功能清理
