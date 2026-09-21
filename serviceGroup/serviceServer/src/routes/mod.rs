@@ -3,7 +3,6 @@ pub mod checks;
 pub mod config_file;
 pub mod config_files;
 pub mod fetch;
-pub mod files;
 pub mod recorder;
 pub mod records;
 pub mod services;

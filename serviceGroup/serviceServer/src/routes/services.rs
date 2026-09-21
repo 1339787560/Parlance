@@ -48,7 +48,52 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
             }),
         );
     }
+    // ---- service-server 自身 (自陈列): 由本进程自报, 不来自 config.json ----
+    // 只提供「重启自身 + 修改配置」两件事, 故附 self:true 供前端渲染专用按钮
+    // (隐藏 启动/停止/更新/删除: 停掉自己入口即消失; 换代必须走 deploy 包通道)。
+    let (self_id, self_entry) = self_service_entry();
+    map.insert(self_id, self_entry);
+
     Ok(Json(serde_json::to_value(map).unwrap()))
+}
+
+/// 工具自身 (infoServer 子服务 serviceServer-rust) 的列表条目坐标。
+///
+/// 它不在 config.json 的游戏服务表里, 却要出现在同一份服务陈列中, 故由进程自报:
+/// name = service-server, type = self → service_id = service-server_self。
+pub const SELF_SERVICE_NAME: &str = "service-server";
+pub const SELF_SERVICE_TYPE: &str = "self";
+/// 工具自身监听端口 (main.rs 绑定的 :5000, 与 config.yaml serviceServer-rust.port 对齐)。
+pub const SELF_SERVICE_PORT: u16 = 5000;
+
+pub fn self_service_id() -> String {
+    format!("{SELF_SERVICE_NAME}_{SELF_SERVICE_TYPE}")
+}
+
+/// 工具自身展示条目: 状态恒为「运行中」(本响应正由它发出), 端口与可执行文件自报。
+fn self_service_entry() -> (String, serde_json::Value) {
+    let exe_path = std::env::current_exe().unwrap_or_default();
+    let path = exe_path
+        .parent()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let exe = exe_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("service-server.exe")
+        .to_string();
+    let entry = serde_json::json!({
+        "status": "运行中",
+        "type": SELF_SERVICE_TYPE,
+        "exe": exe,
+        "name": SELF_SERVICE_NAME,
+        "display_name": "service-server 工具自身",
+        "path": path,
+        "exe_path": exe_path.display().to_string(),
+        "ports": SELF_SERVICE_PORT.to_string(),
+        "self": true,
+    });
+    (self_service_id(), entry)
 }
 
 /// 按 status 语义决定 ports 字段串, 对齐 legacy Service.py 各分支。
@@ -136,6 +181,13 @@ pub async fn start_service(
     State(state): State<AppState>,
     Json(req): Json<ServiceReq>,
 ) -> Result<Json<serde_json::Value>> {
+    // 工具自身由宿主管控, 不能走 SCM (它不是 Windows 服务); 要重启用「重启自身」。
+    if req.svc_type == SELF_SERVICE_TYPE || req.name == SELF_SERVICE_NAME {
+        return Ok(Json(json_err(
+            400,
+            "工具自身不支持手动启动: 它由 infoserver 宿主托管, 请用「重启自身」",
+        )));
+    }
     if req.exe.is_none() {
         return Ok(Json(json_err(400, "参数不完整")));
     }
@@ -157,6 +209,14 @@ pub async fn stop_service(
     State(state): State<AppState>,
     Json(req): Json<ServiceReq>,
 ) -> Result<Json<serde_json::Value>> {
+    // 停掉工具自身 = 入口消失 (且 enabled 由宿主托管), 故只允许「重启自身」;
+    // 换代请走 deploy 包通道 (exe 必须经宿主 swap_exe)。
+    if req.svc_type == SELF_SERVICE_TYPE || req.name == SELF_SERVICE_NAME {
+        return Ok(Json(json_err(
+            400,
+            "工具自身不支持直接停止 (会导致入口消失): 请用「重启自身」或 deploy 包通道",
+        )));
+    }
     if req.exe.is_none() {
         return Ok(Json(json_err(400, "请提供可执行文件名")));
     }
@@ -176,6 +236,12 @@ pub async fn restart_service(
     State(state): State<AppState>,
     Json(req): Json<ServiceReq>,
 ) -> Result<Json<serde_json::Value>> {
+    // 工具自身: 既不是 Windows 服务 (走不了 SCM), 也不能自杀式就地换代 ——
+    // 交 legacy 经宿主管道 restart (stop_verified 端口判据 → start, 句柄留宿主),
+    // 响应由 legacy 发出, 本进程随后才被停, 故调用方拿得到回包。
+    if req.svc_type == SELF_SERVICE_TYPE || req.name == SELF_SERVICE_NAME {
+        return self_restart_via_legacy(&state).await;
+    }
     if req.exe.is_none() {
         return Ok(Json(json_err(400, "参数不完整（需要 name, type, exe）")));
     }
@@ -192,6 +258,49 @@ pub async fn restart_service(
         "success": true,
         "message": "服务重启请求已提交（停止 → 等待 → 启动）",
     })))
+}
+
+/// 工具自身重启: 委派 legacy `POST /api/deploy/self-restart`, 由它请求宿主 restart。
+///
+/// 为什么不自己做: ① 重启要停掉本进程, HTTP 回包必须由别人发出; ② 停/起必须经宿主
+/// 持句柄 (谁 Popen 谁持句柄铁律), 否则 :5000 退化成孤儿进程 —— 孤儿既停不掉也换不了
+/// exe (2026-09-13 堡垒机事故根因)。
+async fn self_restart_via_legacy(state: &AppState) -> Result<Json<serde_json::Value>> {
+    let url = format!(
+        "{}/api/deploy/self-restart",
+        state.legacy_backend.trim_end_matches('/')
+    );
+    // reqwest 未开 json feature (Cargo.toml default-features=false) → 手写 JSON 体。
+    let payload = format!(r#"{{"port":{SELF_SERVICE_PORT}}}"#);
+    let sent = state
+        .http_client
+        .post(&url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(payload)
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await;
+    match sent {
+        Ok(resp) => {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            if status.is_success() {
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "message": "工具自身重启已提交（经宿主 停→起, 约 5-10 秒后刷新）",
+                })))
+            } else {
+                Ok(Json(json_err(
+                    502,
+                    &format!("legacy 拒绝重启请求: HTTP {status} {text}"),
+                )))
+            }
+        }
+        Err(e) => Ok(Json(json_err(
+            502,
+            &format!("委派 legacy 失败 (legacy {url} 是否在线?): {e}"),
+        ))),
+    }
 }
 
 /// POST /api/services/delete — 同步: DeleteService (SCM 注销)。

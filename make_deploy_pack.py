@@ -110,7 +110,17 @@ PROTECTED_SERVICES = {"statistic-server"}
 
 def _plat_service_specs() -> list[dict]:
     """config.yaml 服务声明 → [{name, command, args, cwd}] (平台键解析对齐 service_manager)。"""
-    import yaml
+    try:
+        import yaml
+    except ModuleNotFoundError:
+        # 2026-09-21 实测坑: 系统 py3.14 没装 PyYAML → 打包第一步就 ModuleNotFoundError,
+        # 现场表现像「打包工具坏了」而不是「解释器选错了」。明确指路:
+        raise SystemExit(
+            "缺少 PyYAML —— 本工具需用 infoServer 自带 venv 运行:\n"
+            "  .venv\\Scripts\\python.exe make_deploy_pack.py ...     (Windows)\n"
+            "  ./.venv/bin/python make_deploy_pack.py ...            (macOS)\n"
+            "或用 serviceGroup/serviceServer/deploy.bat 一键 build + 打包 + 推送。"
+        )
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8")) or {}
     plat = "win" if sys.platform.startswith("win") else ("mac" if sys.platform == "darwin" else None)
     specs = []
@@ -237,6 +247,26 @@ def collect_files(only: list[str] | None = None) -> tuple[list[str], list[str]]:
     return sorted(files), sorted(skipped)
 
 
+def _exe_source(rel: str) -> Path:
+    """exe 打包源: 同项目 cargo 产物 target/release/<basename> 比运行位新时优先用它。
+
+    为什么 (2026-09-21 实测): 运行位 exe 被运行中进程锁着 (Windows image section),
+    本机 `build.bat` 的 `copy /Y` 落位必然失败 → 运行位长期停留在旧 build, 打包也就
+    永远带旧 exe。而 deploy 的换代本来就由**目标机宿主持句柄**完成 (stop → cp → start),
+    所以包里直接带新构建产物才是正解: 本机不需要先把新 exe 落到运行位。
+    """
+    dst = ROOT / rel
+    cand = dst.parent / "target" / "release" / dst.name
+    if not cand.is_file():
+        return dst
+    try:
+        if not dst.is_file() or cand.stat().st_mtime > dst.stat().st_mtime:
+            return cand
+    except OSError:
+        return cand
+    return dst
+
+
 def build_zip(files: list[str], skipped: list[str]) -> Path:
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     manifest = {
@@ -250,10 +280,21 @@ def build_zip(files: list[str], skipped: list[str]) -> Path:
     deploy_dir = ROOT / "deploys"
     deploy_dir.mkdir(exist_ok=True)
     zip_path = deploy_dir / f"deploy_{ts}.zip"
+    # 记录被替换的 exe 源 (运行位 → 构建产物), 供推送后核对与排查。
+    exe_src: dict[str, str] = {}
+    for rel in files:
+        if not rel.lower().endswith(".exe"):
+            continue
+        src = _exe_source(rel)
+        if src != ROOT / rel:
+            exe_src[rel] = src.relative_to(ROOT).as_posix()
+    if exe_src:
+        manifest["exe_src"] = exe_src
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
         for rel in files:
-            zf.write(ROOT / rel, rel)
+            src = _exe_source(rel) if rel.lower().endswith(".exe") else ROOT / rel
+            zf.write(src, rel)
     return zip_path
 
 

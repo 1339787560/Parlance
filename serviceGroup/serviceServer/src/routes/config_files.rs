@@ -42,6 +42,25 @@ pub async fn list_files(
     // 刷新 path map (mtime 未变则跳过, 近似零成本)。
     state.path_map.refresh(&state.config_path)?;
 
+    // 工具自身「修改配置」: 只放行 infoServer 根的 config.yaml / config.full.yaml
+    // (声明本工具自身的宿主配置)。不走 config.json 服务表, 也不套 ext 白名单 ——
+    // 前端传的 ext=ini,json,lua 对该路径不适用 (yaml 例外只在 checks::is_tool_config 开)。
+    if params.service_id == crate::routes::services::self_service_id() {
+        let files = crate::routes::checks::tool_config_files()
+            .into_iter()
+            .map(|p| FileEntry {
+                filename: p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                path: p.display().to_string(),
+                full_path: p.display().to_string(),
+            })
+            .collect();
+        return Ok(Json(ListResp { success: true, files }));
+    }
+
     let svc = state
         .path_map
         .get(&params.service_id)

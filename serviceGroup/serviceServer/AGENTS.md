@@ -10,25 +10,29 @@ cargo test           # 全测试 (rstest 参数化 + #[test])
 cargo run            # 跑 :5000 (需 config.json, 默认 cwd, 或 SERVICESVR_CONFIG 环境变量)
 ```
 
-## 部署 (编译产物落位)
+## 部署 (整包 + 静态资源直推, 2026-09-21 起为主路)
 
 ```bash
-./build.bat          # cargo build --release + copy exe 到本目录根 (service-server.exe)
+./deploy.bat                        # 本机 (:5099 发布引导)
+./deploy.bat 192.168.102.53:5099    # 堡垒机 53 (可加 --token <TOK>)
 ```
 
-- config.yaml `serviceServer-rust.command` 指向根目录 `service-server.exe`（不再用 `target/vN/release/` 版本目录，消除手动 cp + 深路径难找）。
-- 改完 build 后只需 `./build.bat` → 根 exe 即最新；重启服务组生效（ctl_client reload / cwd_infoserver_restart 5000）。
-- 根 exe 由 `.gitignore` 的 `*.exe` 覆盖，不入库；`target/` 全目录同样 ignore。
+- **链路**: `build.bat` (cargo build --release) → `make_deploy_pack.py --only serviceServer-rust --push <目标>:5099` → 目标机 legacy 解压校验 → 非 exe 就地替换(带备份) → 包内 exe 交**宿主 swap_exe** 停/换/起换代 → 任一步失败回滚。
+- **为何直连 :5099**: 换代时 :5000 自己就是被停目标, 走前端轮询在停机窗口必断。
+- **为何必须 venv 的 python**: 系统 python 无 PyYAML → 打包第一步就报错 (2026-09-21 实测); `deploy.bat` 已写死 `.venv\Scripts\python.exe`。
+- **exe 打包源 = cargo 产物**: 运行位 exe 被运行中进程锁着, 本机 `copy /Y` 落位必然失败; `make_deploy_pack.py` 在 `target/release/<basename>` 比运行位新时自动改用它打包 (manifest `exe_src` 留痕), 换代由目标机宿主完成。
+- **进度/结果**: 目标机 `GET /api/deploy/log` — record 看 `exe_done` / `failures` / `host_probe`。
+- 服务自身经 `/api/services/status` 的 `service-server_self` 条目自陈列, 页面提供「重启自身 + 配置编辑」(重启经宿主, 不做自杀式换代)。
 
-## 更新编排 (svn 分发)
+### 旧路 (svn 分发, 保留备用)
 
 ```bash
-python D:/Codlib/VscodeCodlib/Python/infoServer/ctl_client.py --socket svc update
+./build.bat        # 需先停服, 否则 copy 撞运行位占用
+./push.bat         # svn commit 两目录 → 远端 ctl_client.py --socket svc update
 ```
 
-- infoServer 控制面 `update` 方法：停 serviceServer-rust + serviceServer-legacy → `svn update`（工作副本根 = infoServer，svn info 动态定位）→ 启两服务。
-- svn 仓库: `https://192.168.102.112/svn/common/trunk/自有平台业务/斗雀工作室/scriptTools/infoServer`（serviceGroup 是其子目录）。
-- 改完代码 → `./build.bat` → svn commit → 远端跑 `ctl_client.py --socket svc update` 即一键更新两子服务。
+- svn 仓库: `https://192.168.102.112/svn/common/trunk/自有平台业务/斗雀工作室/scriptTools/infoServer` (serviceGroup 是其子目录)。
+- **不再作主路**: svn 工作副本有状态 (work queue / 锁 / incomplete), 且版本控制在管运行位 exe → 换代必撞占用 (2026-09-21 事故根因)。
 
 ## 测试约定 (pytest 风格, 质量硬门槛)
 

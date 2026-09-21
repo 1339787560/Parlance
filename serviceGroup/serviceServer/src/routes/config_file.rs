@@ -173,6 +173,11 @@ pub async fn save_file(
 }
 
 fn assert_within_roots(state: &AppState, target: &Path) -> Result<()> {
+    // 工具自身配置 (infoServer 根 config.yaml/config.full.yaml) 是显式白名单,
+    // 其余仍走服务根沙箱 —— 见 checks::tool_config_files。
+    if super::checks::is_tool_config(target) {
+        return Ok(());
+    }
     let roots = state.path_map.valid_roots();
     if is_within_any(target, &roots) {
         Ok(())
@@ -182,6 +187,10 @@ fn assert_within_roots(state: &AppState, target: &Path) -> Result<()> {
 }
 
 fn assert_allowed_ext(path: &Path) -> Result<()> {
+    // 工具自身配置是 .yaml, 白名单之外唯一例外 (只对那两个绝对路径开)。
+    if super::checks::is_tool_config(path) {
+        return Ok(());
+    }
     let ext = path
         .extension()
         .and_then(|e| e.to_str())

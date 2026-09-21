@@ -1722,7 +1722,14 @@
                                     
                                     // 根据服务状态设置不同的操作按钮
                                     let actionButtons = '';
-                                    if (isDeployed) {
+                                    if (serviceInfo.self) {
+                                        // 工具自身: 只给「重启自身 + 配置编辑」—— 停/删会让入口消失,
+                                        // 换代走 deploy 包通道 (exe 必须经宿主 swap_exe)。
+                                        actionButtons = `
+                                            <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}')">配置编辑</button>
+                                            <button class="restart" onclick="restartService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">重启自身</button>
+                                        `;
+                                    } else if (isDeployed) {
                                         actionButtons = `
                                             <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}')">配置编辑</button>
                                             <button class="update" onclick="triggerUpdateFile('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">更新</button>
@@ -1792,6 +1799,12 @@
 
         // 构造操作按钮 (patch 用: deployed 态翻转时重建)
         function buildActionButtons(serviceId, info, isDeployed, isRunning) {
+            if (info.self) {
+                return `
+                    <button class="config-edit-btn" onclick="openConfigEditor('${serviceId}', '${info.name}')">配置编辑</button>
+                    <button class="restart" onclick="restartService('${info.name}', '${info.type}', '${info.exe}')">重启自身</button>
+                `;
+            }
             if (!isDeployed) {
                 return `<button class="deploy" onclick="deployService('${info.name}', '${info.type}', '${info.exe}')">部署服务</button>`;
             }

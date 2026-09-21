@@ -57,7 +57,11 @@ services:
     port: 5000
     auto_restart: true
     tags: [service, api]
-    enabled: false
+    # 2026-09-21 本机改 enabled: true —— 与 config.full.yaml(堡垒机) 对齐, 让宿主真正持有
+    # :5000 的句柄, 从而支持「整包发布换代 (swap_exe) + 重启自身 + 开机自起」。
+    # 前置: 本机 castflow 未运行, 让位未生效; 若将来本机切 castflow ExtensionManager 托管,
+    # 必须回退 false, 否则双宿主争抢 5000。
+    enabled: true
     env:
       # SERVICESVR_CONFIG 基准 = Rust 子进程 cwd (serviceGroup/serviceServer), 故用 ../ 到 legacy
       SERVICESVR_CONFIG: ../serviceServer-legacy/config.json

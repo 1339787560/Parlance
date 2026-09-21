@@ -751,6 +751,39 @@ def api_deploy_log():
         result['error'] = f'read deploy log failed: {e}'
     return jsonify(result)
 
+
+# ===== 工具自身重启 (service-server :5000 自陈列「重启自身」入口) =====
+# 为什么落 legacy: :5000 正是被重启目标, 不能自己编排自己的死; legacy (Python, 不锁自身
+# 文件) 与宿主同侧, 作为第三方替我发号。停/起一律经宿主管道 restart (stop_verified 端口
+# 判据 → start, 句柄最终留在宿主), 严禁 legacy 自己 Popen (谁 Popen 谁持句柄铁律)。
+TOOL_PORT = int(_os.environ.get('SERVICESVR_TOOL_PORT', '5000'))
+
+
+def _self_restart_thread(port):
+    """给 HTTP 响应留出返回时间后再动手 (否则调用方拿不到回包)。"""
+    _time.sleep(1.5)
+    try:
+        r = _call_svc('restart', {'port': port}, timeout=90)
+        print(f"[deploy] self-restart port={port} -> {r}")
+    except Exception as e:
+        print(f"[deploy] self-restart port={port} 失败: {e}")
+
+
+@app.route('/api/deploy/self-restart', methods=['POST'])
+def api_deploy_self_restart():
+    """重启工具自身 (缺省 :5000)。异步: 立即返「已提交」, 实际重启在后台。"""
+    if not _deploy_authed():
+        return _deploy_denied()
+    data = request.get_json(silent=True) or {}
+    try:
+        port = int(data.get('port') or TOOL_PORT)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'port 非法'}), 400
+    _threading.Thread(target=_self_restart_thread, args=(port,),
+                      name='legacy-self-restart', daemon=True).start()
+    return jsonify({'success': True,
+                    'message': f'工具自身重启已提交 (端口 {port}), 约 5-10 秒后刷新页面'})
+
 import subprocess
 import os
 import threading
