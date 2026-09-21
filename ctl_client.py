@@ -18,7 +18,7 @@ Usage:
     python ctl_client.py --socket svc restart --params '{"port": 5000}'
     python ctl_client.py --socket svc swap_exe --params '{"port": 5000}'
 
---socket: ctl=sgmController (run.py, 默认) / svc=服务组 (main.py, services|restart|swap_exe|update)
+--socket: ctl=sgmController (run.py, 默认) / svc=服务组 (main.py, services|restart|swap_exe; svn 的 update/update_log 已于 2026-09-22 退役)
 
 Exit codes:
     0  success (response carries no JSON-RPC error)

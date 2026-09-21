@@ -166,7 +166,7 @@ def api_update_service():
 
 @app.route('/api/services/restart', methods=['POST'])
 def api_restart_service():
-    """热更新服务：停止 → 等待进程退出 → 启动。文件已在本地（SVN update 或手动替换），不需要上传。"""
+    """热更新服务：停止 → 等待进程退出 → 启动。文件已在本地（deploy 包推送或手动替换），不需要上传。"""
     try:
         data = request.json
         name = data.get('name')
@@ -200,9 +200,9 @@ def api_restart_service():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
-# ===== svn update 经 infoserver host 控制面 (停 serviceServer-rust+legacy → svn up infoServer 根 → 启) =====
-# legacy 自身是被停目标, 走 host (main.py) 编排: main.py 异步触发后 sleep 1.5s 才停 legacy,
-# 给本路由时间返 HTTP 响应。完成结果/日志查 /api/svn/update_log (读 host 写的 svn_update.log)。
+# ===== 宿主管道客户端 (_call_svc): deploy 编排经此调 host 原语 stop/start/swap_exe =====
+# 2026-09-22 (U5) svn 编排退役后, 本段只服务 deploy 产物包直推 —— 铁律见下方 deploy 段:
+# exe 的停/起一律经宿主管道 (谁 Popen 谁持有句柄), 句柄始终留宿主。
 SVC_CTL_PIPE_WIN = r"\\.\pipe\infoserver_svc"
 SVC_CTL_SOCKET_POSIX = "/tmp/infoserver_svc.sock"
 
@@ -228,39 +228,6 @@ def _call_svc(method, params=None, timeout=15):
         return resp["result"]
     return resp
 
-
-@app.route('/api/svn/status', methods=['GET'])
-def api_get_svn_status():
-    try:
-        is_latest, message = Service.get_svn_status()
-        return jsonify({'success': True, 'is_latest': is_latest, 'message': message})
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'获取SVN状态失败: {str(e)}'}), 500
-
-@app.route('/api/svn/update', methods=['POST'])
-def api_update_svn():
-    """触发 host 异步编排: 停 serviceServer-rust+legacy → svn up infoServer 根 → 启。
-    立即返「已触发」, 完成结果查 /api/svn/update_log。
-    """
-    try:
-        result = _call_svc("update", {"names": ["serviceServer-rust", "serviceServer-legacy"]})
-        ok = bool(result.get("ok")) if isinstance(result, dict) else False
-        message = result.get("message", "") if isinstance(result, dict) else str(result)
-        log_path = result.get("log", "") if isinstance(result, dict) else ""
-        return jsonify({
-            'success': ok,
-            'message': f"{message} | 日志: {log_path} (查 /api/svn/update_log)",
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'触发 host update 失败: {e}'}), 500
-
-@app.route('/api/svn/update_log', methods=['GET'])
-def api_svn_update_log():
-    """查 host svn update 编排状态 + 最近一次日志 (前端轮询)。"""
-    try:
-        return jsonify(_call_svc("update_log"))
-    except Exception as e:
-        return jsonify({'running': False, 'message': f'查 update_log 失败: {e}'}), 500
 
 # ===== deploy 产物包直推 (legacy 侧编排, 2026-09-13 改造) =====
 # 链路: make_deploy_pack.py 打 zip (py+exe+资源+manifest) → POST /api/deploy/upload
@@ -421,7 +388,7 @@ def _deploy_run(zip_path, record):
         missing = [r for r in files if not _os.path.isfile(_os.path.join(staging, r.replace('/', _os.sep)))]
         if not files or missing:
             raise RuntimeError(f'manifest/files mismatch, missing: {missing[:5]}')
-        record['manifest'] = {'built_at': manifest.get('built_at'), 'svn_rev': manifest.get('svn_rev'),
+        record['manifest'] = {'built_at': manifest.get('built_at'),
                               'git_rev': manifest.get('git_rev'), 'files': len(files)}
         record['stage'] = 'unzipped'
         record['host_diag'] = _host_diag()   # 目标机自述: 宿主文件指纹 + python 进程表

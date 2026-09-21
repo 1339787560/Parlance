@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""infoServer deploy 打包 + 推送工具 (替代 svn 更新链)。
+"""infoServer deploy 打包 + 推送工具 (发布/更新唯一通道: 打包直推, 以推送端内容为准)。
 
 打包: 白名单收集本机验证过的运行产物 (py + 运行位 exe + 模板/静态资源) +
       manifest.json (built_at / git_rev / files) → deploys/deploy_<ts>.zip
@@ -56,51 +56,6 @@ def _git_rev() -> str:
     except Exception:
         pass
     return "unknown"
-
-
-def _svn_rev() -> str:
-    """本机 infoServer 工作副本 revision (部署留痕; 目标机将来可据此比对)。"""
-    try:
-        r = subprocess.run(["svn", "info", "--show-item", "revision"],
-                           capture_output=True, text=True, timeout=20, cwd=ROOT)
-        if r.returncode == 0 and (r.stdout or "").strip():
-            return r.stdout.strip()
-    except Exception:
-        pass
-    return "unknown"
-
-
-def svn_commit(files: list[str], message: str) -> int:
-    """把本次部署涉及、且受 svn 版本控制且有改动的文件提交进 svn (推送后的备份动作)。
-
-    只提 manifest 里的路径 —— 不做全工作副本 commit (本地常驻其它未完成的改动)。
-    未纳入版本控制的 (? 状态) 只提示不代加, 避免误把临时文件塞进仓库。
-    """
-    versioned, unversioned = [], []
-    for rel in files:
-        if not (ROOT / rel).is_file():
-            continue
-        r = subprocess.run(["svn", "status", "-q", rel],
-                           capture_output=True, text=True, timeout=20, cwd=ROOT)
-        out = (r.stdout or "").strip()
-        if not out:
-            continue                    # 无改动, 已是最新
-        if out.startswith("?"):
-            unversioned.append(rel)
-        else:
-            versioned.append(rel)
-    if unversioned:
-        print(f"[svn] 未纳入版本控制, 跳过 {len(unversioned)} 项: {unversioned[:5]}")
-    if not versioned:
-        print("[svn] 无需提交 (manifest 内文件均无本地改动)")
-        return 0
-    r = subprocess.run(["svn", "commit", "--non-interactive", "-m", message, *versioned],
-                       capture_output=True, text=True, timeout=180, cwd=ROOT)
-    print(f"[svn] commit rc={r.returncode} files={len(versioned)}")
-    print((r.stdout or "").strip()[-800:])
-    if r.returncode != 0:
-        print((r.stderr or "").strip()[-800:])
-    return r.returncode
 
 
 # 受保护服务 (host 侧 _DEPLOY_PROTECTED 同款): 本机 AI API 网关, 误停 = 断 AI 会话。
@@ -272,7 +227,6 @@ def build_zip(files: list[str], skipped: list[str]) -> Path:
     manifest = {
         "built_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "git_rev": _git_rev(),
-        "svn_rev": _svn_rev(),
         "platform": sys.platform,
         "files": files,
         "skipped_configs": skipped,
@@ -356,10 +310,6 @@ def main() -> int:
                          "(如 http://192.168.102.53:5099); 走 :5000 前端在换 exe 时会自断")
     ap.add_argument("--token", metavar="TOK",
                     help="部署口令 (缺省取 env DEPLOY_TOKEN); 目标机回环可免, 远端必填")
-    ap.add_argument("--svn-commit", action="store_true",
-                    help="推送成功后, 把本次涉及且已版本控制、有改动的文件提交进 svn (备份)")
-    ap.add_argument("--svn-message", metavar="MSG", default="",
-                    help="svn 提交信息 (缺省自动生成)")
     args = ap.parse_args()
 
     only = [s.strip() for s in args.only.split(",") if s.strip()] if args.only else None
@@ -372,9 +322,6 @@ def main() -> int:
     if not args.push:
         return 0
     rc = push(zip_path, args.push, token=args.token or "")
-    if rc == 0 and args.svn_commit:
-        msg = args.svn_message or f"deploy pack {zip_path.name} → {args.push} (推送后备份)"
-        svn_commit(files, msg)
     return rc
 
 

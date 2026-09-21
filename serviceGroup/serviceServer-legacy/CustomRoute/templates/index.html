@@ -997,26 +997,6 @@
             background-color: rgba(90, 45, 145, 0.8);
         }
 
-        .svn-update-btn {
-            background-color: rgba(40, 167, 69, 0.7); /* 半透明绿色 */
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 10px;
-            backdrop-filter: blur(2px);
-        }
-
-        .svn-update-btn:hover {
-            background-color: rgba(33, 136, 56, 0.9);
-        }
-
-        .svn-update-btn:disabled {
-            background-color: #6c757d; /* 灰色 */
-            cursor: not-allowed;
-        }
-
         /* 不活动提示信息样式 */
         .inactivity-hint {
             position: fixed;
@@ -1402,9 +1382,6 @@
             </div>
             <h1>Windows服务管理工具 By Liz</h1>
             <div class="toolbar">
-                <button id="svn-update-btn" class="svn-update-btn" onclick="updateSvn()">
-                    <span id="svn-status-text">检查SVN状态...</span>
-                </button>
                 <button class="config-btn" onclick="window.location.href='/onlineConfigModify'">⚙️ 在线配置修改</button>
                 <button class="server-status-btn" onclick="window.location.href='/serverstatus'">🖥️ 服务器状态</button>
                 <button class="currency-btn" onclick="window.location.href='/deposit'">💰 设置货币</button>
@@ -1643,122 +1620,9 @@
             if (ev.data && ev.data.type === 'cf-theme') applyEmbedTheme(ev.data.value);
         });
 
-        // SVN 更新相关逻辑
-        const svnUpdateButton = document.getElementById('svn-update-btn');
-        const svnStatusText = document.getElementById('svn-status-text');
-
-        async function checkSvnStatus() {
-            try {
-                const response = await fetch('/api/svn/status');
-                const data = await response.json();
-
-                if (data.success) {
-                    if (data.is_latest) {
-                        svnStatusText.textContent = '已经是最新版本';
-                        svnUpdateButton.disabled = true;
-                        svnUpdateButton.style.backgroundColor = '#6c757d'; // 灰色
-                        svnUpdateButton.style.cursor = 'not-allowed';
-                    } else {
-                        svnStatusText.textContent = '更新到最新版本';
-                        svnUpdateButton.disabled = false;
-                        svnUpdateButton.style.backgroundColor = '#28a745'; // 绿色
-                        svnUpdateButton.style.cursor = 'pointer';
-                    }
-                } else {
-                    svnStatusText.textContent = `SVN状态检查失败: ${data.message}`;
-                    svnUpdateButton.disabled = true;
-                    svnUpdateButton.style.backgroundColor = '#dc3545'; // 红色
-                    svnUpdateButton.style.cursor = 'not-allowed';
-                }
-            } catch (error) {
-                console.error('获取SVN状态失败:', error);
-                svnStatusText.textContent = 'SVN状态检查失败';
-                svnUpdateButton.disabled = true;
-                svnUpdateButton.style.backgroundColor = '#dc3545'; // 红色
-                svnUpdateButton.style.cursor = 'not-allowed';
-            }
-        }
-
-        async function updateSvn() {
-            if (svnUpdateButton.disabled) return;
-
-            if (!confirm('确定要执行SVN更新吗？')) {
-                return;
-            }
-
-            svnStatusText.textContent = '正在更新SVN...';
-            svnUpdateButton.disabled = true;
-            svnUpdateButton.style.backgroundColor = '#ffc107'; // 黄色
-            svnUpdateButton.style.cursor = 'not-allowed';
-
-            try {
-                // 1. 触发 host 异步编排 (停 servicesvr → svn up → 启)
-                const response = await fetch('/api/svn/update', {
-                    method: 'POST'
-                });
-                const data = await response.json();
-                if (!data.success) {
-                    alert('触发SVN更新失败: ' + data.message);
-                    return;
-                }
-                svnStatusText.textContent = 'SVN 更新中 (host 编排: 停服务→svn up→启)...';
-
-                // 2. 轮询 update_log (每 2s, 最多 45 次 = 90s), 等 running=false
-                let log = null;
-                for (let i = 0; i < 45; i++) {
-                    await new Promise(r => setTimeout(r, 2000));
-                    try {
-                        const lr = await fetch('/api/svn/update_log');
-                        log = await lr.json();
-                    } catch (e) {
-                        // legacy/rust 可能正被停启, 连接失败则重试
-                        continue;
-                    }
-                    if (log && log.running === false && log.last) break;
-                    svnStatusText.textContent = `SVN 更新中... (${(i + 1) * 2}s)`;
-                }
-
-                // 3. 显示结果 (svn stdout/stderr + 服务状态)
-                if (log && log.last) {
-                    const svn = log.last.svn;
-                    const started = (log.last.started || []).map(s => `${s.name}=${s.status}`).join(', ');
-                    if (svn) {
-                        // svn 步骤已执行 (正常流程)
-                        const summary = `SVN 更新${svn.ok ? '成功' : '失败'} (returncode=${svn.returncode})\n` +
-                            `工作副本根: ${svn.working_copy_root || '-'}\n` +
-                            `svn stdout:\n${svn.stdout || '(空)'}\n` +
-                            (svn.stderr ? `svn stderr:\n${svn.stderr}\n` : '') +
-                            `服务: ${started}`;
-                        console.error('[SVN Update]', summary);
-                        alert(summary);
-                    } else {
-                        // svn 步骤未执行 (dirty check 失败 / 停服务失败 / svn info 失败等)
-                        const stage = log.last.stage || 'unknown';
-                        const errMsg = log.last.error || log.last.dirty_check || '无详细信息';
-                        const summary = `SVN 更新失败 (阶段: ${stage})\n` +
-                            `工作副本根: ${log.last.working_copy_root || '-'}\n` +
-                            `错误: ${errMsg}`;
-                        console.error('[SVN Update]', summary);
-                        alert(summary);
-                    }
-                } else {
-                    const msg = 'SVN 更新超时, 查 /api/svn/update_log 或 svn_update.log';
-                    console.error('[SVN Update]', msg);
-                    alert(msg);
-                }
-            } catch (error) {
-                console.error('执行SVN更新失败:', error);
-                alert('执行SVN更新失败: ' + error.message);
-            } finally {
-                checkSvnStatus(); // 更新完成后重新检查状态
-            }
-        }
-
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', () => {
             updateServiceStatus(); // 初始加载服务状态
-            checkSvnStatus();
-            setInterval(checkSvnStatus, 30000); // 每30秒更新一次SVN状态
             updateSequenceList(); // 初始加载序列列表
             loadFriendLinks(); // 加载友链
             loadPageBackground(); // 加载背景图
@@ -2158,7 +2022,6 @@
         // 更新所有服务状态
         function updateAllServices() {
             updateServiceStatus();
-            checkSvnStatus();
             alert('状态已更新');
         }
 

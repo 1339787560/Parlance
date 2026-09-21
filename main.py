@@ -19,7 +19,6 @@ import os
 import shutil
 import signal
 import socket
-import subprocess
 import sys
 import threading
 import time
@@ -89,8 +88,8 @@ class ServiceControlServer:
       restart   → {"port": N} → 按 port 找服务 → svc.restart() → {"ok","name","status","pid"}
                   (未知端口 / disabled / daemon managed=false → 结构化 error)
       swap_exe  → {"port": N} → svc.swap_exe() (热替换 .exe, 无 verify/回滚)
-      update    → {"names"|"tags"} → 异步 svn update 编排 (停→svn up→启→探活→失败回滚)
-      update_log → {"running", "last"}  最近一次 update 编排实时进度 + 结果
+      deploy    → {"zip"} → 异步 deploy 产物包直推编排 (停→备份→原位替换→启→探活→失败恢复备份)
+      deploy_log → {"running", "last"}  最近一次 deploy 编排实时进度 + 结果
     """
 
     def __init__(self, svc_mgr: ServiceGroupManager):
@@ -99,7 +98,7 @@ class ServiceControlServer:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._address, self._family = _svc_ctl_address()
-        self._update_running = False  # svn update 异步编排锁 (防 reload/重复触发竞态)
+        self._deploy_running = False  # deploy 异步编排锁 (防 reload/重复触发竞态)
 
     @property
     def address(self) -> str:
@@ -227,10 +226,6 @@ class ServiceControlServer:
             return self._stop_by_port(params.get("port"))
         if method == "start":
             return self._start_by_port(params.get("port"))
-        if method == "update":
-            return self._update_services(params.get("names") or params.get("tags"))
-        if method == "update_log":
-            return self._update_log()
         if method == "deploy":
             return self._deploy_services(params.get("zip"))
         if method == "deploy_log":
@@ -238,8 +233,8 @@ class ServiceControlServer:
         raise _MethodNotFound(method)
 
     def _restart_by_port(self, port) -> dict[str, Any]:
-        if self._update_running:
-            return {"error": "svn update in progress, restart blocked"}
+        if self._deploy_running:
+            return {"error": "deploy in progress, restart blocked"}
         if port is None:
             return {"error": "port required"}
         svc: Optional[ManagedService] = self._find_by_port(int(port))
@@ -259,8 +254,8 @@ class ServiceControlServer:
         }
 
     def _swap_exe_by_port(self, port, src=None) -> dict[str, Any]:
-        if self._update_running:
-            return {"error": "svn update in progress, swap_exe blocked"}
+        if self._deploy_running:
+            return {"error": "deploy in progress, swap_exe blocked"}
         if port is None:
             return {"error": "port required"}
         svc: Optional[ManagedService] = self._find_by_port(int(port))
@@ -283,8 +278,8 @@ class ServiceControlServer:
 
     def _stop_by_port(self, port) -> dict[str, Any]:
         """单服务停止原语 (供 cwd_infoserver_build_swap 停→build→start 编排解锁 exe)."""
-        if self._update_running:
-            return {"error": "svn update in progress, stop blocked"}
+        if self._deploy_running:
+            return {"error": "deploy in progress, stop blocked"}
         if port is None:
             return {"error": "port required"}
         svc: Optional[ManagedService] = self._find_by_port(int(port))
@@ -300,8 +295,8 @@ class ServiceControlServer:
 
     def _start_by_port(self, port) -> dict[str, Any]:
         """单服务启动原语 (供 build_swap 停→build→start 编排; 已运行则幂等)."""
-        if self._update_running:
-            return {"error": "svn update in progress, start blocked"}
+        if self._deploy_running:
+            return {"error": "deploy in progress, start blocked"}
         if port is None:
             return {"error": "port required"}
         svc: Optional[ManagedService] = self._find_by_port(int(port))
@@ -315,160 +310,6 @@ class ServiceControlServer:
             return {"ok": True, "name": svc.name, "port": svc.port, "status": svc.status, "note": "already running"}
         svc.start()
         return {"ok": True, "name": svc.name, "port": svc.port, "status": svc.status}
-
-    # ── update 编排: 停指定子服务 → svn update → 启 ─────────────────────
-    # 用户方案: infoServer 提供断点, 请求后先停两个 serviceServer 子服务
-    # (解锁 exe), 然后更新 svn, 更新完毕后启动两个子服务。
-    # svn 工作副本根 = infoServer 目录本身 (.svn 在根), 用 svn info 动态定位,
-    # 天然覆盖 serviceGroup 下两子服务, 不依赖每服务声明 svn 路径。
-
-    _UPDATE_DEFAULT_NAMES = ["serviceServer-rust", "serviceServer-legacy"]
-
-    def _update_services(self, names=None):
-        """触发异步 svn update 编排 (停 targets → svn up → 启 targets → 写日志)。
-        立即返「已触发」, 编排在后台 thread 跑 (调用方 legacy/rust 是被停目标, 需先返响应)。
-        """
-        if self._update_running:
-            return {"error": "update already running, poll update_log to wait finish"}
-        if names is None:
-            names = self._UPDATE_DEFAULT_NAMES
-        targets = []
-        for n in names:
-            svc = self.svc_mgr.get(n)
-            if svc is None:
-                return {"error": f"no managed service named '{n}'"}
-            if not svc.enabled:
-                return {"error": f"service '{n}' is disabled (enabled=false)"}
-            if not svc.managed:
-                return {"error": f"service '{n}' is daemon (managed=false), cannot orchestrate"}
-            targets.append(svc)
-
-        self._update_running = True
-        log_path = os.path.join(os.getcwd(), "svn_update.log")
-        t = threading.Thread(
-            target=self._update_async,
-            args=(targets, log_path),
-            name="svc-update",
-            daemon=True,
-        )
-        t.start()
-        return {
-            "ok": True,
-            "message": "update triggered (async), poll update_log for result",
-            "log": log_path,
-            "names": [s.name for s in targets],
-        }
-
-    def _update_async(self, targets, log_path):
-        """后台编排: sleep 1.5s (让调用方响应先发) → 停 → svn up → 启 → 探活 → 失败自动回滚。
-        每关键节点把 record 写 log_path (update_log 实时可见), finally 解锁 (防卡死)。
-        关键节点必有日志: 停完成 / svn update 结果 / 启完成 / 探活结果 / 回滚各步。
-        """
-        try:
-            time.sleep(1.5)
-            record = {
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "names": [s.name for s in targets],
-                "stage": "start",
-            }
-            # 0) svn 工作副本根 + 更新前 revision (回滚基准)
-            svn_root = self._svn_working_copy_root()
-            rev_before = self._svn_revision(svn_root)
-            record["working_copy_root"] = svn_root
-            record["revision_before"] = rev_before
-            logger.info("[update] svn working copy root=%s, current rev=%s", svn_root, rev_before)
-
-            # 0.5) 工作副本干净性防护: 有本地改动(M/?/conflict)则中止, 防 svn up 卷进 dev 未提交现场
-            dirty = self._svn_working_copy_dirty(svn_root)
-            record["dirty_check"] = dirty
-            record["stage"] = "dirty_checked"
-            self._write_update_record(log_path, record)
-            if dirty:
-                logger.warning("[update] svn working copy dirty, aborting: %s", dirty)
-                record["ok"] = False
-                record["error"] = f"svn working copy dirty, abort before update: {dirty}"
-                record["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                record["stage"] = "aborted_dirty"
-                self._write_update_record(log_path, record)
-                return
-
-            # 1) 停服务解锁 exe / py 源码
-            stopped = []
-            for svc in targets:
-                svc.stop(timeout=15)
-                stopped.append({"name": svc.name, "status": svc.status, "pid": svc.pid})
-            record["stopped"] = stopped
-            record["stage"] = "stopped"
-            self._write_update_record(log_path, record)
-            logger.info("[update] stopped %s", ", ".join(s.name for s in targets))
-
-            # 2) svn update (cwd = svn 工作副本根)
-            svn_out, svn_err, svn_rc = self._run_svn_update(svn_root)
-            rev_after = self._svn_revision(svn_root)
-            record["svn"] = {
-                "ok": svn_rc == 0,
-                "working_copy_root": svn_root,
-                "returncode": svn_rc,
-                "stdout": svn_out,
-                "stderr": svn_err,
-                "revision_after": rev_after,
-            }
-            record["stage"] = "svn_updated"
-            self._write_update_record(log_path, record)
-            logger.info("[update] svn update rc=%d (rev %s -> %s)", svn_rc, rev_before, rev_after)
-
-            # 3) 启服务
-            started = []
-            for svc in targets:
-                svc.start()
-                started.append({"name": svc.name, "status": svc.status, "pid": svc.pid})
-            record["started"] = started
-            record["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            record["stage"] = "started"
-            self._write_update_record(log_path, record)
-            logger.info("[update] started %s, probing listening (30s)", ", ".join(s.name for s in targets))
-
-            # 4) 探活 listening (30s 超时)
-            probe_ok, probe_detail = self._probe_all(targets, timeout=30)
-            record["probe"] = probe_detail
-            record["stage"] = "probed"
-            self._write_update_record(log_path, record)
-            logger.info("[update] probe ok=%s %s", probe_ok, probe_detail.get("services"))
-
-            # 5) 失败自动回滚: svn update -r <旧rev> → 重启 → 再探活
-            if svn_rc == 0 and not probe_ok and rev_before:
-                self._rollback(targets, rev_before, svn_root, record, log_path)
-                record["stage"] = "rolled_back"
-                record["ok"] = False  # 本次更新失败, 已回滚
-                self._write_update_record(log_path, record)
-            else:
-                record["rollback"] = {"needed": False}
-                record["ok"] = (svn_rc == 0) and probe_ok
-
-            record["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            record["stage"] = "done"
-            self._write_update_record(log_path, record)
-            logger.info("[update] finished (ok=%s), log: %s", record["ok"], log_path)
-        except Exception as e:
-            logger.exception("svn update async failed: %s", e)
-            self._write_update_record(log_path, {"ok": False, "error": str(e),
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "stage": "error"})
-        finally:
-            self._update_running = False
-
-    def _update_log(self):
-        """返最近一次 update 编排状态 + 日志 (供前端轮询 / 排错)。"""
-        log_path = os.path.join(os.getcwd(), "svn_update.log")
-        result = {"running": self._update_running}
-        if os.path.exists(log_path):
-            try:
-                with open(log_path, "r", encoding="utf-8") as f:
-                    result["last"] = json.load(f)
-            except Exception as e:
-                result["error"] = f"read log failed: {e}"
-        else:
-            result["message"] = "no update log yet"
-        return result
 
     # ── deploy 产物包直推编排: 上传的 zip (make_deploy_pack.py 打包) → 停受影响服务
     # → 备份被覆盖文件 → 原位替换 → 启 → 探活 → 失败自动恢复备份。
@@ -553,14 +394,14 @@ class ServiceControlServer:
 
     def _deploy_services(self, zip_name=None):
         """触发异步 deploy 编排。zip_name 缺省 = deploys/ 下最新 zip。"""
-        if self._update_running:
-            return {"error": "update/deploy already running, poll update_log/deploy_log"}
+        if self._deploy_running:
+            return {"error": "deploy already running, poll deploy_log"}
         deploys_dir = os.path.join(os.getcwd(), "deploys")
         zip_path = self._latest_deploy_zip(deploys_dir, zip_name)
         if not zip_path:
             hint = f" matching '{zip_name}'" if zip_name else ""
             return {"error": f"no deploy zip found in {deploys_dir}{hint}"}
-        self._update_running = True  # 与 svn update 共用编排锁 (互斥, restart/swap 守卫同源)
+        self._deploy_running = True  # deploy 编排锁 (互斥 restart/swap 守卫同源)
         log_path = os.path.join(os.getcwd(), self._DEPLOY_LOG)
         t = threading.Thread(target=self._deploy_async, args=(zip_path, log_path),
                              name="svc-deploy", daemon=True)
@@ -585,7 +426,7 @@ class ServiceControlServer:
     def _deploy_log(self):
         """返最近一次 deploy 编排状态 + 日志 (前端轮询)。running 与 update 共用编排锁。"""
         log_path = os.path.join(os.getcwd(), self._DEPLOY_LOG)
-        result = {"running": self._update_running}
+        result = {"running": self._deploy_running}
         if os.path.exists(log_path):
             try:
                 with open(log_path, "r", encoding="utf-8") as f:
@@ -654,7 +495,7 @@ class ServiceControlServer:
                                   "git_rev": manifest.get("git_rev"),
                                   "files": len(files)}
             record["stage"] = "unzipped"
-            self._write_update_record(log_path, record)
+            self._write_orchestration_record(log_path, record)
             logger.info("[deploy] zip ok: %d files, staging=%s", len(files), staging)
 
             # 1) 受影响服务: manifest 命中运行文件的服务; 无命中回落 rust+legacy。
@@ -672,7 +513,7 @@ class ServiceControlServer:
             record["stop"] = [svc.stop_verified(timeout=15) for svc in targets]
             stop_failed = [s["name"] for s in record["stop"] if not s["ok"]]
             record["stage"] = "stopped"
-            self._write_update_record(log_path, record)
+            self._write_orchestration_record(log_path, record)
             logger.info("[deploy] stopped %s (detail=%s)", ", ".join(s.name for s in targets),
                         [(s["name"], s["how"]) for s in record["stop"]])
             if stop_failed:
@@ -683,7 +524,7 @@ class ServiceControlServer:
                               error=f"服务无法停止, 未执行替换: {stop_failed} "
                                     f"→ 详见 record.stop (端口被非本宿主进程占用时需人工处理)",
                               finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
-                self._write_update_record(log_path, record)
+                self._write_orchestration_record(log_path, record)
                 logger.error("[deploy] aborted: stop failed for %s", stop_failed)
                 return
 
@@ -710,7 +551,7 @@ class ServiceControlServer:
                               locked_count=len(locked),
                               error=f"{len(locked)} 个文件替换前仍被占用, 未执行替换",
                               finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
-                self._write_update_record(log_path, record)
+                self._write_orchestration_record(log_path, record)
                 logger.error("[deploy] aborted: %d files locked: %s",
                              len(locked), [r for r, _ in locked[:5]])
                 return
@@ -737,7 +578,7 @@ class ServiceControlServer:
             record["replace_failures"] = failures
             record["skipped_protected"] = skipped_protected
             record["stage"] = "replaced"
-            self._write_update_record(log_path, record)
+            self._write_orchestration_record(log_path, record)
             logger.info("[deploy] replaced %d/%d files (%d backed up, %d failed) → %s",
                         len(replace_pairs) - len(failures), len(replace_pairs),
                         backed, len(failures), backup_dir)
@@ -749,7 +590,7 @@ class ServiceControlServer:
                 record.update(ok=False, stage="rolled_back",
                               error=f"{len(failures)} 个文件替换失败, 已回滚",
                               finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
-                self._write_update_record(log_path, record)
+                self._write_orchestration_record(log_path, record)
                 logger.error("[deploy] replace partial (%d failed) → rolled back", len(failures))
                 return
 
@@ -759,11 +600,11 @@ class ServiceControlServer:
                 svc.start()
             record["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             record["stage"] = "started"
-            self._write_update_record(log_path, record)
+            self._write_orchestration_record(log_path, record)
             probe_ok, probe_detail = self._probe_all(targets, timeout=30)
             record["probe"] = probe_detail
             record["stage"] = "probed"
-            self._write_update_record(log_path, record)
+            self._write_orchestration_record(log_path, record)
 
             # 4) 失败自动恢复备份 (回滚 = 拷回备份 + 重启 + 再探活)
             if not probe_ok:
@@ -775,7 +616,7 @@ class ServiceControlServer:
                 record["ok"] = True
             record["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             record["stage"] = "done"
-            self._write_update_record(log_path, record)
+            self._write_orchestration_record(log_path, record)
             logger.info("[deploy] finished (ok=%s), log: %s", record["ok"], log_path)
         except Exception as e:
             logger.exception("deploy async failed: %s", e)
@@ -785,14 +626,14 @@ class ServiceControlServer:
                                "finished_at": time.strftime("%Y-%m-%d %H:%M:%S")})
                 # 兜底: 异常路径也要把已停的目标服务拉回来, 杜绝"停着不起来"
                 self._restart_stopped(record)
-                self._write_update_record(log_path, record)
+                self._write_orchestration_record(log_path, record)
             else:
-                self._write_update_record(log_path, {"ok": False, "error": str(e),
+                self._write_orchestration_record(log_path, {"ok": False, "error": str(e),
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "stage": "error"})
         finally:
             if staging and os.path.isdir(staging):
                 shutil.rmtree(staging, ignore_errors=True)
-            self._update_running = False
+            self._deploy_running = False
 
     def _restore_backup(self, backup_dir, targets, record, log_path):
         """恢复备份: 停 (坏产物可能 crash-loop, 先停解锁) → 拷回备份 → 启 → 再探活。"""
@@ -815,94 +656,7 @@ class ServiceControlServer:
         ok, probe_detail = self._probe_all(targets, timeout=30)
         detail["probe_after"] = probe_detail
         record["rollback"] = detail
-        self._write_update_record(log_path, record)
-
-    def _svn_working_copy_root(self) -> Optional[str]:
-        """svn info 取 Working Copy Root Path (infoServer 根 = 工作副本根)."""
-        try:
-            r = subprocess.run(
-                ["svn", "info", "--non-interactive"],
-                capture_output=True, text=True, timeout=30,
-                cwd=os.getcwd(),
-            )
-            for line in (r.stdout or "").splitlines():
-                if line.startswith("Working Copy Root Path:"):
-                    return line.split(":", 1)[1].strip()
-        except Exception as e:
-            logger.warning("svn info failed: %s", e)
-        return None
-
-    def _run_svn_update(self, cwd: Optional[str]):
-        """svn update --non-interactive, 返回 (stdout, stderr, returncode)."""
-        return self._run_svn(["--non-interactive"], cwd)
-
-    def _run_svn_update_rev(self, cwd: Optional[str], revision):
-        """svn update -r <rev> --non-interactive (回滚), 返回 (stdout, stderr, returncode)."""
-        return self._run_svn(["-r", str(revision), "--non-interactive"], cwd)
-
-    def _run_svn(self, args, cwd: Optional[str]):
-        """通用 svn 调用, gbk 编码, 120s 超时, 返回 (stdout, stderr, returncode)."""
-        try:
-            r = subprocess.run(
-                ["svn", "update", *args],
-                capture_output=True, text=True, timeout=120, cwd=cwd or os.getcwd(),
-                encoding="gbk", errors="replace",
-            )
-            return (r.stdout or "").strip(), (r.stderr or "").strip(), r.returncode
-        except subprocess.TimeoutExpired:
-            return "", "svn update timed out after 120s", -1
-        except FileNotFoundError:
-            return "", "svn CLI not found", -1
-        except Exception as e:
-            return "", str(e), -1
-
-    def _svn_revision(self, cwd: Optional[str]) -> Optional[str]:
-        """svn info 取工作副本当前 Revision (更新前/后各自取值, 回滚基准)."""
-        try:
-            r = subprocess.run(
-                ["svn", "info", "--non-interactive"],
-                capture_output=True, text=True, timeout=30,
-                cwd=cwd or os.getcwd(),
-            )
-            for line in (r.stdout or "").splitlines():
-                if line.startswith("Revision:"):
-                    return line.split(":", 1)[1].strip()
-        except Exception as e:
-            logger.warning("svn info revision failed: %s", e)
-        return None
-
-    def _svn_working_copy_dirty(self, cwd: Optional[str]) -> str:
-        """检查 svn 工作副本是否有阻断 svn update 的冲突。
-
-        返 '' = 可更新; 非空 = 需先处理的冲突摘要 (如 "D     C path").
-        只挡 C (tree conflict 第七列 / 内容冲突第一列) — svn update 唯一会直接
-        失败的本地状态。本地修改 M / 新增 A / 删除 D / 未版本化 ? / missing !,
-        svn update 均安全处理 (merge / 恢复, 不丢数据), 一律放行。生产环境
-        config.yaml 等本地专属配置改动是常态, 挡 M 会让自动更新永远卡住。
-        """
-        try:
-            r = subprocess.run(
-                ["svn", "status"],
-                capture_output=True, text=True, timeout=30,
-                cwd=cwd or os.getcwd(),
-                encoding="gbk", errors="replace",
-            )
-            lines = [ln for ln in (r.stdout or "").splitlines() if ln.strip()]
-            if not lines:
-                return ""
-            parts = []
-            for ln in lines:
-                s = ln.strip()
-                # tree conflict 落在第七列 (行前 8 字符内 'C'), 内容冲突第一列也是 'C'
-                if "C" in ln[:8]:
-                    parts.append(s)
-            if not parts:
-                return ""
-            shown = parts[:10]
-            extra = f"... (+{len(parts)-10} more)" if len(parts) > 10 else ""
-            return "; ".join(shown) + extra
-        except Exception as e:
-            return f"svn status failed: {e}"
+        self._write_orchestration_record(log_path, record)
 
     def _probe_svc(self, svc: ManagedService, timeout: float = 0.5) -> bool:
         """探活单个子服务: 进程存活 + (有端口) 端口 listening."""
@@ -942,51 +696,8 @@ class ServiceControlServer:
         }
         return detail["ok"], detail
 
-    def _rollback(self, targets, revision, svn_root, record, log_path):
-        """回滚: 停(杀坏 exe 崩溃循环) → svn update -r <旧rev> → 重启 → 再探活。
-        每关键节点写 log_path (update_log 实时可见)。返 rollback detail dict。
-        """
-        logger.warning("[update] probe failed, rolling back to svn r%s", revision)
-        detail = {"needed": True, "revision": revision}
-        # a) 停 (坏 exe 可能正在跑/crash-loop, 先停解锁)
-        stopped = []
-        for svc in targets:
-            if svc.running:
-                svc.stop(timeout=15)
-            stopped.append({"name": svc.name, "status": svc.status, "pid": svc.pid})
-        detail["stopped"] = stopped
-        record["rollback"] = detail
-        record["stage"] = "rollback_stopped"
-        self._write_update_record(log_path, record)
-        # b) svn update -r <旧rev>
-        out, err, rc = self._run_svn_update_rev(svn_root, revision)
-        detail["svn"] = {"ok": rc == 0, "revision": revision, "returncode": rc,
-                         "stdout": out, "stderr": err}
-        record["rollback"] = detail
-        record["stage"] = "rollback_svn"
-        self._write_update_record(log_path, record)
-        logger.info("[update] rollback svn -r %s rc=%d", revision, rc)
-        # c) 重启
-        restarted = []
-        for svc in targets:
-            svc.start()
-            restarted.append({"name": svc.name, "status": svc.status, "pid": svc.pid})
-        detail["restarted"] = restarted
-        record["rollback"] = detail
-        record["stage"] = "rollback_started"
-        self._write_update_record(log_path, record)
-        # d) 再探活
-        probe_ok, probe_detail = self._probe_all(targets, timeout=30)
-        detail["probe_after"] = probe_detail
-        detail["ok"] = probe_ok
-        record["rollback"] = detail
-        record["stage"] = "rollback_probed"
-        self._write_update_record(log_path, record)
-        logger.warning("[update] rollback restart probe ok=%s", probe_ok)
-        return detail
-
-    def _write_update_record(self, log_path, record):
-        """把当前 record 写 svn_update.log (update_log 实时可见, 关键节点刷新)."""
+    def _write_orchestration_record(self, log_path, record):
+        """把当前 record 写编排日志 (deploy.log, 关键节点刷新, 供 deploy_log 轮询)."""
         try:
             with open(log_path, "w", encoding="utf-8") as f:
                 json.dump(record, f, ensure_ascii=False, indent=2)

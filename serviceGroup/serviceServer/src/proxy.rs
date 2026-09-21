@@ -92,6 +92,9 @@ const DEAD_PREFIXES: &[&str] = &[
     // 抓取家族 (U4 收尾): title/background/metadata 三条全迁原生 (routes/fetch.rs + assets.rs)。
     // 注: /static/* 不在收编范围 —— 抓取产物仍由 legacy 的 Flask static 目录服务。
     "/api/fetch-",
+    // svn 编排 (U5, 2026-09-22 用户裁定): svn 端点整体退役 —— 发布/更新一律走 deploy
+    // 产物打包直推 (以推送端上传内容为准), 3 条端点连前端入口一并删除, 故整段收编。
+    "/api/svn",
     "/ai-manager",
     "/rag-qa",
     "/api/rag",
@@ -160,6 +163,10 @@ mod tests {
     #[case("/api/fetch-background", true)]
     #[case("/api/fetch-metadata", true)]
     #[case("/api/fetch-title", true)]
+    // U5 (2026-09-22): svn 编排退役 —— /api/svn 整段收编, 3 端点与 UI 入口一并删除。
+    #[case("/api/svn/status", true)]
+    #[case("/api/svn/update", true)]
+    #[case("/api/svn/update_log", true)]
     #[case("/fileontimer", true)]
     #[case("/api/fileontimer/list", true)]
     fn test_is_dead_path_matrix(#[case] path: &str, #[case] dead: bool) {

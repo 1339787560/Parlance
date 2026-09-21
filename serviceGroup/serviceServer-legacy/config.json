@@ -1,10 +1,8 @@
 {
     "chunkSvrHttpUrl": "http://192.168.102.53:60463/v1.0/chunkluareq",
     "hideForBG":true,
-    "svnPath": "https:/192.168.102.112/svn/common/trunk/自有平台业务/斗雀工作室/scriptTools/serviceServer",
     "abspath": "D:/game/",
     "toolbarButtons": {
-        "svnUpdate": true,
         "configModify": true,
         "serverStatus": true,
         "setCurrency": true,

@@ -141,8 +141,8 @@ async fn main() -> anyhow::Result<()> {
         // 注意: 返回的 /static/* 仍由 legacy 提供, 前台不收编该前缀。
         .route("/api/fetch-background", get(assets::fetch_background))
         .route("/api/fetch-metadata", get(assets::fetch_metadata))
-        // /api/svn/* 暂留 legacy 反代: svnPath 是 URL 非本地路径, 旧码语义混乱
-        // (读 svnPath 未传 cwd), 待 auto-update SDD 重新设计 svn 编排。
+        // /api/svn/* 已退役 (U5, 2026-09-22 用户裁定): 发布/更新统一走 deploy 产物打包直推,
+        // 不再保留 svn 编排 —— 前缀已进 proxy.rs DEAD_PREFIXES, 未匹配子路径一律 404。
         .route("/api/config/file/content", get(config_file::get_content))
         .route("/api/config/file/download", get(config_file::download_file))
         .route("/api/config/file/save", axum::routing::post(config_file::save_file))

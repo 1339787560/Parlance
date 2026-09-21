@@ -12,7 +12,6 @@ def load_toolbar_config():
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
             return config.get('toolbarButtons', {
-                'svnUpdate': True,
                 'configModify': True,
                 'serverStatus': True,
                 'setCurrency': True,
@@ -23,7 +22,6 @@ def load_toolbar_config():
             })
     except:
         return {
-            'svnUpdate': True,
             'configModify': True,
             'serverStatus': True,
             'setCurrency': True,
