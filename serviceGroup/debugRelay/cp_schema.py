@@ -86,6 +86,12 @@ CP_REQ_SCHEMA = {
         {'req': 'claimTutorialReward', 'params': {}, 'ro': False, 'desc': '领取引导奖励 [写]'},
         {'req': 'clearMigrationFlag', 'params': {}, 'ro': False, 'desc': '清迁移标记 (仅125/888) [写]'},
         {'req': 'clearMigrationTargets', 'params': {}, 'ro': False, 'desc': '清迁移模块数据 (仅125/888) [写]'},
+        {'req': 'runLegacyMigration', 'params': {}, 'ro': False,
+         'desc': '重置并跑一遍旧版迁移流程，制造「旧版迁移态」账号 (仅125/888) [写]；跑完 CP 会 notifyClient 刷新界面'},
+        {'req': 'clearMigrationCache', 'params': {}, 'ro': False,
+         'desc': '清 chunkSvr 侧「已推送」去重缓存 (仅125/888) [写]；由 CP 转调 chunkSvr 内网接口，客户端不直连'},
+        {'req': 'clearMigrationBoth', 'params': {}, 'ro': False,
+         'desc': '【原子】清两侧迁移状态 = CP 迁移标记 + chunkSvr 推送缓存，使玩家回到「未迁移」态 (仅125/888) [写]'},
     ],
     'goldbank': [
         {'req': 'queryGoldBankInfo', 'params': {}, 'ro': True, 'desc': '金库信息'},

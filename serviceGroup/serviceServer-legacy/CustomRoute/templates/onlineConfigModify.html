@@ -7,8 +7,16 @@
     <link rel="icon" href="/static/icon/tabIcon.ico" type="image/x-icon">
     <title>在线配置修改</title>
     <style>
+        /* ===== 字体 (2026-09-21) ===== 与 index.html 同口径: 界面走黑体系
+           (Arial 不含中文 -> 中文掉进宋体 SimSun 发虚); 配置正文走等宽
+           (Windows 的 monospace 会落到 Courier New 细而旧 -> 换 Consolas)。 */
+        :root {
+            --ui-font: "Microsoft YaHei", "微软雅黑", "SimHei", "黑体", "Segoe UI", Arial, sans-serif;
+            --code-font: Consolas, "Cascadia Mono", "Courier New", "Microsoft YaHei", "微软雅黑", monospace;
+        }
+
         body {
-            font-family: Arial, sans-serif;
+            font-family: var(--ui-font);
             margin: 0;
             padding: 20px;
             background-color: #f5f5f5;
@@ -135,16 +143,60 @@
             padding: 16px;
         }
 
-        .editor-container textarea {
+        /* 编辑区 = 行号槽 + 正文。行号靠"同字体同行高的 div 列 + scrollTop 同步"实现;
+           正文必须 wrap="off" —— 软换行会让一个逻辑行占两个视觉行, 行号必然错位。 */
+        .editor-container .ocm-editor {
             flex: 1;
             min-height: 300px;
-            height: auto;
+            display: flex;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #fff;
+        }
+        .editor-container .ocm-editor.invalid {
+            border-color: #dc3545;
+            box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.18);
+        }
+        body.dark-theme .ocm-editor {
+            background: #1e1e1e;
+            border-color: #555;
+        }
+        .editor-container textarea {
+            flex: 1;
+            min-width: 0;
+            min-height: 0;
+            height: 100%;
             width: 100%;
             max-width: 100%;
-            overflow-x: auto;
-            overflow-y: auto;
-            word-break: break-all;
+            overflow: auto;
+            white-space: pre;    /* 与 wrap="off" 配套: 不软换行, 长行走横向滚动 */
+            word-break: normal;
+            border: 0;
+            border-radius: 0;
+            resize: none;        /* 有行号槽后不能再拖高, 否则行号错位 */
         }
+        .ocm-gutter {
+            flex: 0 0 auto;
+            padding: 10px 6px 10px 10px;
+            text-align: right;
+            font-family: var(--code-font);
+            font-size: 13px;
+            line-height: 1.6; /* 与正文严格同高, 否则滚动后行号会漂 */
+            color: #9aa0a6;
+            background: rgba(0, 0, 0, 0.035);
+            border-right: 1px solid rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            user-select: none;
+            cursor: default;
+        }
+        body.dark-theme .ocm-gutter {
+            color: #6b7075;
+            background: rgba(255, 255, 255, 0.04);
+            border-right-color: rgba(255, 255, 255, 0.07);
+        }
+        .ocm-gutter > div { line-height: 1.6; }
+        .ocm-gutter > div.err-line { color: #fff; background: #dc3545; border-radius: 2px; }
 
         .close-btn {
             background-color: #dc3545;
@@ -211,12 +263,40 @@
         textarea {
             width: 100%;
             height: 400px;
-            font-family: monospace;
+            font-family: var(--code-font);
+            font-size: 13px;
+            line-height: 1.6;
+            tab-size: 4;
             padding: 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
             resize: vertical;
         }
+
+        /* 格式校验: 只报真实语法错误 (拼写检查已由 textarea 的 spellcheck=false 关掉)。
+           出错 = 正文框描红 + 下方红条给出「第几行第几列」, 点红条跳到出错行。 */
+        .ocm-validate {
+            font-size: 12px;
+            padding: 5px 8px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.04);
+            color: #666;
+        }
+        .ocm-validate.ok {
+            color: #1e7e34;
+            background: rgba(40, 167, 69, 0.12);
+        }
+        .ocm-validate.err {
+            color: #c82333;
+            background: rgba(220, 53, 69, 0.12);
+            cursor: pointer;
+        }
+        .ocm-validate.err:hover { background: rgba(220, 53, 69, 0.20); }
+        /* 描红挂在编辑区容器上 (正文自身 border 已去掉, 且外面有行号槽) */
+        body.dark-theme .ocm-validate { background: rgba(255, 255, 255, 0.05); color: #b0b0b0; }
+        body.dark-theme .ocm-validate.ok { color: #5bd47f; background: rgba(40, 167, 69, 0.16); }
+        body.dark-theme .ocm-validate.err { color: #ff6b6b; background: rgba(220, 53, 69, 0.18); }
+        body.dark-theme .ocm-validate.err:hover { background: rgba(220, 53, 69, 0.28); }
 
         button {
             background-color: #007bff;
@@ -246,6 +326,132 @@
 
         button.cancel:hover {
             background-color: #5a6268;
+        }
+
+        /* ===== 文件管理 (serviceserver_spec/09): 服务级工具栏 + 文件行删除 + 回收站区 ===== */
+        .config-file-toolbar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 4px 0 6px;
+        }
+
+        .config-file-toolbar button {
+            padding: 3px 10px;
+            margin: 0;
+            font-size: 12px;
+        }
+
+        .config-file-toolbar button.recycle {
+            background-color: #28a745;
+        }
+
+        .config-file-toolbar button.recycle:hover {
+            background-color: #218838;
+        }
+
+        .config-file-empty {
+            color: #666;
+            padding: 5px 0;
+        }
+
+        .config-file-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 2px 0;
+            min-width: 0;
+        }
+
+        .config-file-row .config-file-name {
+            flex: 1;
+            min-width: 0;
+            padding: 5px 0;
+            cursor: pointer;
+            color: #007bff;
+            overflow-wrap: anywhere;
+        }
+
+        .config-file-row .config-file-name:hover {
+            text-decoration: underline;
+        }
+
+        .config-file-row .config-file-del {
+            flex: 0 0 auto;
+            padding: 1px 6px;
+            margin: 0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: transparent;
+            color: #dc3545;
+            font-weight: bold;
+            font-size: 13px;
+            line-height: 1.2;
+        }
+
+        .config-file-row .config-file-del:hover {
+            background-color: #dc3545;
+            color: #fff;
+        }
+
+        .recycle-panel {
+            padding: 2px 0 6px;
+        }
+
+        .recycle-note {
+            color: #888;
+            font-size: 12px;
+            padding: 2px 0 4px;
+        }
+
+        .recycle-list {
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .recycle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 3px 0;
+            border-bottom: 1px solid #eee;
+            min-width: 0;
+        }
+
+        body.dark-theme .recycle-row {
+            border-bottom-color: #444;
+        }
+
+        .recycle-main {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .recycle-name {
+            font-size: 13px;
+            overflow-wrap: anywhere;
+        }
+
+        .recycle-meta {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .recycle-row button {
+            flex: 0 0 auto;
+            padding: 3px 10px;
+            margin: 0;
+            font-size: 12px;
+            background-color: #28a745;
+        }
+
+        .recycle-row button:hover {
+            background-color: #218838;
         }
     </style>
 </head>
@@ -282,7 +488,11 @@
                         <button class="close-btn" onclick="hideEditor()" title="关闭">✕</button>
                     </div>
                 </div>
-                <textarea id="file-content" placeholder="文件内容将在此显示..."></textarea>
+                <div class="ocm-editor" id="ocm-editor">
+                    <div class="ocm-gutter" id="ocm-gutter" aria-hidden="true"></div>
+                    <textarea id="file-content" placeholder="文件内容将在此显示..." spellcheck="false" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
+                </div>
+                <div class="ocm-validate" id="ocm-validate"><span id="ocm-validate-text">格式校验: 打开文件后自动检测</span></div>
                 <details id="branch-details">
                     <summary>备份文件 (<span id="branch-count">0</span>)</summary>
                     <div id="branch-files-container"></div>
@@ -354,25 +564,67 @@
                 const configFileList = document.createElement('div');
                 configFileList.className = 'config-file-list';
 
-                const configFiles = result.files || [];
-                if (configFiles.length > 0) {
-                    configFiles.forEach(file => {
-                        const fileItem = document.createElement('div');
-                        fileItem.className = 'config-file-item';
-                        fileItem.textContent = file.filename;
-                        fileItem.onclick = (event) => {
-                            event.stopPropagation(); // 阻止冒泡到父级服务项
-                            openFileEditor(file.full_path, file.filename);  // 使用完整路径
-                        };
-                        configFileList.appendChild(fileItem);
-                    });
-                } else {
-                    const noFiles = document.createElement('div');
-                    noFiles.style.color = '#666';
-                    noFiles.style.padding = '5px 0 5px 20px';
-                    noFiles.textContent = '未找到配置文件(.ini或.json)';
-                    configFileList.appendChild(noFiles);
-                }
+                // 服务级工具栏: [上传] [回收站 (N)]
+                const toolbar = document.createElement('div');
+                toolbar.className = 'config-file-toolbar';
+
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.style.display = 'none';
+                fileInput.onchange = () => {
+                    const picked = fileInput.files && fileInput.files[0];
+                    fileInput.value = ''; // 清空, 便于再次选同名文件也能触发 change
+                    if (picked) ocmUpload(ctx, picked);
+                };
+
+                const upBtn = document.createElement('button');
+                upBtn.textContent = '上传';
+                upBtn.title = '上传文件到该服务根目录 (同名会先备份进回收站)';
+                upBtn.onclick = (event) => { event.stopPropagation(); fileInput.click(); };
+
+                const recBtn = document.createElement('button');
+                recBtn.className = 'recycle';
+                recBtn.textContent = '回收站 (0)';
+                recBtn.title = '该服务被删除 / 覆盖过的历史版本 (只能还原, 不能删除)';
+
+                const recPanel = document.createElement('div');
+                recPanel.className = 'recycle-panel';
+                recPanel.style.display = 'none';
+                recBtn.onclick = async (event) => {
+                    event.stopPropagation(); // 阻止冒泡到父级服务项 (否则会收起整个文件列表)
+                    const opening = recPanel.style.display === 'none';
+                    recPanel.style.display = opening ? 'block' : 'none';
+                    if (opening) await ctx.refreshRecycle();
+                };
+
+                toolbar.appendChild(fileInput);
+                toolbar.appendChild(upBtn);
+                toolbar.appendChild(recBtn);
+
+                const filesBox = document.createElement('div');
+
+                // 该服务的操作上下文: 上传 / 删除 / 还原后都靠这两个回调重绘
+                const ctx = {
+                    serviceId,
+                    refreshFiles: async () => {
+                        const r = await fetch(`/api/config/files?serviceId=${encodeURIComponent(serviceId)}&ext=ini,json,lua`);
+                        const data = await r.json();
+                        return ocmRenderFiles(filesBox, data.files || [], ctx);
+                    },
+                    refreshRecycle: async () => {
+                        const n = await ocmLoadRecycle(ctx, recPanel);
+                        recBtn.textContent = `回收站 (${n})`;
+                        return n;
+                    }
+                };
+
+                configFileList.appendChild(toolbar);
+                configFileList.appendChild(recPanel);
+                configFileList.appendChild(filesBox);
+
+                // 首次用刚取到的列表渲染, 不重复请求
+                ocmRenderFiles(filesBox, result.files || [], ctx);
+                ctx.refreshRecycle();
 
                 // 插入到服务项之后
                 serviceItemElement.parentNode.insertBefore(configFileList, serviceItemElement.nextSibling);
@@ -472,6 +724,7 @@
             document.getElementById('file-content').value = content;
             document.getElementById('editor-container').style.display = 'flex';
             document.getElementById('encoding-selector').value = encoding; // Set the dropdown value
+            ocmValidateNow(); // 打开即校验一次, 不用等用户敲键
 
             // 加载备份文件列表
             loadBranchFiles(filePath, fileName);
@@ -683,11 +936,13 @@
             document.getElementById('editor-container').style.display = 'none';
             selectedService = null;
             editingFilePath = null;
+            ocmValidateNow(); // 清掉残留校验态
         }
         // 隐藏编辑器
         function hideEditor() {
             document.getElementById('editor-container').style.display = 'none';
             editingFilePath = null;
+            ocmValidateNow();
         }
         // 遮罩点击关闭 (卡片 onclick stopPropagation 已挡冒泡)
         function onBackdropClick(event) {
@@ -695,6 +950,361 @@
                 hideEditor();
             }
         }
+
+        // ===== 文件管理: 上传 / 删除 / 回收站还原 (规格 serviceserver_spec/09) =====
+        // 后端红线: 只收相对服务根的 relPath; 拒 .exe; 拒保留区 (.config_history / remove);
+        // 删除与覆盖都先滚一份备份进 .config_history (即"回收站"), 故都可还原。
+        // 回收站设计为只读: 行内只有「还原」, 不提供删除。
+
+        // 备份名后缀 = unix 纳秒 (20 位定长, 见 src/backup.rs 命名) → 本地时间串
+        function ocmParseBackupTime(name) {
+            const m = /\.(\d{20})$/.exec(name || '');
+            if (!m) return '—';
+            const d = new Date(Number(m[1]) / 1e6);
+            if (isNaN(d.getTime())) return '—';
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+                + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        }
+
+        function ocmFmtSize(n) {
+            if (typeof n !== 'number' || isNaN(n)) return '—';
+            if (n < 1024) return n + ' B';
+            if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+            return (n / 1024 / 1024).toFixed(2) + ' MB';
+        }
+
+        // 渲染文件行: 文件名 (点击编辑) + ✕ 删除。返回同一份列表供调用方判定可见性。
+        function ocmRenderFiles(container, files, ctx) {
+            container.innerHTML = '';
+            if (!files.length) {
+                const empty = document.createElement('div');
+                empty.className = 'config-file-empty';
+                empty.textContent = '未找到配置文件(.ini/.json/.lua)';
+                container.appendChild(empty);
+                return files;
+            }
+            files.forEach(file => {
+                const row = document.createElement('div');
+                row.className = 'config-file-row';
+
+                const nameEl = document.createElement('span');
+                nameEl.className = 'config-file-name';
+                nameEl.textContent = file.filename;
+                nameEl.onclick = (event) => {
+                    event.stopPropagation();
+                    openFileEditor(file.full_path, file.filename); // 用完整路径读内容
+                };
+
+                const del = document.createElement('button');
+                del.className = 'config-file-del';
+                del.textContent = '✕';
+                del.title = '删除 ' + file.filename + ' (先进回收站, 可还原)';
+                del.onclick = (event) => {
+                    event.stopPropagation();
+                    ocmDelete(ctx, file.path || file.filename, file.filename);
+                };
+
+                row.appendChild(nameEl);
+                row.appendChild(del);
+                container.appendChild(row);
+            });
+            return files;
+        }
+
+        async function ocmUpload(ctx, file) {
+            const relPath = file.name;   // 落服务根目录: relPath 即文件名
+            const fd = new FormData();
+            fd.append('file', file, file.name);
+            try {
+                const resp = await fetch(
+                    `/api/files/upload?serviceId=${encodeURIComponent(ctx.serviceId)}&relPath=${encodeURIComponent(relPath)}`,
+                    { method: 'POST', body: fd });
+                const result = await resp.json().catch(() => ({}));
+                if (!resp.ok || !result.success) {
+                    alert('上传失败: ' + (result.message || ('HTTP ' + resp.status)));
+                    return;
+                }
+                const files = await ctx.refreshFiles();
+                ctx.refreshRecycle();
+                // 本列表按 ini/json/lua 过滤: 别的扩展名传成功了也不在列表里,
+                // 不说明白就会看着像"上传没生效"。
+                const visible = (files || []).some(f => f.filename === relPath);
+                let msg = result.message || '上传成功';
+                if (result.path) msg += `\n\n落位: ${result.path}`;
+                if (!visible) {
+                    msg += `\n\n注意: ${relPath} 的扩展名不在本列表的 ini/json/lua 过滤范围内,`
+                         + ` 所以这里看不到它 —— 文件确实已经写进服务目录了。`;
+                }
+                alert(msg);
+            } catch (e) {
+                alert('上传失败: ' + e.message);
+            }
+        }
+
+        async function ocmDelete(ctx, relPath, fileName) {
+            if (!confirm(`确定删除 "${fileName}" 吗？\n\n会先进回收站, 可在「回收站」里还原。`)) return;
+            try {
+                const resp = await fetch('/api/files/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ serviceId: ctx.serviceId, relPath })
+                });
+                const result = await resp.json().catch(() => ({}));
+                if (resp.ok && result.success) {
+                    await ctx.refreshFiles();
+                    await ctx.refreshRecycle();
+                } else {
+                    alert('删除失败: ' + (result.message || ('HTTP ' + resp.status)));
+                }
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+
+        // 回收站: 该服务全部历史备份 (跨文件, 含已删除文件)。只给「还原」, 无删除。
+        async function ocmLoadRecycle(ctx, panel) {
+            panel.innerHTML = '<div class="recycle-note">加载中...</div>';
+            try {
+                const resp = await fetch(`/api/files/recycle?serviceId=${encodeURIComponent(ctx.serviceId)}`);
+                const result = await resp.json().catch(() => ({}));
+                if (!resp.ok || !result.success) {
+                    panel.innerHTML = `<div class="recycle-note">回收站加载失败: ${result.message || ('HTTP ' + resp.status)}</div>`;
+                    return 0;
+                }
+                const entries = result.entries || [];
+                panel.innerHTML = '';
+                const note = document.createElement('div');
+                note.className = 'recycle-note';
+                note.textContent = '删除 / 覆盖前的历史版本, 只能还原, 不能删除。';
+                panel.appendChild(note);
+                if (!entries.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'recycle-note';
+                    empty.textContent = '回收站为空';
+                    panel.appendChild(empty);
+                    return 0;
+                }
+                const list = document.createElement('div');
+                list.className = 'recycle-list';
+                entries.forEach(en => {
+                    const row = document.createElement('div');
+                    row.className = 'recycle-row';
+                    const main = document.createElement('span');
+                    main.className = 'recycle-main';
+                    const nm = document.createElement('span');
+                    nm.className = 'recycle-name';
+                    nm.textContent = en.original;   // textContent: 文件名不参与 HTML 解析
+                    nm.title = en.rel_path;
+                    const meta = document.createElement('span');
+                    meta.className = 'recycle-meta';
+                    meta.textContent = `${ocmParseBackupTime(en.name)} · ${ocmFmtSize(en.size)}`;
+                    main.appendChild(nm);
+                    main.appendChild(meta);
+                    const btn = document.createElement('button');
+                    btn.textContent = '还原';
+                    btn.title = `还原 "${en.original}" 到服务目录 (当前同名文件会先备份)`;
+                    btn.onclick = (event) => { event.stopPropagation(); ocmRestore(ctx, en); };
+                    row.appendChild(main);
+                    row.appendChild(btn);
+                    list.appendChild(row);
+                });
+                panel.appendChild(list);
+                return entries.length;
+            } catch (e) {
+                panel.innerHTML = `<div class="recycle-note">回收站加载失败: ${e.message}</div>`;
+                return 0;
+            }
+        }
+
+        async function ocmRestore(ctx, entry) {
+            if (!confirm(`确定把 "${entry.original}" 还原为这个备份吗？\n\n备份: ${entry.name}\n当前同名文件会先备份进回收站, 还原本身也可反悔。`)) return;
+            try {
+                const resp = await fetch('/api/files/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        serviceId: ctx.serviceId,
+                        relPath: entry.rel_path,
+                        backupName: entry.name
+                    })
+                });
+                const result = await resp.json().catch(() => ({}));
+                if (resp.ok && result.success) {
+                    await ctx.refreshFiles();
+                    await ctx.refreshRecycle();
+                    alert(result.message || '还原成功');
+                } else {
+                    alert('还原失败: ' + (result.message || ('HTTP ' + resp.status)));
+                }
+            } catch (e) {
+                alert('还原失败: ' + e.message);
+            }
+        }
+
+        // ===== 格式校验 (只报真实语法错误; 浏览器的拼写检查已由 textarea 的 spellcheck=false 关掉) =====
+        // 与 index.html 同口径: json → JSON.parse (严格); ini → 逐行规则; lua → 不校验
+        // (没有 Lua 解析器, 靠猜的校验必然误报, 比不校验更糟)。
+        // 规则已对实盘语料验证: xzmo/xzms/zgdb 全部 ini 无一例外命中; zgdb 31 个 json 全部严格可解析。
+        function ocmKindOf(name) {
+            const m = /\.([a-z0-9]+)$/i.exec(name || '');
+            const ext = m ? m[1].toLowerCase() : '';
+            if (ext === 'json') return 'json';
+            if (ext === 'ini') return 'ini';
+            return null;
+        }
+
+        // V8 报错两种形态 (Chrome 145 实测): a) 带 "at position N (line L column C)" → 直接给行列;
+        // b) Unexpected token 一家只给上下文片段 → 在原文反查该片段, 定位到「出错附近」(不谎报行列)。
+        function ocmCheckJson(text) {
+            try {
+                JSON.parse(text);
+                return { ok: true };
+            } catch (e) {
+                const msg = String((e && e.message) || e);
+                let line = null, col = null, nearStart = null, nearEnd = null, m;
+                if ((m = /\(line (\d+) column (\d+)\)/.exec(msg))) {
+                    line = +m[1]; col = +m[2];
+                } else if ((m = /position (\d+)/.exec(msg))) {
+                    const pos = +m[1];
+                    const before = text.slice(0, pos);
+                    line = before.split('\n').length;
+                    col = pos - before.lastIndexOf('\n');
+                } else if ((m = /Unexpected token '[^']*', (?:\.\.\.)?"([\s\S]*)" is not valid JSON$/.exec(msg))) {
+                    const at = text.indexOf(m[1]);
+                    if (at >= 0) { nearStart = at; nearEnd = at + m[1].length; }
+                }
+                return { ok: false, line, col, msg, nearStart, nearEnd };
+            }
+        }
+
+        function ocmCheckIni(text) {
+            const lines = text.split(/\r?\n/);
+            for (let i = 0; i < lines.length; i++) {
+                const t = lines[i].trim();
+                if (t === '' || t.startsWith(';') || t.startsWith('#')) continue;
+                if (t.startsWith('[')) {
+                    if (!/^\[[^\]\r\n]+\]\s*$/.test(t)) {
+                        return { ok: false, line: i + 1, col: 1, msg: '节名不合法 (应为 [名称]): ' + t.slice(0, 40) };
+                    }
+                    continue;
+                }
+                if (!/^[^=]+=/.test(t) && !/^[^:]+:/.test(t)) {
+                    return { ok: false, line: i + 1, col: 1, msg: '既不是 [节], 也不是 key=value: ' + t.slice(0, 40) };
+                }
+            }
+            return { ok: true };
+        }
+
+        let ocmValidateTimer = null;
+        function ocmScheduleValidate() {
+            // 输入防抖: 别每敲一个键就把整篇重解析一遍
+            if (ocmValidateTimer) clearTimeout(ocmValidateTimer);
+            ocmValidateTimer = setTimeout(ocmValidateNow, 400);
+        }
+
+        function ocmValidateNow() {
+            const bar = document.getElementById('ocm-validate');
+            const txt = document.getElementById('ocm-validate-text');
+            const ta = document.getElementById('file-content');
+            if (!bar || !txt || !ta) return;
+            const ed = document.getElementById('ocm-editor');
+            const paint = (cls, text, errLine) => {
+                bar.className = 'ocm-validate' + (cls ? ' ' + cls : '');
+                txt.textContent = text;
+                if (ed) ed.classList.toggle('invalid', cls === 'err'); // 描红挂在编辑区容器上
+                bar.dataset.line = '';
+                bar.dataset.near = '';
+                bar.title = '';
+                ocmRenderGutter(errLine || null);
+            };
+            if (!editingFilePath) { paint('', '格式校验: 打开文件后自动检测'); return; }
+            const name = editingFilePath.replace(/.*[/\\]/, '');
+            const kind = ocmKindOf(name);
+            if (!kind) {
+                const ext = (name.split('.').pop() || '').toLowerCase();
+                paint('', `格式校验: ${ext ? '.' + ext : '无扩展名'} 不校验 (只校验 ini / json)`);
+                return;
+            }
+            const r = (kind === 'json') ? ocmCheckJson(ta.value) : ocmCheckIni(ta.value);
+            if (r.ok) { paint('ok', `✓ ${kind.toUpperCase()} 格式正确`); return; }
+            let where = '', hint = '   (点这里跳到出错处)';
+            if (r.line) {
+                where = `第 ${r.line} 行${r.col ? ' 第 ' + r.col + ' 列' : ''}: `;
+            } else if (r.nearStart != null) {
+                where = '出错附近: ';
+            } else {
+                hint = ''; // 既没位置也没片段 → 只报错, 不假装能跳
+            }
+            const shown = r.msg.length > 140 ? r.msg.slice(0, 140) + '…' : r.msg;
+            paint('err', `✗ ${kind.toUpperCase()} 格式错误 — ${where}${shown}${hint}`, r.line);
+            bar.dataset.line = r.line || '';
+            bar.dataset.near = (r.nearStart != null) ? (r.nearStart + ',' + r.nearEnd) : '';
+            bar.title = r.msg; // 完整报错挂 title, 免得长消息把条撑爆
+        }
+
+        // 点校验条 → 选中出错行并滚到可视区中间。
+        // textarea 没法给单行染色, "选中 + 滚动" 是最直观的定位手段;
+        // 要行内红线/波浪线得换 CodeMirror 或 Monaco, 属另一个量级。
+        function ocmGotoValidateError() {
+            const bar = document.getElementById('ocm-validate');
+            const ta = document.getElementById('file-content');
+            if (!bar || !ta) return;
+            const ln = bar.dataset.line ? parseInt(bar.dataset.line, 10) : 0;
+            const nr = (bar.dataset.near || '').split(',').map(s => parseInt(s, 10));
+            const hasNear = nr.length === 2 && !isNaN(nr[0]) && !isNaN(nr[1]) && nr[1] > nr[0];
+            if (!ln && !hasNear) return;
+            ta.focus();
+            const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+            if (ln) {
+                const lines = ta.value.split('\n');
+                let start = 0;
+                for (let i = 0; i < ln - 1 && i < lines.length; i++) start += lines[i].length + 1;
+                const end = start + ((lines[ln - 1] || '').length);
+                ta.setSelectionRange(start, end);
+                ta.scrollTop = Math.max(0, (ln - 1) * lh - ta.clientHeight / 2);
+            } else {
+                ta.setSelectionRange(nr[0], nr[1]);
+                const lineNo = ta.value.slice(0, nr[0]).split('\n').length;
+                ta.scrollTop = Math.max(0, (lineNo - 1) * lh - ta.clientHeight / 2);
+            }
+        }
+
+        // 行号槽: 与正文同字体/同行高, 只随 scrollTop 平移。
+        // 前提是 textarea 用 wrap="off" —— 软换行会让一个逻辑行占两个视觉行, 行号必然错位。
+        let ocmGutterCount = -1;
+        function ocmRenderGutter(errLine) {
+            const ta = document.getElementById('file-content');
+            const g = document.getElementById('ocm-gutter');
+            if (!ta || !g) return;
+            const n = ta.value.split('\n').length;
+            if (n !== ocmGutterCount) {
+                ocmGutterCount = n;
+                const frag = document.createDocumentFragment();
+                for (let i = 1; i <= n; i++) {
+                    const d = document.createElement('div');
+                    d.textContent = i;
+                    frag.appendChild(d);
+                }
+                g.textContent = '';
+                g.appendChild(frag);
+            }
+            // 出错行在行号槽里标红 (textarea 本体没法给单行染色, 行号槽可以)
+            const prev = g.querySelector('.err-line');
+            if (prev) prev.classList.remove('err-line');
+            if (errLine && errLine >= 1 && g.children[errLine - 1]) {
+                g.children[errLine - 1].classList.add('err-line');
+            }
+            g.scrollTop = ta.scrollTop;
+        }
+
+        document.getElementById('file-content').addEventListener('input', ocmScheduleValidate);
+        document.getElementById('file-content').addEventListener('input', function () { ocmRenderGutter(); });
+        document.getElementById('file-content').addEventListener('scroll', function () {
+            const g = document.getElementById('ocm-gutter');
+            if (g) g.scrollTop = this.scrollTop; // 行号跟着正文一起滚
+        });
+        document.getElementById('ocm-validate').addEventListener('click', ocmGotoValidateError);
 
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', loadServices);

@@ -78,6 +78,9 @@ pub fn compose_proxy_url(backend: &str, uri: &str) -> String {
 /// 注: `/api/makedeal` 曾在此列, 2026-09-13 移除 — 做牌接口 (caiyf svn r58900/r59114/r59912)
 /// 已回填 legacy ServiceRoute.py 且仍在用, 放行反代。
 const DEAD_PREFIXES: &[&str] = &[
+    // 启动序列 (U1): 全部 4 条已迁 Rust 原生 (routes/script.rs), 前缀整段摘除,
+    // 未匹配子路径一律 404 而非回退 legacy。
+    "/api/script",
     "/ai-manager",
     "/rag-qa",
     "/api/rag",

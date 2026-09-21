@@ -27,6 +27,7 @@ rstest = "0.23"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_System_Services",
+    "Win32_System_SystemInformation",  # GetLocalTime (script.json created_at, 无 chrono)
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",          # OpenProcess + QueryFullProcessImageNameW
     "Win32_NetworkManagement_IpHelper", # GetExtendedTcpTable/UdpTable

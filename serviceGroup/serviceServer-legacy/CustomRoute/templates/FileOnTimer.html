@@ -389,7 +389,12 @@
         }
     </style>
 </head>
-<body>
+<body class="dark-theme">
+    <script>
+        // 默认夜间模式: 仅当用户显式切过白天 (darkMode === 'false') 时回退白天。
+        // 置于 body 最前 → 先于正文解析执行, 首屏不闪白。
+        try { if (localStorage.getItem('darkMode') === 'false') document.body.classList.remove('dark-theme'); } catch (e) {}
+    </script>
     <div class="container">
         <div class="header">
             <h1>FileOnTimer 文件下载</h1>
@@ -398,7 +403,7 @@
                     ⚙️ 设置面板
                 </button>
                 <button class="theme-toggle" id="theme-toggle">
-                    <span id="theme-icon">🌙</span> 夜间模式
+                    <span id="theme-icon">☀️</span> 夜间模式
                 </button>
             </div>
         </div>
@@ -440,14 +445,10 @@
         const themeToggle = document.getElementById('theme-toggle');
         const themeIcon = document.getElementById('theme-icon');
         
-        // 检查本地存储中的主题偏好
-        const isDarkMode = localStorage.getItem('darkMode') === 'true';
-        
-        // 应用保存的主题
-        if (isDarkMode) {
-            document.body.classList.add('dark-theme');
-            themeIcon.textContent = '☀️';
-        }
+        // 主题已由 <body> 顶部的早置脚本确定 (默认夜间模式, 首屏不闪白);
+        // 这里只按实际 class 同步图标 —— 单一真相源 = body.dark-theme。
+        const isDarkMode = document.body.classList.contains('dark-theme');
+        themeIcon.textContent = isDarkMode ? '☀️' : '🌙';
         
         // 添加主题切换事件
         themeToggle.addEventListener('click', function() {

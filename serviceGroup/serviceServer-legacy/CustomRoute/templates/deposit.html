@@ -444,7 +444,12 @@
         }
     </style>
 </head>
-<body>
+<body class="dark-theme">
+    <script>
+        // 默认夜间模式: 仅当用户显式切过白天 (darkMode === 'false') 时回退白天。
+        // 置于 body 最前 → 先于正文解析执行, 首屏不闪白。
+        try { if (localStorage.getItem('darkMode') === 'false') document.body.classList.remove('dark-theme'); } catch (e) {}
+    </script>
     <div class="container">
         <div class="breadcrumb">
             <a href="/">主页</a> &gt; <span class="current-page-title">设置货币</span>
@@ -975,11 +980,7 @@
     </div>
     
     <script>
-        // 夜间模式功能实现
-        const isDarkMode = localStorage.getItem('darkMode') === 'true';
-        if (isDarkMode) {
-            document.body.classList.add('dark-theme');
-        }
+        // 夜间模式: 主题由 <body> 顶部早置脚本决定 (默认夜间模式), 此处不再重复判定。
         
         // tab -> 所属分组 (切 tab / 模板 apply 时自动切组)
         const TAB_GROUP = {

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cp_schema import CP_REQ_SCHEMA, cp_catalog, cp_namespaces, find_req, validate  # noqa: E402
 
 EXPECTED_MODULES = 13
-EXPECTED_REQS = 43
+EXPECTED_REQS = 46
 
 
 def test_schema_integrity():
@@ -83,4 +83,4 @@ def test_write_reqs_are_flagged():
             if not e["ro"]:
                 flagged += 1
                 assert "[写]" in e["desc"], f'{module}.{e["req"]} 写操作未标 [写]'
-    assert flagged == 20, "写操作数量变化需同步确认"
+    assert flagged == 23, "写操作数量变化需同步确认"

@@ -195,7 +195,7 @@
 
   <div class="app">
     <div class="meta" id="meta">未加载</div>
-    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v15</div>
+    <div id="ver-badge" style="position:fixed; top:4px; right:10px; z-index:150; font-size:11px; color:#fc6; background:rgba(20,40,30,.78); border:1px solid rgba(255,255,255,.06); border-radius:6px; padding:4px 10px;">复盘器 v17</div>
 
     <div class="table">
       <div class="chair" data-chair="0"><div class="player-info"><span class="name">玩家0</span><span class="uid"></span><span class="deposit" data-deposit>0</span><span class="que-chip" data-que>缺 -</span></div><div class="play-area"><div class="hu-area"></div><div class="play-row"><div class="meld-area"></div><div class="hand-area"><div class="hand-tiles"></div><div class="catch-area"></div></div></div></div></div>
@@ -477,6 +477,11 @@
         round.snaps.push(S({ phase: '定缺' })); continue;
       }
       if (t === 'ScoreDiff' || t === 'DepositDiff') {
+        // 结算块: DepositDiff 第 2 字段是**本次结算自己的金币变化**（服务端 MyTbl.cpp
+        // RecordResultEx 写 GameResultsExNew[i].nDepositDiff）。
+        // 用户口径（2026-09-21）: 对局中每次结算互相独立 —— 不累加、也不含开局服务费；
+        // 服务费那一步只显示它自己（ConstructMyPreSaveResult 的 ResultByFee 分支、
+        // nDepositDiff = -m_nRoomFees[i]）。末块是服务端给的累计/矫正行，属额外的一行，原样显示。
         while (i < n && isSettle(evs[i].type)) {
           if (evs[i].type==='DepositDiff') { const pp = evs[i].rest.split(/\s+/); const cc=+pp[0], val=+pp[1]; if (depositInit[cc]===null) depositInit[cc]=val; deposit[cc]=val; }
           i++;
@@ -687,8 +692,11 @@
 
       const depEl = chair.querySelector('.deposit');
       if (isResult) {
-        const init = s.depositInit[c], cur = s.deposit[c];
-        if (init !== null && cur !== null) { const delta = init + cur; depEl.textContent = (delta>0?'+':'')+convertMoneyFormat(delta); depEl.className = 'deposit show ' + (delta>0?'pos':delta<0?'neg':'zero'); }
+        // 只显示**本次结算自己**的金币变化（用户 2026-09-21 口径: 对局中每次结算互相独立，
+        // 不累加；服务费开局已扣、只在其自身那一步出现，不带到后续结算）。
+        // 旧式 init+cur 会把服务费加到每次结算上（槓显示 -75万 而非它自己的 -60万）。
+        const cur = s.deposit[c];
+        if (cur !== null && cur !== undefined) { const delta = cur; depEl.textContent = (delta>0?'+':'')+convertMoneyFormat(delta); depEl.className = 'deposit show ' + (delta>0?'pos':delta<0?'neg':'zero'); }
         else { depEl.textContent='0'; depEl.className='deposit show zero'; }
       } else depEl.className = 'deposit';
 

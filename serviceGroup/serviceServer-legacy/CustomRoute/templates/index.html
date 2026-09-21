@@ -10,8 +10,19 @@
             scrollbar-gutter: stable; /* 预留滚动条槽: 无条也留位, 展开出现条时不挤内容左移 */
         }
 
+        /* ===== 字体 (2026-09-21) =====
+           界面字体 (标题/标签/按钮/列表): 黑体系 —— 替掉 Arial; Arial 不含中文, 中文会掉进
+           宋体 (SimSun) 发虚发糊, 这是之前"不好看"的主因。
+           配置正文 (textarea): 显式等宽 —— Windows 的 monospace 会落到 Courier New (细而旧),
+           换成 Consolas; 中文回退雅黑/黑体。ini/json/lua 的缩进 + 易辨识字形 (l/1/I、O/0) 是刚需,
+           所以正文不跟界面走衬线体 (Times New Roman 是比例衬线, 会把缩进与列对齐打散)。 */
+        :root {
+            --ui-font: "Microsoft YaHei", "微软雅黑", "SimHei", "黑体", "Segoe UI", Arial, sans-serif;
+            --code-font: Consolas, "Cascadia Mono", "Courier New", "Microsoft YaHei", "微软雅黑", monospace;
+        }
+
         body {
-            font-family: Arial, sans-serif;
+            font-family: var(--ui-font);
             margin: 0;
             padding: 0; /* 移除body的padding，由container控制 */
             background-color: transparent; /* 背景透明以露出底层背景图 */
@@ -354,15 +365,16 @@
         .panel-content.expanded {
             max-height: 10000px; /* 增加最大高度以适应更多内容 */
             transition: max-height 0.3s ease-out; /* 仅展开播动画 */
+            /* 服务卡片流: 每行放若干个, 窄屏自动降列 */
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 12px;
+            padding: 12px;
+            align-content: start;
         }
         
         .panel-content .service-item {
-            padding: 15px 20px;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .panel-content .service-item:last-child {
-            border-bottom: none;
+            padding: 12px;
         }
 
         .game-stats {
@@ -474,23 +486,82 @@
             background-color: rgba(35, 39, 43, 0.9);
         }
         
-        /* 新增样式：使服务项更宽，适合单行显示 */
+        /* 服务卡片: 左信息 (title + type/file/port/modify/update), 右按钮纵向排列 */
         .service-item {
             display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 15px;
+            align-items: stretch;
+            gap: 10px;
+            min-width: 0;
+            background: rgba(255, 255, 255, 0.45);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
         }
         
         .service-info {
             flex: 1;
-            min-width: 300px;
+            min-width: 0;
+        }
+
+        .service-info h4 {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .svc-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .svc-head .status {
+            flex: 0 0 auto;
+        }
+
+        .svc-meta p {
+            display: flex;
+            gap: 6px;
+            margin: 2px 0;
+            min-width: 0;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .svc-k {
+            flex: 0 0 48px;
+            color: #999;
+        }
+
+        .svc-v {
+            flex: 1;
+            min-width: 0;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         
         .service-actions {
             display: flex;
+            flex-direction: column;
             gap: 5px;
-            flex-wrap: wrap;
+            flex: 0 0 auto;
+            align-self: stretch;
+        }
+
+        .service-actions button {
+            width: 100%;
+            margin: 0;
+            padding: 5px 10px;
+            font-size: 12px;
+            line-height: 1.2;
+            white-space: nowrap;
         }
 
         .sequence-item {
@@ -686,13 +757,22 @@
         }
         
         @media (max-width: 768px) {
+            .panel-content.expanded {
+                grid-template-columns: 1fr;
+            }
+
             .service-item {
                 flex-direction: column;
-                align-items: flex-start;
+                align-items: stretch;
             }
-            
-            .service-info {
-                min-width: 100%;
+
+            .service-actions {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+
+            .service-actions button {
+                width: auto;
             }
         }
 
@@ -759,8 +839,18 @@
             border-bottom-color: rgba(255, 255, 255, 0.05);
         }
         
-        body.dark-theme .panel-content .service-item {
-            border-bottom-color: #444;
+        body.dark-theme .service-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        body.dark-theme .svc-k {
+            color: #888;
+        }
+
+        body.dark-theme .svc-v {
+            color: #e0e0e0;
         }
         
         body.dark-theme .game-stats {
@@ -1071,7 +1161,7 @@
             border-radius: 4px;
             color: #007bff;
             word-break: break-all;
-            font-family: monospace;
+            font-family: var(--code-font);
             font-size: 13px;
         }
         .ce-file-item:hover { background-color: #e9ecef; text-decoration: underline; }
@@ -1086,24 +1176,97 @@
             flex-direction: column;
             gap: 8px;
         }
+        /* 编辑区 = 行号槽 + 正文。行号靠"同字体同行高的 div 列 + scrollTop 同步"实现;
+           正文必须 wrap="off" —— 软换行会让一个逻辑行占两个视觉行, 行号必然错位。 */
+        .ce-editor {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #fff;
+        }
+        /* 夜间模式的 body.dark-theme .ce-editor 特异性是 (0,2,1), 这里必须同特异或更高,
+           否则 border-color 会被它压过去 (box-shadow 不受影响, 所以只红一半) */
+        .ce-editor.invalid,
+        body.dark-theme .ce-editor.invalid {
+            border-color: #dc3545;
+            box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.18);
+        }
+        body.dark-theme .ce-editor {
+            background: #1e1e1e;
+            border-color: #555;
+        }
         .ce-main textarea {
             flex: 1;
             width: 100%;
             max-width: 100%;
+            min-width: 0;
             min-height: 0;
-            font-family: monospace;
+            font-family: var(--code-font);
+            font-size: 13px;
+            line-height: 1.6;
+            tab-size: 4; /* lua/json 里用 tab 缩进时不再挤成一格 */
             padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
+            border: 0;
+            border-radius: 0;
             resize: none;
-            overflow-x: auto;
-            word-break: break-all;
+            overflow: auto;
+            white-space: pre;    /* 与 wrap="off" 配套: 不软换行, 长行走横向滚动 */
+            word-break: normal;
         }
         body.dark-theme .ce-main textarea {
             background: #1e1e1e;
             color: #f0f0f0;
-            border-color: #555;
         }
+        .ce-gutter {
+            flex: 0 0 auto;
+            padding: 10px 6px 10px 10px;
+            text-align: right;
+            font-family: var(--code-font);
+            font-size: 13px;
+            line-height: 1.6; /* 与正文严格同高, 否则滚动后行号会漂 */
+            color: #9aa0a6;
+            background: rgba(0, 0, 0, 0.035);
+            border-right: 1px solid rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            user-select: none;
+            cursor: default;
+        }
+        body.dark-theme .ce-gutter {
+            color: #6b7075;
+            background: rgba(255, 255, 255, 0.04);
+            border-right-color: rgba(255, 255, 255, 0.07);
+        }
+        .ce-gutter > div { line-height: 1.6; }
+        .ce-gutter > div.err-line { color: #fff; background: #dc3545; border-radius: 2px; }
+
+        /* 格式校验: 只报真实语法错误 (拼写检查已由 textarea 的 spellcheck=false 关掉)。
+           出错 = 正文框描红 + 下方红条给出「第几行第几列」, 点红条跳到出错行。 */
+        .ce-validate {
+            flex-shrink: 0;
+            font-size: 12px;
+            padding: 5px 8px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.04);
+            color: #666;
+        }
+        .ce-validate.ok {
+            color: #1e7e34;
+            background: rgba(40, 167, 69, 0.12);
+        }
+        .ce-validate.err {
+            color: #c82333;
+            background: rgba(220, 53, 69, 0.12);
+            cursor: pointer;
+        }
+        .ce-validate.err:hover { background: rgba(220, 53, 69, 0.20); }
+        /* 描红挂在编辑区容器上 (正文自身 border 已去掉, 且外面有行号槽) */
+        body.dark-theme .ce-validate { background: rgba(255, 255, 255, 0.05); color: #b0b0b0; }
+        body.dark-theme .ce-validate.ok { color: #5bd47f; background: rgba(40, 167, 69, 0.16); }
+        body.dark-theme .ce-validate.err { color: #ff6b6b; background: rgba(220, 53, 69, 0.18); }
+        body.dark-theme .ce-validate.err:hover { background: rgba(220, 53, 69, 0.28); }
 
         .config-editor-overlay details {
             border-top: 1px solid #ccc;
@@ -1146,9 +1309,76 @@
         .ce-branch-row button.del { background-color: #dc3545; }
         .ce-branch-row button.del:hover { background-color: #c82333; }
         .ce-branch-empty { color: #888; padding: 4px 8px; font-size: 13px; }
+
+        /* 文件管理 (spec 09): 侧栏行删除按钮 + 回收站区。
+           回收站只读设计: 行内只给「还原」, 不给删除 —— 后端亦禁写保留区, 双层保证。 */
+        .ce-file-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+        }
+        .ce-file-row .ce-file-name {
+            flex: 1;
+            min-width: 0;
+        }
+        .ce-file-row .ce-file-del {
+            flex: 0 0 auto;
+            padding: 1px 6px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: transparent;
+            color: #dc3545;
+            font-weight: bold;
+            font-size: 13px;
+            line-height: 1.2;
+        }
+        .ce-file-row .ce-file-del:hover { background-color: #dc3545; color: #fff; }
+
+        .ce-recycle-note { color: #888; padding: 2px 8px 4px; font-size: 12px; }
+        .ce-recycle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            border-bottom: 1px solid #eee;
+            min-width: 0;
+        }
+        body.dark-theme .ce-recycle-row { border-bottom-color: #444; }
+        .ce-recycle-main {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .ce-recycle-name {
+            font-size: 13px;
+            overflow-wrap: anywhere;
+            word-break: break-all;
+        }
+        .ce-recycle-meta { color: #888; font-size: 12px; }
+        .ce-recycle-row button {
+            flex: 0 0 auto;
+            padding: 3px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #fff;
+            background-color: #28a745;
+            font-size: 12px;
+        }
+        .ce-recycle-row button:hover { background-color: #218838; }
+        /* 回收站可能条数很多: 限高+滚动, 避免撑破弹窗 (弹窗 overflow 是 hidden, 撑破就够不到了) */
+        #ce-recycle-list { max-height: 180px; overflow-y: auto; }
     </style>
 </head>
-<body>
+<body class="dark-theme">
+    <script>
+        // 默认夜间模式: 仅当用户显式切过白天 (darkMode === 'false') 时回退白天。
+        // 置于 body 最前 → 先于正文解析执行, 首屏不闪白。
+        try { if (localStorage.getItem('darkMode') === 'false') document.body.classList.remove('dark-theme'); } catch (e) {}
+    </script>
     <div id="bg-container" class="page-background"></div>
     <div class="page-overlay"></div>
     <div class="container">
@@ -1183,7 +1413,7 @@
                 <!-- fileontimer (下载日志) 已移除 -->
                 <!-- AI管理按钮已移除 (死功能: ai-manager/benchmark/claude/rag 均废弃) -->
                 <button id="theme-toggle" class="theme-toggle">
-                    <span id="theme-icon">🌙</span> 夜间模式
+                    <span id="theme-icon">☀️</span> 夜间模式
                 </button>
             </div>
 
@@ -1232,6 +1462,9 @@
                             <option value="utf-16-be">UTF-16 大端</option>
                         </select>
                     </label>
+                    <input type="file" id="ce-upload-input" style="display: none;" onchange="ceOnUploadPicked(event)">
+                    <button id="ce-upload-btn" onclick="cePromptUpload()" title="上传文件到该服务根目录 (同名会先备份进回收站)">上传</button>
+                    <button id="ce-recycle-btn" onclick="ceToggleRecycle()" title="该服务被删除 / 覆盖过的历史版本 (只能还原, 不能删除)">回收站 (<span id="ce-recycle-btn-count">0</span>)</button>
                     <button class="save" onclick="ceSaveFile()">保存</button>
                     <button onclick="cePromptCreateBranch()" title="创建命名备份">创建备份</button>
                     <button class="cancel" onclick="ceHideEditor()">取消</button>
@@ -1244,10 +1477,19 @@
                     <div id="ce-file-list"></div>
                 </div>
                 <div class="ce-main">
-                    <textarea id="ce-file-content" placeholder="选择左侧文件以加载内容..."></textarea>
+                    <div class="ce-editor" id="ce-editor">
+                        <div class="ce-gutter" id="ce-gutter" aria-hidden="true"></div>
+                        <textarea id="ce-file-content" placeholder="选择左侧文件以加载内容..." spellcheck="false" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
+                    </div>
+                    <div class="ce-validate" id="ce-validate"><span id="ce-validate-text">格式校验: 打开文件后自动检测</span></div>
                     <details>
                         <summary>备份文件 (<span id="ce-branch-count">0</span>)</summary>
                         <div id="ce-branch-files-container"></div>
+                    </details>
+                    <details id="ce-recycle-details">
+                        <summary>回收站 (<span id="ce-recycle-count">0</span>)</summary>
+                        <div class="ce-recycle-note">删除 / 覆盖前的历史版本, 只能还原, 不能删除。</div>
+                        <div id="ce-recycle-list"></div>
                     </details>
                 </div>
             </div>
@@ -1356,16 +1598,12 @@
         const themeToggleButtons = document.querySelectorAll('.theme-toggle');
         const themeIcons = document.querySelectorAll('#theme-icon');
         
-        // 检查本地存储中的主题偏好
-        const isDarkMode = localStorage.getItem('darkMode') === 'true';
-        
-        // 应用保存的主题
-        if (isDarkMode) {
-            document.body.classList.add('dark-theme');
-            themeIcons.forEach(icon => {
-                icon.textContent = '☀️';
-            });
-        }
+        // 主题已由 <body> 顶部的早置脚本确定 (默认夜间模式, 首屏不闪白);
+        // 这里只按实际 class 同步图标 —— 单一真相源 = body.dark-theme。
+        const isDarkMode = document.body.classList.contains('dark-theme');
+        themeIcons.forEach(icon => {
+            icon.textContent = isDarkMode ? '☀️' : '🌙';
+        });
         
         // 为所有夜间模式按钮添加主题切换事件
         themeToggleButtons.forEach(button => {
@@ -1726,12 +1964,12 @@
                                         // 工具自身: 只给「重启自身 + 配置编辑」—— 停/删会让入口消失,
                                         // 换代走 deploy 包通道 (exe 必须经宿主 swap_exe)。
                                         actionButtons = `
-                                            <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}')">配置编辑</button>
+                                            <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}', ${serviceInfo.self ? 'true' : 'false'})">配置编辑</button>
                                             <button class="restart" onclick="restartService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">重启自身</button>
                                         `;
                                     } else if (isDeployed) {
                                         actionButtons = `
-                                            <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}')">配置编辑</button>
+                                            <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}', ${serviceInfo.self ? 'true' : 'false'})">配置编辑</button>
                                             <button class="update" onclick="triggerUpdateFile('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">更新</button>
                                             <button data-role="start" onclick="startService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')"
                                                     ${isRunning ? 'disabled' : ''}>启动</button>
@@ -1749,13 +1987,17 @@
                                     
                                     serviceItem.innerHTML = `
                                         <div class="service-info">
-                                            <h4>${serviceInfo.display_name}</h4>
-                                            <p>类型: ${serviceInfo.type}</p>
-                                            <p>可执行文件: ${serviceInfo.exe}</p>
-                                            <p>端口: ${serviceInfo.ports || 'N/A'}</p>
-                                            <p>exe 修改时间: <span class="svc-exe-mtime">${fmtTs(serviceInfo.exe_mtime)}</span></p>
-                                            <p>最后更新: <span class="svc-updated">${fmtTs(serviceInfo.updated_at)}</span></p>
-                                            <div class="status ${statusClass}">${serviceInfo.status}</div>
+                                            <div class="svc-head">
+                                                <h4 title="${serviceInfo.display_name}">${serviceInfo.display_name}</h4>
+                                                <div class="status ${statusClass}">${serviceInfo.status}</div>
+                                            </div>
+                                            <div class="svc-meta">
+                                                <p><span class="svc-k">type</span><span class="svc-v" title="${serviceInfo.type}">${serviceInfo.type}</span></p>
+                                                <p><span class="svc-k">file</span><span class="svc-v" title="${serviceInfo.exe}">${serviceInfo.exe}</span></p>
+                                                <p><span class="svc-k">port</span><span class="svc-v">${serviceInfo.ports || 'N/A'}</span></p>
+                                                <p title="exe 修改时间"><span class="svc-k">modify</span><span class="svc-v svc-exe-mtime">${fmtTs(serviceInfo.exe_mtime)}</span></p>
+                                                <p title="最后更新"><span class="svc-k">update</span><span class="svc-v svc-updated">${fmtTs(serviceInfo.updated_at)}</span></p>
+                                            </div>
                                         </div>
                                         <div class="service-actions">
                                             ${actionButtons}
@@ -1812,7 +2054,7 @@
         function buildActionButtons(serviceId, info, isDeployed, isRunning) {
             if (info.self) {
                 return `
-                    <button class="config-edit-btn" onclick="openConfigEditor('${serviceId}', '${info.name}')">配置编辑</button>
+                    <button class="config-edit-btn" onclick="openConfigEditor('${serviceId}', '${info.name}', ${info.self ? 'true' : 'false'})">配置编辑</button>
                     <button class="restart" onclick="restartService('${info.name}', '${info.type}', '${info.exe}')">重启自身</button>
                 `;
             }
@@ -1821,7 +2063,7 @@
             }
             const starting = info.status === '启动中';
             return `
-                <button class="config-edit-btn" onclick="openConfigEditor('${serviceId}', '${info.name}')">配置编辑</button>
+                <button class="config-edit-btn" onclick="openConfigEditor('${serviceId}', '${info.name}', ${info.self ? 'true' : 'false'})">配置编辑</button>
                 <button class="update" onclick="triggerUpdateFile('${info.name}', '${info.type}', '${info.exe}')">更新</button>
                 <button data-role="start" onclick="startService('${info.name}', '${info.type}', '${info.exe}')" ${isRunning ? 'disabled' : ''}>启动</button>
                 <button class="stop" data-role="stop" onclick="stopService('${info.name}', '${info.type}', '${info.exe}')" ${!isRunning ? 'disabled' : ''}>停止</button>
@@ -2092,6 +2334,9 @@
         // ===== 配置编辑悬浮窗 (逻辑对齐 onlineConfigModify.html) =====
         let ceEditingFilePath = null;
         let ceEditingServiceId = null;
+        // 工具自身 (service-server_self): 只给「重启自身 + 配置编辑」, 不开放
+        // 上传/删除/回收站 —— 否则可删掉自己的源码与配置 (后端也拒: 该 id 不在服务表里)。
+        let ceIsSelfService = false;
 
         function ceOnBackdropClick(event) {
             if (event.target === event.currentTarget) ceHideEditor();
@@ -2103,16 +2348,21 @@
         }
 
         // 打开配置编辑悬浮窗: 加载左侧文件列表
-        async function openConfigEditor(serviceId, serviceName) {
+        async function openConfigEditor(serviceId, serviceName, isSelf) {
             ceEditingServiceId = serviceId;
             ceEditingFilePath = null;
+            ceIsSelfService = !!isSelf;
             document.getElementById('ce-title').textContent = '配置编辑: ' + (serviceName || serviceId);
             document.getElementById('ce-service-name').textContent = (serviceName || '配置文件');
             document.getElementById('ce-file-content').value = '';
             document.getElementById('ce-branch-files-container').innerHTML = '';
             document.getElementById('ce-branch-count').textContent = '0';
+            document.getElementById('ce-upload-btn').style.display = ceIsSelfService ? 'none' : '';
+            document.getElementById('ce-recycle-btn').style.display = ceIsSelfService ? 'none' : '';
             document.getElementById('config-editor-overlay').style.display = 'flex';
+            ceValidateNow(); // 清掉上次残留的校验态 (此刻未选文件 → 回到中性提示)
             await ceLoadFileList(serviceId);
+            ceLoadRecycle();
         }
 
         // 加载左侧配置文件列表
@@ -2135,7 +2385,22 @@
                 files.forEach(file => {
                     const item = document.createElement('div');
                     item.className = 'ce-file-item';
-                    item.textContent = file.filename;
+                    // 行 = 文件名 (点击打开) + 删除按钮 (file.path 即相对服务根的 relPath)
+                    const row = document.createElement('div');
+                    row.className = 'ce-file-row';
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'ce-file-name';
+                    nameSpan.textContent = file.filename;
+                    row.appendChild(nameSpan);
+                    if (!ceIsSelfService) {
+                        const del = document.createElement('button');
+                        del.className = 'ce-file-del';
+                        del.textContent = '✕';
+                        del.title = '删除 ' + file.filename + ' (先进回收站, 可还原)';
+                        del.onclick = (ev) => { ev.stopPropagation(); ceDeleteFile(file.path, file.filename); };
+                        row.appendChild(del);
+                    }
+                    item.appendChild(row);
                     item.onclick = () => ceOpenFile(file.full_path, file.filename);
                     listEl.appendChild(item);
                 });
@@ -2161,6 +2426,7 @@
                 ceEditingFilePath = filePath;
                 document.getElementById('ce-file-content').value = content;
                 document.getElementById('ce-encoding').value = actualEnc;
+                ceValidateNow();          // 打开即校验一次, 不用等用户敲键
                 ceLoadBranchFiles(filePath);
             } catch (e) {
                 alert('打开文件失败: ' + e.message);
@@ -2296,6 +2562,375 @@
                 alert('删除失败: ' + e.message);
             }
         }
+
+        // ===== 文件管理: 上传 / 删除 / 回收站还原 (规格 serviceserver_spec/09) =====
+
+        function cePromptUpload() {
+            if (ceIsSelfService) { alert('工具自身不支持上传 (只给配置编辑)'); return; }
+            document.getElementById('ce-upload-input').click();
+        }
+
+        function ceOnUploadPicked(event) {
+            const input = event.target;
+            const file = input.files && input.files[0];
+            input.value = ''; // 清空, 便于连续上传同名文件再次触发 change
+            if (file) ceUploadFile(file);
+        }
+
+        // 上传到服务根目录 (relPath = 文件名)。同名覆盖会先滚一份备份进回收站。
+        async function ceUploadFile(file) {
+            if (!ceEditingServiceId) { alert('未选择服务'); return; }
+            const relPath = file.name;
+            const exists = [...document.querySelectorAll('#ce-file-list .ce-file-name')]
+                .some(el => el.textContent === relPath);
+            if (exists && !confirm(`"${relPath}" 已存在, 覆盖它吗？\n\n原文件会先进回收站, 可还原。`)) return;
+
+            const fd = new FormData();
+            fd.append('file', file, file.name);
+            try {
+                const resp = await fetch(
+                    `/api/files/upload?serviceId=${encodeURIComponent(ceEditingServiceId)}&relPath=${encodeURIComponent(relPath)}`,
+                    { method: 'POST', body: fd });
+                const result = await resp.json().catch(() => ({}));
+                if (resp.ok && result.success) {
+                    // 先刷新再判定"可见性": 侧栏按 ini/json/lua 过滤, 其它扩展名上传成功后
+                    // 列表里根本不出现 —— 只弹一句"成功"会让人以为上传没生效。
+                    await ceLoadFileList(ceEditingServiceId);
+                    ceLoadRecycle();
+                    const visible = [...document.querySelectorAll('#ce-file-list .ce-file-name')]
+                        .some(el => el.textContent === relPath);
+                    let msg = result.message || '上传成功';
+                    if (result.path) msg += `\n\n落位: ${result.path}`;
+                    if (!visible) {
+                        msg += `\n\n注意: ${relPath} 的扩展名不在左侧列表的 ini/json/lua 过滤范围内,`
+                             + ` 所以列表里看不到它 —— 文件确实已经写进服务目录了。`;
+                    }
+                    alert(msg);
+                } else {
+                    alert('上传失败: ' + (result.message || ('HTTP ' + resp.status)));
+                }
+            } catch (e) {
+                alert('上传失败: ' + e.message);
+            }
+        }
+
+        // 删除文件: 后端先备份进回收站再删, 故可还原。
+        async function ceDeleteFile(relPath, fileName) {
+            if (!ceEditingServiceId) return;
+            if (!confirm(`确定删除 "${fileName}" 吗？\n\n会先进回收站, 可在「回收站」还原。`)) return;
+            try {
+                const resp = await fetch('/api/files/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ serviceId: ceEditingServiceId, relPath })
+                });
+                const result = await resp.json().catch(() => ({}));
+                if (resp.ok && result.success) {
+                    // 删的正是当前打开的文件 → 清空编辑器, 免得对着幽灵文件保存
+                    const openedName = ceEditingFilePath ? ceEditingFilePath.replace(/.*[/\\]/, '') : null;
+                    if (openedName && openedName === fileName) {
+                        ceEditingFilePath = null;
+                        document.getElementById('ce-file-content').value = '';
+                        document.getElementById('ce-branch-files-container').innerHTML = '';
+                        document.getElementById('ce-branch-count').textContent = '0';
+                        ceValidateNow(); // 文件已删 -> 校验条回到中性
+                    }
+                    await ceLoadFileList(ceEditingServiceId);
+                    ceLoadRecycle();
+                } else {
+                    alert('删除失败: ' + (result.message || ('HTTP ' + resp.status)));
+                }
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+
+        // 备份名后缀 = unix 纳秒 (20 位定长, backup.rs 命名) → 本地时间串
+        function ceParseBackupTime(name) {
+            const m = /\.(\d{20})$/.exec(name || '');
+            if (!m) return '—';
+            const d = new Date(Number(m[1]) / 1e6);
+            if (isNaN(d.getTime())) return '—';
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+                + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        }
+
+        function ceFmtSize(n) {
+            if (typeof n !== 'number' || isNaN(n)) return '—';
+            if (n < 1024) return n + ' B';
+            if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+            return (n / 1024 / 1024).toFixed(2) + ' MB';
+        }
+
+        // 头部「回收站」按钮: 展开 / 收起折叠区并刷新。
+        // (给回收站一个显式入口 —— 之前只有弹窗底部一行 collapsed summary, 太容易看不见)
+        function ceToggleRecycle() {
+            const d = document.getElementById('ce-recycle-details');
+            if (!d) return;
+            d.open = !d.open;
+            if (d.open) {
+                ceLoadRecycle();
+                d.scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        // 回收站: 当前服务的全部历史备份 (跨文件, 含已删除文件)。
+        // 设计为只读: 行内只有「还原」, 不提供删除 —— 回收站内容不可删。
+        async function ceLoadRecycle() {
+            // 头部按钮与折叠区共用一份计数
+            await ceLoadRecycleInner();
+            const a = document.getElementById('ce-recycle-count');
+            const b = document.getElementById('ce-recycle-btn-count');
+            if (a && b) b.textContent = a.textContent;
+        }
+
+        async function ceLoadRecycleInner() {
+            const listEl = document.getElementById('ce-recycle-list');
+            const countEl = document.getElementById('ce-recycle-count');
+            if (!listEl || !countEl) return;
+            if (!ceEditingServiceId || ceIsSelfService) {
+                countEl.textContent = '0';
+                listEl.innerHTML = '<div class="ce-branch-empty">工具自身不支持回收站</div>';
+                return;
+            }
+            listEl.innerHTML = '<div class="ce-branch-empty">加载中...</div>';
+            try {
+                const resp = await fetch(`/api/files/recycle?serviceId=${encodeURIComponent(ceEditingServiceId)}`);
+                const result = await resp.json().catch(() => ({}));
+                if (!resp.ok || !result.success) {
+                    countEl.textContent = '0';
+                    listEl.innerHTML = `<div class="ce-branch-empty">加载失败: ${result.message || ('HTTP ' + resp.status)}</div>`;
+                    return;
+                }
+                const entries = result.entries || [];
+                countEl.textContent = entries.length;
+                listEl.innerHTML = '';
+                if (entries.length === 0) {
+                    listEl.innerHTML = '<div class="ce-branch-empty">回收站为空</div>';
+                    return;
+                }
+                entries.forEach(e => {
+                    const row = document.createElement('div');
+                    row.className = 'ce-recycle-row';
+                    const main = document.createElement('span');
+                    main.className = 'ce-recycle-main';
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'ce-recycle-name';
+                    nameEl.textContent = e.original;   // textContent: 文件名不参与 HTML 解析
+                    nameEl.title = e.rel_path;
+                    const metaEl = document.createElement('span');
+                    metaEl.className = 'ce-recycle-meta';
+                    metaEl.textContent = `${ceParseBackupTime(e.name)} · ${ceFmtSize(e.size)}`;
+                    main.appendChild(nameEl);
+                    main.appendChild(metaEl);
+                    const btn = document.createElement('button');
+                    btn.textContent = '还原';
+                    btn.title = `还原 "${e.original}" 到服务目录 (当前同名文件会先备份)`;
+                    btn.onclick = () => ceRestoreBackup(e.rel_path, e.original, e.name);
+                    row.appendChild(main);
+                    row.appendChild(btn);
+                    listEl.appendChild(row);
+                });
+            } catch (e) {
+                countEl.textContent = '0';
+                listEl.innerHTML = `<div class="ce-branch-empty">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        // 从回收站还原指定备份 (不传 backupName 则由后端取最新一份)。
+        async function ceRestoreBackup(relPath, original, backupName) {
+            if (!ceEditingServiceId) return;
+            if (!confirm(`确定把 "${original}" 还原为这个备份吗？\n\n备份: ${backupName}\n当前同名文件会先备份进回收站, 还原本身也可反悔。`)) return;
+            try {
+                const resp = await fetch('/api/files/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ serviceId: ceEditingServiceId, relPath, backupName })
+                });
+                const result = await resp.json().catch(() => ({}));
+                if (resp.ok && result.success) {
+                    alert(result.message || '还原成功');
+                    await ceLoadFileList(ceEditingServiceId);
+                    ceLoadRecycle();
+                } else {
+                    alert('还原失败: ' + (result.message || ('HTTP ' + resp.status)));
+                }
+            } catch (e) {
+                alert('还原失败: ' + e.message);
+            }
+        }
+
+        // ===== 格式校验 (只报真实语法错误; 浏览器的拼写检查已由 textarea 的 spellcheck=false 关掉) =====
+        // json → JSON.parse (严格, 就是浏览器同一套解析器; 不会误报)
+        // ini  → 逐行规则: 空行 / ;与# 注释 / [节] / key=value 或 key: value
+        // lua  → 不做: 没有 Lua 解析器, 靠猜的校验必然误报, 比不校验更糟
+        // 规则已对实盘语料验证: xzmo/xzms/zgdb 全部 ini 无一例外命中; zgdb 31 个 json 全部严格可解析。
+        function ceKindOf(name) {
+            const m = /\.([a-z0-9]+)$/i.exec(name || '');
+            const ext = m ? m[1].toLowerCase() : '';
+            if (ext === 'json') return 'json';
+            if (ext === 'ini') return 'ini';
+            return null;
+        }
+
+        // V8 的 JSON 报错有两种形态 (Chrome 145 实测):
+        //  a) 带精确位置: "... in JSON at position 12 (line 3 column 1)" → 直接用, 能给到行列
+        //  b) 只有上下文片段 (Unexpected token 一家): "Unexpected token '}', ...\"…\" is not valid JSON"
+        //     —— 没有位置, 但那段片段是 V8 从原文里截出来的 → 可在原文反查定位到「出错附近」。
+        //     不谎报行列: 精确行列只来自 a 类。
+        function ceCheckJson(text) {
+            try {
+                JSON.parse(text);
+                return { ok: true };
+            } catch (e) {
+                const msg = String((e && e.message) || e);
+                let line = null, col = null, nearStart = null, nearEnd = null, m;
+                if ((m = /\(line (\d+) column (\d+)\)/.exec(msg))) {
+                    line = +m[1]; col = +m[2];
+                } else if ((m = /position (\d+)/.exec(msg))) {
+                    const pos = +m[1];
+                    const before = text.slice(0, pos);
+                    line = before.split('\n').length;
+                    col = pos - before.lastIndexOf('\n');
+                } else if ((m = /Unexpected token '[^']*', (?:\.\.\.)?"([\s\S]*)" is not valid JSON$/.exec(msg))) {
+                    const at = text.indexOf(m[1]);
+                    if (at >= 0) { nearStart = at; nearEnd = at + m[1].length; }
+                }
+                return { ok: false, line, col, msg, nearStart, nearEnd };
+            }
+        }
+
+        function ceCheckIni(text) {
+            const lines = text.split(/\r?\n/);
+            for (let i = 0; i < lines.length; i++) {
+                const t = lines[i].trim();
+                if (t === '' || t.startsWith(';') || t.startsWith('#')) continue;
+                if (t.startsWith('[')) {
+                    if (!/^\[[^\]\r\n]+\]\s*$/.test(t)) {
+                        return { ok: false, line: i + 1, col: 1, msg: '节名不合法 (应为 [名称]): ' + t.slice(0, 40) };
+                    }
+                    continue;
+                }
+                // key=value 或 key: value; 值里再出现 = / : 都允许, 只要求键非空
+                if (!/^[^=]+=/.test(t) && !/^[^:]+:/.test(t)) {
+                    return { ok: false, line: i + 1, col: 1, msg: '既不是 [节], 也不是 key=value: ' + t.slice(0, 40) };
+                }
+            }
+            return { ok: true };
+        }
+
+        let ceValidateTimer = null;
+        function ceScheduleValidate() {
+            // 输入防抖: 别每敲一个键就把整篇重解析一遍
+            if (ceValidateTimer) clearTimeout(ceValidateTimer);
+            ceValidateTimer = setTimeout(ceValidateNow, 400);
+        }
+
+        function ceValidateNow() {
+            const bar = document.getElementById('ce-validate');
+            const txt = document.getElementById('ce-validate-text');
+            const ta = document.getElementById('ce-file-content');
+            if (!bar || !txt || !ta) return;
+            const ed = document.getElementById('ce-editor');
+            const paint = (cls, text, errLine) => {
+                bar.className = 'ce-validate' + (cls ? ' ' + cls : '');
+                txt.textContent = text;
+                if (ed) ed.classList.toggle('invalid', cls === 'err'); // 描红挂在编辑区容器上
+                bar.dataset.line = '';
+                bar.dataset.near = '';
+                bar.title = '';
+                ceRenderGutter(errLine || null);
+            };
+            if (!ceEditingFilePath) { paint('', '格式校验: 打开文件后自动检测'); return; }
+            const name = ceEditingFilePath.replace(/.*[/\\]/, '');
+            const kind = ceKindOf(name);
+            if (!kind) {
+                const ext = (name.split('.').pop() || '').toLowerCase();
+                paint('', `格式校验: ${ext ? '.' + ext : '无扩展名'} 不校验 (只校验 ini / json)`);
+                return;
+            }
+            const r = (kind === 'json') ? ceCheckJson(ta.value) : ceCheckIni(ta.value);
+            if (r.ok) { paint('ok', `✓ ${kind.toUpperCase()} 格式正确`); return; }
+            let where = '', hint = '   (点这里跳到出错处)';
+            if (r.line) {
+                where = `第 ${r.line} 行${r.col ? ' 第 ' + r.col + ' 列' : ''}: `;
+            } else if (r.nearStart != null) {
+                where = '出错附近: ';
+            } else {
+                hint = ''; // 既没位置也没片段 → 只报错, 不假装能跳
+            }
+            const shown = r.msg.length > 140 ? r.msg.slice(0, 140) + '…' : r.msg;
+            paint('err', `✗ ${kind.toUpperCase()} 格式错误 — ${where}${shown}${hint}`, r.line);
+            bar.dataset.line = r.line || '';
+            bar.dataset.near = (r.nearStart != null) ? (r.nearStart + ',' + r.nearEnd) : '';
+            bar.title = r.msg; // 完整报错挂 title, 免得长消息把条撑爆
+        }
+
+        // 点校验条 → 选中出错行并滚到可视区中间。
+        // textarea 没法给单行染色, "选中 + 滚动" 是最直观的定位手段;
+        // 要行内红线/波浪线得换 CodeMirror 或 Monaco(整套编辑器), 属另一个量级。
+        function ceGotoValidateError() {
+            const bar = document.getElementById('ce-validate');
+            const ta = document.getElementById('ce-file-content');
+            if (!bar || !ta) return;
+            const ln = bar.dataset.line ? parseInt(bar.dataset.line, 10) : 0;
+            const nr = (bar.dataset.near || '').split(',').map(s => parseInt(s, 10));
+            const hasNear = nr.length === 2 && !isNaN(nr[0]) && !isNaN(nr[1]) && nr[1] > nr[0];
+            if (!ln && !hasNear) return;
+            ta.focus();
+            const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+            if (ln) {
+                // 精确行列: 选中整行
+                const lines = ta.value.split('\n');
+                let start = 0;
+                for (let i = 0; i < ln - 1 && i < lines.length; i++) start += lines[i].length + 1;
+                const end = start + ((lines[ln - 1] || '').length);
+                ta.setSelectionRange(start, end);
+                ta.scrollTop = Math.max(0, (ln - 1) * lh - ta.clientHeight / 2);
+            } else {
+                // 只有片段: 选中该片段 (V8 给的上下文, 不谎称是精确行)
+                ta.setSelectionRange(nr[0], nr[1]);
+                const lineNo = ta.value.slice(0, nr[0]).split('\n').length;
+                ta.scrollTop = Math.max(0, (lineNo - 1) * lh - ta.clientHeight / 2);
+            }
+        }
+
+        // 行号槽: 与正文同字体/同行高, 只随 scrollTop 平移。
+        // 前提是 textarea 用 wrap="off" —— 软换行会让一个逻辑行占两个视觉行, 行号必然错位。
+        let ceGutterCount = -1;
+        function ceRenderGutter(errLine) {
+            const ta = document.getElementById('ce-file-content');
+            const g = document.getElementById('ce-gutter');
+            if (!ta || !g) return;
+            const n = ta.value.split('\n').length;
+            if (n !== ceGutterCount) {
+                ceGutterCount = n;
+                const frag = document.createDocumentFragment();
+                for (let i = 1; i <= n; i++) {
+                    const d = document.createElement('div');
+                    d.textContent = i;
+                    frag.appendChild(d);
+                }
+                g.textContent = '';
+                g.appendChild(frag);
+            }
+            // 出错行在行号槽里标红 (textarea 本体没法给单行染色, 行号槽可以)
+            const prev = g.querySelector('.err-line');
+            if (prev) prev.classList.remove('err-line');
+            if (errLine && errLine >= 1 && g.children[errLine - 1]) {
+                g.children[errLine - 1].classList.add('err-line');
+            }
+            g.scrollTop = ta.scrollTop;
+        }
+
+        document.getElementById('ce-file-content').addEventListener('input', ceScheduleValidate);
+        document.getElementById('ce-file-content').addEventListener('input', function () { ceRenderGutter(); });
+        document.getElementById('ce-file-content').addEventListener('scroll', function () {
+            const g = document.getElementById('ce-gutter');
+            if (g) g.scrollTop = this.scrollTop; // 行号跟着正文一起滚
+        });
+        document.getElementById('ce-validate').addEventListener('click', ceGotoValidateError);
 
         // 编码切换: 重新加载当前文件
         document.getElementById('ce-encoding').addEventListener('change', function () {

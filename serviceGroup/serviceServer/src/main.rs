@@ -29,7 +29,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{branches, config_file, config_files, fetch, recorder, records, services, spideorder, templates as tpl};
+use crate::routes::{branches, config_file, config_files, fetch, files, recorder, records, script, services, spideorder, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -137,6 +137,21 @@ async fn main() -> anyhow::Result<()> {
             "/api/config/file/remove_branch",
             axum::routing::delete(branches::remove_branch),
         )
+        // 服务目录文件管理 (spec serviceserver_spec/09): 上传 / 删除 / 列备份 / 还原 / 回收站。
+        // 五条红线在 files.rs: 只收相对路径、拒 .exe、拒保留区 (.config_history / remove)、
+        // 只收文件、分量沙箱。上传走 multipart, 限 200MB (与 download 上限对齐)。
+        .route(
+            "/api/files/upload",
+            axum::routing::post(files::upload_file)
+                .layer(axum::extract::DefaultBodyLimit::max(200 * 1024 * 1024)),
+        )
+        .route("/api/files/delete", axum::routing::post(files::delete_file))
+        .route("/api/files/backups", get(files::list_file_backups))
+        .route(
+            "/api/files/restore",
+            axum::routing::post(files::restore_file),
+        )
+        .route("/api/files/recycle", get(files::list_recycle))
         .route("/api/services/status", get(services::list_status))
         .route("/api/config/services/running", get(services::running_services))
         .route(
@@ -162,6 +177,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/spideorder/get", get(spideorder::get_config))
         .route("/api/spideorder/save", axum::routing::post(spideorder::save_config))
         .route("/api/spideorder/execute", axum::routing::post(spideorder::execute))
+        // 启动序列 (U1 序列迁移, 2026-09-21): script.json 读写 + 按序列启动服务。
+        // 对应 legacy CustomRoute/SequenceRoute.py 四路由; 前缀已进 proxy DEAD_PREFIXES,
+        // 不再回退 5099。
+        .route("/api/script/get-all", get(script::get_all))
+        .route("/api/script/save", axum::routing::post(script::save))
+        .route(
+            "/api/script/execute/:name",
+            axum::routing::post(script::execute_named),
+        )
+        .route("/api/script/execute", axum::routing::post(script::execute))
         // services 控制簇剩余: deploy(sc create) + start-all + update(multipart 热更新)。
         .route("/api/services/deploy", axum::routing::post(services::deploy_service))
         .route("/api/services/start-all", axum::routing::post(services::start_all_services))

@@ -349,7 +349,12 @@
         body.dark-theme .zone-label { color: #aaa; }
     </style>
 </head>
-<body>
+<body class="dark-theme">
+    <script>
+        // 默认夜间模式: 仅当用户显式切过白天 (darkMode === 'false') 时回退白天。
+        // 置于 body 最前 → 先于正文解析执行, 首屏不闪白。
+        try { if (localStorage.getItem('darkMode') === 'false') document.body.classList.remove('dark-theme'); } catch (e) {}
+    </script>
     <!-- 悬浮工具栏（fixed, 不占文档流） -->
     <div class="svc-bar">
         <span class="crumb"><a href="/">主页</a> &rsaquo; 做牌器</span>
@@ -481,7 +486,7 @@
     </div>
 
     <script>
-        if (localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-theme');
+        // 主题由 <body> 顶部早置脚本决定 (默认夜间模式), 此处不再重复判定。
 
         const CN_NUM = ['一','二','三','四','五','六','七','八','九'];
         const SUITS = [{key:'wan',name:'万'},{key:'tiao',name:'条'},{key:'tong',name:'筒'}];
