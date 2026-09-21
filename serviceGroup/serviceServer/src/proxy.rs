@@ -84,6 +84,9 @@ const DEAD_PREFIXES: &[&str] = &[
     // 做牌器 + 发牌配置 (U2): 10 条已迁 Rust 原生 (routes/makecard.rs)。
     "/api/makecard",
     "/api/makedeal",
+    // 货币与礼包 (U3): set-* 7 条 + query-costume 已迁 Rust 原生 (routes/money.rs)。
+    "/api/set-",
+    "/api/query-costume",
     "/ai-manager",
     "/rag-qa",
     "/api/rag",
@@ -142,6 +145,9 @@ mod tests {
     #[case("/api/makecard/files", true)]
     // U1 (routes/script.rs) 同理: 四端点全迁原生, 前缀入列。
     #[case("/api/script/get-all", true)]
+    // U3 (routes/money.rs): set-* 与 query-costume 全迁原生。
+    #[case("/api/set-gold", true)]
+    #[case("/api/query-costume", true)]
     #[case("/fileontimer", true)]
     #[case("/api/fileontimer/list", true)]
     fn test_is_dead_path_matrix(#[case] path: &str, #[case] dead: bool) {

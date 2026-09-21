@@ -30,7 +30,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{branches, config_file, config_files, fetch, files, makecard, recorder, records, script, services, spideorder, templates as tpl};
+use crate::routes::{branches, config_file, config_files, fetch, files, makecard, money, recorder, records, script, services, spideorder, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -203,6 +203,19 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(makecard::makedeal_start),
         )
         .route("/api/makedeal/randomReject", get(makecard::makedeal_random_reject))
+        // 货币与礼包 (U3 迁移, 2026-09-22): 游戏币(起 RobotToolD.exe) / deposit 远程转发 /
+        // 游戏库 Lua 数据(经 luaDataTool.py 助手)。前缀已进 proxy DEAD_PREFIXES。
+        .route("/api/set-gold", axum::routing::post(money::set_gold))
+        .route("/api/set-points", axum::routing::post(money::set_points))
+        .route("/api/set-silver", axum::routing::post(money::set_silver))
+        .route("/api/set-tqvip", axum::routing::post(money::set_tqvip))
+        .route("/api/set-weekcard", axum::routing::post(money::set_weekcard))
+        .route("/api/set-monthcard", axum::routing::post(money::set_monthcard))
+        .route("/api/query-costume", axum::routing::post(money::query_costume))
+        .route(
+            "/api/set-newplayer-gift",
+            axum::routing::post(money::set_newplayer_gift),
+        )
         // services 控制簇剩余: deploy(sc create) + start-all + update(multipart 热更新)。
         .route("/api/services/deploy", axum::routing::post(services::deploy_service))
         .route("/api/services/start-all", axum::routing::post(services::start_all_services))

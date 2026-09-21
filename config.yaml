@@ -70,6 +70,11 @@ services:
       SERVICESVR_HOST_ID: local
       SERVICESVR_BASTION_53_URL: http://192.168.102.53:5000
       SERVICESVR_BASTION_185_URL: http://192.168.52.185:5000
+      # 货币/礼包端点经 luaDataTool.py 读写游戏库 (mysql/redis/protobuf) —— 必须用带这些
+      # 依赖的解释器。**本机实测**: 进程 PATH 里的 `python` 会解析到 C:\Python314 (缺 mysql),
+      # 而 legacy 服务实际跑在 D:\Compiler\python (依赖齐), 故此处显式钉定, 不赌 PATH。
+      # 换机器/堡垒机按其本机实际解释器改 (config.full.yaml 侧同理, 缺省仍走 python)。
+      SERVICESVR_PYTHON: D:/Compiler/python/python.exe
 
   - name: serviceServer-legacy
     command: python
