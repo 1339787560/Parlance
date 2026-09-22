@@ -40,3 +40,6 @@ deploys/
 deploy.log
 
 temp/*
+
+# 发布口令 (deploy 面远端鉴权用; 每机不同, 绝不入库)
+deploy.token

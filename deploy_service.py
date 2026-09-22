@@ -689,8 +689,13 @@ class _DeployHandler(BaseHTTPRequestHandler):
         return self.client_address[0] if self.client_address else ""
 
     def _authed(self) -> bool:
+        peer = self._peer()
+        # 回环先判: 免口令 —— 且**不触碰 token_provider**, 因为 deploy_token() 有副作用
+        # (首次调用会生成 deploy.token 文件); 为 loopback 白造一个秘密没意义。
+        if is_loopback(peer):
+            return True
         token = self.server.token_provider()  # type: ignore[attr-defined]
-        return auth_ok(self._peer(), self.headers.get("X-Deploy-Token"), token)
+        return auth_ok(peer, self.headers.get("X-Deploy-Token"), token)
 
     def _deny(self):
         self._send_json(_ERR_UNAUTHORIZED,

@@ -17,9 +17,10 @@ cargo run            # 跑 :5000 (需 config.json, 默认 cwd, 或 SERVICESVR_CO
 ./deploy.bat 192.168.102.53:5099    # 堡垒机 53 (可加 --token <TOK>)
 ```
 
-- **链路**: `build.bat` (cargo build --release) → `make_deploy_pack.py --only serviceServer-rust --push <目标>:5099` → 目标机 legacy 解压校验 → 非 exe 就地替换(带备份) → 包内**服务** exe 交**宿主 swap_exe** 停/换/起换代 → 任一步失败回滚。
-- **助手 exe（非服务二进制，如 `serviceServer-legacy/assetTool.exe`）**: 走**就地替换**(带备份)，**不经** swap_exe —— 它没有宿主服务/端口可换（原逻辑会把它判 `unmapped_exe` 令发布失败）。三处清单必须同步：`src/routes/assets.rs::HELPER_EXE` / `make_deploy_pack.py::HELPER_EXES`（进不进包）/ `serviceServer-legacy/CustomRoute/ServiceRoute.py::HELPER_EXES`（就地替换 vs 判失败）。构建：`serviceServer-legacy/build_assetTool.bat`（PyInstaller onefile；产物**不入库** —— 该目录 `.gitignore` 已忽略 `*.exe`，语义同 `target/release/*.exe`）。
-- **为何直连 :5099**: 换代时 :5000 自己就是被停目标, 走前端轮询在停机窗口必断。
+- **链路**: `build.bat` (cargo build --release) → `make_deploy_pack.py --only serviceServer-rust --push <目标>:5099` → 目标机 **L2 发布面**（`run.py` + `deploy_service.py`，2026-09-22 起；此前在 legacy）解压校验 → 非 exe 就地替换(带备份) → 包内**服务** exe 交**宿主 swap_exe** 停/换/起换代 → 任一步失败回滚。
+- **助手 exe（非服务二进制，如 `serviceServer-legacy/assetTool.exe`）**: 走**就地替换**(带备份)，**不经** swap_exe —— 它没有宿主服务/端口可换（原逻辑会把它判 `unmapped_exe` 令发布失败）。三处清单必须同步：`src/routes/assets.rs::HELPER_EXE` / `make_deploy_pack.py::HELPER_EXES`（进不进包）/ **`deploy_service.py::HELPER_EXES`**（就地替换 vs 判失败；该项 2026-09-22 随发布器搬到 L2，legacy 那份已随发布通道摘除）。构建：`serviceServer-legacy/build_assetTool.bat`（PyInstaller onefile；产物**不入库** —— 该目录 `.gitignore` 已忽略 `*.exe`，语义同 `target/release/*.exe`）。
+- **为何直连 :5099**: 换代时 :5000 自己就是被停目标, 走前端轮询在停机窗口必断。**2026-09-22 起该面由 L2 (`run.py`) 托管**，legacy 退居 **:5098** 只服务 CP 路由（`/api/deploy/*` 在 legacy 上已 404）；Rust 反代目标 = `SERVICESVR_LEGACY_URL`，自身重启委派 = `SERVICESVR_DEPLOY_URL`。
+- **包动了哪一层决定收尾**（2026-09-22 起）: `run.py`/`start.py` → 发布器自更新（停 L3 → 非保留码退出 → L1 `--supervise` 重拉）；`main.py`/`service_manager.py` → reseat L3（L2 不死）；`serviceServer-legacy/**` → 请宿主 restart legacy(5098)。
 - **为何必须 venv 的 python**: 系统 python 无 PyYAML → 打包第一步就报错 (2026-09-21 实测); `deploy.bat` 已写死 `.venv\Scripts\python.exe`。
 - **exe 打包源 = cargo 产物**: 运行位 exe 被运行中进程锁着, 本机 `copy /Y` 落位必然失败; `make_deploy_pack.py` 在 `target/release/<basename>` 比运行位新时自动改用它打包 (manifest `exe_src` 留痕), 换代由目标机宿主完成。
 - **进度/结果**: 目标机 `GET /api/deploy/log` — record 看 `exe_done` / `failures` / `host_probe`。

@@ -398,6 +398,15 @@ def test_orchestrator_creates_new_dirs_and_backup(repo):
 
 # ── DeployServer (HTTP round trip, ephemeral port) ──────────────────────────
 
+def _token_must_not_be_touched():
+    """回归: 回环请求免口令 → 不该触碰 token_provider。
+
+    真实 `deploy_token()` 有副作用 (首次调用即生成 `deploy.token` 文件) ——
+    为 loopback 白造一个秘密文件是 bug (2026-09-22 实测: A3 推送后根目录多出
+    deploy.token)。故这里让 provider 直接炸: loopback 若碰它, 测试立刻失败。
+    """
+    raise AssertionError("回环请求不应触碰 token_provider (会生成 deploy.token)")
+
 def test_deploy_server_upload_activate_log_round_trip(repo):
     import urllib.request
 
@@ -408,7 +417,7 @@ def test_deploy_server_upload_activate_log_round_trip(repo):
     svc = _FakeSvc()
     orch, _ = _orchestrator(repo, svc)
     server = ds.DeployServer("127.0.0.1", 0, orchestrator=orch, root=str(repo),
-                             token_provider=lambda: "tok")
+                             token_provider=_token_must_not_be_touched)   # 回环免口令 → provider 不应被触碰
     server.start()
     try:
         base = f"http://127.0.0.1:{server.port}"
@@ -457,7 +466,7 @@ def test_deploy_server_rejects_multipart_body(repo):
     svc = _FakeSvc()
     orch, _ = _orchestrator(repo, svc)
     server = ds.DeployServer("127.0.0.1", 0, orchestrator=orch, root=str(repo),
-                             token_provider=lambda: "tok")
+                             token_provider=_token_must_not_be_touched)   # 回环免口令 → provider 不应被触碰
     server.start()
     try:
         base = f"http://127.0.0.1:{server.port}"
@@ -480,7 +489,7 @@ def test_deploy_server_rejects_bad_name(repo):
     svc = _FakeSvc()
     orch, _ = _orchestrator(repo, svc)
     server = ds.DeployServer("127.0.0.1", 0, orchestrator=orch, root=str(repo),
-                             token_provider=lambda: "tok")
+                             token_provider=_token_must_not_be_touched)   # 回环免口令 → provider 不应被触碰
     server.start()
     try:
         base = f"http://127.0.0.1:{server.port}"
