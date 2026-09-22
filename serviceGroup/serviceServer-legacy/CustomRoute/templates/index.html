@@ -1661,6 +1661,39 @@
             }
         });
 
+        // ===== 友链图标策略 (2026-09-23 重写) =====
+        // 背景: 原实现在页面加载时对**每个**友链 fire-and-forget 地并发抓 /api/fetch-metadata,
+        // 14 个友链 = 14 路并发长任务 (每个 13~38s: onefile 解包 1.8s + 外网 timeout 5s + 相互争抢)。
+        // 服务是 HTTP/1.1 ⇒ 浏览器每源仅 ~6 个并发连接 ⇒ 6 个槽位被占满后,
+        // **页面内所有其他请求** (背景图 / 配置修改 / 服务启停 / 数据修改 / 复盘器 / 做牌器)
+        // 全部排队到 ERR_TIMED_OUT。实测: 页内打轻端点 26.5s vs curl 打同一端点 1ms。
+        // 现策略: 默认不抓 —— 名称用配置好的 link.name, 图标只用已缓存/后端给的, 抓不到就降级为
+        // 本地默认图 (不引 google/icon.horse 等外部服务, 不占带宽)。需要补图时手动串行跑
+        // window.refreshFriendLinkIcons()。
+        let FRIENDLINK_NEED_ICON = [];
+        const FRIENDLINK_CRAWL_ON_LOAD = false;   // 置 true 可恢复旧的加载期并发抓取 (不建议)
+        const FRIENDLINK_REFRESH_LIMIT = 20;
+
+        /// 串行补抓友链图标: 始终只占 1 个连接, 抓不到即保持降级图。
+        async function refreshFriendLinkIcons() {
+            const queue = FRIENDLINK_NEED_ICON.slice(0, FRIENDLINK_REFRESH_LIMIT);
+            FRIENDLINK_NEED_ICON = [];
+            let updated = 0;
+            for (const item of queue) {          // 串行: 不打并发, 不占满连接槽
+                try {
+                    const r = await fetch(`/api/fetch-metadata?url=${encodeURIComponent(item.link.url)}`);
+                    const meta = await r.json();
+                    if (meta.success && meta.favicon) {
+                        item.iconImg.onerror = null;
+                        item.iconImg.src = meta.favicon;
+                        updated++;
+                    }
+                } catch (e) { /* 抓不到 → 保持本地默认图 (降级) */ }
+            }
+            return { tried: queue.length, updated };
+        }
+        window.refreshFriendLinkIcons = refreshFriendLinkIcons;
+
         // 加载友链
         async function loadFriendLinks() {
             try {
@@ -1684,12 +1717,9 @@
                             domain = urlObj.hostname;
                         } catch(e) {}
 
-                        // 备选方案列表
-                        const fallbacks = [
-                            `https://www.google.com/s2/favicons?domain=${domain}&sz=128`, // 增大尺寸
-                            `https://icon.horse/icon/${domain}`,
-                            defaultIcon
-                        ];
+                        // 备选方案只留本地默认图 —— 不再打 google/icon.horse 等外部 favicon 服务
+                        // (那些既占带宽, 又是页面里那批 console 报错的来源)
+                        const fallbacks = [defaultIcon];
                         let currentFallbackIdx = 0;
 
                         // 创建列表项
@@ -1717,8 +1747,20 @@
                             }
                         };
 
-                        // 异步获取元数据（标题和图标）
+                        // 名称: 用配置好的 link.name (缺失才退化为 URL) —— 不再为了标题去爬页面
+                        nameSpan.textContent = displayName || link.url;
+                        // 图标: 只用后端已给的缓存路径 (link.icon); 没有就保持本地默认图。
+                        // 需要补图的链接登记进队列, 由 window.refreshFriendLinkIcons() 串行补。
+                        if (link.icon) {
+                            iconImg.onerror = null;
+                            iconImg.src = link.icon;
+                        } else {
+                            FRIENDLINK_NEED_ICON.push({ link, iconImg });
+                        }
+
+                        // 侧爬原逻辑 (页面加载期并发抓取) —— 默认关闭, 见文件上方说明
                         (async () => {
+                            if (!FRIENDLINK_CRAWL_ON_LOAD) return;
                             try {
                                 const metaResponse = await fetch(`/api/fetch-metadata?url=${encodeURIComponent(link.url)}`);
                                 const metaData = await metaResponse.json();
