@@ -65,7 +65,11 @@ services:
     env:
       # SERVICESVR_CONFIG 基准 = Rust 子进程 cwd (serviceGroup/serviceServer), 故用 ../ 到 legacy
       SERVICESVR_CONFIG: ../serviceServer-legacy/config.json
-      SERVICESVR_LEGACY_URL: http://127.0.0.1:5099
+      # strangler 反代目标 = legacy Flask。2026-09-22 起 :5099 让位给 L2 发布面 → legacy 退居 5098
+      SERVICESVR_LEGACY_URL: http://127.0.0.1:5098
+      # 发布面 (:5099, 由 L2 run.py 承接) —— 工具自身重启委派给它: 它不在被重启目标内,
+      # 停机窗口仍能应答 (旧值指 legacy_backend, 切流后会打到 5098 那里已无 /api/deploy/*)
+      SERVICESVR_DEPLOY_URL: http://127.0.0.1:5099
       RUST_LOG: info
       SERVICESVR_HOST_ID: local
       SERVICESVR_BASTION_53_URL: http://192.168.102.53:5000
@@ -81,12 +85,14 @@ services:
     command_mac: ./serviceGroup/serviceServer-legacy/.venv/bin/python
     args: ["main.py"]
     cwd: ./serviceGroup/serviceServer-legacy
-    port: 5099
+    # 2026-09-22 起让位 :5099 (发布面搬到 L2 run.py), 退居 5098 —— 只服务 CP 路由
+    # (/api/cp-data/* + /api/migration/dryrun; 发布通道已从 legacy 摘除)
+    port: 5098
     auto_restart: true
     tags: [service, api, legacy]
     enabled: true
     env:
-      SERVICESVR_PORT: "5099"
+      SERVICESVR_PORT: "5098"
 
   - name: statistic-server      # 融入 castflow: extensions/statistic-server/extension.yaml
     command_mac: ./serviceGroup/statisticServer/target/release/statistic-server
