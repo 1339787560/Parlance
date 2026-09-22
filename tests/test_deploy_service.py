@@ -185,7 +185,7 @@ def test_targets_self_update_wins_over_reseat():
 
 
 def test_targets_restart_legacy_prefix():
-    out = ds.classify_targets(["serviceGroup/serviceServer-legacy/CustomRoute/ServiceRoute.py"])
+    out = ds.classify_targets(["serviceGroup/serviceServer-legacy/CustomRoute/templates/deposit.html"])
     assert out == {"self_update": False, "reseat_l3": False, "restart_legacy": True}
 
 
