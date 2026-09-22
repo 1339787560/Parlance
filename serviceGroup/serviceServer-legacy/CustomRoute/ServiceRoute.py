@@ -84,6 +84,12 @@ DEPLOY_TOKEN_FILE = _os.path.join(_LEGACY_ROOT, 'deploy.token')
 LEGACY_PORT = int(_os.environ.get('SERVICESVR_PORT', '5099'))
 
 _deploy_lock = _threading.Lock()
+
+# 助手 exe（非服务二进制，如 serviceServer-legacy/assetTool.exe）: 目标机上没有对应的宿主
+# 服务/端口可换，故**不**走 swap_exe，也**不**按「未映射」判失败 —— 等同普通文件走
+# 「备份 + 就地替换」。它们是按需拉起的短命子进程，通常无进程锁；真被占用时 OSError 会照常
+# 进 failures 并触发回滚。清单须与 make_deploy_pack.py 的 HELPER_EXES 保持一致（两处同源）。
+HELPER_EXES = {'serviceGroup/serviceServer-legacy/assetTool.exe'}
 _deploy_running = {'v': False}
 _deploy_token_cache = {'v': None}
 
@@ -226,6 +232,8 @@ def _deploy_run(zip_path, record):
                 svc_by_rel[rel] = s
         exe_plan, exe_rels = [], set()
         for rel in sorted(r for r in files if r.lower().endswith('.exe')):
+            if rel in HELPER_EXES:
+                continue        # 助手 exe 走下面 plain 通道（备份 + 就地替换），不换代
             s = svc_by_rel.get(rel)
             if not s or not s.get('port'):
                 record.setdefault('unmapped_exe', []).append(rel)
@@ -234,8 +242,11 @@ def _deploy_run(zip_path, record):
             exe_plan.append({'name': s.get('name'), 'port': s.get('port'), 'rel': rel,
                              'src': _os.path.join(staging, rel.replace('/', _os.sep))})
         record['exe_plan'] = [{'name': e['name'], 'port': e['port'], 'file': e['rel']} for e in exe_plan]
-        # 映射不到服务的 .exe 绝不就地覆盖 (必撞运行中占用) → 显式失败, 触发回滚
-        unmapped = [r for r in files if r.lower().endswith('.exe') and r not in exe_rels]
+        # 映射不到服务的 .exe 绝不就地覆盖 (必撞运行中占用) → 显式失败, 触发回滚。
+        # 例外: HELPER_EXES（助手 exe）从 unmapped 排除 → 自动落进下面的 plain 通道。
+        record['helper_exes'] = sorted(r for r in files if r in HELPER_EXES)
+        unmapped = [r for r in files
+                    if r.lower().endswith('.exe') and r not in exe_rels and r not in HELPER_EXES]
         plain = [r for r in files if r not in exe_rels and r not in set(unmapped)]
 
         # 1) 非 exe 文件: 备份 + 就地替换 (运行中的进程不锁 .py/.html, 无需停服)

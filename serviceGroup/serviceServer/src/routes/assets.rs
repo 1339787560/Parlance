@@ -27,8 +27,18 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-/// 助手脚本名（与 `serviceServer-legacy/` 同目录，随发布包发布）。
+/// 助手脚本名（**回落形态**：由 `SERVICESVR_PYTHON` 解释器执行）。
 const HELPER_NAME: &str = "assetTool.py";
+
+/// 冻结后的单文件助手（**优先形态**）：不依赖目标机的 Python 环境与 site-packages
+/// （playwright 那套重依赖随 exe 打包）。由 `serviceServer-legacy/build_assetTool.bat`
+/// 生成；是**构建产物**（`serviceServer-legacy/.gitignore` 的 `*.exe` 已忽略，不入库），
+/// 随发布包投递。
+///
+/// ⚠ 三处清单必须同步（同名同路径）：本常量 / `make_deploy_pack.py::HELPER_EXES`（决定它
+/// 进不进包）/ `CustomRoute/ServiceRoute.py::HELPER_EXES`（决定目标机走「就地替换」还是被
+/// 判成 unmapped_exe 而失败）。
+const HELPER_EXE: &str = "assetTool.exe";
 
 #[derive(Deserialize)]
 pub struct ForceQuery {
@@ -64,7 +74,14 @@ async fn call(
         Some(p) => p.to_path_buf(),
         None => return Ok(err(500, "无法定位 legacy 目录")),
     };
-    match crate::pybridge::call_helper(&root, HELPER_NAME, action, payload).await {
+    // 优先跑冻结后的单文件 exe（目标机无需 Python 环境）；缺失则回落 python 脚本
+    // （开发机没跑过 build_assetTool.bat 时依旧可用）。
+    let out = if root.join(HELPER_EXE).is_file() {
+        crate::pybridge::call_binary(&root, HELPER_EXE, action, payload).await
+    } else {
+        crate::pybridge::call_helper(&root, HELPER_NAME, action, payload).await
+    };
+    match out {
         Ok(crate::pybridge::HelperOut::Body(b)) => Ok((StatusCode::OK, Json(b))),
         Ok(crate::pybridge::HelperOut::Error(status, msg)) => Ok(err(status, &msg)),
         Err((status, msg)) => Ok(err(status, &msg)),

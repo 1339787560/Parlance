@@ -32,7 +32,7 @@ pub enum HelperOut {
     Error(u16, String),
 }
 
-/// 调一次助手：`script` 与 `action` 定位入口，`payload` 走 stdin。
+/// 调一次 **python 脚本**助手：`script` 与 `action` 定位入口，`payload` 走 stdin。
 ///
 /// `legacy_root` = 助手脚本所在目录（也是 legacy `os.getcwd()` 的等价物 —— 脚本内已改用
 /// `__file__` 定位，故这里主要作为子进程 cwd）。
@@ -42,18 +42,53 @@ pub async fn call_helper(
     action: &str,
     payload: Value,
 ) -> std::result::Result<HelperOut, (u16, String)> {
+    let python = std::env::var("SERVICESVR_PYTHON").unwrap_or_else(|_| "python".to_string());
+    call_program(
+        legacy_root,
+        python,
+        vec![script.to_string(), action.to_string()],
+        payload,
+    )
+    .await
+}
+
+/// 调一次**独立可执行**助手（如 PyInstaller 冻结出的 `assetTool.exe`）。
+///
+/// 与 `call_helper` 的差别只在「不经解释器」：目标机因此**不需要** Python 环境与
+/// site-packages（playwright 那类重依赖随 exe 一起打包）。`exe` 传相对 legacy 根的文件名。
+///
+/// 注意必须拼**绝对路径**：`Command` 解析相对程序名的基准是**父进程**的 cwd，而不是下面
+/// 设置的子进程 `current_dir`，直接传裸文件名会启动失败。
+pub async fn call_binary(
+    legacy_root: &Path,
+    exe: &str,
+    action: &str,
+    payload: Value,
+) -> std::result::Result<HelperOut, (u16, String)> {
+    let program = legacy_root.join(exe).to_string_lossy().to_string();
+    call_program(legacy_root, program, vec![action.to_string()], payload).await
+}
+
+/// 共用执行体：起子进程 → 喂 stdin → 收 stdout → 解析 JSON 契约（三条纪律见模块头注）。
+async fn call_program(
+    legacy_root: &Path,
+    program: String,
+    args: Vec<String>,
+    payload: Value,
+) -> std::result::Result<HelperOut, (u16, String)> {
     let root = legacy_root.to_path_buf();
-    let script = script.to_string();
-    let action = action.to_string();
     let body = payload.to_string();
 
     let task = tokio::task::spawn_blocking(
         move || -> std::result::Result<std::process::Output, String> {
             use std::io::Write;
-            let python = std::env::var("SERVICESVR_PYTHON").unwrap_or_else(|_| "python".to_string());
-            let mut child = std::process::Command::new(&python)
-                .arg(&script)
-                .arg(&action)
+            let mut cmd = std::process::Command::new(&program);
+            for a in &args {
+                cmd.arg(a);
+            }
+            // PYTHONIOENCODING/PYTHONUTF8 对 exe 形态无害（非 Python 会忽略），保留可让
+            // 同一段代码同时服务两种形态。
+            let mut child = cmd
                 .current_dir(&root)
                 .env("PYTHONIOENCODING", "utf-8")
                 .env("PYTHONUTF8", "1")
@@ -61,7 +96,7 @@ pub async fn call_helper(
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
-                .map_err(|e| format!("启动助手失败 (python={python} script={script}): {e}"))?;
+                .map_err(|e| format!("启动助手失败 (program={program}): {e}"))?;
             if let Some(stdin) = child.stdin.as_mut() {
                 stdin
                     .write_all(body.as_bytes())
