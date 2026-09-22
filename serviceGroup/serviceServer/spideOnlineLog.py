@@ -410,7 +410,27 @@ def remove_timestamp_from_first_line(text: str) -> str:
 # 注册表 oss_hosts.yaml 记录 hostID→service 反查 (hostID 跨 service 复用, 勿臆断)。
 
 def _oss_svc_dir() -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'CommonTools', 'xzmpDB')
+    """`CommonTools/xzmpDB` 目录 —— 凭据 (`db_creds.enc`) 与 `oss_hosts.yaml` 所在。
+
+    2026-09-22 收敛: CommonTools **唯一副本**在 `serviceServer-legacy/CommonTools`
+    (本脚本所在的 `serviceServer/CommonTools` 是 0 tracked 的重复副本, 已删除 ——
+    它比 legacy 那份少 `CpUserData.py` / `add_cp_creds.py`, 且凭据副本可能过期)。
+    解析优先级:
+      1. env `SERVICESVR_COMMONTOOLS` (指向 CommonTools 包目录)
+      2. 兄弟目录 `../serviceServer-legacy/CommonTools/xzmpDB` (部署后的标准布局)
+      3. 本地 `CommonTools/xzmpDB` (兜底: 自持副本的老机器)
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    cands = []
+    env = os.environ.get('SERVICESVR_COMMONTOOLS')
+    if env:
+        cands.append(os.path.join(env, 'xzmpDB'))
+    cands.append(os.path.join(here, '..', 'serviceServer-legacy', 'CommonTools', 'xzmpDB'))
+    cands.append(os.path.join(here, 'CommonTools', 'xzmpDB'))
+    for c in cands:
+        if os.path.isdir(c):
+            return os.path.normpath(c)
+    return os.path.normpath(cands[-1])
 
 
 def _oss_connect():
