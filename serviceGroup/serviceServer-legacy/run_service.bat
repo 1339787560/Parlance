@@ -38,7 +38,11 @@ echo "Fixing requests dependency compatibility..."
 python -m pip install --upgrade requests urllib3 charset-normalizer
 
 :: Install Playwright browser binaries
-echo "Installing Playwright Chromium..."
+:: [optional since 2026-09-22] No longer required for the deploy path: the helper is
+:: shipped as assetTool.exe (playwright bundled inside) and it launches the SYSTEM
+:: Chrome/Edge via channel=chrome. Keep this only if you rely on the .py fallback
+:: with the bundled chromium.
+echo "Installing Playwright Chromium (optional)..."
 python -m playwright install chromium
 
 :: Run main.py script

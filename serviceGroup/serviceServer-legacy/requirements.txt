@@ -21,7 +21,10 @@ redis
 cryptography
 python-dateutil
 
-# --- playwright: ServiceRoute.py 顶层硬 import (缺了启动即崩), 1 处抓取功能 ---
+# --- playwright: 仅供 assetTool.py 的 .py 回落路径使用 (非启动必需) ---
+#   2026-09-22 起: 部署首选冻结产物 assetTool.exe (build_assetTool.bat 生成, playwright 随
+#   exe 打包), 且浏览器默认走系统 chrome/msedge (channel) -> **目标机可不装本项**。
+#   旧注「ServiceRoute.py 顶层硬 import (缺了启动即崩)」已随 U7 退役失效。
 playwright
 
 # --- 可选: oss2 (仅 add_oss_creds.py/probe_oss_layout.py 运维脚本用, 非启动必需) ---

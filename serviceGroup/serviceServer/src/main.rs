@@ -145,8 +145,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/config/files", get(config_files::list_files))
         .route("/api/config", get(config_files::get_config))
         .route("/api/fetch-title", get(fetch::fetch_title))
-        // 资源抓取 (U4 收尾, 2026-09-22): 抓取与缓存在 assetTool.py (requests/bs4/playwright),
-        // 前台只做参数校验与响应整形 —— 顺带把 playwright 从服务启动链里摘出去 (SDD N9)。
+        // 资源抓取 (U4 收尾 2026-09-22 / 助手二进制化 2026-09-22): 抓取与缓存在助手内部
+        // (开发机: assetTool.py 的 requests/bs4/playwright; 部署: 优先冻结产物 assetTool.exe),
+        // 前台只做参数校验与响应整形。两件顺带成果: playwright 既离开了**服务启动链**(N9),
+        // 也不再是**部署链**依赖 —— exe 内自带, 且浏览器改用系统 chrome/edge (channel)。
         // 注意: 返回的 /static/* 仍由 legacy 提供, 前台不收编该前缀。
         .route("/api/fetch-background", get(assets::fetch_background))
         .route("/api/fetch-metadata", get(assets::fetch_metadata))
