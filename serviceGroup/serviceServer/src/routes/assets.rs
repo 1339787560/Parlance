@@ -15,9 +15,10 @@
 //! 附带收获：这把 SDD「N9 重依赖出启动链」要摘的**那处 playwright 抓取**从服务启动链里摘出去了
 //! —— 它现在只在被请求时由独立脚本按需拉起，legacy Flask 启动不再需要 playwright 在场。
 //!
-//! **`/static/*` 仍由 legacy 提供**：这里返回的 `/static/cache/backgrounds/...`、
-//! `/static/cache/icons/...` 指向 `<legacy>/src/...`，由 Flask 的 static 目录服务 ——
-//! 前台**不要**把 `/static` 收编进死名单，保持反代即可。
+//! **`/static/*` 自 2026-09-22 起由前台原生提供**：这里返回的 `/static/cache/backgrounds/...`、
+//! `/static/cache/icons/...` 指向 `<legacy>/src/...`（= `assetTool.py` 的 `ROOT/src`），
+//! 现由 `routes/static_files.rs` 直读同一目录发回 —— 该前缀已收编进 `proxy.rs`
+//! DEAD_PREFIXES，不再反代 legacy（写入方与读取方仍是同一个目录，闭环不变）。
 
 use crate::error::Result;
 use crate::state::AppState;

@@ -32,7 +32,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{assets, branches, config_file, config_files, fetch, files, makecard, money, pages, recorder, records, script, serverstatus, services, spideorder, templates as tpl};
+use crate::routes::{assets, branches, config_file, config_files, fetch, files, makecard, money, pages, recorder, records, script, serverstatus, services, spideorder, static_files, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -90,6 +90,21 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // `/static/*` 静态根 (2026-09-22 从 legacy Flask 收编): 直读 config.json 同级 `src`,
+    // 与 assetTool.py 写入抓取产物的 `ROOT/src` 是同一目录 (fetch → 展示闭环不变)。
+    // 解析不到 → 该前缀一律 404, **不回退 legacy** (前缀已收编, 见 proxy.rs DEAD_PREFIXES)。
+    let static_root = static_files::resolve_static_root(
+        std::path::Path::new(&config_path),
+        std::env::var(static_files::ENV_STATIC_DIR).ok().as_deref(),
+    );
+    match &static_root {
+        Some(p) => tracing::info!("/static/* 根目录: {}", p.display()),
+        None => tracing::warn!(
+            "/static/* 根目录未解析 (config 同级 src 缺失? 可用 {} 覆盖); 该前缀将一律 404",
+            static_files::ENV_STATIC_DIR
+        ),
+    }
+
     let state = AppState {
         config_path: config_path.into(),
         path_map,
@@ -99,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
         deploy_url,
         http_client,
         templates,
+        static_root,
     };
 
     let app = Router::new()
@@ -155,7 +171,8 @@ async fn main() -> anyhow::Result<()> {
         // (开发机: assetTool.py 的 requests/bs4/playwright; 部署: 优先冻结产物 assetTool.exe),
         // 前台只做参数校验与响应整形。两件顺带成果: playwright 既离开了**服务启动链**(N9),
         // 也不再是**部署链**依赖 —— exe 内自带, 且浏览器改用系统 chrome/edge (channel)。
-        // 注意: 返回的 /static/* 仍由 legacy 提供, 前台不收编该前缀。
+        // 注意: 返回的 /static/* 自 2026-09-22 起由**前台原生**提供 (routes/static_files.rs),
+        // 该前缀已收编 (见 proxy.rs DEAD_PREFIXES), 不再反代 legacy。
         .route("/api/fetch-background", get(assets::fetch_background))
         .route("/api/fetch-metadata", get(assets::fetch_metadata))
         // /api/svn/* 已退役 (U5, 2026-09-22 用户裁定): 发布/更新统一走 deploy 产物打包直推,
@@ -262,6 +279,10 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(services::update_service)
                 .layer(axum::extract::DefaultBodyLimit::max(200 * 1024 * 1024)),
         )
+        // 静态资源 (2026-09-22 从 legacy 收编): 抓取产物 / 图标 / 背景图 / friendlink.json
+        // 直读 config.json 同级 `src` (与 assetTool.py 的 ROOT/src 同一目录)。此前经
+        // Flask static 反代提供; 收编后 `/static` 前缀进 proxy DEAD_PREFIXES, 不再回退 legacy。
+        .route("/static/*path", get(static_files::serve))
         // strangler: 未匹配请求反代到旧 Flask 后端 (SERVICESVR_LEGACY_URL)。
         .fallback(crate::proxy::proxy_legacy)
         // 全 HTML 页面 (rust 内嵌 + legacy 反代) 注入面包屑条 (第二层下拉直达切换)

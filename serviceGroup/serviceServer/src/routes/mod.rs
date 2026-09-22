@@ -14,6 +14,7 @@ pub mod script;
 pub mod serverstatus;
 pub mod services;
 pub mod spideorder;
+pub mod static_files;
 pub mod templates;
 
 use crate::error::{AppError, Result};

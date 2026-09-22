@@ -21,4 +21,8 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     /// 模板存储 (SQLite); None = 未启用 (DB 路径未配置)。
     pub templates: Option<Arc<TemplateStore>>,
+    /// `/static/*` 的物理根 (2026-09-22 从 legacy Flask 收编)。
+    /// 权威锚点 = config.json 同级 `src` (与 `assetTool.py` 的 `ROOT/src` 同一目录);
+    /// 可用 env `SERVICESVR_STATIC_DIR` 显式覆盖。None = 未解析 → 该前缀一律 404。
+    pub static_root: Option<PathBuf>,
 }

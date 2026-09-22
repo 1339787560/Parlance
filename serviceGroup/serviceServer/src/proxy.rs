@@ -1,7 +1,7 @@
 //! Strangler 反代: 未匹配请求转发到旧 Flask 后端。
 //!
-//! Rust 占 :5000 做前台, 已实现路由自处理, 其余 (货币调控/文件浏览/SVN 等)
-//! 反代到旧 Flask (跑 :5099)。随路由迁移, Flask 渐进瘦身至退役。
+//! Rust 占 :5000 做前台, 已实现路由自处理, 其余 (CP 测试面等)
+//! 反代到旧 Flask (2026-09-22 起退居 :5098)。随路由迁移, Flask 渐进瘦身至退役。
 
 use crate::error::{AppError, Result};
 use crate::state::AppState;
@@ -90,8 +90,11 @@ const DEAD_PREFIXES: &[&str] = &[
     // 模板家族 (U4): get/save/delete/update 四条全迁原生 (routes/templates.rs + pages.rs)。
     "/api/templates",
     // 抓取家族 (U4 收尾): title/background/metadata 三条全迁原生 (routes/fetch.rs + assets.rs)。
-    // 注: /static/* 不在收编范围 —— 抓取产物仍由 legacy 的 Flask static 目录服务。
     "/api/fetch-",
+    // 静态资源 (2026-09-22): /static/* 由「反代 legacy 的 Flask static 目录」改为
+    // **前台原生**直读 (routes/static_files.rs, 读 config.json 同级 src) —— 前缀整段收编,
+    // 未匹配子路径 (含越权/不存在/目录) 一律 404, 不再回退 legacy。
+    "/static",
     // svn 编排 (U5, 2026-09-22 用户裁定): svn 端点整体退役 —— 发布/更新一律走 deploy
     // 产物打包直推 (以推送端上传内容为准), 3 条端点连前端入口一并删除, 故整段收编。
     "/api/svn",
@@ -169,6 +172,10 @@ mod tests {
     #[case("/api/fetch-background", true)]
     #[case("/api/fetch-metadata", true)]
     #[case("/api/fetch-title", true)]
+    // 2026-09-22: /static/* 收编为前台原生 (routes/static_files.rs) —— 真实文件与越权
+    // 路径在 fallback 这一层都不该再到 legacy (原生路由未命中时由此兜底 404)。
+    #[case("/static/cache/backgrounds/bg_20260408.webp", true)]
+    #[case("/static/../config.json", true)]
     // U5 (2026-09-22): svn 编排退役 —— /api/svn 整段收编, 3 端点与 UI 入口一并删除。
     #[case("/api/svn/status", true)]
     #[case("/api/svn/update", true)]
