@@ -33,10 +33,9 @@ RUN_PY = ROOT / "run.py"
 # 目的: run.py 崩溃时由本层拉回来（未来 :5099 发布器移到 run.py 后, 它不能是单点）。
 #
 # 为什么**默认关闭**、需显式 --supervise:
-#   run.py 的 `ctl stop` / `ctl quit` / `q` 键 / Ctrl+C **都会**让它退出（主循环条件
-#   `_running and (service.running or _reloading)` 不再满足）。若无条件重拉, 这些"主动停止"
-#   就全变成"重拉" —— 停止功能失效。故 run.py 对主动停止打标记并以 EXIT_DELIBERATE 退出,
-#   本层见到该码即收手; 其它退出码（崩溃/main.py 意外死亡）才重拉。
+#   run.py 的 `ctl quit` / `q` 键 / Ctrl+C 会以 EXIT_DELIBERATE 退出（用户主动收工 → 不重拉）;
+#   而 `ctl stop` **不会退出** —— 它只停 sgManager, sgmController 留守（便于"停下来更新"后
+#   直接 start/restart）。于是本层的判据很干净: 保留码 = 收手, 其它退出码(崩溃) = 拉回。
 SUPERVISE_FLAG = "--supervise"
 EXIT_DELIBERATE = 42        # 必须与 run.py 的 EXIT_DELIBERATE 一致
 FAST_WINDOW = 10.0          # 存活不足此秒数 = 快速失败

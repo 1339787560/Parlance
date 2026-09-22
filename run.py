@@ -66,9 +66,9 @@ _ERR_METHOD_NOT_FOUND = -32601
 _ERR_INTERNAL = -32603
 
 
-# 主动退出保留码: quit/stop RPC、q 键、Ctrl+C 四处会打 _deliberate 标记, 最终以本码退出。
+# 主动退出保留码: quit RPC / q 键 / Ctrl+C 三处会打 _deliberate 标记, 最终以本码退出。
 # 契约方 = start.py (--supervise 时见本码即「别再拉」, 其余码 = 崩溃 → 重拉)。
-# 为什么需要它: ctl stop 也会让本层主循环退出, 若父层无条件重拉, 「停止」就变成「重拉」。
+# 注意 **stop 不在此列**: 它只停 sgManager, sgmController 留守（见 _dispatch("stop")）。
 EXIT_DELIBERATE = 42
 
 
@@ -206,8 +206,8 @@ class ControlServer:
         if method == "start":
             return {"ok": bool(lc.start())}
         if method == "stop":
-            # stop 也会让本层主循环退出（service.running 变 False），故同样算主动停止。
-            self._deliberate = True
+            # stop 只停 sgManager, sgmController **留守**（控制面不断, 便于"停下来更新"后
+            # 直接 start/restart）。故这里不算主动退出、不打 _deliberate。
             lc.stop()
             return {"ok": True}
         raise _MethodNotFound(method)
@@ -480,7 +480,13 @@ Hotkeys:
             t.start()
 
         try:
-            while self._running and (self.service.running or self._reloading):
+            # sgmController 的生命周期**独立于** sgManager: stop 只停服务组, 本层留守
+            # （控制面还在 → 可再 start/restart，restart 依赖这一点）。
+            # 只有 quit / q / Ctrl+C 才让它退出。
+            # 旧条件 `and (self.service.running or self._reloading)` 会让 stop 连本层一起退,
+            # 与设计文档（infoserver_spec_v6/02_生命周期.md「stop 只停 sgManager, sgmController
+            # 留」）及 cwd_infoserver_stop 的「进程保留」描述相悖 → 2026-09-22 按用户裁定修正。
+            while self._running:
                 time.sleep(0.2)
         except KeyboardInterrupt:
             logger.info("Ctrl+C received")
