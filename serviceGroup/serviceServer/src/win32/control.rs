@@ -4,7 +4,7 @@
 //! delete_service。OpenSCManager -> OpenService -> op -> poll (10s) -> CloseHandle。
 //!
 //! 不做 install-on-missing (start 分支): legacy 在 start 时若服务未装会先 InstallService,
-//! Rust 简化为未装直接报错 -> 前端走 /deploy (仍 legacy 反代)。strangler 渐进。
+//! Rust 简化为未装直接报错 -> 前端走 /deploy。(U8 后已无反代。)
 
 use std::time::{Duration, Instant};
 

@@ -55,10 +55,10 @@ services:
     tags: [service, api]
     enabled: true
     env:
-      # SERVICESVR_CONFIG 基准 = Rust 子进程 cwd (serviceGroup/serviceServer), 故用 ../ 到 legacy
+      # SERVICESVR_CONFIG 基准 = Rust 子进程 cwd (serviceGroup/serviceServer), 故用 ../ 到
+      # serviceServer-legacy —— 该目录 U8 (2026-09-22) 后已退役为「数据 + 数据层助手 + 页面
+      # 模板」载体 (config.json / templates/ / templates.db / CommonTools 都还在这里)
       SERVICESVR_CONFIG: ../serviceServer-legacy/config.json
-      # strangler 反代目标 = legacy Flask。2026-09-22 起 :5099 让位给 L2 发布面 → legacy 退居 5098
-      SERVICESVR_LEGACY_URL: http://127.0.0.1:5098
       # 发布面 (:5099, 由 L2 run.py 承接) —— 工具自身重启委派给它 (它不在被重启目标内)
       SERVICESVR_DEPLOY_URL: http://127.0.0.1:5099
       RUST_LOG: info
@@ -66,18 +66,6 @@ services:
       SERVICESVR_BASTION_53_URL: http://192.168.102.53:5000
       SERVICESVR_BASTION_185_URL: http://192.168.52.185:5000
 
-  - name: serviceServer-legacy
-    command: python
-    command_mac: ./serviceGroup/serviceServer-legacy/.venv/bin/python
-    args: ["main.py"]
-    cwd: ./serviceGroup/serviceServer-legacy
-    # 2026-09-22 起让位 :5099 (发布面搬到 L2 run.py), 退居 5098 —— 只服务 CP 路由
-    port: 5098
-    auto_restart: true
-    tags: [service, api, legacy]
-    enabled: true
-    env:
-      SERVICESVR_PORT: "5098"
 
   - name: statistic-server
     command_mac: ./serviceGroup/statisticServer/target/release/statistic-server

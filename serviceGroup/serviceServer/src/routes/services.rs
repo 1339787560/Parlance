@@ -314,8 +314,8 @@ pub async fn restart_service(
 /// 工具自身重启: 委派发布面 `POST /api/deploy/self-restart`, 由它请求宿主 restart。
 ///
 /// 2026-09-22 起发布面在 **L2 (run.py) 的 :5099** (原 legacy Flask 让位 5098) ——
-/// 委派目标改用 `state.deploy_url`, 不再走 legacy_backend: 发布面本身不在被重启目标内,
-/// 故停机窗口仍能应答。
+/// 委派目标 = `state.deploy_url`: 发布面本身不在被重启目标内, 故停机窗口仍能应答。
+/// (U8 收口后 `legacy_backend` 已随反代 fallback 一并删除, 本函数名保留历史。) 
 ///
 /// 为什么不自己做: ① 重启要停掉本进程, HTTP 回包必须由别人发出; ② 停/起必须经宿主
 /// 持句柄 (谁 Popen 谁持句柄铁律), 否则 :5000 退化成孤儿进程 —— 孤儿既停不掉也换不了

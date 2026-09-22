@@ -322,7 +322,6 @@ mod tests {
                 std::time::Duration::from_secs(10),
             )),
             status_provider: Arc::from(crate::status::default_provider()),
-            legacy_backend: "http://127.0.0.1:5098".to_string(),
             deploy_url: "http://127.0.0.1:5099".to_string(),
             http_client: reqwest::Client::new(),
             templates: None,

@@ -18,7 +18,7 @@
 //! **`/static/*` 自 2026-09-22 起由前台原生提供**：这里返回的 `/static/cache/backgrounds/...`、
 //! `/static/cache/icons/...` 指向 `<legacy>/src/...`（= `assetTool.py` 的 `ROOT/src`），
 //! 现由 `routes/static_files.rs` 直读同一目录发回 —— 该前缀已收编进 `proxy.rs`
-//! DEAD_PREFIXES，不再反代 legacy（写入方与读取方仍是同一个目录，闭环不变）。
+//! 已前台原生（U8 后无反代）—— 写入方与读取方仍是同一个目录，闭环不变。
 
 use crate::error::Result;
 use crate::state::AppState;

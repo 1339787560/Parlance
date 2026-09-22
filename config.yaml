@@ -63,10 +63,10 @@ services:
     # 必须回退 false, 否则双宿主争抢 5000。
     enabled: true
     env:
-      # SERVICESVR_CONFIG 基准 = Rust 子进程 cwd (serviceGroup/serviceServer), 故用 ../ 到 legacy
+      # SERVICESVR_CONFIG 基准 = Rust 子进程 cwd (serviceGroup/serviceServer), 故用 ../ 到
+      # serviceServer-legacy —— 该目录 U8 (2026-09-22) 后已退役为「数据 + 数据层助手 + 页面
+      # 模板」载体 (config.json / templates/ / templates.db / CommonTools 都还在这里)
       SERVICESVR_CONFIG: ../serviceServer-legacy/config.json
-      # strangler 反代目标 = legacy Flask。2026-09-22 起 :5099 让位给 L2 发布面 → legacy 退居 5098
-      SERVICESVR_LEGACY_URL: http://127.0.0.1:5098
       # 发布面 (:5099, 由 L2 run.py 承接) —— 工具自身重启委派给它: 它不在被重启目标内,
       # 停机窗口仍能应答 (旧值指 legacy_backend, 切流后会打到 5098 那里已无 /api/deploy/*)
       SERVICESVR_DEPLOY_URL: http://127.0.0.1:5099
@@ -74,25 +74,12 @@ services:
       SERVICESVR_HOST_ID: local
       SERVICESVR_BASTION_53_URL: http://192.168.102.53:5000
       SERVICESVR_BASTION_185_URL: http://192.168.52.185:5000
-      # 货币/礼包端点经 luaDataTool.py 读写游戏库 (mysql/redis/protobuf) —— 必须用带这些
-      # 依赖的解释器。**本机实测**: 进程 PATH 里的 `python` 会解析到 C:\Python314 (缺 mysql),
-      # 而 legacy 服务实际跑在 D:\Compiler\python (依赖齐), 故此处显式钉定, 不赌 PATH。
+      # 货币/礼包/CP 数据端点经 luaDataTool.py / cpDataTool.py 读写游戏库与 CP 库 —— 必须用
+      # 带这些依赖 (mysql/redis/protobuf) 的解释器。**本机实测**: 进程 PATH 里的 `python` 会
+      # 解析到 C:\Python314 (缺依赖), 而助手们需在 D:\Compiler\python 下跑, 故显式钉定, 不赌 PATH。
       # 换机器/堡垒机按其本机实际解释器改 (config.full.yaml 侧同理, 缺省仍走 python)。
       SERVICESVR_PYTHON: D:/Compiler/python/python.exe
 
-  - name: serviceServer-legacy
-    command: python
-    command_mac: ./serviceGroup/serviceServer-legacy/.venv/bin/python
-    args: ["main.py"]
-    cwd: ./serviceGroup/serviceServer-legacy
-    # 2026-09-22 起让位 :5099 (发布面搬到 L2 run.py), 退居 5098 —— 只服务 CP 路由
-    # (/api/cp-data/* + /api/migration/dryrun; 发布通道已从 legacy 摘除)
-    port: 5098
-    auto_restart: true
-    tags: [service, api, legacy]
-    enabled: true
-    env:
-      SERVICESVR_PORT: "5098"
 
   - name: statistic-server      # 融入 castflow: extensions/statistic-server/extension.yaml
     command_mac: ./serviceGroup/statisticServer/target/release/statistic-server

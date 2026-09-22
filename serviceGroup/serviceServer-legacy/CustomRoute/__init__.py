@@ -9,16 +9,12 @@ static_folder_path = os.path.join(current_dir, '..', 'src')
 app = Flask(__name__, static_folder=static_folder_path, static_url_path='/static')
 
 from .ServiceRoute import *
-from .CpDirectRoute import *
-from .MigrationRoute import *
 
 # 定义包的公共接口
 __all__ = [
     'app',      # 路由针对的Flask应用实例
 
     # 所有的自定义路由应该放在这个位置。
-    'ServiceRoute',
-    'CpDirectRoute',
-    'MigrationRoute'
+    'ServiceRoute'
 ]
 

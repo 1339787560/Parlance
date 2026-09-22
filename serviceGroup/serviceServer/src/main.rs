@@ -13,7 +13,6 @@ mod localtime;
 mod path_check;
 mod path_map;
 mod ports_probe;
-mod proxy;
 mod pybridge;
 mod pyval;
 mod routes;
@@ -32,7 +31,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{assets, branches, config_file, config_files, fetch, files, makecard, money, pages, recorder, records, script, serverstatus, services, spideorder, static_files, templates as tpl};
+use crate::routes::{assets, branches, config_file, config_files, cp_data, fetch, files, makecard, migration, money, pages, recorder, records, script, serverstatus, services, spideorder, static_files, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -52,10 +51,6 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("启动预热 config.json 失败 (稍后请求重试): {e}");
     }
 
-    // strangler 反代目标 = legacy Flask。2026-09-22 起 :5099 让位给 L2 发布面,
-    // legacy 退居 :5098 (只服务 CP 路由), 故缺省随之改。
-    let legacy_backend = std::env::var("SERVICESVR_LEGACY_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:5098".to_string());
     // 发布面 (:5099, 由 L2 run.py 承接) —— 工具自身重启委派给它 (routes/services.rs)。
     let deploy_url = std::env::var("SERVICESVR_DEPLOY_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:5099".to_string());
@@ -92,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
 
     // `/static/*` 静态根 (2026-09-22 从 legacy Flask 收编): 直读 config.json 同级 `src`,
     // 与 assetTool.py 写入抓取产物的 `ROOT/src` 是同一目录 (fetch → 展示闭环不变)。
-    // 解析不到 → 该前缀一律 404, **不回退 legacy** (前缀已收编, 见 proxy.rs DEAD_PREFIXES)。
+    // 解析不到 → 该前缀一律 404 (U8 后无反代)。
     let static_root = static_files::resolve_static_root(
         std::path::Path::new(&config_path),
         std::env::var(static_files::ENV_STATIC_DIR).ok().as_deref(),
@@ -110,7 +105,6 @@ async fn main() -> anyhow::Result<()> {
         path_map,
         status_cache: Arc::new(StatusCache::new(Duration::from_secs(10))),
         status_provider: Arc::from(default_provider()),
-        legacy_backend,
         deploy_url,
         http_client,
         templates,
@@ -172,11 +166,11 @@ async fn main() -> anyhow::Result<()> {
         // 前台只做参数校验与响应整形。两件顺带成果: playwright 既离开了**服务启动链**(N9),
         // 也不再是**部署链**依赖 —— exe 内自带, 且浏览器改用系统 chrome/edge (channel)。
         // 注意: 返回的 /static/* 自 2026-09-22 起由**前台原生**提供 (routes/static_files.rs),
-        // 该前缀已收编 (见 proxy.rs DEAD_PREFIXES), 不再反代 legacy。
+        // 该前缀已前台原生收编 (U8 后无反代)。
         .route("/api/fetch-background", get(assets::fetch_background))
         .route("/api/fetch-metadata", get(assets::fetch_metadata))
         // /api/svn/* 已退役 (U5, 2026-09-22 用户裁定): 发布/更新统一走 deploy 产物打包直推,
-        // 不再保留 svn 编排 —— 前缀已进 proxy.rs DEAD_PREFIXES, 未匹配子路径一律 404。
+        // 不再保留 svn 编排 —— 前缀已前台原生; 未匹配子路径一律 404 (U8 后无反代)。
         .route("/api/config/file/content", get(config_file::get_content))
         .route("/api/config/file/download", get(config_file::download_file))
         .route("/api/config/file/save", axum::routing::post(config_file::save_file))
@@ -234,7 +228,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/spideorder/save", axum::routing::post(spideorder::save_config))
         .route("/api/spideorder/execute", axum::routing::post(spideorder::execute))
         // 启动序列 (U1 序列迁移, 2026-09-21): script.json 读写 + 按序列启动服务。
-        // 对应 legacy CustomRoute/SequenceRoute.py 四路由; 前缀已进 proxy DEAD_PREFIXES,
+        // 对应 legacy CustomRoute/SequenceRoute.py 四路由; 前缀已前台原生 (U8 后无反代),
         // 不再回退 5099。
         .route("/api/script/get-all", get(script::get_all))
         .route("/api/script/save", axum::routing::post(script::save))
@@ -244,7 +238,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/script/execute", axum::routing::post(script::execute))
         // 做牌器 + 发牌配置 (U2 迁移, 2026-09-21): 直读本机服务目录 test*.ini /
-        // 写 config.json 的 makedealFilePath。前缀二者均已进 proxy DEAD_PREFIXES。
+        // 写 config.json 的 makedealFilePath。二者均已前台原生 (U8 后无反代)。
         .route("/api/makecard/files", get(makecard::files))
         .route("/api/makecard/read", get(makecard::read))
         .route("/api/makecard/save", axum::routing::post(makecard::save))
@@ -259,7 +253,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/makedeal/randomReject", get(makecard::makedeal_random_reject))
         // 货币与礼包 (U3 迁移, 2026-09-22): 游戏币(起 RobotToolD.exe) / deposit 远程转发 /
-        // 游戏库 Lua 数据(经 luaDataTool.py 助手)。前缀已进 proxy DEAD_PREFIXES。
+        // 游戏库 Lua 数据(经 luaDataTool.py 助手)。前缀已前台原生 (U8 后无反代)。
         .route("/api/set-gold", axum::routing::post(money::set_gold))
         .route("/api/set-points", axum::routing::post(money::set_points))
         .route("/api/set-silver", axum::routing::post(money::set_silver))
@@ -271,6 +265,41 @@ async fn main() -> anyhow::Result<()> {
             "/api/set-newplayer-gift",
             axum::routing::post(money::set_newplayer_gift),
         )
+        // CP 用户数据 (U6 迁移, 2026-09-22): deposit 页「CP 数据」tab 的六条 —— 原 legacy
+        // CustomRoute/CpDirectRoute.py。数据层(CredsManager 解密 + CP MySQL modsvr283db +
+        // redis db10)留在 Python 助手 cpDataTool.py, 前台只做确定性预检与响应整形
+        // (同 U3/U4 的 pybridge 范式)。前缀已前台原生 (U8 后无反代)。
+        .route(
+            "/api/cp-data/direct/appcodes",
+            get(cp_data::appcodes).post(cp_data::appcodes),
+        )
+        .route(
+            "/api/cp-data/direct/modules",
+            axum::routing::post(cp_data::modules),
+        )
+        .route(
+            "/api/cp-data/direct/module",
+            axum::routing::post(cp_data::module),
+        )
+        .route(
+            "/api/cp-data/direct/write-prepare",
+            axum::routing::post(cp_data::write_prepare),
+        )
+        .route(
+            "/api/cp-data/direct/write",
+            axum::routing::post(cp_data::write),
+        )
+        .route(
+            "/api/cp-data/direct/clear",
+            axum::routing::post(cp_data::clear),
+        )
+        // 迁移测试面 (U6 迁移, 2026-09-22): deposit 页「获取装载迁移数据」tab 的后端 ——
+        // 原 legacy CustomRoute/MigrationRoute.py。纯 HTTP 调本机 chunkSvr 调试口, 故
+        // Rust 原生 (无 Python 助手)。前缀已前台原生 (U8 后无反代)。
+        .route(
+            "/api/migration/dryrun",
+            axum::routing::post(migration::dryrun),
+        )
         // services 控制簇剩余: deploy(sc create) + start-all + update(multipart 热更新)。
         .route("/api/services/deploy", axum::routing::post(services::deploy_service))
         .route("/api/services/start-all", axum::routing::post(services::start_all_services))
@@ -281,11 +310,14 @@ async fn main() -> anyhow::Result<()> {
         )
         // 静态资源 (2026-09-22 从 legacy 收编): 抓取产物 / 图标 / 背景图 / friendlink.json
         // 直读 config.json 同级 `src` (与 assetTool.py 的 ROOT/src 同一目录)。此前经
-        // Flask static 反代提供; 收编后 `/static` 前缀进 proxy DEAD_PREFIXES, 不再回退 legacy。
+        // Flask static 反代提供; 收编后前台原生, 不再有反代。
         .route("/static/*path", get(static_files::serve))
-        // strangler: 未匹配请求反代到旧 Flask 后端 (SERVICESVR_LEGACY_URL)。
-        .fallback(crate::proxy::proxy_legacy)
-        // 全 HTML 页面 (rust 内嵌 + legacy 反代) 注入面包屑条 (第二层下拉直达切换)
+        // U8 收口 (2026-09-22): legacy Flask 的业务路由已全部迁完/退役 (其 url_map 只剩
+        // Flask 自带的 /static), 故**删除 strangler 反代 fallback** —— 未匹配请求不再
+        // 转发给 :5098, 直接 404。fallback 保留前台统一的 JSON 错误体
+        // (`{success:false,message}`), 与退役前死前缀的 404 形态一致 (前端按 JSON 解析)。
+        .fallback(|| async { crate::error::AppError::NotFound })
+        // 全 HTML 页面 (rust 内嵌，U8 后无反代) 注入面包屑条 (第二层下拉直达切换)
         .layer(axum::middleware::from_fn(crate::breadcrumb::inject))
         .with_state(state);
 

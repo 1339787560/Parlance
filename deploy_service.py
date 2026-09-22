@@ -56,10 +56,10 @@ DEPLOY_TOKEN_ENV = "DEPLOY_TOKEN"
 # 工具自身 (:5000) —— `/api/deploy/self-restart` 的目标
 TOOL_PORT = int(os.environ.get("SERVICESVR_TOOL_PORT", "5000"))
 
-# legacy 子服务端口 (2026-09-22 起 :5099 让位给 L2, legacy 退居 5098 只服务 CP 路由)。
-# 编排收尾若动过 legacy 的文件 → 请宿主重启它。优先用宿主服务清单里的实际 port。
-LEGACY_PORT = int(os.environ.get("SERVICESVR_LEGACY_PORT", "5098"))
-LEGACY_SVC_NAME = "serviceServer-legacy"
+# legacy 目录前缀。**2026-09-22 U8 后该子服务已退役** —— 目录只承载「数据 +
+# 数据层助手 (.py/.exe) + 页面模板 + config.json」, 且这些文件现由 **:5000 前台**读取
+# (templates/*.html 与 src/** 每请求现读; config.json 亦然; 只有 templates.db 是启动时
+# 打开)。故「动过 legacy 文件」的收尾 = **重启读取方 :5000**, 不再重启已不存在的 legacy 服务。
 LEGACY_PREFIX = "serviceGroup/serviceServer-legacy/"
 
 # 助手 exe (非服务二进制, 如 assetTool.exe): 目标机上没有对应的宿主服务/端口可换,
@@ -75,7 +75,7 @@ PROTECTED_PREFIXES = ("serviceGroup/statisticServer/",)
 # 落点分层 (收尾动作由"包动了谁"决定):
 #   L2 文件 (run.py/start.py) → 发布器自己换代: 停 L3 → 退出非保留码 → L1 重拉新码
 #   L3 文件 (main.py/service_manager.py) → reseat L3 (Job Object 重建, 全子服务重启)
-#   legacy 文件 → 请宿主重启 legacy
+#   legacy 目录文件 → 请宿主重启读取方 :5000 (U8: legacy 服务已退役; 见 LEGACY_PREFIX 注释)
 LAUNCHER_FILES = ("run.py", "start.py")
 HOST_FILES = ("main.py", "service_manager.py")
 
@@ -189,7 +189,10 @@ def classify_targets(replaced: List[str],
                      launcher_files=LAUNCHER_FILES,
                      host_files=HOST_FILES,
                      legacy_prefix: str = LEGACY_PREFIX) -> Dict[str, bool]:
-    """替换成功后该做什么收尾 —— 由"包动了哪一层"决定 (互斥, self_update 优先)。"""
+    """替换成功后该做什么收尾 —— 由"包动了哪一层"决定 (互斥, self_update 优先)。
+
+    注: `restart_legacy` 键名保留历史, **含义自 U8 (2026-09-22) 起 = 重启 legacy 目录文件
+    的读取方 :5000** (legacy 服务已退役; 该目录只剩数据/助手/模板, 由前台读取)。"""
     rels = [r.replace("\\", "/") for r in replaced]
     self_update = any(r in launcher_files for r in rels)
     reseat_l3 = any(r in host_files for r in rels) and not self_update
@@ -466,7 +469,7 @@ class DeployOrchestrator:
             record.update(ok=True, stage="done", post=actions,
                           finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
             if actions["restart_legacy"]:
-                record["self_restart"] = self._legacy_port(host_svcs)
+                record["restart_reader_port"] = TOOL_PORT
             self.write_record(record)   # ★ 必须在收尾动作之前落盘 (self_update 会退出本进程)
 
             if actions["self_update"]:
@@ -477,11 +480,16 @@ class DeployOrchestrator:
                 logger.warning("[deploy] 包动了 L3 (main.py/service_manager.py) → reseat L3")
                 self.on_reseat_l3()
             elif actions["restart_legacy"]:
-                port = self._legacy_port(host_svcs)
-                try:
-                    self.svc.call("restart", {"port": port}, timeout=90)
-                except Exception as e:
-                    logger.warning("[deploy] 重启 legacy(%s) 失败 (人工重启生效): %s", port, e)
+                # U8 (2026-09-22): legacy 服务已退役, 这些文件由 :5000 读取 ⇒ 重启 :5000 生效。
+                # 若本次已换代 :5000 的 exe (swap_exe 自带停/起), 则跳过以免重复重启。
+                if any(e.get("port") == TOOL_PORT for e in exe_done):
+                    logger.info("[deploy] legacy 目录文件随 :5000 换代已重启生效, 跳过额外重启")
+                else:
+                    try:
+                        self.svc.call("restart", {"port": TOOL_PORT}, timeout=90)
+                    except Exception as e:
+                        logger.warning("[deploy] 重启 :5000 (%s) 失败 (人工重启生效): %s",
+                                       TOOL_PORT, e)
             return record
         except Exception as e:
             record.update(ok=False, stage="error", error=str(e),
@@ -502,12 +510,6 @@ class DeployOrchestrator:
         if isinstance(r, dict):
             return r.get("services") or []
         return []
-
-    def _legacy_port(self, host_svcs: Optional[list] = None) -> int:
-        for s in (host_svcs or []):
-            if s.get("name") == LEGACY_SVC_NAME and s.get("port"):
-                return int(s["port"])
-        return LEGACY_PORT
 
     def _swap_exe_via_host(self, e: dict) -> dict:
         """exe 换代: 优先宿主 swap_exe (句柄留宿主)。

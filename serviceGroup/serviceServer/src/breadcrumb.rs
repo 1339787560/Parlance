@@ -1,6 +1,6 @@
 //! 全页面面包屑注入中间件 — service-server 附属界面统一导航。
 //!
-//! HTML 响应（rust 内嵌页 + legacy 反代页）注入顶部条:
+//! HTML 响应（rust 内嵌页; U8 后已无反代）注入顶部条:
 //!   `首页 / [当前页 ▾]`
 //! 根标签"首页"可点击返回 /; 第二层为 select 下拉, 列全部页面直达切换。
 //!
@@ -15,7 +15,7 @@ use axum::middleware::Next;
 use axum::response::Response;
 
 /// 页面清单（path, 名称）— 面包屑第二层下拉项。
-/// 首页不列（根标签"首页"本身即返回入口）; fileontimer/AIManager/A2AManager/ragQA 已在 proxy DEAD_PREFIXES 退役（:5000 404），不列。
+/// 首页不列（根标签"首页"本身即返回入口）; fileontimer/AIManager/A2AManager/ragQA 已退役（:5000 404），不列。
 const PAGES: &[(&str, &str)] = &[
     ("/sequence", "设置启动序列"),
     ("/deposit", "设置数据"),

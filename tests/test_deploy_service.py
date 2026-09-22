@@ -371,17 +371,39 @@ def test_orchestrator_self_update_on_run_py(repo):
     assert calls["reseat"] == 0
 
 
-def test_orchestrator_restarts_legacy_when_its_files_change(repo):
-    rel = "serviceGroup/serviceServer-legacy/CustomRoute/ServiceRoute.py"
-    zip_path = _make_zip(repo / "deploys" / "p.zip", {rel: b"# new\n"})
+def test_orchestrator_restarts_reader_when_legacy_dir_files_change(repo):
+    """U8 (2026-09-22): legacy 服务已退役 ⇒ 该目录文件由 :5000 读取, 收尾重启 :5000。
+
+    包内只有 legacy 文件 (无 :5000 exe) ⇒ 必须发起一次 restart(:5000)。
+    """
+    rel = "serviceGroup/serviceServer-legacy/CustomRoute/templates/deposit.html"
+    zip_path = _make_zip(repo / "deploys" / "p.zip", {rel: b"<!-- new -->\n"})
     svc = _FakeSvc()
     orch, _ = _orchestrator(repo, svc)
     record = {}
     orch.run(zip_path, record)
     assert record["ok"] is True
+    assert record["post"]["restart_legacy"] is True      # 分类键名保留历史, 含义见 deploy_service
+    assert record["restart_reader_port"] == ds.TOOL_PORT
     restarts = [c for c in svc.calls if c[0] == "restart"]
     assert len(restarts) == 1
-    assert restarts[0][1]["port"] == ds.LEGACY_PORT
+    assert restarts[0][1]["port"] == ds.TOOL_PORT
+
+
+def test_orchestrator_skips_reader_restart_when_5000_exe_already_swapped(repo):
+    """包同时含 :5000 exe 与 legacy 文件 ⇒ swap_exe 自带的停/起已让新文件生效, 不再重复重启。"""
+    exe_rel = "serviceGroup/serviceServer/service-server.exe"
+    leg_rel = "serviceGroup/serviceServer-legacy/CustomRoute/templates/deposit.html"
+    zip_path = _make_zip(repo / "deploys" / "p.zip",
+                         {exe_rel: b"MZnew", leg_rel: b"<!-- new -->\n"})
+    svc = _FakeSvc(services=[{"name": "serviceServer-rust", "port": ds.TOOL_PORT,
+                              "exe_path": str(repo / exe_rel), "command": exe_rel}])
+    orch, _ = _orchestrator(repo, svc)
+    record = {}
+    orch.run(zip_path, record)
+    assert record["ok"] is True
+    assert record["post"]["restart_legacy"] is True       # 分类仍标记该层被动过
+    assert [c for c in svc.calls if c[0] == "restart"] == []   # 但不额外重启
 
 
 def test_orchestrator_creates_new_dirs_and_backup(repo):
