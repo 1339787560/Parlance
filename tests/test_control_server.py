@@ -31,6 +31,7 @@ class _FakeSgmController:
         self.stopped = 0
         self.started = 0
         self.shutdown_calls = 0
+        self._deliberate = False
         self.svc = mock.Mock()
         self.svc.running = True
         self.svc.status = "running"
@@ -51,6 +52,9 @@ class _FakeSgmController:
 
     def shutdown(self):
         self.shutdown_calls += 1
+
+    def mark_deliberate(self):
+        self._deliberate = True
 
     def status_dict(self):
         return {
@@ -109,6 +113,18 @@ def test_dispatch_quit_defers_shutdown(server, controller):
     # shutdown scheduled on a 0.2s-deferred daemon thread
     time.sleep(0.4)
     assert controller.shutdown_calls == 1
+
+
+def test_dispatch_quit_marks_deliberate_on_controller(server, controller):
+    """回归 (2026-09-22 实测 bug): 「主动退出」标记必须打在 SgmController 上。
+
+    run() 读的是 SgmController._deliberate 决定是否 exit(EXIT_DELIBERATE=42)，
+    而 _dispatch("quit") 曾把它打在 ControlServer 自己身上 → run() 读到 False
+    → 退出码 0 → 被 start.py --supervise 当"崩溃"重拉（quit 形同无效）。
+    契约方 = start.py::_supervise_nt（只有 42 = 不重拉）。
+    """
+    server._dispatch("quit", {})
+    assert controller._deliberate is True
 
 
 # ── _handle_request ──────────────────────────────────────────────────────────

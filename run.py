@@ -11,6 +11,10 @@ Hotkeys:
     q / Q   Stop service and quit sgmController
     s / S   Show current status
     h / H   Show this help
+
+发布通道 (2026-09-22 起本层承接): :5099 = `/api/deploy/*` 产物包直推 —— 见
+deploy_service.py。放在本层 (L2) 的理由: 上级 L1 (`start.py --supervise`) 能重拉它
+⇒ 它能换掉下面全部 (含 L3 main.py) 而"零组件需要自我更新"。
 """
 
 import logging
@@ -32,6 +36,12 @@ logger = logging.getLogger("run")
 
 import yaml
 from service_manager import ManagedService
+from deploy_service import (
+    DEFAULT_PORT as DEPLOY_DEFAULT_PORT,
+    DeployOrchestrator,
+    DeployServer,
+    SvcClient,
+)
 
 if os.name == "nt":
     import msvcrt
@@ -196,7 +206,11 @@ class ControlServer:
         if method == "status":
             return lc.status_dict()
         if method == "quit":
-            self._deliberate = True   # 主动退出: start.py --supervise 不得重拉
+            # 主动退出: start.py --supervise 不得重拉。
+            # ★ 标记必须打在 **SgmController** 上 —— run() 读的是 lc._deliberate 决定
+            #   退出码; 2026-09-22 实测 bug: 这里曾打成 ControlServer 自己的属性,
+            #   run() 读到 False → 退出码 0 → 被 --supervise 当"崩溃"重拉 (quit 失效)。
+            lc.mark_deliberate()
             # Defer shutdown so the response flushes before process exit.
             def _deferred():
                 time.sleep(0.2)
@@ -350,6 +364,20 @@ class SgmController:
         self._lock = threading.Lock()
         self._ctl_server: Optional[ControlServer] = None
 
+        # 主动退出标记 (quit RPC / q 键 / Ctrl+C 置位) — run() 读它决定是否以
+        # EXIT_DELIBERATE 退出; 见模块头契约与 ControlServer._dispatch("quit")。
+        self._deliberate = False
+
+        # 发布通道 (:5099) —— 编排在 L2, 原语 (stop/start/swap_exe) 仍经 L3 宿主管道。
+        self._deploy_svc = SvcClient()
+        self._deploy: Optional[DeployOrchestrator] = DeployOrchestrator(
+            root=str(PROJECT_DIR),
+            svc=self._deploy_svc,
+            on_self_update=self._self_update_for_deploy,
+            on_reseat_l3=self._reseat_l3,
+        )
+        self._deploy_server: Optional[DeployServer] = None
+
     def start(self) -> bool:
         logger.info("Starting infoServer (port %d)...", self.port)
         if not _ensure_port_free(self.port, timeout=15):
@@ -400,6 +428,56 @@ class SgmController:
             "Status: %s | PID: %s | uptime: %s",
             d["status"], d["pid"], d["uptime"],
         )
+
+    # ── 主动退出标记 (quit RPC / q 键 / Ctrl+C 共用; 唯一读取方 = run()) ──
+    def mark_deliberate(self):
+        self._deliberate = True
+
+    # ── 发布通道 (:5099) ─────────────────────────────────────────────────
+    def _start_deploy_server(self) -> None:
+        port = int(os.environ.get("INFOSERVER_DEPLOY_PORT", str(DEPLOY_DEFAULT_PORT)))
+        try:
+            self._deploy_server = DeployServer("0.0.0.0", port, orchestrator=self._deploy)
+            self._deploy_server.start()
+        except OSError as e:
+            # 绑不上 (:5099 被占 / 权限不足) 不致命 —— 启动器本体继续跑, 人还能进来修;
+            # 但发布面缺失必须显眼 (旧 legacy 仍占 5099 时正是这个症状)。
+            self._deploy_server = None
+            logger.error("发布面 :%d 绑定失败 —— deploy 通道不可用: %s", port, e)
+
+    def _stop_deploy_server(self) -> None:
+        if self._deploy_server is not None:
+            self._deploy_server.stop()
+            self._deploy_server = None
+
+    def _reseat_l3(self) -> None:
+        """包动了 L3 (main.py/service_manager.py) → 停起 sgManager 让新码生效。
+
+        L3 持 Job Object ⇒ 它一退, 全部子服务连坐 —— 这是"改 L3 必须接受"的代价
+        (2026-09-22 决策日志)。L2 自身不死, 故由它发起是正路。
+        """
+        logger.info("[deploy] reseat L3 (sgManager) ...")
+        self.stop()
+        self.start()
+
+    def _self_update_for_deploy(self) -> None:
+        """包动了 L2 自身 (run.py/start.py) → 发布器换代。
+
+        Python 不锁自己的 .py 文件, 此刻文件已换好; 但本层无法"重启自己", 故:
+        停 L3 (释放端口与 Job) → 以**非保留码**退出 → L1 `start.py --supervise` 重拉新码。
+        未被监督时退出 = 整栈下线且无人拉回 ⇒ 只记日志, 留人工重启。
+        """
+        if os.environ.get("INFOSERVER_SUPERVISED") != "1":
+            logger.warning("[deploy] 包已换掉 L2 自身文件, 但当前**未受监督** —— "
+                           "请人工重启 (start_admin.bat) 使新码生效")
+            return
+        time.sleep(2)          # 让 deploy.log 的最终 record 能被客户端轮询读到
+        logger.info("[deploy] L2 自身换代: 停 L3 → 以非保留码退出, 等 L1 重拉新码")
+        try:
+            self.stop()
+        except Exception as e:
+            logger.warning("[deploy] 换代前停 L3 失败 (继续退出): %s", e)
+        os._exit(1)            # 1 != EXIT_DELIBERATE(42) ⇒ L1 重拉
 
     @staticmethod
     def help():
@@ -452,7 +530,7 @@ Hotkeys:
             if ch == "r":
                 threading.Thread(target=self.reload, daemon=True).start()
             elif ch == "q":
-                self._deliberate = True   # 主动退出: 见 _dispatch("quit")
+                self.mark_deliberate()   # 主动退出: 见 _dispatch("quit")
                 threading.Thread(target=self.shutdown, daemon=True).start()
                 break
             elif ch == "s":
@@ -472,6 +550,9 @@ Hotkeys:
         self._ctl_server = ControlServer(self)
         self._ctl_server.start()
 
+        # 发布通道 (:5099): 与 ctl 管道并列的第二个面 —— 绑不上只告警不致命。
+        self._start_deploy_server()
+
         if not self.start():
             sys.exit(1)
 
@@ -490,10 +571,11 @@ Hotkeys:
                 time.sleep(0.2)
         except KeyboardInterrupt:
             logger.info("Ctrl+C received")
-            self._deliberate = True       # 用户主动按停: 不重拉
+            self.mark_deliberate()        # 用户主动按停: 不重拉
         finally:
             if self._ctl_server is not None:
                 self._ctl_server.stop()
+            self._stop_deploy_server()
             self.shutdown()
             logger.info("SgmController exited")
 
