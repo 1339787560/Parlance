@@ -95,6 +95,12 @@ const DEAD_PREFIXES: &[&str] = &[
     // svn 编排 (U5, 2026-09-22 用户裁定): svn 端点整体退役 —— 发布/更新一律走 deploy
     // 产物打包直推 (以推送端上传内容为准), 3 条端点连前端入口一并删除, 故整段收编。
     "/api/svn",
+    // 服务器状态页数据面 (2026-09-22): `/api/serverstatus/get` 迁 Rust 原生 (routes/serverstatus.rs),
+    // `stop` / `restart` 两条退役删除 —— 故整段收编, 未匹配子路径一律 404 而不回退 legacy。
+    "/api/serverstatus",
+    // 系统重启 (2026-09-22) 迁 Rust 原生。用**全路径**前缀: legacy 的 `/api/system/*` 仅此一条,
+    // 不会误伤兄弟路径。
+    "/api/system/restart",
     "/ai-manager",
     "/rag-qa",
     "/api/rag",
@@ -167,6 +173,12 @@ mod tests {
     #[case("/api/svn/status", true)]
     #[case("/api/svn/update", true)]
     #[case("/api/svn/update_log", true)]
+    // 2026-09-22: 状态页数据面 /api/serverstatus 整段收编 + /api/system/restart 迁原生;
+    // 未被原生路由接管的子路径 (stop / restart) 一律 404, 不回退 legacy。
+    #[case("/api/serverstatus/get", true)]
+    #[case("/api/serverstatus/stop", true)]
+    #[case("/api/serverstatus/restart", true)]
+    #[case("/api/system/restart", true)]
     #[case("/fileontimer", true)]
     #[case("/api/fileontimer/list", true)]
     fn test_is_dead_path_matrix(#[case] path: &str, #[case] dead: bool) {

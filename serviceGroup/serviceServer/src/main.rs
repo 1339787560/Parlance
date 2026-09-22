@@ -32,7 +32,7 @@ use axum::{routing::get, Router};
 use tracing_subscriber::EnvFilter;
 
 use crate::path_map::PathMap;
-use crate::routes::{assets, branches, config_file, config_files, fetch, files, makecard, money, pages, recorder, records, script, services, spideorder, templates as tpl};
+use crate::routes::{assets, branches, config_file, config_files, fetch, files, makecard, money, pages, recorder, records, script, serverstatus, services, spideorder, templates as tpl};
 use crate::state::AppState;
 use crate::status::{default_provider, StatusCache};
 use std::time::Duration;
@@ -113,6 +113,15 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/templates/update",
             axum::routing::post(pages::templates_update),
+        )
+        // 服务器状态页数据面 + 系统重启 (2026-09-22): 页面壳 U4 已原生 (见上 /serverstatus),
+        // 本批补齐它背后的两条。legacy 的 /api/serverstatus/stop 与 /api/serverstatus/restart
+        // **不迁** —— 前者停自己会致入口消失 (首刀裁定), 后者等价能力已在 /api/services/restart
+        // 的 self 分支; 二者与 legacy 路由一并退役, 详见 routes/serverstatus.rs 头注。
+        .route("/api/serverstatus/get", get(serverstatus::get))
+        .route(
+            "/api/system/restart",
+            axum::routing::post(serverstatus::system_restart),
         )
         // 复盘器数据源 (SDD running/四川麻将复盘器-数据源): 三类源统一 /api/record/*
         .route("/api/record/sources", get(records::sources))

@@ -11,6 +11,7 @@ pub mod pages;
 pub mod recorder;
 pub mod records;
 pub mod script;
+pub mod serverstatus;
 pub mod services;
 pub mod spideorder;
 pub mod templates;

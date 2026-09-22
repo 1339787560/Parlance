@@ -332,7 +332,8 @@
             </div>
 
             <div class="service-controls">
-                <button class="service-btn" id="stop-service-btn">停止服务</button>
+                <!-- 「停止服务」按钮已随 legacy 退役 (2026-09-22): 它停的是旧 Flask 自身,
+                     而首刀已裁定「工具自身不提供停止」(停掉入口即消失) —— 停服/换代请走 deploy 包通道。 -->
                 <button class="restart-btn" id="restart-service-btn">重启服务</button>
                 <button class="restart-btn" id="restart-machine-btn" style="background-color: #dc3545; color: white;">重启机器</button>
             </div>
@@ -393,9 +394,10 @@
                 </div>
             </div>
             
-            <!-- Python服务状态 -->
+            <!-- 服务进程状态 (原 Python 服务状态): 服务端已迁 Rust, 被观测者是
+                 service-server 进程 (响应键仍沿用 legacy 的 python, 见后端注释)。 -->
             <div class="status-card">
-                <h3>Python服务状态</h3>
+                <h3>服务进程状态</h3>
                 <div class="status-item">
                     <span class="status-label">CPU使用率:</span>
                     <span class="status-value" id="python-cpu">--%</span>
@@ -451,30 +453,18 @@
         
         refreshBtn.addEventListener('click', updateStatus);
         
-        // 服务控制按钮
-        const stopServiceBtn = document.getElementById('stop-service-btn');
+        // 服务控制按钮 (2026-09-22 迁移):「停止服务」已随 legacy 退役 (见上方 HTML 注释);
+        // 「重启服务」改打原生 /api/services/restart —— 它对 type=self 会委派 legacy
+        // /api/deploy/self-restart → 宿主 restart (句柄留宿主, 不做自杀式换代)。
         const restartServiceBtn = document.getElementById('restart-service-btn');
-        
-        stopServiceBtn.addEventListener('click', function() {
-            if (confirm('确定要停止当前服务吗？')) {
-                fetch('/api/serverstatus/stop', { method: 'POST' })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            alert('服务停止命令已发送');
-                        } else {
-                            alert('停止服务失败: ' + data.message);
-                        }
-                    })
-                    .catch(error => {
-                        alert('停止服务失败: ' + error.message);
-                    });
-            }
-        });
         
         restartServiceBtn.addEventListener('click', function() {
             if (confirm('确定要重启当前服务吗？')) {
-                fetch('/api/serverstatus/restart', { method: 'POST' })
+                fetch('/api/services/restart', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: 'service-server', type: 'self' })
+                })
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
@@ -515,7 +505,7 @@
                 .then(data => {
                     if (data.success) {
                         updateSystemStatus(data.system);
-                        updatePythonStatus(data.python);
+                        updateProcessStatus(data.python);
                         lastUpdate.textContent = `上次更新: ${new Date().toLocaleString()}`;
                     } else {
                         console.error('获取状态失败:', data.message);
@@ -551,8 +541,8 @@
             document.getElementById('system-disk-write').textContent = formatBytes(systemData.disk_write_rate) + '/s';
         }
         
-        // 更新Python服务状态显示
-        function updatePythonStatus(pythonData) {
+        // 更新服务进程状态显示 (被观测者 = service-server 进程)
+        function updateProcessStatus(pythonData) {
             document.getElementById('python-cpu').textContent = `${pythonData.cpu_percent.toFixed(1)}%`;
             document.getElementById('python-cpu-progress').style.width = `${pythonData.cpu_percent}%`;
             
