@@ -42,7 +42,14 @@ try:
 except Exception:  # pragma: no cover
     pass
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# ROOT = 现场根（= legacy 目录）。冻结成 exe 后 `__file__` 指向 PyInstaller 的**临时解包
+# 目录**（_MEIxxxx），必须改取 exe 自身所在目录 —— 否则 friendlink.json 读不到（spiderUrl
+# 为空 → 直接返兜底图，浏览器那步根本不执行），且图标/背景缓存会写进临时目录、进程一退就丢。
+# 这是 onefile 的经典坑（本次实测定点：`fetch-background` 只回了 FALLBACK_BG 才暴露）。
+if getattr(sys, "frozen", False):
+    ROOT = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    ROOT = os.path.dirname(os.path.abspath(__file__))
 
 IMPORT_ERROR = None
 try:
@@ -170,19 +177,37 @@ def h_fetch_background(data):
 
     bg_url = None
     # 1. 无头浏览器抓候选图（这是 N9 要摘出启动链的那一处 playwright）
+    #    浏览器**优先用系统自带的**（channel=chrome/msedge），避免为了这一处抓取去拖
+    #    ms-playwright 那 1.7GB 浏览器缓存；系统没有对应 channel 时才回落 playwright
+    #    自带 chromium（即旧行为）。三条都不成 → 不抛，走下面兜底图。
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent=UA)
-        page = context.new_page()
-        page.set_default_timeout(15000)
-        try:
-            page.goto(spider_url, wait_until="networkidle")
-            page.wait_for_timeout(2000)
-            bg_url = page.evaluate(_BG_JS)
-        except Exception as pe:
-            log("Playwright error: %s" % pe)  # 与 legacy 同: 失败不抛, 走兜底
-        finally:
-            browser.close()
+        browser = None
+        for ch in ("chrome", "msedge", None):
+            kw = {"channel": ch} if ch else {}
+            try:
+                browser = p.chromium.launch(headless=True, **kw)
+                log("browser launched via channel=%s" % (ch or "<bundled>"))
+                break
+            except Exception as ce:
+                log("launch channel=%s failed: %s" % (ch or "<bundled>", ce))
+        if browser is None:
+            log("no browser available (chrome/msedge/bundled all failed); 走兜底")
+        else:
+            try:
+                context = browser.new_context(user_agent=UA)
+                page = context.new_page()
+                page.set_default_timeout(15000)
+                try:
+                    page.goto(spider_url, wait_until="networkidle")
+                    page.wait_for_timeout(2000)
+                    bg_url = page.evaluate(_BG_JS)
+                except Exception as pe:
+                    log("Playwright error: %s" % pe)  # 与 legacy 同: 失败不抛, 走兜底
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
     # 2. 找到就下载，并和最新缓存比大小
     if bg_url:
