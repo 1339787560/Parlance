@@ -34,6 +34,10 @@ ROOT = Path(__file__).resolve().parent
 # serviceGroup 递归收集的扩展名白名单 (纯代码/资源资产)
 INCLUDE_EXT = {".py", ".html", ".js", ".css", ".json", ".yaml", ".yml",
                ".png", ".jpg", ".svg", ".woff", ".woff2", ".ttf", ".ico", ".txt"}
+# 助手 exe（非服务二进制，目标机走「就地替换 + 备份」，不经宿主 swap_exe）。
+# 为什么必须显式登记：目录扫描按 INCLUDE_EXT 过滤且**不含 .exe**，而下面的服务 exe 只从
+# config.yaml 的 command 收集 —— 助手 exe 不登记就会**静默漏打包**（同 2026-09-09「exe 恒漏」）。
+HELPER_EXES = {"serviceGroup/serviceServer-legacy/assetTool.exe"}
 # 目录黑名单 (target 例外: 显式 exe 路径单独收集, 不走目录扫描)
 EXCLUDE_DIRS = {".svn", ".git", "__pycache__", ".venv", "venv", "node_modules",
                 "logs", "target", "deploys", "_staging", ".deploy_backup",
@@ -180,6 +184,11 @@ def collect_files(only: list[str] | None = None) -> tuple[list[str], list[str]]:
         for rel in spec["runs"]:
             if rel.endswith(".exe") and _want(_owner_of(rel, owners)) and rel not in files:
                 files.append(rel)
+
+    # 助手 exe（见 HELPER_EXES 注释）：显式收集，缺失即静默跳过（本机还没 build 时不报错）。
+    for rel in sorted(HELPER_EXES):
+        if (ROOT / rel).is_file() and _want(_owner_of(rel, owners)) and rel not in files:
+            files.append(rel)
 
     sg = ROOT / "serviceGroup"
     for dirpath, dirnames, filenames in os.walk(sg):
