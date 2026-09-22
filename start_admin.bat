@@ -40,7 +40,7 @@ if not defined PY if exist "C:\Program Files\Python312\python.exe" set "PY=C:\Pr
 if not defined PY if exist "C:\Program Files\Python311\python.exe" set "PY=C:\Program Files\Python311\python.exe"
 if not defined PY set "PY=python"
 
-rem --supervise: sgmController 崩溃时由本层拉回（quit 仍被尊重 -> 不重拉；stop 不会退出）
+rem --supervise: restart sgmController if it crashes (quit is honored -> no relaunch; stop does not exit)
 "!PY!" !PYARGS! start.py --supervise %*
 
 echo.
