@@ -66,6 +66,12 @@ _ERR_METHOD_NOT_FOUND = -32601
 _ERR_INTERNAL = -32603
 
 
+# 主动退出保留码: quit/stop RPC、q 键、Ctrl+C 四处会打 _deliberate 标记, 最终以本码退出。
+# 契约方 = start.py (--supervise 时见本码即「别再拉」, 其余码 = 崩溃 → 重拉)。
+# 为什么需要它: ctl stop 也会让本层主循环退出, 若父层无条件重拉, 「停止」就变成「重拉」。
+EXIT_DELIBERATE = 42
+
+
 def _ctl_address():
     """Return (address, family) for the control socket on this platform."""
     if os.name == "nt":
@@ -190,6 +196,7 @@ class ControlServer:
         if method == "status":
             return lc.status_dict()
         if method == "quit":
+            self._deliberate = True   # 主动退出: start.py --supervise 不得重拉
             # Defer shutdown so the response flushes before process exit.
             def _deferred():
                 time.sleep(0.2)
@@ -199,6 +206,8 @@ class ControlServer:
         if method == "start":
             return {"ok": bool(lc.start())}
         if method == "stop":
+            # stop 也会让本层主循环退出（service.running 变 False），故同样算主动停止。
+            self._deliberate = True
             lc.stop()
             return {"ok": True}
         raise _MethodNotFound(method)
@@ -443,6 +452,7 @@ Hotkeys:
             if ch == "r":
                 threading.Thread(target=self.reload, daemon=True).start()
             elif ch == "q":
+                self._deliberate = True   # 主动退出: 见 _dispatch("quit")
                 threading.Thread(target=self.shutdown, daemon=True).start()
                 break
             elif ch == "s":
@@ -452,6 +462,9 @@ Hotkeys:
 
     def run(self):
         no_input = "--no-input" in sys.argv
+        # 主动停止标记（quit/stop RPC、q 键、Ctrl+C）。父层 start.py --supervise 靠它决定
+        # 「别再拉」还是「崩溃了要拉回来」。见模块头 EXIT_DELIBERATE 契约。
+        self._deliberate = False
 
         # 单实例锁: 先绑定 sgmController 控制管道再启动 sgManager。管道已被占 =
         # 已有 sgmController 在跑, ControlServer.start() 内部 raise SystemExit(1),
@@ -471,11 +484,21 @@ Hotkeys:
                 time.sleep(0.2)
         except KeyboardInterrupt:
             logger.info("Ctrl+C received")
+            self._deliberate = True       # 用户主动按停: 不重拉
         finally:
             if self._ctl_server is not None:
                 self._ctl_server.stop()
             self.shutdown()
             logger.info("SgmController exited")
+
+        # 主动停止 → 以保留码退出，父层(start.py --supervise)据此不再重拉；
+        # 其余退出（崩溃 / main.py 意外死亡）走自然返回/非保留码 → 父层会重拉。
+        #
+        # **仅在受监督时**才用保留码：未被监督时保持历史上的 exit 0，避免把非 0 退出码
+        # 暴露给别的宿主（如 Windows SCM —— SCM 会把非 0 记为该服务失败；仓里有
+        # install_service.bat，故必须保守）。start.py 在监督模式下注入该 env。
+        if self._deliberate and os.environ.get("INFOSERVER_SUPERVISED") == "1":
+            sys.exit(EXIT_DELIBERATE)
 
 
 def main():
