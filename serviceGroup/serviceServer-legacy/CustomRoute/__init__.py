@@ -9,7 +9,6 @@ static_folder_path = os.path.join(current_dir, '..', 'src')
 app = Flask(__name__, static_folder=static_folder_path, static_url_path='/static')
 
 from .ServiceRoute import *
-from .CpDataRoute import *
 from .CpDirectRoute import *
 from .MigrationRoute import *
 
@@ -19,7 +18,6 @@ __all__ = [
 
     # 所有的自定义路由应该放在这个位置。
     'ServiceRoute',
-    'CpDataRoute',
     'CpDirectRoute',
     'MigrationRoute'
 ]

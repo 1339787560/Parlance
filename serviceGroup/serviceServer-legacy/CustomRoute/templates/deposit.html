@@ -471,9 +471,6 @@
                 <button class="tab-button" onclick="switchTab('cpdata')">CP 数据</button>
                 <!-- 迁移数据: 走本机 chunkSvr 调试口 (/api/migration/dryrun), 采集+组装, 只读干跑 -->
                 <button class="tab-button" onclick="switchTab('migration')">获取装载迁移数据</button>
-                <!-- CP 配置 / 模拟请求 仍走旧 exec_script 通路 (CP_ENABLED=False), 暂隐藏 -->
-                <button class="tab-button" onclick="switchTab('cpconfig')" hidden>CP 配置</button>
-                <button class="tab-button" onclick="switchTab('cprequest')" hidden>模拟请求</button>
             </div>
 
             <!-- 积分选项卡内容 -->
@@ -714,50 +711,6 @@
                         </div>
                     </div>
                 </div>
-                <!-- redis/mysql 自由查询面板: 隐藏保留接口 (/api/cp-data/redis, /api/cp-data/mysql), 前端不露出 -->
-            </div>
-
-            <!-- CP 配置获取选项卡内容 (parse_config 直读, 零副作用) -->
-            <div id="cpconfig" class="tab-content">
-                <div class="form-group">
-                    <label>模块配置（parse_config 直读，不走业务请求，零副作用）：</label>
-                    <div style="display:flex; gap:8px;">
-                        <select id="cp-config-module" style="width:200px; padding:8px; border:1px solid #ddd; border-radius:4px;">
-                            <option value="">— 选择模块 —</option>
-                        </select>
-                        <select id="cp-config-appcode" style="width:110px; padding:8px; border:1px solid #ddd; border-radius:4px;">
-                            <option value="xzmp" selected>xzmp</option>
-                            <option value="xzmk">xzmk</option>
-                        </select>
-                        <button class="submit-btn" onclick="cpQueryConfig()">查询配置</button>
-                    </div>
-                </div>
-                <div id="cp-config-result"></div>
-            </div>
-
-            <!-- 模拟请求选项卡内容 (client_request + db9 五元组) -->
-            <div id="cprequest" class="tab-content">
-                <div class="form-group">
-                    <label for="cp-req-userid">玩家ID（需该账号在客户端登录过，db9 取五元组）：</label>
-                    <input type="number" id="cp-req-userid" value="1040720" placeholder="请输入玩家ID">
-                </div>
-                <div class="form-group">
-                    <label>请求（模块 → 模块内请求；只读 query 类，写操作未开放）：</label>
-                    <div style="display:flex; gap:8px;">
-                        <select id="cp-req-module" onchange="cpReqModuleChanged()" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;">
-                            <option value="">— 选择模块 —</option>
-                        </select>
-                        <select id="cp-req-select" onchange="cpReqSelectChanged()" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;" disabled>
-                            <option value="">— 选择请求 —</option>
-                        </select>
-                        <button class="submit-btn" onclick="cpSendRequest()">发送</button>
-                    </div>
-                </div>
-                <div class="form-group" id="cp-req-params-group" style="display:none;">
-                    <label for="cp-req-params">参数（JSON，缺参会按模块源码行为处理）：</label>
-                    <textarea id="cp-req-params" rows="3" placeholder='{"roomID": 694, "channelkey": "tcyan"}'></textarea>
-                </div>
-                <div id="cp-req-result"></div>
             </div>
 
             <!-- 获取装载迁移数据: chunkSvr 判定 + 采集 Lua 侧 5 项 + 组装推送载荷 (只读干跑) -->
@@ -985,7 +938,6 @@
         // tab -> 所属分组 (切 tab / 模板 apply 时自动切组)
         const TAB_GROUP = {
             points: 'creator', silver: 'creator', cpdata: 'creator', migration: 'creator',
-            cpconfig: 'creator', cprequest: 'creator',
             gold: 'lua', tqvip: 'lua', weekcard: 'lua', monthcard: 'lua',
             costume: 'lua', newplayergift: 'lua'
         };
@@ -1086,21 +1038,11 @@
             }
         }
 
-        // 清空 CP 各面板「已显示的」查询结果 (输入保留; 同步清状态缓存防刷新回显旧结果)
+        // 清空 CP 数据面板「已显示的」查询结果 (输入保留)
         // 注意: 不动 cpDataCache —— 数据缓存要留着, 切回 CP 数据 tab 才能免网即显
         function cpClearResults() {
-            for (const id of ['cp-module-result', 'cp-config-result', 'cp-req-result']) {
-                const el = document.getElementById(id);
-                if (el) el.innerHTML = '';
-            }
-            try {
-                const state = JSON.parse(localStorage.getItem(CP_CACHE_KEY) || 'null');
-                if (state) {
-                    delete state.configResultHtml;
-                    delete state.reqResultHtml;
-                    localStorage.setItem(CP_CACHE_KEY, JSON.stringify(state));
-                }
-            } catch (e) { /* 忽略 */ }
+            const el = document.getElementById('cp-module-result');
+            if (el) el.innerHTML = '';
         }
         
         // 显示结果消息 (如果需要，可以重新启用)
@@ -1565,17 +1507,7 @@
                 input.placeholder = '请输入领取天数';
             }
         }
-        // ---- CP 数据查询 (只读测试面, 后端 /api/cp-data/* 代理 125 exec_script) ----
-
-        function cpRenderJson(elId, data, errMsg) {
-            const el = document.getElementById(elId);
-            if (errMsg) {
-                el.innerHTML = `<div class="result error" style="display:block;">${errMsg}</div>`;
-            } else {
-                el.innerHTML = '<pre class="cp-json-block">' +
-                    JSON.stringify(data, null, 2).replace(/</g, '&lt;') + '</pre>';
-            }
-        }
+        // ---- CP 数据 / 迁移 共用的 POST 小工具 ----
 
         async function cpPost(url, body) {
             const resp = await fetch(url, {
@@ -2034,60 +1966,10 @@
             if (el) el.textContent = out.querySelectorAll('.cp-mod-card').length;
         }
 
-        async function cpQueryRedis() { /* 自由查询面板已隐去, 保留函数供 console 调用 */
-            const key = document.getElementById('cp-redis-key')?.value.trim();
-            if (!key) return;
-            const db = document.getElementById('cp-redis-db')?.value || '10';
-            const op = document.getElementById('cp-redis-op')?.value || 'HGETALL';
-            try {
-                const r = await cpPost('/api/cp-data/redis', { db: db, key: key, op: op });
-                console.log('cp redis:', r);
-            } catch (e) { console.error(e); }
-        }
-
-        async function cpQueryMysql() { /* 自由查询面板已隐去, 保留函数供 console 调用 */
-            const sql = document.getElementById('cp-mysql-sql')?.value.trim();
-            if (!sql) return;
-            try {
-                const r = await cpPost('/api/cp-data/mysql', { sql: sql });
-                console.log('cp mysql:', r);
-            } catch (e) { console.error(e); }
-        }
-
-        // 模块配置下拉 (固定清单, 与后端 CP_MODULES 同步)
-        const CP_MODULES = ['award', 'cmdailyquestion', 'cmdecoration', 'cmmonthcard', 'cmnewplayerdailygift',
-            'cmquickrecharge', 'cmremoteconfig', 'convert', 'friendroom', 'goldbank',
-            'joyfulgift', 'leveldefine', 'luckyturntable', 'resurrect'];
-
-        function cpFillConfigOptions() {
-            const sel = document.getElementById('cp-config-module');
-            if (sel.options.length > 1) return; // 已填
-            sel.innerHTML = '<option value="">— 选择模块 —</option>' +
-                CP_MODULES.map(m => `<option value="${m}">${m}</option>`).join('');
-        }
-
-        async function cpQueryConfig() {
-            const module = document.getElementById('cp-config-module').value;
-            const appcode = document.getElementById('cp-config-appcode').value;
-            if (!module) {
-                cpRenderJson('cp-config-result', null, '请先选择模块');
-                return;
-            }
-            cpRenderJson('cp-config-result', '查询中...');
-            try {
-                const r = await cpPost('/api/cp-data/config', { module: module, appcode: appcode });
-                if (!r.success) throw new Error(r.message);
-                cpRenderJson('cp-config-result', r.data.content === null ? '(配置为空 — 运营未开?)' : r.data.content);
-                cpSaveState();
-            } catch (e) {
-                cpRenderJson('cp-config-result', null, '查询失败: ' + e.message);
-                cpSaveState();
-            }
-        }
-
         // ---- 值详情弹窗 (只读) ----
         // 受控写（模块白名单 + key 归属校验 + 写前 redis/mysql 双快照）后续接回此处。
-        // 注意: 不要复用旧的 /api/cp-data/write —— 它属 125 exec_script 通路, 已停用;
+        // 注意: 旧的 /api/cp-data/write (125 exec_script 通路) 已随 CpDataRoute.py 整体退役删除;
+        // 现行写通路 = /api/cp-data/direct/write*（CpDirectRoute.py），
         // 后端扩展点见 CommonTools/xzmpDB/CpUserData.py 末尾「受控写扩展点」。
 
         function cpCloseModal() {
@@ -2096,139 +1978,6 @@
 
         // （原「快照列表 / 双写开关 / 确认写入 / 恢复快照」一整套受控修改 UI 已随
         //   旧 exec_script 写通路一并移除。只读页不需要它们；重做受控写时按上面注释接回。）
-
-        // 模拟请求 schema (镜像后端 CP_REQ_SCHEMA; write=true 写操作, 下拉标 [写])
-        const CP_REQ_SCHEMA = {
-            award: [
-                { req: 'queryAdVideoCfg', params: {}, desc: '看视频礼包配置' },
-                { req: 'queryReliefConfig', params: {}, desc: '低保配置' },
-                { req: 'queryReliefTakeCount', params: {}, desc: '低保已领次数' },
-                { req: 'queryDressGiftCfg', params: {}, desc: '装饰礼包配置' },
-                { req: 'queryNextDayConfig', params: {}, desc: '明日奖励配置' },
-                { req: 'queryPayGiftPackCfg', params: {}, desc: '礼包配置' },
-                { req: 'takeEvaluateReward', params: {}, desc: '领取评价奖励', write: true },
-                { req: 'takeAdVideoGift_v2', params: {}, desc: '领取看视频礼包', write: true },
-                { req: 'takeReliefReward_v2', params: {takeParam: '', registerTime: 0, subscribe: 0}, desc: '领取低保奖励', write: true },
-                { req: 'takeBackHallReward', params: {}, desc: '领取返回大厅礼包', write: true },
-                { req: 'takeDressGiftReward', params: {}, desc: '领取装饰礼包', write: true },
-                { req: 'takeOptionChooseReward', params: {optionKey: ''}, desc: '领取问卷选择礼包', write: true },
-                { req: 'takeNextDayReward', params: {dayKey: ''}, desc: '领取明日奖励', write: true },
-            ],
-            cmdailyquestion: [
-                { req: 'GR_TQDAILYQUESTION_REQINFO', params: {}, desc: '每日问答玩家信息' },
-                { req: 'GR_TQDAILYQUESTION_REQCONFIG', params: {}, desc: '每日问答配置' },
-                { req: 'GR_TQDAILYQUESTION_REQANSWER', params: {questionid: 1, answer: 0}, desc: '提交答题', write: true },
-                { req: 'GR_TQDAILYQUESTION_REQPRIZE', params: {}, desc: '领取答题奖励', write: true },
-            ],
-            cmdecoration: [
-                { req: 'queryCMDecorationConfig', params: {}, desc: '装扮配置' },
-                { req: 'queryChangeDecoration', params: {}, desc: '已使用装饰' },
-                { req: 'queryUserListsHeadFrameInfo', params: {userIDList: [1040720, 0, 0, 0]}, desc: '多玩家装扮信息' },
-                { req: 'queryChangeDecoration_use', params: {itemUUID: 0}, desc: '使用装饰', write: true },
-            ],
-            cmmonthcard: [
-                { req: 'queryCMMonthCardConfig', params: {}, desc: '周月卡配置' },
-            ],
-            cmnewplayerdailygift: [
-                { req: 'queryNewPlayerDailyGiftConfig', params: {}, desc: '迎新每日礼包配置' },
-                { req: 'claimDailyReward', params: {}, desc: '领取每日礼包奖励', write: true },
-            ],
-            cmquickrecharge: [
-                { req: 'queryCMQuickRechargeConfig', params: {}, desc: '补足金币配置' },
-                { req: 'buySpecialGift', params: {gametype: 1, roomlevel: 1, giftlevel: 1}, desc: '购买特惠礼包校验', write: true },
-                { req: 'markSpecialGiftPurchased', params: {gametype: 1, roomlevel: 1, giftlevel: 1}, desc: '标记已购买', write: true },
-            ],
-            cmremoteconfig: [
-                { req: 'queryRemoteConfig', params: {}, desc: '选房策略远端配置' },
-                { req: 'debugRemoteConfig', params: {}, desc: '调试远端配置', write: true },
-            ],
-            convert: [
-                { req: 'queryTutorialState', params: {}, desc: '新手引导迁移状态' },
-                { req: 'claimTutorialReward', params: {}, desc: '领取引导奖励', write: true },
-                { req: 'clearMigrationFlag', params: {}, desc: '清迁移标记 (仅125/888)', write: true },
-                { req: 'clearMigrationTargets', params: {}, desc: '清迁移模块数据 (仅125/888)', write: true },
-            ],
-            goldbank: [
-                { req: 'queryGoldBankInfo', params: {}, desc: '金库信息' },
-            ],
-            joyfulgift: [
-                { req: 'queryJoyFulGiftCfg', params: {gametype: 1, roomlevel: 1, giftlevel: 1}, desc: '欢乐礼包配置' },
-            ],
-            leveldefine: [
-                { req: 'queryLevelDefineConfig', params: {}, desc: '等级定义配置' },
-                { req: 'reqTakeOneOffReward', params: {getLevelID: 1}, desc: '领取等级一次性奖励', write: true },
-            ],
-            luckyturntable: [
-                { req: 'queryLuckyTurntableConfig', params: {}, desc: '幸运转盘配置+剩余次数' },
-                { req: 'queryRunTurntable', params: {useCount: 1}, desc: '转转盘 (消耗次数发奖)', write: true },
-            ],
-            resurrect: [
-                { req: 'queryConfig_resurrect', params: {roomID: 694, channelkey: 'tcyan'}, desc: '复活礼包配置' },
-                { req: 'queryLeftTakeCount_resurrect', params: {roomID: 694, channelkey: 'tcyan'}, desc: '免费复活剩余次数' },
-                { req: 'queryShowList_resurrect', params: {roomID: 694, channelkey: 'tcyan'}, desc: '复活展示列表' },
-                { req: 'takeReward_resurrect', params: {roomID: 694, channelkey: 'tcyan'}, desc: '使用免费复活', write: true },
-            ],
-        };
-
-        function cpFillReqOptions() {
-            const modSel = document.getElementById('cp-req-module');
-            if (modSel.options.length > 1) return;
-            modSel.innerHTML = '<option value="">— 选择模块 —</option>' +
-                Object.keys(CP_REQ_SCHEMA).map(m => `<option value="${m}">${m}</option>`).join('');
-        }
-
-        function cpReqModuleChanged() {
-            const mod = document.getElementById('cp-req-module').value;
-            const reqSel = document.getElementById('cp-req-select');
-            const group = document.getElementById('cp-req-params-group');
-            if (!mod) {
-                reqSel.innerHTML = '<option value="">— 选择请求 —</option>';
-                reqSel.disabled = true;
-                group.style.display = 'none';
-                cpSaveState();
-                return;
-            }
-            reqSel.disabled = false;
-            reqSel.innerHTML = '<option value="">— 选择请求 —</option>' +
-                CP_REQ_SCHEMA[mod].map(r => {
-                    const flag = r.write ? '⚠' : '';
-                    return `<option value="${r.req}">${flag}${r.req}（${r.desc}）</option>`;
-                }).join('');
-            group.style.display = 'none';
-            cpSaveState();
-        }
-
-        function cpReqSelectChanged() {
-            const mod = document.getElementById('cp-req-module').value;
-            const req = document.getElementById('cp-req-select').value;
-            const group = document.getElementById('cp-req-params-group');
-            if (!mod || !req) { group.style.display = 'none'; return; }
-            const entry = CP_REQ_SCHEMA[mod].find(r => r.req === req);
-            document.getElementById('cp-req-params').value = JSON.stringify(entry.params, null, 2);
-            group.style.display = 'block';
-            cpSaveState();
-        }
-
-        async function cpSendRequest() {
-            const mod = document.getElementById('cp-req-module').value;
-            const req = document.getElementById('cp-req-select').value;
-            const userid = parseInt(document.getElementById('cp-req-userid').value);
-            if (!mod || !req) { cpRenderJson('cp-req-result', null, '请先选择模块和请求'); return; }
-            if (isNaN(userid) || userid <= 0) { cpRenderJson('cp-req-result', null, '玩家ID格式错误'); return; }
-            let params = {};
-            try { params = JSON.parse(document.getElementById('cp-req-params').value || '{}'); }
-            catch (e) { cpRenderJson('cp-req-result', null, '参数 JSON 格式错误: ' + e.message); return; }
-            cpRenderJson('cp-req-result', '发送中...');
-            try {
-                const r = await cpPost('/api/cp-data/request', { module: mod, req: req, params: params, userid: userid });
-                if (!r.success) throw new Error(r.message);
-                cpRenderJson('cp-req-result', r.data);
-                cpSaveState();
-            } catch (e) {
-                cpRenderJson('cp-req-result', null, '请求失败: ' + e.message);
-                cpSaveState();
-            }
-        }
 
         // ---- CP 面板状态缓存 (localStorage, 刷新还原) ----
         // ---- 获取装载迁移数据: 走本机 chunkSvr 调试口 (只读干跑, 见 MigrationRoute.py) ----
@@ -2313,21 +2062,7 @@
             const state = {
                 userid: document.getElementById('cp-userid').value,
                 appcode: document.getElementById('cp-appcode').value,
-                redisDb: document.getElementById('cp-redis-db')?.value,
-                redisKey: document.getElementById('cp-redis-key')?.value,
-                redisOp: document.getElementById('cp-redis-op')?.value,
-                mysqlSql: document.getElementById('cp-mysql-sql')?.value,
-                configModule: document.getElementById('cp-config-module').value,
-                configAppcode: document.getElementById('cp-config-appcode').value,
-                reqUserid: document.getElementById('cp-req-userid').value,
-                reqModule: document.getElementById('cp-req-module').value,
-                reqSelect: document.getElementById('cp-req-select').value,
-                reqParams: document.getElementById('cp-req-params-group').style.display === 'none' ? null : document.getElementById('cp-req-params').value,
-                reqResultHtml: document.getElementById('cp-req-result').innerHTML,
                 // 注: CP 数据列表改由 cpDataCache 存「数据」并在还原时重渲染, 不再存 HTML 快照
-                redisResultHtml: document.getElementById('cp-redis-result')?.innerHTML,
-                mysqlResultHtml: document.getElementById('cp-mysql-result')?.innerHTML,
-                configResultHtml: document.getElementById('cp-config-result').innerHTML,
                 savedAt: Date.now()
             };
             try { localStorage.setItem(CP_CACHE_KEY, JSON.stringify(state)); } catch (e) { /* 超限忽略 */ }
@@ -2337,7 +2072,6 @@
             let state;
             try { state = JSON.parse(localStorage.getItem(CP_CACHE_KEY) || 'null'); } catch (e) { return; }
             if (!state) return;
-            cpFillConfigOptions();
             if (state.userid) document.getElementById('cp-userid').value = state.userid;
             if (state.appcode) {
                 // 静态下拉只有 xzmp; 若上次的缩写不在选项里先补一个, 否则 sel.value 赋值会静默落空
@@ -2350,22 +2084,6 @@
                 }
                 sel.value = state.appcode;
             }
-            if (state.configModule) document.getElementById('cp-config-module').value = state.configModule;
-            if (state.configAppcode) document.getElementById('cp-config-appcode').value = state.configAppcode;
-            if (state.reqUserid) document.getElementById('cp-req-userid').value = state.reqUserid;
-            if (state.reqModule) {
-                document.getElementById('cp-req-module').value = state.reqModule;
-                cpReqModuleChanged(); // 联动填 req 下拉
-                if (state.reqSelect) {
-                    document.getElementById('cp-req-select').value = state.reqSelect;
-                    if (state.reqParams) {
-                        document.getElementById('cp-req-params-group').style.display = 'block';
-                        document.getElementById('cp-req-params').value = state.reqParams;
-                    }
-                }
-            }
-            if (state.reqResultHtml) document.getElementById('cp-req-result').innerHTML = state.reqResultHtml;
-            if (state.configResultHtml) document.getElementById('cp-config-result').innerHTML = state.configResultHtml;
             // CP 数据列表: 从数据缓存重渲染 (不用 HTML 快照 -> 事件绑定完好, 模块点开仍可用)
             const dcache = cpCacheHit(parseInt(state.userid), state.appcode);
             if (dcache) cpRenderModules(dcache.data, dcache.userid, dcache.appcode);
@@ -2393,10 +2111,6 @@
                 if (uid > 0) cpLoadModules();
             }, 800);
         }
-        document.getElementById('cp-config-module').addEventListener('change', cpSaveState);
-        document.getElementById('cp-config-appcode').addEventListener('change', cpSaveState);
-        document.getElementById('cp-req-select').addEventListener('change', () => { cpReqSelectChanged(); });
-        document.getElementById('cp-req-module').addEventListener('change', () => { cpReqModuleChanged(); });
 
         // 保存模板函数
         async function saveTemplate(tabType) {
@@ -2643,8 +2357,6 @@
                 safeTab = Object.keys(TAB_GROUP).find(t => TAB_GROUP[t] === gid && tabVisible(t)) || 'points';
             }
             switchTab(safeTab, true); // 还原上次所在分组 + 该组 tab (skipClear 保留缓存结果回显)
-            cpFillConfigOptions(); // 模块配置下拉
-            cpFillReqOptions();    // 模拟请求下拉
             cpRestoreState();    // CP 面板状态还原 (输入 + 上次查询结果)
             loadTemplates(); // 加载模板列表
             updateTQVIPGrade(); // 初始化荣耀特权等级显示

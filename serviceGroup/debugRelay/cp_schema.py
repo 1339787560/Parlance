@@ -3,15 +3,16 @@
 
 来源
 ----
-移植自 serviceServer-legacy/CustomRoute/CpDataRoute.py 的 CP_REQ_SCHEMA
+原为 serviceServer-legacy/CustomRoute/CpDataRoute.py 的 CP_REQ_SCHEMA
 (2026-08-14 从 cpscript/src/xzmp/<module>_xzmp.ts 的 OnClientRequest 全分支反推,
-13 模块 43 req)。
+13 模块 43 req)；**该文件已于 2026-09-22 随旧 exec_script 通路整体退役删除**，
+本文件即该 schema 的唯一真相源。
 
 为什么搬到 debugRelay
 ---------------------
 旧通路 POST /api/cp-data/request 依赖 db9 halllogon 五元组: 玩家必须先用客户端在
-125 登录过, 且 appcode 与最后登录包一致, 否则必报「无 halllogon 记录」; 该通路随
-CP redis 事故一并停用 (CP_ENABLED=False, 全端点 503)。
+125 登录过, 且 appcode 与最后登录包一致, 否则必报「无 halllogon 记录」; 该通路已
+**整体退役删除** (2026-09-22, CpDataRoute.py 连同前端两个 hidden tab 一并摘除)。
 
 新通路经 debugRelay 代码通道打到**已连接的客户端**, 由客户端
 ct.CommonCPInterFace.client_request 自动填全局登录态 src, 天然通过 CheckRequest,
