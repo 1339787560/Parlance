@@ -3,14 +3,17 @@
 
 打包: 白名单收集本机验证过的运行产物 (py + 运行位 exe + 模板/静态资源) +
       manifest.json (built_at / git_rev / files) → deploys/deploy_<ts>.zip
-推送: --push <base_url> 时 upload (multipart) + activate (host 异步编排:
-      停受影响服务 → 备份 .deploy_backup/<ts>/ → 原位替换 → 启 → 探活 →
-      失败自动恢复备份) + 轮询 deploy.log 到编排结束。
+推送: --push <base_url> 时 upload (**raw zip body**) + activate (发布面异步编排:
+      解包校验 → exe 交宿主管道换代 / 非 exe 备份+就地替换 → 失败回滚 →
+      按"包动了哪一层"收尾重启) + 轮询 deploy.log 到编排结束。
+
+发布面 = **:5099** (2026-09-22 起由 L2 `run.py` 承接; 原 legacy Flask 让位 5098)。
+**勿指向 :5000** —— 换 exe 时它自己就是被停目标, 停机窗口必断。
 
 用法:
     python make_deploy_pack.py                    # 只打包
-    python make_deploy_pack.py --push http://127.0.0.1:5000      # 打包+推本机
-    python make_deploy_pack.py --push http://192.168.102.53:5000 # 打包+推 53
+    python make_deploy_pack.py --push http://127.0.0.1:5099      # 打包+推本机
+    python make_deploy_pack.py --push http://192.168.102.53:5099 # 打包+推 53
 
 设计约束:
   - config.yaml 与 serviceGroup 下 config*.json/yaml 不打包 (现场配置分叉保护,
@@ -269,12 +272,16 @@ def push(zip_path: Path, base: str, timeout: int = 180, token: str = "") -> int:
         token = os.environ.get("DEPLOY_TOKEN", "").strip()
         if token:
             headers = {"X-Deploy-Token": token}
-    # 直连 legacy (:5099) 优先 —— 换 exe 时前端 (:5000) 本身就是被停目标,
-    # 走前端轮询在停机窗口必然断 (2026-09-13 起 deploy 编排已在 legacy 侧)
+    # 直连发布面 (:5099)。2026-09-22 起 :5099 由 **L2 (run.py)** 承接 (原 legacy Flask
+    # 让位 5098) —— 换 exe 时前端 (:5000) 本身就是被停目标, 走前端轮询在停机窗口必然断。
+    # upload 契约 = **raw zip body** (不再 multipart): 文件名走 X-Deploy-Filename ——
+    # 省掉收端 multipart 解析层 (cgi 在 Python 3.13 已移除, 不该押在它上面)。
     with open(zip_path, "rb") as f:
+        up_headers = dict(headers)
+        up_headers["Content-Type"] = "application/zip"
+        up_headers["X-Deploy-Filename"] = zip_path.name
         r = requests.post(f"{base}/api/deploy/upload",
-                          files={"file": (zip_path.name, f, "application/zip")},
-                          headers=headers, timeout=60)
+                          data=f, headers=up_headers, timeout=300)
     print(f"[upload] {r.status_code}: {r.text[:300]}")
     if r.status_code != 200 or not r.json().get("success"):
         return 1
@@ -315,8 +322,9 @@ def main() -> int:
     ap.add_argument("--only", metavar="SVCS",
                     help="只打包指定服务 (逗号分隔; host=根级 launcher py; 缺省=全量但排除受保护服务)")
     ap.add_argument("--push", metavar="BASE_URL",
-                    help="打包后推送到该基址。**优先直连 legacy :5099** "
-                         "(如 http://192.168.102.53:5099); 走 :5000 前端在换 exe 时会自断")
+                    help="打包后推送到该基址。**指向发布面 :5099** "
+                         "(本机 http://127.0.0.1:5099; 堡垒机 http://192.168.102.53:5099) —— "
+                         "该面自 2026-09-22 起由 L2 (run.py) 承接; 走 :5000 前端在换 exe 时会自断")
     ap.add_argument("--token", metavar="TOK",
                     help="部署口令 (缺省取 env DEPLOY_TOKEN); 目标机回环可免, 远端必填")
     args = ap.parse_args()

@@ -52,7 +52,12 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("启动预热 config.json 失败 (稍后请求重试): {e}");
     }
 
+    // strangler 反代目标 = legacy Flask。2026-09-22 起 :5099 让位给 L2 发布面,
+    // legacy 退居 :5098 (只服务 CP 路由), 故缺省随之改。
     let legacy_backend = std::env::var("SERVICESVR_LEGACY_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:5098".to_string());
+    // 发布面 (:5099, 由 L2 run.py 承接) —— 工具自身重启委派给它 (routes/services.rs)。
+    let deploy_url = std::env::var("SERVICESVR_DEPLOY_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:5099".to_string());
     let http_client = reqwest::Client::builder()
         .build()
@@ -91,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
         status_cache: Arc::new(StatusCache::new(Duration::from_secs(10))),
         status_provider: Arc::from(default_provider()),
         legacy_backend,
+        deploy_url,
         http_client,
         templates,
     };
