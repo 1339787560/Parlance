@@ -69,6 +69,19 @@ def _git_rev() -> str:
 # 打包默认排除其文件; 要更新它需 --only statistic-server 显式指定 (53 侧同理人工评估)。
 PROTECTED_SERVICES = {"statistic-server"}
 
+# 退役目录的**资产继承** (2026-09-22 U8 后): `serviceServer-legacy/` 已不是服务
+# (config.yaml 摘除该条目, 不再出现在 _service_owners 的 cwd 前缀里), 但它的
+# 模板 / 静态 / 数据层助手 / 凭据仍是 `serviceServer-rust` 的运行资产 —— 前台
+# (`:5000`) 每请求现读。不并回的话:
+#   ① `--only serviceServer-rust` 会把整个 legacy 目录**静默漏发** (实测 17 文件,
+#      应发 72: 缺 55 个 legacy 文件 —— 模板/助手/CommonTools/src 全丢);
+#   ② `deploy.bat` 的旧双服务名调用 `--only ...,serviceServer-legacy` 直接
+#      `未知服务名` 报错 (打包第一步即失败)。
+# 故在此显式登记「继承关系」: 单服务名 `serviceServer-rust` 即覆盖全包。
+EXTRA_ASSET_PREFIXES: dict[str, list[str]] = {
+    "serviceServer-rust": ["serviceGroup/serviceServer-legacy/"],
+}
+
 
 def _plat_service_specs() -> list[dict]:
     """config.yaml 服务声明 → [{name, command, args, cwd}] (平台键解析对齐 service_manager)。"""
@@ -105,9 +118,10 @@ def _plat_service_specs() -> list[dict]:
 
 
 def _service_owners() -> dict[str, dict]:
-    """{svc_name: {"prefix": "serviceGroup/<dir>/", "runs": [运行文件 rel...]}}。
+    """{svc_name: {"prefixes": ["serviceGroup/<dir>/"], "runs": [运行文件 rel...]}}。
 
-    prefix = cwd 相对根 posix (服务资产域: 模板/静态/js 等归此前缀);
+    prefixes = cwd 相对根 posix (服务资产域: 模板/静态/js 等归此前缀) + 继承域
+    (EXTRA_ASSET_PREFIXES, 如退役 legacy 目录归 serviceServer-rust);
     runs = command/args 对应的文件 (py/exe)。ROOT 外 (np-reader/caddy) 跳过。
     """
     owners = {}
@@ -131,15 +145,18 @@ def _service_owners() -> dict[str, dict]:
                 continue
             if full.is_file():
                 runs.append(rel)
+        prefixes = []
         if spec["cwd"]:
             try:
                 c = Path(spec["cwd"])
                 c = c if c.is_absolute() else ROOT / c
-                prefix = c.resolve().relative_to(ROOT).as_posix() + "/"
+                prefixes.append(c.resolve().relative_to(ROOT).as_posix() + "/")
             except ValueError:
                 pass
-        if runs or prefix:
-            owners[spec["name"]] = {"prefix": prefix, "runs": runs}
+        # 继承域: 退役服务目录的资产归继承者 (见 EXTRA_ASSET_PREFIXES)
+        prefixes.extend(EXTRA_ASSET_PREFIXES.get(spec["name"], []))
+        if runs or prefixes:
+            owners[spec["name"]] = {"prefixes": prefixes, "runs": runs}
     return owners
 
 
@@ -149,7 +166,7 @@ def _owner_of(rel: str, owners: dict[str, dict]) -> str:
         if rel in o["runs"]:
             return name
     for name, o in owners.items():
-        if o["prefix"] and rel.startswith(o["prefix"]):
+        if any(o["prefixes"] and rel.startswith(p) for p in o["prefixes"]):
             return name
     return "shared"
 
@@ -181,8 +198,8 @@ def collect_files(only: list[str] | None = None) -> tuple[list[str], list[str]]:
         if _want("host"):
             files.append(p.relative_to(ROOT).as_posix())
 
-    # owners.values() 是 {prefix, runs} dict, 须取 ["runs"] — 遍历 dict 本身只会得键
-    # "prefix"/"runs", exe 恒漏 (2026-09-09: 工具首次真正带上 exe)
+    # owners.values() 是 {prefixes, runs} dict, 须取 ["runs"] — 遍历 dict 本身只会得键
+    # "prefixes"/"runs", exe 恒漏 (2026-09-09: 工具首次真正带上 exe)
     for spec in owners.values():
         for rel in spec["runs"]:
             if rel.endswith(".exe") and _want(_owner_of(rel, owners)) and rel not in files:

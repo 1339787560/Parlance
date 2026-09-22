@@ -7,8 +7,8 @@ rem   e.g.  deploy.bat                                -> local
 rem         deploy.bat 192.168.102.53:5099            -> bastion 53
 rem         deploy.bat 192.168.102.53:5099 --token X   -> remote with deploy token
 rem
-rem scope: serviceServer-rust + serviceServer-legacy = ONE pack for the whole tool
-rem   -> make_deploy_pack.py --only serviceServer-rust,serviceServer-legacy --push <target>:5099
+rem scope: serviceServer-rust (its assets incl. serviceServer-legacy dir) = ONE pack
+rem   -> make_deploy_pack.py --only serviceServer-rust --push <target>:5099
 rem   -> remote legacy: unzip+verify -> non-exe replaced in place (backup) -> exe handed
 rem      to host swap_exe (stop/replace/start) -> rollback on any failure
 rem   -> progress: GET /api/deploy/log on the target (record: exe_done / failures / host_probe)
@@ -40,7 +40,7 @@ if errorlevel 1 (
 
 echo === 2/3 pack (serviceServer-rust + serviceServer-legacy) + push %TARGET% ===
 cd /d "%~dp0..\.."
-"%PY%" make_deploy_pack.py --only serviceServer-rust,serviceServer-legacy --push %TARGET% %2 %3 %4 %5 %6 %7 %8 %9
+"%PY%" make_deploy_pack.py --only serviceServer-rust --push %TARGET% %2 %3 %4 %5 %6 %7 %8 %9
 if errorlevel 1 (
     echo DEPLOY FAILED - check /api/deploy/log on the target
     exit /b 1
