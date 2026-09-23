@@ -805,7 +805,7 @@ body {
 }
 #content-wrap > #content-body { flex: 1 1 auto; }
 
-#viewer {
+:is(#viewer, .md-render) {
   max-width: 980px;
   margin: 0 auto;
   line-height: var(--reader-line-height);
@@ -819,13 +819,13 @@ body {
   text-rendering: optimizeLegibility;
   font-feature-settings: "kern" 1, "liga" 1;
 }
-#viewer p, #viewer li { overflow-wrap: break-word; word-break: break-word; }
+:is(#viewer, .md-render) p, :is(#viewer, .md-render) li { overflow-wrap: break-word; word-break: break-word; }
 /* 显式钉死行高: 防任何子元素继承歧义 (只读渲染全局统一行高) */
-#viewer p, #viewer li, #viewer blockquote, #viewer ul, #viewer ol,
-#viewer td, #viewer th, #viewer dd, #viewer dt {
+:is(#viewer, .md-render) p, :is(#viewer, .md-render) li, :is(#viewer, .md-render) blockquote, :is(#viewer, .md-render) ul, :is(#viewer, .md-render) ol,
+:is(#viewer, .md-render) td, :is(#viewer, .md-render) th, :is(#viewer, .md-render) dd, :is(#viewer, .md-render) dt {
   line-height: var(--reader-line-height);
 }
-#viewer .frontmatter-card {
+:is(#viewer, .md-render) .frontmatter-card {
   margin: 0 0 1.6em;
   padding: 12px 14px;
   border: 1px solid var(--border);
@@ -833,47 +833,47 @@ body {
   background: var(--bg-sidebar);
   color: var(--fg);
 }
-#viewer .frontmatter-title {
+:is(#viewer, .md-render) .frontmatter-title {
   margin-bottom: 8px;
   font-size: 0.85em;
   font-weight: 600;
   color: var(--fg-muted);
 }
-#viewer .frontmatter-row {
+:is(#viewer, .md-render) .frontmatter-row {
   display: grid;
   grid-template-columns: 120px 1fr;
   gap: 10px;
   padding: 4px 0;
 }
-#viewer .frontmatter-key {
+:is(#viewer, .md-render) .frontmatter-key {
   font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg-muted);
 }
-#viewer .frontmatter-value {
+:is(#viewer, .md-render) .frontmatter-value {
   min-width: 0;
   overflow-wrap: break-word;
 }
-#viewer h1, #viewer h2, #viewer h3, #viewer h4 {
+:is(#viewer, .md-render) h1, :is(#viewer, .md-render) h2, :is(#viewer, .md-render) h3, :is(#viewer, .md-render) h4 {
   margin-top: 1.6em;
   margin-bottom: 0.6em;
   font-weight: 600;
   line-height: var(--reader-line-height);
 }
-#viewer h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-#viewer h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-#viewer h3 { font-size: 1.15em; }
-#viewer p { margin: 0; }
-#viewer a { color: var(--cn-red, var(--accent)); text-decoration: none; }
-#viewer a:hover { text-decoration: underline; }
-#viewer code {
+:is(#viewer, .md-render) h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+:is(#viewer, .md-render) h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+:is(#viewer, .md-render) h3 { font-size: 1.15em; }
+:is(#viewer, .md-render) p { margin: 0; }
+:is(#viewer, .md-render) a { color: var(--cn-red, var(--accent)); text-decoration: none; }
+:is(#viewer, .md-render) a:hover { text-decoration: underline; }
+:is(#viewer, .md-render) code {
   font-family: var(--font-mono);
   font-size: 0.9em;
   background: var(--bg-hover);
   padding: 1px 4px;
   border-radius: 3px;
 }
-#viewer pre {
+:is(#viewer, .md-render) pre {
   background: #f6f8fa;
   padding: 12px;
   border-radius: 6px;
@@ -886,335 +886,335 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-html[data-theme="dark"] #viewer pre,
-html[data-theme="furina"] #viewer pre,
-html[data-theme="hysilens"] #viewer pre,
-html[data-theme="geniusclub"] #viewer pre,
-html[data-theme="silverwolf"] #viewer pre,
-html[data-theme="odette"] #viewer pre {
+html[data-theme="dark"] :is(#viewer, .md-render) pre,
+html[data-theme="furina"] :is(#viewer, .md-render) pre,
+html[data-theme="hysilens"] :is(#viewer, .md-render) pre,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) pre,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) pre,
+html[data-theme="odette"] :is(#viewer, .md-render) pre {
   background: #1e1e1e;
   color: var(--fg);
 }
 @media (prefers-color-scheme: dark) {
-  html:not([data-theme]) #viewer pre { background: #2d2d2d; }
+  html:not([data-theme]) :is(#viewer, .md-render) pre { background: #2d2d2d; }
 }
-#viewer pre code { background: transparent; padding: 0; }
+:is(#viewer, .md-render) pre code { background: transparent; padding: 0; }
 
 /* 深色主题代码高亮：覆盖 github.css 浅色 token，避免深底深字（黑底黑字）。
-   与上方 #viewer pre 深色背景同步，token 色取自 GitHub Dark 近似值。 */
-html[data-theme="dark"] #viewer .hljs,
-html[data-theme="furina"] #viewer .hljs,
-html[data-theme="hysilens"] #viewer .hljs,
-html[data-theme="geniusclub"] #viewer .hljs,
-html[data-theme="silverwolf"] #viewer .hljs,
-html[data-theme="odette"] #viewer .hljs {
+   与上方 :is(#viewer, .md-render) pre 深色背景同步，token 色取自 GitHub Dark 近似值。 */
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs {
   color: #c9d1d9;
   background: transparent;
 }
-html[data-theme="dark"] #viewer .hljs-doctag,
-html[data-theme="dark"] #viewer .hljs-keyword,
-html[data-theme="dark"] #viewer .hljs-meta .hljs-keyword,
-html[data-theme="dark"] #viewer .hljs-template-tag,
-html[data-theme="dark"] #viewer .hljs-template-variable,
-html[data-theme="dark"] #viewer .hljs-type,
-html[data-theme="dark"] #viewer .hljs-variable.language_,
-html[data-theme="furina"] #viewer .hljs-doctag,
-html[data-theme="furina"] #viewer .hljs-keyword,
-html[data-theme="furina"] #viewer .hljs-meta .hljs-keyword,
-html[data-theme="furina"] #viewer .hljs-template-tag,
-html[data-theme="furina"] #viewer .hljs-template-variable,
-html[data-theme="furina"] #viewer .hljs-type,
-html[data-theme="furina"] #viewer .hljs-variable.language_,
-html[data-theme="hysilens"] #viewer .hljs-doctag,
-html[data-theme="hysilens"] #viewer .hljs-keyword,
-html[data-theme="hysilens"] #viewer .hljs-meta .hljs-keyword,
-html[data-theme="hysilens"] #viewer .hljs-template-tag,
-html[data-theme="hysilens"] #viewer .hljs-template-variable,
-html[data-theme="hysilens"] #viewer .hljs-type,
-html[data-theme="hysilens"] #viewer .hljs-variable.language_,
-html[data-theme="geniusclub"] #viewer .hljs-doctag,
-html[data-theme="geniusclub"] #viewer .hljs-keyword,
-html[data-theme="geniusclub"] #viewer .hljs-meta .hljs-keyword,
-html[data-theme="geniusclub"] #viewer .hljs-template-tag,
-html[data-theme="geniusclub"] #viewer .hljs-template-variable,
-html[data-theme="geniusclub"] #viewer .hljs-type,
-html[data-theme="geniusclub"] #viewer .hljs-variable.language_,
-html[data-theme="silverwolf"] #viewer .hljs-doctag,
-html[data-theme="silverwolf"] #viewer .hljs-keyword,
-html[data-theme="silverwolf"] #viewer .hljs-meta .hljs-keyword,
-html[data-theme="silverwolf"] #viewer .hljs-template-tag,
-html[data-theme="silverwolf"] #viewer .hljs-template-variable,
-html[data-theme="silverwolf"] #viewer .hljs-type,
-html[data-theme="silverwolf"] #viewer .hljs-variable.language_,
-html[data-theme="odette"] #viewer .hljs-doctag,
-html[data-theme="odette"] #viewer .hljs-keyword,
-html[data-theme="odette"] #viewer .hljs-meta .hljs-keyword,
-html[data-theme="odette"] #viewer .hljs-template-tag,
-html[data-theme="odette"] #viewer .hljs-template-variable,
-html[data-theme="odette"] #viewer .hljs-type,
-html[data-theme="odette"] #viewer .hljs-variable.language_ {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-doctag,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-keyword,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-meta .hljs-keyword,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-template-tag,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-template-variable,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-type,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-variable.language_,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-doctag,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-keyword,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-meta .hljs-keyword,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-template-tag,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-template-variable,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-type,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-variable.language_,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-doctag,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-keyword,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-meta .hljs-keyword,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-template-tag,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-template-variable,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-type,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-variable.language_,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-doctag,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-keyword,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-meta .hljs-keyword,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-template-tag,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-template-variable,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-type,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-variable.language_,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-doctag,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-keyword,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-meta .hljs-keyword,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-template-tag,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-template-variable,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-type,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-variable.language_,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-doctag,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-keyword,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-meta .hljs-keyword,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-template-tag,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-template-variable,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-type,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-variable.language_ {
   color: #ff7b72;
 }
-html[data-theme="dark"] #viewer .hljs-title,
-html[data-theme="dark"] #viewer .hljs-title.class_,
-html[data-theme="dark"] #viewer .hljs-title.class_.inherited__,
-html[data-theme="dark"] #viewer .hljs-title.function_,
-html[data-theme="furina"] #viewer .hljs-title,
-html[data-theme="furina"] #viewer .hljs-title.class_,
-html[data-theme="furina"] #viewer .hljs-title.class_.inherited__,
-html[data-theme="furina"] #viewer .hljs-title.function_,
-html[data-theme="hysilens"] #viewer .hljs-title,
-html[data-theme="hysilens"] #viewer .hljs-title.class_,
-html[data-theme="hysilens"] #viewer .hljs-title.class_.inherited__,
-html[data-theme="hysilens"] #viewer .hljs-title.function_,
-html[data-theme="geniusclub"] #viewer .hljs-title,
-html[data-theme="geniusclub"] #viewer .hljs-title.class_,
-html[data-theme="geniusclub"] #viewer .hljs-title.class_.inherited__,
-html[data-theme="geniusclub"] #viewer .hljs-title.function_,
-html[data-theme="silverwolf"] #viewer .hljs-title,
-html[data-theme="silverwolf"] #viewer .hljs-title.class_,
-html[data-theme="silverwolf"] #viewer .hljs-title.class_.inherited__,
-html[data-theme="silverwolf"] #viewer .hljs-title.function_,
-html[data-theme="odette"] #viewer .hljs-title,
-html[data-theme="odette"] #viewer .hljs-title.class_,
-html[data-theme="odette"] #viewer .hljs-title.class_.inherited__,
-html[data-theme="odette"] #viewer .hljs-title.function_ {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-title,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-title.class_,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-title.class_.inherited__,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-title.function_,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-title,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-title.class_,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-title.class_.inherited__,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-title.function_,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-title,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-title.class_,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-title.class_.inherited__,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-title.function_,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-title,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-title.class_,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-title.class_.inherited__,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-title.function_,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-title,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-title.class_,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-title.class_.inherited__,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-title.function_,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-title,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-title.class_,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-title.class_.inherited__,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-title.function_ {
   color: #d2a8ff;
 }
-html[data-theme="dark"] #viewer .hljs-attr,
-html[data-theme="dark"] #viewer .hljs-attribute,
-html[data-theme="dark"] #viewer .hljs-literal,
-html[data-theme="dark"] #viewer .hljs-meta,
-html[data-theme="dark"] #viewer .hljs-number,
-html[data-theme="dark"] #viewer .hljs-operator,
-html[data-theme="dark"] #viewer .hljs-selector-attr,
-html[data-theme="dark"] #viewer .hljs-selector-class,
-html[data-theme="dark"] #viewer .hljs-selector-id,
-html[data-theme="dark"] #viewer .hljs-variable,
-html[data-theme="furina"] #viewer .hljs-attr,
-html[data-theme="furina"] #viewer .hljs-attribute,
-html[data-theme="furina"] #viewer .hljs-literal,
-html[data-theme="furina"] #viewer .hljs-meta,
-html[data-theme="furina"] #viewer .hljs-number,
-html[data-theme="furina"] #viewer .hljs-operator,
-html[data-theme="furina"] #viewer .hljs-selector-attr,
-html[data-theme="furina"] #viewer .hljs-selector-class,
-html[data-theme="furina"] #viewer .hljs-selector-id,
-html[data-theme="furina"] #viewer .hljs-variable,
-html[data-theme="hysilens"] #viewer .hljs-attr,
-html[data-theme="hysilens"] #viewer .hljs-attribute,
-html[data-theme="hysilens"] #viewer .hljs-literal,
-html[data-theme="hysilens"] #viewer .hljs-meta,
-html[data-theme="hysilens"] #viewer .hljs-number,
-html[data-theme="hysilens"] #viewer .hljs-operator,
-html[data-theme="hysilens"] #viewer .hljs-selector-attr,
-html[data-theme="hysilens"] #viewer .hljs-selector-class,
-html[data-theme="hysilens"] #viewer .hljs-selector-id,
-html[data-theme="hysilens"] #viewer .hljs-variable,
-html[data-theme="geniusclub"] #viewer .hljs-attr,
-html[data-theme="geniusclub"] #viewer .hljs-attribute,
-html[data-theme="geniusclub"] #viewer .hljs-literal,
-html[data-theme="geniusclub"] #viewer .hljs-meta,
-html[data-theme="geniusclub"] #viewer .hljs-number,
-html[data-theme="geniusclub"] #viewer .hljs-operator,
-html[data-theme="geniusclub"] #viewer .hljs-selector-attr,
-html[data-theme="geniusclub"] #viewer .hljs-selector-class,
-html[data-theme="geniusclub"] #viewer .hljs-selector-id,
-html[data-theme="geniusclub"] #viewer .hljs-variable,
-html[data-theme="silverwolf"] #viewer .hljs-attr,
-html[data-theme="silverwolf"] #viewer .hljs-attribute,
-html[data-theme="silverwolf"] #viewer .hljs-literal,
-html[data-theme="silverwolf"] #viewer .hljs-meta,
-html[data-theme="silverwolf"] #viewer .hljs-number,
-html[data-theme="silverwolf"] #viewer .hljs-operator,
-html[data-theme="silverwolf"] #viewer .hljs-selector-attr,
-html[data-theme="silverwolf"] #viewer .hljs-selector-class,
-html[data-theme="silverwolf"] #viewer .hljs-selector-id,
-html[data-theme="silverwolf"] #viewer .hljs-variable,
-html[data-theme="odette"] #viewer .hljs-attr,
-html[data-theme="odette"] #viewer .hljs-attribute,
-html[data-theme="odette"] #viewer .hljs-literal,
-html[data-theme="odette"] #viewer .hljs-meta,
-html[data-theme="odette"] #viewer .hljs-number,
-html[data-theme="odette"] #viewer .hljs-operator,
-html[data-theme="odette"] #viewer .hljs-selector-attr,
-html[data-theme="odette"] #viewer .hljs-selector-class,
-html[data-theme="odette"] #viewer .hljs-selector-id,
-html[data-theme="odette"] #viewer .hljs-variable {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-attr,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-attribute,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-literal,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-meta,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-number,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-operator,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-selector-attr,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-selector-class,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-selector-id,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-variable,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-attr,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-attribute,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-literal,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-meta,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-number,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-operator,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-selector-attr,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-selector-class,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-selector-id,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-variable,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-attr,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-attribute,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-literal,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-meta,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-number,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-operator,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-selector-attr,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-selector-class,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-selector-id,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-variable,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-attr,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-attribute,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-literal,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-meta,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-number,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-operator,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-selector-attr,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-selector-class,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-selector-id,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-variable,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-attr,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-attribute,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-literal,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-meta,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-number,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-operator,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-selector-attr,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-selector-class,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-selector-id,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-variable,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-attr,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-attribute,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-literal,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-meta,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-number,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-operator,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-selector-attr,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-selector-class,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-selector-id,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-variable {
   color: #79c0ff;
 }
-html[data-theme="dark"] #viewer .hljs-meta .hljs-string,
-html[data-theme="dark"] #viewer .hljs-regexp,
-html[data-theme="dark"] #viewer .hljs-string,
-html[data-theme="furina"] #viewer .hljs-meta .hljs-string,
-html[data-theme="furina"] #viewer .hljs-regexp,
-html[data-theme="furina"] #viewer .hljs-string,
-html[data-theme="hysilens"] #viewer .hljs-meta .hljs-string,
-html[data-theme="hysilens"] #viewer .hljs-regexp,
-html[data-theme="hysilens"] #viewer .hljs-string,
-html[data-theme="geniusclub"] #viewer .hljs-meta .hljs-string,
-html[data-theme="geniusclub"] #viewer .hljs-regexp,
-html[data-theme="geniusclub"] #viewer .hljs-string,
-html[data-theme="silverwolf"] #viewer .hljs-meta .hljs-string,
-html[data-theme="silverwolf"] #viewer .hljs-regexp,
-html[data-theme="silverwolf"] #viewer .hljs-string,
-html[data-theme="odette"] #viewer .hljs-meta .hljs-string,
-html[data-theme="odette"] #viewer .hljs-regexp,
-html[data-theme="odette"] #viewer .hljs-string {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-meta .hljs-string,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-regexp,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-string,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-meta .hljs-string,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-regexp,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-string,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-meta .hljs-string,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-regexp,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-string,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-meta .hljs-string,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-regexp,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-string,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-meta .hljs-string,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-regexp,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-string,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-meta .hljs-string,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-regexp,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-string {
   color: #a5d6ff;
 }
-html[data-theme="dark"] #viewer .hljs-built_in,
-html[data-theme="dark"] #viewer .hljs-symbol,
-html[data-theme="furina"] #viewer .hljs-built_in,
-html[data-theme="furina"] #viewer .hljs-symbol,
-html[data-theme="hysilens"] #viewer .hljs-built_in,
-html[data-theme="hysilens"] #viewer .hljs-symbol,
-html[data-theme="geniusclub"] #viewer .hljs-built_in,
-html[data-theme="geniusclub"] #viewer .hljs-symbol,
-html[data-theme="silverwolf"] #viewer .hljs-built_in,
-html[data-theme="silverwolf"] #viewer .hljs-symbol,
-html[data-theme="odette"] #viewer .hljs-built_in,
-html[data-theme="odette"] #viewer .hljs-symbol {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-built_in,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-symbol,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-built_in,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-symbol,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-built_in,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-symbol,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-built_in,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-symbol,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-built_in,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-symbol,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-built_in,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-symbol {
   color: #ffa657;
 }
-html[data-theme="dark"] #viewer .hljs-code,
-html[data-theme="dark"] #viewer .hljs-comment,
-html[data-theme="dark"] #viewer .hljs-formula,
-html[data-theme="furina"] #viewer .hljs-code,
-html[data-theme="furina"] #viewer .hljs-comment,
-html[data-theme="furina"] #viewer .hljs-formula,
-html[data-theme="hysilens"] #viewer .hljs-code,
-html[data-theme="hysilens"] #viewer .hljs-comment,
-html[data-theme="hysilens"] #viewer .hljs-formula,
-html[data-theme="geniusclub"] #viewer .hljs-code,
-html[data-theme="geniusclub"] #viewer .hljs-comment,
-html[data-theme="geniusclub"] #viewer .hljs-formula,
-html[data-theme="silverwolf"] #viewer .hljs-code,
-html[data-theme="silverwolf"] #viewer .hljs-comment,
-html[data-theme="silverwolf"] #viewer .hljs-formula,
-html[data-theme="odette"] #viewer .hljs-code,
-html[data-theme="odette"] #viewer .hljs-comment,
-html[data-theme="odette"] #viewer .hljs-formula {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-code,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-comment,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-formula,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-code,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-comment,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-formula,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-code,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-comment,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-formula,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-code,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-comment,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-formula,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-code,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-comment,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-formula,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-code,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-comment,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-formula {
   color: #8b949e;
 }
-html[data-theme="dark"] #viewer .hljs-name,
-html[data-theme="dark"] #viewer .hljs-quote,
-html[data-theme="dark"] #viewer .hljs-selector-pseudo,
-html[data-theme="dark"] #viewer .hljs-selector-tag,
-html[data-theme="furina"] #viewer .hljs-name,
-html[data-theme="furina"] #viewer .hljs-quote,
-html[data-theme="furina"] #viewer .hljs-selector-pseudo,
-html[data-theme="furina"] #viewer .hljs-selector-tag,
-html[data-theme="hysilens"] #viewer .hljs-name,
-html[data-theme="hysilens"] #viewer .hljs-quote,
-html[data-theme="hysilens"] #viewer .hljs-selector-pseudo,
-html[data-theme="hysilens"] #viewer .hljs-selector-tag,
-html[data-theme="geniusclub"] #viewer .hljs-name,
-html[data-theme="geniusclub"] #viewer .hljs-quote,
-html[data-theme="geniusclub"] #viewer .hljs-selector-pseudo,
-html[data-theme="geniusclub"] #viewer .hljs-selector-tag,
-html[data-theme="silverwolf"] #viewer .hljs-name,
-html[data-theme="silverwolf"] #viewer .hljs-quote,
-html[data-theme="silverwolf"] #viewer .hljs-selector-pseudo,
-html[data-theme="silverwolf"] #viewer .hljs-selector-tag,
-html[data-theme="odette"] #viewer .hljs-name,
-html[data-theme="odette"] #viewer .hljs-quote,
-html[data-theme="odette"] #viewer .hljs-selector-pseudo,
-html[data-theme="odette"] #viewer .hljs-selector-tag {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-name,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-quote,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-selector-pseudo,
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-selector-tag,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-name,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-quote,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-selector-pseudo,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-selector-tag,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-name,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-quote,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-selector-pseudo,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-selector-tag,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-name,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-quote,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-selector-pseudo,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-selector-tag,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-name,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-quote,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-selector-pseudo,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-selector-tag,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-name,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-quote,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-selector-pseudo,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-selector-tag {
   color: #7ee787;
 }
-html[data-theme="dark"] #viewer .hljs-subst,
-html[data-theme="furina"] #viewer .hljs-subst,
-html[data-theme="hysilens"] #viewer .hljs-subst,
-html[data-theme="geniusclub"] #viewer .hljs-subst,
-html[data-theme="silverwolf"] #viewer .hljs-subst,
-html[data-theme="odette"] #viewer .hljs-subst {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-subst,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-subst,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-subst,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-subst,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-subst,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-subst {
   color: #c9d1d9;
 }
-html[data-theme="dark"] #viewer .hljs-section,
-html[data-theme="furina"] #viewer .hljs-section,
-html[data-theme="hysilens"] #viewer .hljs-section,
-html[data-theme="geniusclub"] #viewer .hljs-section,
-html[data-theme="silverwolf"] #viewer .hljs-section,
-html[data-theme="odette"] #viewer .hljs-section {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-section,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-section,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-section,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-section,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-section,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-section {
   color: #79c0ff;
   font-weight: 700;
 }
-html[data-theme="dark"] #viewer .hljs-bullet,
-html[data-theme="furina"] #viewer .hljs-bullet,
-html[data-theme="hysilens"] #viewer .hljs-bullet,
-html[data-theme="geniusclub"] #viewer .hljs-bullet,
-html[data-theme="silverwolf"] #viewer .hljs-bullet,
-html[data-theme="odette"] #viewer .hljs-bullet {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-bullet,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-bullet,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-bullet,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-bullet,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-bullet,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-bullet {
   color: #f2cc60;
 }
-html[data-theme="dark"] #viewer .hljs-emphasis,
-html[data-theme="furina"] #viewer .hljs-emphasis,
-html[data-theme="hysilens"] #viewer .hljs-emphasis,
-html[data-theme="geniusclub"] #viewer .hljs-emphasis,
-html[data-theme="silverwolf"] #viewer .hljs-emphasis,
-html[data-theme="odette"] #viewer .hljs-emphasis {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-emphasis,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-emphasis,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-emphasis,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-emphasis,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-emphasis,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-emphasis {
   color: #c9d1d9;
   font-style: italic;
 }
-html[data-theme="dark"] #viewer .hljs-strong,
-html[data-theme="furina"] #viewer .hljs-strong,
-html[data-theme="hysilens"] #viewer .hljs-strong,
-html[data-theme="geniusclub"] #viewer .hljs-strong,
-html[data-theme="silverwolf"] #viewer .hljs-strong,
-html[data-theme="odette"] #viewer .hljs-strong {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-strong,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-strong,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-strong,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-strong,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-strong,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-strong {
   color: #c9d1d9;
   font-weight: 700;
 }
-html[data-theme="dark"] #viewer .hljs-addition,
-html[data-theme="furina"] #viewer .hljs-addition,
-html[data-theme="hysilens"] #viewer .hljs-addition,
-html[data-theme="geniusclub"] #viewer .hljs-addition,
-html[data-theme="silverwolf"] #viewer .hljs-addition,
-html[data-theme="odette"] #viewer .hljs-addition {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-addition,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-addition,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-addition,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-addition,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-addition,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-addition {
   color: #aff5b4;
   background-color: #033a16;
 }
-html[data-theme="dark"] #viewer .hljs-deletion,
-html[data-theme="furina"] #viewer .hljs-deletion,
-html[data-theme="hysilens"] #viewer .hljs-deletion,
-html[data-theme="geniusclub"] #viewer .hljs-deletion,
-html[data-theme="silverwolf"] #viewer .hljs-deletion,
-html[data-theme="odette"] #viewer .hljs-deletion {
+html[data-theme="dark"] :is(#viewer, .md-render) .hljs-deletion,
+html[data-theme="furina"] :is(#viewer, .md-render) .hljs-deletion,
+html[data-theme="hysilens"] :is(#viewer, .md-render) .hljs-deletion,
+html[data-theme="geniusclub"] :is(#viewer, .md-render) .hljs-deletion,
+html[data-theme="silverwolf"] :is(#viewer, .md-render) .hljs-deletion,
+html[data-theme="odette"] :is(#viewer, .md-render) .hljs-deletion {
   color: #ffdcd7;
   background-color: #67060c;
 }
-#viewer blockquote {
+:is(#viewer, .md-render) blockquote {
   border-left: 3px solid var(--border);
   margin: 0.8em 0;
   padding: 0 1em;
   color: var(--fg-muted);
 }
-#viewer table {
+:is(#viewer, .md-render) table {
   border-collapse: collapse;
   margin: 0.8em 0;
   width: 100%;
 }
-#viewer th, #viewer td {
+:is(#viewer, .md-render) th, :is(#viewer, .md-render) td {
   border: 1px solid var(--border);
   padding: 6px 10px;
   text-align: left;
 }
-#viewer th { background: var(--bg-hover); }
-#viewer img { max-width: 100%; }
-#viewer ul, #viewer ol { padding-left: 2em; }
+:is(#viewer, .md-render) th { background: var(--bg-hover); }
+:is(#viewer, .md-render) img { max-width: 100%; }
+:is(#viewer, .md-render) ul, :is(#viewer, .md-render) ol { padding-left: 2em; }
 /* 嵌套列表: marker 随缩进右移 (inside) + 左竖线 + marker 分级, 父子层次一目了然 */
-#viewer li > ul, #viewer li > ol {
+:is(#viewer, .md-render) li > ul, :is(#viewer, .md-render) li > ol {
   list-style-position: inside;
   padding-left: 0.4em;
   margin: 0.3em 0 0.3em 1.2em;
   border-left: 2px solid var(--border);
 }
-#viewer ul ul { list-style-type: circle; }
-#viewer ul ul ul { list-style-type: square; }
-#viewer ol ol { list-style-type: lower-alpha; }
-#viewer ol ol ol { list-style-type: lower-roman; }
-#viewer kbd {
+:is(#viewer, .md-render) ul ul { list-style-type: circle; }
+:is(#viewer, .md-render) ul ul ul { list-style-type: square; }
+:is(#viewer, .md-render) ol ol { list-style-type: lower-alpha; }
+:is(#viewer, .md-render) ol ol ol { list-style-type: lower-roman; }
+:is(#viewer, .md-render) kbd {
   font-family: var(--font-mono);
   font-size: 0.85em;
   background: var(--bg-hover);
@@ -1224,7 +1224,7 @@ html[data-theme="odette"] #viewer .hljs-deletion {
 }
 
 /* ===== 渲染区折叠 ===== */
-#viewer .md-collapse-chevron {
+:is(#viewer, .md-render) .md-collapse-chevron {
   display: inline-block;
   width: 10px;
   font-size: 10px;
@@ -1237,10 +1237,10 @@ html[data-theme="odette"] #viewer .hljs-deletion {
   transition: transform 0.15s ease;
   text-align: center;
 }
-#viewer .md-section[data-collapsed="true"] .md-collapse-chevron {
+:is(#viewer, .md-render) .md-section[data-collapsed="true"] .md-collapse-chevron {
   transform: rotate(-90deg);
 }
-#viewer .md-level-badge {
+:is(#viewer, .md-render) .md-level-badge {
   float: right;
   font-size: 10px;
   font-weight: 400;
@@ -1254,11 +1254,11 @@ html[data-theme="odette"] #viewer .hljs-deletion {
   background: transparent;
   user-select: none;
 }
-#viewer .md-section > .md-section-body { display: block; }
-#viewer .md-section[data-collapsed="true"] > .md-section-body { display: none; }
+:is(#viewer, .md-render) .md-section > .md-section-body { display: block; }
+:is(#viewer, .md-render) .md-section[data-collapsed="true"] > .md-section-body { display: none; }
 
-#viewer .md-codeblock { position: relative; margin: 1em 0; }
-#viewer .md-code-badge {
+:is(#viewer, .md-render) .md-codeblock { position: relative; margin: 1em 0; }
+:is(#viewer, .md-render) .md-code-badge {
   position: absolute; top: 0; right: 0; z-index: 2;
   font: 11px/1.4 var(--font-mono);
   padding: 2px 8px; cursor: pointer;
@@ -1268,22 +1268,22 @@ html[data-theme="odette"] #viewer .hljs-deletion {
   border-top: none; border-right: none;
   border-radius: 0 0 0 4px;
 }
-#viewer .md-code-badge:hover { color: var(--accent); }
-#viewer .md-codeblock[data-collapsed="true"] > pre {
+:is(#viewer, .md-render) .md-code-badge:hover { color: var(--accent); }
+:is(#viewer, .md-render) .md-codeblock[data-collapsed="true"] > pre {
   max-height: 0; overflow: hidden; margin: 0; padding-top: 0; padding-bottom: 0;
   border: none;
 }
-#viewer .md-codeblock[data-collapsed="true"] > pre code { visibility: hidden; }
+:is(#viewer, .md-render) .md-codeblock[data-collapsed="true"] > pre code { visibility: hidden; }
 
 /* ===== drawio 内联渲染 ===== */
-#viewer .md-drawio {
+:is(#viewer, .md-render) .md-drawio {
   margin: 1em 0;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
   background: #fff;
 }
-#viewer .md-drawio-head {
+:is(#viewer, .md-render) .md-drawio-head {
   display: flex;
   align-items: center;
   gap: 0.4em;
@@ -1294,34 +1294,34 @@ html[data-theme="odette"] #viewer .hljs-deletion {
   cursor: pointer;
   user-select: none;
 }
-#viewer .md-drawio-head:hover { background: var(--bg-hover); }
-#viewer .md-drawio-title { font-weight: 600; color: var(--cn-ink, var(--fg)); }
-#viewer .md-drawio-tag {
+:is(#viewer, .md-render) .md-drawio-head:hover { background: var(--bg-hover); }
+:is(#viewer, .md-render) .md-drawio-title { font-weight: 600; color: var(--cn-ink, var(--fg)); }
+:is(#viewer, .md-render) .md-drawio-tag {
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--fg-muted);
 }
-#viewer .md-drawio-body {
+:is(#viewer, .md-render) .md-drawio-body {
   padding: 8px;
   /* 图过宽时横向滚动; 纵向不裁剪, 由 md 文档自身滚动控制 */
   overflow-x: auto;
   overflow-y: visible;
 }
-#viewer .md-drawio[data-collapsed="true"] .md-drawio-body { display: none; }
-#viewer .md-drawio[data-collapsed="true"] .md-collapse-chevron { transform: rotate(-90deg); }
-#viewer .md-drawio-body .mxgraph { max-width: 100%; background: #fff; }
-#viewer .md-drawio-placeholder,
-#viewer .md-drawio-error {
+:is(#viewer, .md-render) .md-drawio[data-collapsed="true"] .md-drawio-body { display: none; }
+:is(#viewer, .md-render) .md-drawio[data-collapsed="true"] .md-collapse-chevron { transform: rotate(-90deg); }
+:is(#viewer, .md-render) .md-drawio-body .mxgraph { max-width: 100%; background: #fff; }
+:is(#viewer, .md-render) .md-drawio-placeholder,
+:is(#viewer, .md-render) .md-drawio-error {
   padding: 16px;
   color: var(--fg-muted);
   font-size: 13px;
   text-align: center;
 }
-#viewer .md-drawio-error { color: #c00; }
+:is(#viewer, .md-render) .md-drawio-error { color: #c00; }
 
 /* ===== drawio 单独打开 (GraphViewer 直接渲染, 无 iframe/提示文本) ===== */
-#viewer .drawio-standalone {
+:is(#viewer, .md-render) .drawio-standalone {
   padding: 8px;
   background: #fff;
   border: 1px solid var(--border);
@@ -1330,12 +1330,12 @@ html[data-theme="odette"] #viewer .hljs-deletion {
   overflow-x: auto;
   overflow-y: visible;
 }
-#viewer .drawio-standalone .mxgraph { max-width: 100%; background: #fff; }
+:is(#viewer, .md-render) .drawio-standalone .mxgraph { max-width: 100%; background: #fff; }
 
 /* ===== Mermaid 图渲染 (```mermaid 块 → SVG) =====
    marked 只读路径 (.mermaid-block) 和 Vditor IR 编辑路径 (.mermaid-preview) 共用样式。
    两条路径都把 mermaid.run() 产出的 SVG 注入 .mermaid 容器。 */
-#viewer .mermaid,
+:is(#viewer, .md-render) .mermaid,
 .vditor-ir .mermaid-preview {
   margin: 1em 0;
   padding: 12px;
@@ -1346,12 +1346,12 @@ html[data-theme="odette"] #viewer .hljs-deletion {
   overflow-x: auto;
   overflow-y: visible;
 }
-#viewer .mermaid svg,
+:is(#viewer, .md-render) .mermaid svg,
 .vditor-ir .mermaid-preview svg {
   max-width: 100%;
   height: auto;
 }
-#viewer .mermaid.mermaid-error,
+:is(#viewer, .md-render) .mermaid.mermaid-error,
 .vditor-ir .mermaid-preview.mermaid-error {
   color: #c00;
   font-family: var(--font-mono);
@@ -1434,7 +1434,7 @@ html[data-theme="odette"] #viewer .hljs-deletion {
 }
 
 /* drawio viewer 工具栏 (zoom/layers/lightbox 按钮) 隐藏 */
-#viewer .mxgraph .geToolbar { display: none !important; }
+:is(#viewer, .md-render) .mxgraph .geToolbar { display: none !important; }
 
 .code-view {
   max-width: 980px;
@@ -1488,6 +1488,66 @@ html[data-theme="odette"] .code-view {
 }
 #editor-host .cm-content {
   padding: 12px 8px;
+}
+
+/* ============== 编辑态布局 (源码编辑器 + 右侧实时预览) ============== */
+/* 编辑态 = CM6 源码编辑器 (左) + 实时预览 (右)。预览与 #content-body 同为 #content-wrap 的
+   flex 子项 → 天然分栏, 不改现有布局 (见 落地坐标)。
+   渲染一致红线: 预览容器挂 .md-render, 而本文件所有阅读态选择器都写成
+   :is(#viewer, .md-render) → 预览与阅读态逐条同源 (选择器级共享, 不是复制粘贴的近似)。
+   维护提示: 新增阅读态样式一律写 :is(#viewer, .md-render) 前缀, 只写 #viewer 预览就不生效。 */
+#edit-preview {
+  width: 46%;
+  min-width: 260px;
+  max-width: 760px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+}
+/* 设了 display:flex 会压掉 [hidden] 的默认 display:none, 必须显式还原 */
+#edit-preview[hidden] { display: none; }
+#edit-preview .panel-header {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+#edit-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  /* 与 #content-body 的 20px 32px 略收窄: 预览栏更窄, 保持正文列宽不至于太薄 */
+  padding: 20px 24px;
+  scrollbar-width: thin;
+}
+#edit-preview-body::-webkit-scrollbar { width: 10px; }
+#edit-preview-body::-webkit-scrollbar-thumb {
+  background: var(--cn-wood, var(--scroll-thumb, rgba(128,128,128,.5)));
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+#edit-preview-body::-webkit-scrollbar-thumb:hover {
+  background: var(--cn-ink-faint, var(--scroll-thumb-hover, rgba(128,128,128,.8)));
+  background-clip: content-box;
+}
+/* 手机上左右分栏太窄 → 改上下叠: 编辑器在上, 预览在下 */
+@media (max-width: 900px) {
+  #content-wrap.edit-split { flex-direction: column; }
+  #edit-preview {
+    width: 100%;
+    max-width: none;
+    flex: 0 0 40%;
+    min-height: 140px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
 }
 
 .empty-state {
@@ -1761,7 +1821,7 @@ cf-find-mark.current { background: rgba(255, 140, 0, 0.6); }
 
   /* 内容内边距收窄 */
   #content-body { padding: 12px 14px; }
-  #viewer, .code-view, #editor-host { max-width: 100%; }
+  :is(#viewer, .md-render), .code-view, #editor-host { max-width: 100%; }
 
   /* 弹层全宽 */
   .modal-card { width: 95vw; max-width: 95vw; }

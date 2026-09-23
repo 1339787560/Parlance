@@ -71,6 +71,8 @@ const els = {
   viewer: $('#viewer'),
   vditorHost: $('#vditor-host'),
   editorHost: $('#editor-host'),
+  editPreview: $('#edit-preview'),
+  editPreviewBody: $('#edit-preview-body'),
   contentBody: $('#content-body'),
   contentWrap: $('#content-wrap'),
   tabBar: $('#tab-bar'),
@@ -901,7 +903,26 @@ function renderOutlineNode(node) {
 }
 
 function jumpToHeading(lineIndex) {
-  // 给 viewer 内对应行加 id 并滚动
+  // 编辑态 (CM6 源码编辑器): 按行号把编辑器滚到该标题, 并把光标放过去。
+  // lineIndex 是 buildOutline 基于"去掉 frontmatter 的 body"算出来的, 而编辑器文档含 frontmatter,
+  // 故要补上 frontmatter 前缀占用的行数 (从编辑器文档自身算, 不依赖可能过期的 currentFile.content)。
+  if (state.editor && !els.editorHost.hidden) {
+    const raw = state.editor.state.doc.toString();
+    const { body } = splitFrontmatter(raw);
+    const fmChars = raw.length - body.length;
+    const fmLines = fmChars > 0 ? raw.slice(0, fmChars).split('\n').length - 1 : 0;
+    const lineNo = Math.min(fmLines + lineIndex + 1, state.editor.state.doc.lines);
+    const line = state.editor.state.doc.line(lineNo);
+    state.editor.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: 'start' }),
+    });
+    state.editor.focus();
+    if (isMobile()) closeMobileOutline();
+    return;
+  }
+
+  // 只读态: 给 viewer 内对应行加 id 并滚动
   // marked 渲染后的标题没有行号映射, 改为按标题文本查找
   const container = state.vditor ? els.vditorHost : els.viewer;
   const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
@@ -1400,17 +1421,13 @@ async function openFile(path, opts = {}) {
     } else if (isImageFile(file.extension)) {
       renderImage(file);
     } else if (isMarkdown(file.extension)) {
-      // .md 编辑模式选择:
-      //   - 含 ```mermaid 块 → CM6 纯文本编辑 (renderCode). Vditor IR 对 mermaid 代码块在真实
-      //     流程下 getValue 会丢码/错乱/重复 (4+ 次客诉, 最小复现未抓到确切路径), CM6 不 mutate
-      //     内容, 数据安全. 代价: 失 Vditor IR 所见即所得, 改为源码编辑.
-      //   - 无 mermaid → Vditor IR 编辑 (getMdEditMode) 或 renderMarkdown 只读
-      const hasMermaid = /```mermaid\b/.test(file.content || '');
-      if (getMdEditMode() && hasMermaid) {
-        enterEditMode();   // CM6 纯文本编辑器 (state.editor = new EditorView), 不 mutate 内容, mermaid 安全
+      // .md 编辑态入口统一 (N1): 不再按内容分流。
+      // 旧版两条路 —— 含 ```mermaid 的走 CM6 源码编辑, 其余走 Vditor IR —— 同一份文档按内容
+      // 走不同编辑器, 而 Vditor IR 的 DOM→MD 序列化会重排全文 (红线一不达标的根因)。
+      // 现统一: 编辑态恒为 CM6 源码编辑器 (文档即源码, 零序列化), 所见即所得交给右侧实时预览。
+      if (getMdEditMode()) {
+        enterEditMode();
         setMdToggleState(true);
-      } else if (getMdEditMode()) {
-        renderMarkdownVditor(file);
       } else {
         renderMarkdown(file);
         setMdToggleState(false);
@@ -3868,21 +3885,63 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ============== 渲染流水线 (阅读态 + 编辑态预览同源) ==============
+// 内容层流水线: marked 净化 → frontmatter → 标题 id → 代码高亮 → drawio/图片 → mermaid。
+//
+// 「渲染一致」红线的落点: 阅读态 viewer 与编辑态右侧实时预览**共用本函数与同一套 CSS**
+// (:is(#viewer, .md-render))。同一份 md 经同一条管线出来, 两态不可能给出不同结果;
+// 旧实现两态各走一条渲染路径, 才有"软换行在阅读态断行、编辑态并行"这类不一致。
+//
+// 交互层 (折叠 / 大纲 / 批注锚标 / 链接拦截 / hash 跳转) 不在这里 —— 预览是投影, 不承载交互。
+// collapse=true 仅阅读态需要 (预览不装折叠, 免得出现点不动的 chevron)。
+function renderInto(root, basePath, content, opts = {}) {
+  const { meta, body } = splitFrontmatter(content || '');
+  let html = window.marked.parse(preprocessCenterImages(body));
+  if (window.DOMPurify) {
+    html = window.DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
+  }
+  root.innerHTML = renderFrontmatter(meta) + html;
+
+  // 给所有标题加 slug id (支持内文 [链接](#heading) + URL hash 跳转)
+  applyHeadingIds(root);
+
+  // 后处理: 对 code 块运行 highlight.js
+  root.querySelectorAll('pre code').forEach(block => {
+    const cls = block.className || '';
+    const langMatch = cls.match(/language-(\w+)/);
+    const lang = langMatch ? langMatch[1] : '';
+    if (lang && window.hljs && window.hljs.getLanguage(lang)) {
+      try { window.hljs.highlightElement(block); } catch (e) {}
+    } else if (window.hljs) {
+      try { window.hljs.highlightElement(block); } catch (e) {}
+    }
+  });
+
+  if (opts.collapse) {
+    // 折叠功能: 标题 + 代码块
+    applyHeadingCollapse(root, basePath);
+    applyCodeCollapse(root, basePath);
+  }
+
+  // drawio 内联渲染: ![alt](xxx.drawio) → GraphViewer 内联图 (无 iframe, 可折叠)
+  applyDrawioInline(root, basePath);
+  // 内嵌图片: 相对路径 → /api/reader/raw (drawio img 已在上步 replaceWith 出 DOM)
+  applyImageRewrite(root, basePath);
+
+  // mermaid 渲染: ```mermaid 代码块 → SVG
+  renderMermaidBlocks(root);
+
+  return body;
+}
+
+// 阅读态渲染 (viewer)。编辑态预览直调 renderInto, 见 renderEditPreview。
 function renderMarkdown(file) {
   exitEditMode();
   els.welcome.hidden = true;
   els.viewer.hidden = false;
   els.editorHost.hidden = true;
 
-  const { meta, body } = splitFrontmatter(file.content);
-  let html = window.marked.parse(preprocessCenterImages(body));
-  if (window.DOMPurify) {
-    html = window.DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
-  }
-  els.viewer.innerHTML = renderFrontmatter(meta) + html;
-
-  // 给所有标题加 slug id (支持内文 [链接](#heading) + URL hash 跳转)
-  applyHeadingIds(els.viewer);
+  const body = renderInto(els.viewer, file.path, file.content, { collapse: true });
 
   // 若 URL 含 #hash, 跳转到对应标题 (首次渲染该文件时)
   if (location.hash && location.hash.length > 1) {
@@ -3900,32 +3959,12 @@ function renderMarkdown(file) {
     }
   }
 
-  // 后处理: 对 code 块运行 highlight.js
-  els.viewer.querySelectorAll('pre code').forEach(block => {
-    const cls = block.className || '';
-    const langMatch = cls.match(/language-(\w+)/);
-    const lang = langMatch ? langMatch[1] : '';
-    if (lang && window.hljs.getLanguage(lang)) {
-      try { window.hljs.highlightElement(block); } catch (e) {}
-    } else if (window.hljs) {
-      try { window.hljs.highlightElement(block); } catch (e) {}
-    }
-  });
-
-  // 折叠功能: 标题 + 代码块
-  applyHeadingCollapse(els.viewer, file.path);
-  applyCodeCollapse(els.viewer, file.path);
-
-  // drawio 内联渲染: ![alt](xxx.drawio) → GraphViewer 内联图 (无 iframe, 可折叠)
-  applyDrawioInline(els.viewer, file.path);
-  // 内嵌图片: 相对路径 → /api/reader/raw (drawio img 已在上步 replaceWith 出 DOM)
-  applyImageRewrite(els.viewer, file.path);
-
-  // mermaid 渲染: ```mermaid 代码块 → SVG
-  renderMermaidBlocks(els.viewer);
-
   // 拦截 md 内 a 链接 (相对路径 .md → 站内打开)
-  els.viewer.addEventListener('click', onViewerClick);
+  // 一次性绑定: els.viewer 是常驻元素 (只换 innerHTML), 每次渲染都 add 会累积监听
+  if (!state._viewerClickBound) {
+    els.viewer.addEventListener('click', onViewerClick);
+    state._viewerClickBound = true;
+  }
 
   // 生成目录大纲
   buildOutline(body);
@@ -4932,6 +4971,41 @@ const listTableBindings = [
   } },
 ];
 
+// ============== 编辑态右侧实时预览 (投影编辑器的"所见即所得"半边) ==============
+// 编辑区是源码 (唯一事实源, 零序列化); 预览是投影 (只读, 不回写, 不参与持久化)。
+// 与阅读态同源渲染 (renderInto + .md-render CSS) —— 这是「渲染一致」红线的落点。
+const EDIT_PREVIEW_DEBOUNCE = 300;
+
+function showEditPreview() {
+  els.editPreview.hidden = false;
+  els.contentWrap.classList.add('edit-split');
+}
+
+function hideEditPreview() {
+  els.editPreview.hidden = true;
+  els.contentWrap.classList.remove('edit-split');
+  els.editPreviewBody.innerHTML = '';   // 清空, 免得下次进编辑态先闪一眼旧文档
+}
+
+// 立即按编辑器当前文档重渲预览。取编辑器文档文本 (源码), 不读 DOM。
+function renderEditPreview() {
+  if (els.editPreview.hidden || !state.editor || !state.currentFile) return;
+  const content = state.editor.state.doc.toString();
+  const body = renderInto(els.editPreviewBody, state.currentFile.path, content, { collapse: false });
+  // 大纲跟随编辑内容走 (编辑态也能看结构)
+  if (isMarkdown(state.currentFile.extension)) buildOutline(body);
+}
+
+// 打字防抖: 每次 docChanged 都全量重渲 markdown 太重 (长文档会拖慢输入手感, 见程序实现文档"待实测确认")
+let __editPreviewTimer = null;
+function scheduleEditPreview() {
+  if (__editPreviewTimer) clearTimeout(__editPreviewTimer);
+  __editPreviewTimer = setTimeout(() => {
+    __editPreviewTimer = null;
+    try { renderEditPreview(); } catch (e) { console.error('[preview] render failed:', e); }
+  }, EDIT_PREVIEW_DEBOUNCE);
+}
+
 function enterEditMode() {
   if (!state.currentFile) return;
   // CM6 是目标编辑器 → 先走完整退场 (同步+落盘+销毁 Vditor IR)。
@@ -4942,8 +5016,12 @@ function enterEditMode() {
   // 保存当前滚动位置，编辑切换后恢复
   const currentScroll = els.contentBody ? els.contentBody.scrollTop : 0;
   els.viewer.hidden = true;
+  // 清空阅读态 DOM: 编辑期 viewer 不可见, 但它的标题 slug id 会与预览的同名 id 撞车
+  // (applyHeadingIds 两边都按标题文本生成 slug), 留着会让 #锚点 / hash 跳到已隐藏的阅读区。
+  els.viewer.innerHTML = '';
   els.editorHost.hidden = false;
   els.editToggle.textContent = '预览';
+  showEditPreview();
   // 恢复滚动位置（编辑器内容变化不会改变位置）
   requestAnimationFrame(() => {
     if (els.contentBody) els.contentBody.scrollTop = currentScroll;
@@ -4960,6 +5038,7 @@ function enterEditMode() {
       ),
     });
     state.editor.focus();
+    scheduleEditPreview();   // 复用已有编辑器: 文档换了, 预览得跟上
     return;
   }
 
@@ -4971,6 +5050,7 @@ function enterEditMode() {
         const tab = getTab(state.currentFile.path);
         if (tab) { tab.dirty = true; renderTabs(); }
         scheduleAutosave();
+        scheduleEditPreview();   // 右侧实时预览防抖重渲 (300ms)
         // 删行后自动重编号 (renumber 自身的 userEvent 跳过, 防递归)
         const isRenumber = vu.transactions.some(t => t.isUserEvent('input.renumber'));
         if (!isRenumber) {
@@ -5027,6 +5107,7 @@ function enterEditMode() {
       parent: els.editorHost,
     });
     console.log('[reader] CM6 editor created, doc length:', state.editor.state.doc.length);
+    renderEditPreview();   // 首次进编辑态: 立即铺预览 (不等打字)
   } catch (e) {
     // CodeMirror 6 加载失败,降级为 textarea
     console.error('CM6 init failed, fallback to textarea:', e);
@@ -5059,11 +5140,18 @@ function exitEditMode() {
   if ((state.editor || state._textareaFallback) && state.isDirty) {
     flushSave(true);
   }
+  // 离开编辑态前把编辑器文档同步回 currentFile: flushSave 是异步的, 若等它回来再渲染,
+  // 中间这段时间 renderMarkdown 会读到旧内容 (切回阅读态瞬闪旧文档 / 保存失败时长期不一致)。
+  // editor.state.doc 就是唯一事实源, 同步取值零序列化。
+  if (state.editor && state.currentFile) {
+    state.currentFile.content = state.editor.state.doc.toString();
+  }
   // 清理 textarea 降级模式
   if (state._textareaFallback) {
     state._textareaFallback = null;
     els.editorHost.innerHTML = '';
   }
+  hideEditPreview();
   els.editorHost.hidden = true;
   els.editToggle.textContent = '编辑';
 }
@@ -5121,11 +5209,11 @@ function recoverMermaidBlocks(newContent, snapshotMap, fallbackContent) {
 async function flushSave(silent = false) {
   if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; }
   if (!state.currentFile) return;
-  // 读取编辑器内容: Vditor (IR) / CM6 / textarea 降级
+  // 读取编辑器内容 (N3 保存取源): CM6 源码文本直取 —— 编辑器文档就是落盘内容, 零序列化。
+  // 不再有 Vditor 分支: IR 走 DOM→MD 序列化, 那正是"单次退格 784→958 字符"这类重排的根因。
+  // 也不做 mermaid 防丢回填 (recoverMermaidBlocks): 源码编辑器从不 mutate 文档, 无从丢码。
   let content;
-  if (state.vditor) {
-    content = recoverMermaidBlocks(state.vditor.getValue(), state.mermaidSnapshot, state.lastSavedContent);
-  } else if (state.editor) {
+  if (state.editor) {
     content = state.editor.state.doc.toString();
   } else if (state._textareaFallback) {
     content = state._textareaFallback.value;
@@ -5336,20 +5424,15 @@ els.editToggle.addEventListener('click', () => {
   if (!state.currentFile) return;
   const ext = state.currentFile.extension;
   if (isMarkdown(ext)) {
-    // .md: Vditor(IR 编辑) <-> renderMarkdown(只读); 切全局偏好 (对所有 .md 生效, 刷新保留)
+    // .md: CM6 源码编辑 <-> renderMarkdown(只读); 切全局偏好 (对所有 .md 生效, 刷新保留)
     // 切换前以左侧目录高亮标题为锚 (scroll-spy 维护的 state._currentHeading), 切换后跳到同一标题
     const anchor = state._currentHeading || captureViewportHeading();
     const newMode = !getMdEditMode();
     setMdEditMode(newMode);
     if (newMode) {
-      state._scrollAnchor = anchor;  // Vditor after 回调里恢复
-      // 含 mermaid 的 .md 走 CM6 (enterEditMode), 避免 Vditor IR 丢码/崩图; 其余 .md 仍 Vditor
-      const hasMermaid = /```mermaid\b/.test(state.currentFile.content || '');
-      if (hasMermaid) {
-        enterEditMode();
-      } else {
-        renderMarkdownVditor(state.currentFile);
-      }
+      state._scrollAnchor = anchor;  // 退出编辑态后按标题锚点恢复
+      // 编辑态恒为 CM6 源码编辑器 (入口统一, 见 openFile 注释)
+      enterEditMode();
     } else {
       if (state.isDirty) flushSave();
       renderMarkdown(state.currentFile);
