@@ -31,6 +31,9 @@ use axum::Json;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+/// Python 值语义（对齐页面对数字/字符串的宽容解析，见 `crate::pyval`）。
+use crate::pyval::py_int;
+
 /// 本机 chunkSvr 调试口；可用环境变量覆盖以指向别的机器做联调（同 legacy 的 env 名）。
 const DEFAULT_CHUNKSVR_DEBUG_URL: &str = "http://127.0.0.1:60463/v1.0/chunkluareq";
 /// 对齐 legacy `DRYRUN_TIMEOUT = 25`。
@@ -92,6 +95,57 @@ pub fn parse_userid(v: Option<&Value>) -> std::result::Result<i64, (u16, &'stati
     Ok(uid)
 }
 
+/// 转发一条请求到 chunkSvr 调试口，返回 Lua 侧 `ret`（已解「双层编码」）。
+///
+/// 沿用 legacy 语义：非 2xx / 结构异常 / `err` 非空 → 一律以 (状态码, 文案) 失败，
+/// 调用方直接转成 `err(...)`。**不重试、不降级**（chunkSvr 不可达是明确错误）。
+pub async fn post_chunklua(
+    state: &AppState,
+    req: Value,
+) -> std::result::Result<Value, (u16, String)> {
+    let url = chunksvr_url();
+    let resp = state
+        .http_client
+        .post(&url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(req.to_string())
+        .timeout(DRYRUN_TIMEOUT)
+        .send()
+        .await
+        .map_err(|e| (502, format!("连不上本机 chunkSvr 调试口（{url}）：{e}")))?;
+
+    // legacy 用 urllib（非 2xx 抛 HTTPError）→ 同义：非 2xx 一律报 code，不解析 body
+    let status = resp.status();
+    if !status.is_success() {
+        return Err((502, format!("chunkSvr 调试口返回 HTTP {}", status.as_u16())));
+    }
+
+    let text = resp.text().await.unwrap_or_default();
+    let outer: Value =
+        serde_json::from_str(&text).map_err(|_| (502, "chunkSvr 返回结构异常".to_string()))?;
+    if !outer.is_object() {
+        return Err((502, "chunkSvr 返回结构异常".to_string()));
+    }
+    if let Some(e) = outer.get("err").and_then(|v| v.as_str()) {
+        if !e.is_empty() {
+            return Err((502, format!("chunkSvr: {e}")));
+        }
+    }
+
+    // ret 可能是 JSON 对象，也可能是「对象的 JSON 字符串」（双层编码）
+    let mut ret = outer.get("ret").cloned().unwrap_or(Value::Null);
+    if let Value::String(s) = ret.clone() {
+        match serde_json::from_str::<Value>(&s) {
+            Ok(v) => ret = v,
+            Err(_) => {
+                let head: String = s.chars().take(200).collect();
+                return Err((502, format!("chunkSvr 返回非 JSON: {head}")));
+            }
+        }
+    }
+    Ok(ret)
+}
+
 /// `POST /api/migration/dryrun` —— `{userid}` → chunkSvr 干跑出的迁移推送载荷（只读）。
 pub async fn dryrun(
     State(state): State<AppState>,
@@ -108,54 +162,12 @@ pub async fn dryrun(
     let url = chunksvr_url();
     // 只传 userid：缩写/版本由 C++ 在真实推送时从客户端登录尾载荷填入，
     // 本页不提供也不伪造（见模块头注释与页签说明）。
-    let req_body = json!({ "req": "migrationdryrun", "nUserID": userid }).to_string();
-
-    let resp = match state
-        .http_client
-        .post(&url)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(req_body)
-        .timeout(DRYRUN_TIMEOUT)
-        .send()
-        .await
+    let ret = match post_chunklua(&state, json!({ "req": "migrationdryrun", "nUserID": userid })).await
     {
-        Ok(r) => r,
-        Err(e) => {
-            return Ok(err(502, &format!("连不上本机 chunkSvr 调试口（{url}）：{e}")));
-        }
-    };
-
-    // legacy 用 urllib（非 2xx 抛 HTTPError）→ 同义：非 2xx 一律报 code，不解析 body
-    let status = resp.status();
-    if !status.is_success() {
-        return Ok(err(502, &format!("chunkSvr 调试口返回 HTTP {}", status.as_u16())));
-    }
-
-    let text = resp.text().await.unwrap_or_default();
-    let outer: Value = match serde_json::from_str(&text) {
         Ok(v) => v,
-        Err(_) => return Ok(err(502, "chunkSvr 返回结构异常")),
+        Err((st, msg)) => return Ok(err(st, &msg)),
     };
-    if !outer.is_object() {
-        return Ok(err(502, "chunkSvr 返回结构异常"));
-    }
-    if let Some(e) = outer.get("err").and_then(|v| v.as_str()) {
-        if !e.is_empty() {
-            return Ok(err(502, &format!("chunkSvr: {e}")));
-        }
-    }
 
-    // ret 可能是 JSON 对象，也可能是「对象的 JSON 字符串」（双层编码）
-    let mut ret = outer.get("ret").cloned().unwrap_or(Value::Null);
-    if let Value::String(s) = ret.clone() {
-        match serde_json::from_str::<Value>(&s) {
-            Ok(v) => ret = v,
-            Err(_) => {
-                let head: String = s.chars().take(200).collect();
-                return Ok(err(502, &format!("chunkSvr 返回非 JSON: {head}")));
-            }
-        }
-    }
     let success = ret.get("success").and_then(Value::as_bool).unwrap_or(false);
     if !ret.is_object() || !success {
         let e = ret.get("err").cloned().unwrap_or(ret.clone());
@@ -185,6 +197,169 @@ pub async fn dryrun(
     ))
 }
 
+// ---------- 测试面：构造测试数据（设置金币 / 设置装扮有效期 / 装扮清单） ----------
+//
+// 用途：验证迁移链路要构造「三类玩家」等起始态，而原测试面只能【读】：
+//   ① 金币（newdeposit）  → 决定 tier1（金币 > 0）
+//   ② 有时限装扮          → 决定 tier2（金币 == 0 且经验 > 0 或有时限装扮 > 0）
+// 数据层全在 chunkSvr Lua（`scripts/msgcenter/Migration.lua` 的 3 个 registerhttp），
+// 前台只做确定性预检 + 响应整形 —— 与 `dryrun` 同一条调试口通道，**不新增暴露面**。
+
+/// 收集目标 uid：`userid`（单个，优先）或 `userIds`（数组）。
+/// 数组内非法项静默过滤（对齐 `money.rs` 的既有口径）；全非法 / 都缺 → 400。
+pub fn collect_userids(body: &Value) -> std::result::Result<Vec<i64>, (u16, &'static str)> {
+    if let Some(v) = body.get("userid") {
+        if !v.is_null() {
+            let uid = parse_userid(Some(v)).map_err(|_| (400u16, "玩家ID格式错误"))?;
+            return Ok(vec![uid]);
+        }
+    }
+    let mut out: Vec<i64> = Vec::new();
+    if let Some(arr) = body.get("userIds").and_then(Value::as_array) {
+        for item in arr {
+            if let Ok(uid) = parse_userid(Some(item)) {
+                out.push(uid);
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err((400, "玩家ID格式错误"));
+    }
+    Ok(out)
+}
+
+/// `/api/migration/set-gold` 校验：返回 (uid 列表, 目标金币)。
+pub fn validate_set_gold(body: &Value) -> std::result::Result<(Vec<i64>, i64), (u16, String)> {
+    let gold = match body.get("gold") {
+        None | Some(Value::Null) => return Err((400, "参数不完整（缺少 gold）".into())),
+        Some(v) => match py_int(v) {
+            Some(n) if n >= 0 => n,
+            _ => return Err((400, "金币数量必须是非负整数".into())),
+        },
+    };
+    let uids = collect_userids(body).map_err(|(s, m)| (s, m.to_string()))?;
+    Ok((uids, gold))
+}
+
+/// `/api/migration/set-costume-expire` 校验：返回 (userid, decoration_id, expire)。
+/// expire 语义：0 = 永久 / -1 = 已过期 / > 0 = N 天后过期（与 Lua 侧逐字对齐）。
+pub fn validate_set_costume_expire(
+    body: &Value,
+) -> std::result::Result<(i64, i64, i64), (u16, String)> {
+    let userid = parse_userid(body.get("userid")).map_err(|(s, m)| (s, m.to_string()))?;
+    let decoration_id = match body.get("decoration_id") {
+        None | Some(Value::Null) => return Err((400, "参数不完整（缺少 decoration_id）".into())),
+        Some(v) => match py_int(v) {
+            Some(n) if n > 0 => n,
+            _ => return Err((400, "装扮ID必须是正整数".into())),
+        },
+    };
+    let expire = match body.get("expire") {
+        None | Some(Value::Null) => return Err((400, "参数不完整（缺少 expire）".into())),
+        Some(v) => match py_int(v) {
+            Some(n) if n >= -1 => n,
+            _ => return Err((400, "有效期只支持 0(永久) / -1(过期) / 正数(有效天数)".into())),
+        },
+    };
+    Ok((userid, decoration_id, expire))
+}
+
+/// `POST /api/migration/set-gold` —— 设置玩家金币（newdeposit）**绝对值**。
+///
+/// 入参 `{"userid": 123, "gold": 10000}`，或 `{"userIds": [1,2], "gold": 10000}`
+/// （逐个转发并聚合，同 `money.rs` 的 deposit_proxy 范式）。金币不存在则建行。
+pub async fn set_gold(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> Result<(StatusCode, Json<Value>)> {
+    if let Some(resp) = disabled_response() {
+        return Ok(resp);
+    }
+    let (uids, gold) = match validate_set_gold(&body) {
+        Ok(v) => v,
+        Err((s, m)) => return Ok(err(s, &m)),
+    };
+
+    let mut results = Vec::new();
+    let mut all_ok = true;
+    for uid in &uids {
+        let req = json!({ "req": "migrationsetgold", "nUserID": uid, "gold": gold });
+        match post_chunklua(&state, req).await {
+            Ok(ret) => {
+                let ok = ret.get("success").and_then(Value::as_bool).unwrap_or(false);
+                if !ok {
+                    all_ok = false;
+                }
+                results.push(json!({ "userid": uid, "ok": ok, "result": ret }));
+            }
+            Err((st, msg)) => {
+                all_ok = false;
+                results.push(json!({ "userid": uid, "ok": false, "status": st, "error": msg }));
+            }
+        }
+    }
+
+    let code = if all_ok { StatusCode::OK } else { StatusCode::INTERNAL_SERVER_ERROR };
+    Ok((
+        code,
+        Json(json!({ "success": all_ok, "gold": gold, "results": results })),
+    ))
+}
+
+/// `POST /api/migration/set-costume-expire` —— 设置装扮有效期。
+///
+/// 入参 `{"userid": 123, "decoration_id": 3, "expire": 30}`；
+/// `expire`：0 = 永久 / -1 = 已过期 / > 0 = N 天后过期（起始时间按当前时间算）。
+/// **目标装扮不存在时自动新建一件有时限装扮**（便于构造 tier2 玩家）。
+pub async fn set_costume_expire(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> Result<(StatusCode, Json<Value>)> {
+    if let Some(resp) = disabled_response() {
+        return Ok(resp);
+    }
+    let (userid, decoration_id, expire) = match validate_set_costume_expire(&body) {
+        Ok(v) => v,
+        Err((s, m)) => return Ok(err(s, &m)),
+    };
+
+    let req = json!({
+        "req": "migrationsetcostumeexpire",
+        "nUserID": userid,
+        "decoration_id": decoration_id,
+        "expire": expire,
+    });
+    match post_chunklua(&state, req).await {
+        Ok(ret) => {
+            let ok = ret.get("success").and_then(Value::as_bool).unwrap_or(false);
+            if !ok {
+                let e = ret.get("err").cloned().unwrap_or(ret.clone());
+                return Ok(err(502, &format!("chunkSvr 设置装扮有效期失败: {e}")));
+            }
+            Ok((StatusCode::OK, Json(json!({ "success": true, "data": ret }))))
+        }
+        Err((st, msg)) => Ok(err(st, &msg)),
+    }
+}
+
+/// `POST /api/migration/decoration-list` —— 装扮清单（页面下拉用，只读）。
+pub async fn decoration_list(State(state): State<AppState>) -> Result<(StatusCode, Json<Value>)> {
+    if let Some(resp) = disabled_response() {
+        return Ok(resp);
+    }
+    match post_chunklua(&state, json!({ "req": "migrationdecorationlist" })).await {
+        Ok(ret) => {
+            let ok = ret.get("success").and_then(Value::as_bool).unwrap_or(false);
+            if !ok {
+                let e = ret.get("err").cloned().unwrap_or(ret.clone());
+                return Ok(err(502, &format!("chunkSvr 取装扮清单失败: {e}")));
+            }
+            Ok((StatusCode::OK, Json(json!({ "success": true, "data": ret }))))
+        }
+        Err((st, msg)) => Ok(err(st, &msg)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +385,107 @@ mod tests {
         #[case] expect: std::result::Result<i64, (u16, &'static str)>,
     ) {
         assert_eq!(parse_userid(v.as_ref()), expect);
+    }
+
+    // ---- 测试面：collect_userids / validate_set_gold / validate_set_costume_expire ----
+
+    #[test]
+    fn test_collect_userids_single_and_multi() {
+        assert_eq!(collect_userids(&json!({"userid": 123})).unwrap(), vec![123]);
+        assert_eq!(collect_userids(&json!({"userid": "123"})).unwrap(), vec![123]);
+        // userIds 数组：非法项静默过滤
+        assert_eq!(
+            collect_userids(&json!({"userIds": [1, "2", 0, -3, "x"]})).unwrap(),
+            vec![1, 2]
+        );
+        // userid 优先于 userIds
+        assert_eq!(
+            collect_userids(&json!({"userid": 9, "userIds": [1, 2]})).unwrap(),
+            vec![9]
+        );
+    }
+
+    #[test]
+    fn test_collect_userids_errors() {
+        assert_eq!(collect_userids(&json!({})).unwrap_err(), (400, "玩家ID格式错误"));
+        assert_eq!(
+            collect_userids(&json!({"userIds": []})).unwrap_err(),
+            (400, "玩家ID格式错误")
+        );
+        assert_eq!(
+            collect_userids(&json!({"userIds": [0, -1]})).unwrap_err(),
+            (400, "玩家ID格式错误")
+        );
+        assert_eq!(collect_userids(&json!({"userid": 0})).unwrap_err(), (400, "玩家ID格式错误"));
+        assert_eq!(
+            collect_userids(&json!({"userid": 2147483648i64})).unwrap_err(),
+            (400, "玩家ID格式错误")
+        );
+    }
+
+    #[test]
+    fn test_validate_set_gold_ok() {
+        assert_eq!(
+            validate_set_gold(&json!({"userid": 7, "gold": 100})).unwrap(),
+            (vec![7], 100)
+        );
+        // 字符串数字 + 0 合法
+        assert_eq!(
+            validate_set_gold(&json!({"userIds": [1, 2], "gold": "0"})).unwrap(),
+            (vec![1, 2], 0)
+        );
+    }
+
+    #[rstest]
+    #[case::no_gold(json!({"userid": 7}), "参数不完整（缺少 gold）")]
+    #[case::null_gold(json!({"userid": 7, "gold": null}), "参数不完整（缺少 gold）")]
+    #[case::negative(json!({"userid": 7, "gold": -1}), "金币数量必须是非负整数")]
+    #[case::not_a_number(json!({"userid": 7, "gold": "abc"}), "金币数量必须是非负整数")]
+    #[case::no_uid(json!({"gold": 1}), "玩家ID格式错误")]
+    fn test_validate_set_gold_errors(#[case] body: Value, #[case] expected: &str) {
+        assert_eq!(
+            validate_set_gold(&body).unwrap_err(),
+            (400, expected.to_string())
+        );
+    }
+
+    #[test]
+    fn test_validate_set_costume_expire_ok() {
+        // 三种有效期语义：0 永久 / -1 已过期 / >0 天数
+        assert_eq!(
+            validate_set_costume_expire(&json!({"userid": 7, "decoration_id": 3, "expire": 0}))
+                .unwrap(),
+            (7, 3, 0)
+        );
+        assert_eq!(
+            validate_set_costume_expire(&json!({"userid": 7, "decoration_id": 3, "expire": -1}))
+                .unwrap(),
+            (7, 3, -1)
+        );
+        // 字符串数字也接受
+        assert_eq!(
+            validate_set_costume_expire(
+                &json!({"userid": "7", "decoration_id": "3", "expire": "30"})
+            )
+            .unwrap(),
+            (7, 3, 30)
+        );
+    }
+
+    #[rstest]
+    #[case::no_deco(json!({"userid": 7, "expire": 1}), "参数不完整（缺少 decoration_id）")]
+    #[case::bad_deco(json!({"userid": 7, "decoration_id": 0, "expire": 1}), "装扮ID必须是正整数")]
+    #[case::no_expire(json!({"userid": 7, "decoration_id": 3}), "参数不完整（缺少 expire）")]
+    #[case::too_negative(
+        json!({"userid": 7, "decoration_id": 3, "expire": -5}),
+        "有效期只支持 0(永久) / -1(过期) / 正数(有效天数)"
+    )]
+    #[case::no_uid(json!({"decoration_id": 3, "expire": 1}), "玩家ID格式错误")]
+    fn test_validate_set_costume_expire_errors(#[case] body: Value, #[case] expected: &str) {
+        assert_eq!(
+            validate_set_costume_expire(&body).unwrap_err(),
+            (400, expected.to_string())
+        );
     }
 
     /// 关闭开关的取值集合（缺省 = 开）。

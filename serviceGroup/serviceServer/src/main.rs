@@ -212,6 +212,11 @@ async fn main() -> anyhow::Result<()> {
             "/api/services/stop",
             axum::routing::post(services::stop_service),
         )
+        // 卡在 pending (停止中) 时的人工兜底: 强杀进程 (会丢未落盘数据, 前端二次确认)。
+        .route(
+            "/api/services/force-stop",
+            axum::routing::post(services::force_stop_service),
+        )
         .route(
             "/api/services/restart",
             axum::routing::post(services::restart_service),
@@ -299,6 +304,22 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/migration/dryrun",
             axum::routing::post(migration::dryrun),
+        )
+        // 迁移测试面 · 构造数据 (2026-09-23): deposit 页「金币」/「装扮」tab 用 —— 走同一条
+        // chunkSvr 调试口, 数据层在 Migration.lua (`migrationsetgold` / `migrationsetcostumeexpire`
+        // / `migrationdecorationlist`)。用途: 构造「三类玩家」等迁移测试起始态
+        // (金币决定 tier1; 有时限装扮决定 tier2)。
+        .route(
+            "/api/migration/set-gold",
+            axum::routing::post(migration::set_gold),
+        )
+        .route(
+            "/api/migration/set-costume-expire",
+            axum::routing::post(migration::set_costume_expire),
+        )
+        .route(
+            "/api/migration/decoration-list",
+            axum::routing::post(migration::decoration_list),
         )
         // services 控制簇剩余: deploy(sc create) + start-all + update(multipart 热更新)。
         .route("/api/services/deploy", axum::routing::post(services::deploy_service))

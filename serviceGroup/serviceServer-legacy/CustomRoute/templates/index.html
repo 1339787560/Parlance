@@ -469,6 +469,14 @@
         button.delete:hover {
             background-color: rgba(201, 48, 44, 0.9);
         }
+
+        /* 强制停止: 深红以区别于常规「停止」, 破坏性操作 (会丢未落盘数据), 二次确认 */
+        button.force-stop {
+            background-color: rgba(153, 0, 0, 0.85);
+        }
+        button.force-stop:hover {
+            background-color: rgba(120, 0, 0, 0.95);
+        }
         
         button.deploy {
             background-color: rgba(23, 162, 184, 0.7);
@@ -1529,7 +1537,7 @@
                 return;
             }
 
-            if (!confirm(`确定要更新服务 ${currentUpdateService.name} (${currentUpdateService.type}) 的文件吗？\n将替换 ${exeFile.name} 和 ${pdbFile.name}。\n服务将被停止，替换文件后重新启动。`)) {
+            if (!confirm(`确定要更新服务 ${currentUpdateService.name} (${currentUpdateService.type}) 的文件吗？\n将替换 ${exeFile.name} 和 ${pdbFile.name}。\n服务将被停止，替换文件后重新启动。\n若服务停止超时（卡在「停止中」），请改用「强制停止」后再重试。`)) {
                 event.target.value = '';
                 return;
             }
@@ -1629,20 +1637,59 @@
         });
 
         // 加载背景图
+        // 2026-09-23 客户端缓存: /api/fetch-background 每次都要起 Python 助手 (onefile 自解包),
+        // 实测 2.4~4.3s, 而前端必须等它返回才知道 bg_url => 每次刷新背景空白好几秒。
+        // 该 API 语义是「每日一张」(返回 date=YYYYMMDD) => 同一天内不必再问:
+        //   localStorage 存 {url, date}; 命中就直接铺图 (图片本身有 ETag, 走浏览器缓存 304)
+        //   => 0 请求 / 0 等待。跨天 (或 force) 才去问一次。
+        const BG_LS_KEY = 'bg_cache_v1';
+        function _bgReadCache() {
+            try { return JSON.parse(localStorage.getItem(BG_LS_KEY) || 'null'); } catch (e) { return null; }
+        }
+        function _bgToday() {
+            const d = new Date();
+            return '' + d.getFullYear()
+                + String(d.getMonth() + 1).padStart(2, '0')
+                + String(d.getDate()).padStart(2, '0');
+        }
+        function _bgPaint(url) {
+            const el = document.getElementById('bg-container');
+            if (el && url) el.style.backgroundImage = `url('${url}')`;
+        }
         async function loadPageBackground(force = false) {
+            const bgContainer = document.getElementById('bg-container');
+            const cache = _bgReadCache();
+            // 1) 先用缓存立刻上屏 (图片走浏览器缓存, 不等 API)
+            if (cache && cache.url) _bgPaint(cache.url);
+            // 2) 同一天 + 已有缓存 -> 完全不再问 API (省掉那 2.4~4.3s 与一次助手子进程)
+            if (!force && cache && cache.url && cache.date === _bgToday()) {
+                return { success: true, bg_url: cache.url, date: cache.date, client_cached: true };
+            }
             try {
                 const response = await fetch(`/api/fetch-background${force ? '?force=true' : ''}`);
                 const data = await response.json();
                 if (data.success && data.bg_url) {
-                    const bgContainer = document.getElementById('bg-container');
-                    // 添加时间戳防止浏览器缓存
-                    const bgUrlWithTimestamp = force ? `${data.bg_url}?t=${Date.now()}` : data.bg_url;
-                    bgContainer.style.backgroundImage = `url('${bgUrlWithTimestamp}')`;
-                    return data;
+                    // 存「不带时间戳」的原 URL, 下次铺图才能命中浏览器缓存
+                    try {
+                        localStorage.setItem(BG_LS_KEY, JSON.stringify({ url: data.bg_url, date: data.date || '' }));
+                    } catch (e) { /* 隐私模式等 -> 退化为不缓存 */ }
+                    // force 才加时间戳破缓存; 平时保持原 URL 以命中浏览器缓存
+                    const url = force ? `${data.bg_url}?t=${Date.now()}` : data.bg_url;
+                    if (!bgContainer || !bgContainer.style.backgroundImage) {
+                        _bgPaint(url);                 // 首访: 无旧图可铺, 直接上
+                    } else {
+                        const pre = new Image();       // 已有旧图: 预热新图, 加载完再切, 避免闪白
+                        pre.onload = () => _bgPaint(url);
+                        pre.src = url;
+                    }
                 }
                 return data;
             } catch (error) {
                 console.error('加载背景图失败:', error);
+                // 失败也不影响已铺上的缓存图
+                if (cache && cache.url) {
+                    return { success: true, bg_url: cache.url, from_cache: true };
+                }
                 throw error;
             }
         }
@@ -1851,45 +1898,14 @@
                                     serviceItem.className = 'service-item';
                                     serviceItem.dataset.sid = serviceInfo._serviceId;
                                     serviceItem.dataset.deployed = (serviceInfo.status !== '未部署') ? '1' : '0';
-                                    
-                                    let statusClass = 'status-stopped';
-                                    if (serviceInfo.status === '运行中') statusClass = 'status-running';
-                                    if (serviceInfo.status === '启动中') statusClass = 'status-starting';
-                                    if (serviceInfo.status === '启动失败') statusClass = 'status-failed';
-                                    // 添加未部署状态样式
-                                    if (serviceInfo.status === '未部署') statusClass = 'status-undeployed';
-                                    
-                                    // 检查服务是否正在启动或已经启动
-                                    const isRunning = serviceInfo.status === '运行中' || serviceInfo.status === '启动中';
+                                    serviceItem.dataset.pending = isPendingStatus(serviceInfo.status) ? '1' : '0';
+
+                                    const statusClass = statusClassFor(serviceInfo.status);
                                     // 检查服务是否已部署
                                     const isDeployed = serviceInfo.status !== '未部署';
-                                    
-                                    // 根据服务状态设置不同的操作按钮
-                                    let actionButtons = '';
-                                    if (serviceInfo.self) {
-                                        // 工具自身: 只给「重启自身 + 配置编辑」—— 停/删会让入口消失,
-                                        // 换代走 deploy 包通道 (exe 必须经宿主 swap_exe)。
-                                        actionButtons = `
-                                            <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}', ${serviceInfo.self ? 'true' : 'false'})">配置编辑</button>
-                                            <button class="restart" onclick="restartService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">重启自身</button>
-                                        `;
-                                    } else if (isDeployed) {
-                                        actionButtons = `
-                                            <button class="config-edit-btn" onclick="openConfigEditor('${serviceInfo._serviceId}', '${serviceInfo.name}', ${serviceInfo.self ? 'true' : 'false'})">配置编辑</button>
-                                            <button class="update" onclick="triggerUpdateFile('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">更新</button>
-                                            <button data-role="start" onclick="startService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')"
-                                                    ${isRunning ? 'disabled' : ''}>启动</button>
-                                            <button class="stop" data-role="stop" onclick="stopService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')"
-                                                    ${!isRunning ? 'disabled' : ''}>停止</button>
-                                            <button class="restart" data-role="restart" onclick="restartService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')"
-                                                    ${serviceInfo.status === '启动中' ? 'disabled' : ''}>重启</button>
-                                            <button class="delete" onclick="deleteService('${serviceInfo.name}', '${serviceInfo.type}')">删除部署</button>
-                                        `;
-                                    } else {
-                                        actionButtons = `
-                                            <button class="deploy" onclick="deployService('${serviceInfo.name}', '${serviceInfo.type}', '${serviceInfo.exe}')">部署服务</button>
-                                        `;
-                                    }
+                                    // 操作按钮统一由 buildActionButtons 生成
+                                    // (含中间态 -> 禁用启停 + 给「强制停止」)
+                                    const actionButtons = buildActionButtons(serviceInfo._serviceId, serviceInfo, isDeployed);
                                     
                                     serviceItem.innerHTML = `
                                         <div class="service-info">
@@ -1950,15 +1966,24 @@
 
         function statusClassFor(status) {
             if (status === '运行中') return 'status-running';
-            if (status === '启动中') return 'status-starting';
+            // 中间态统一用黄: 后端 2026-09-23 起如实报「启动中/停止中/已暂停」
+            // (此前一律折叠成「未运行」, 卡死的服务看起来像正常停着)
+            if (status === '启动中' || status === '停止中' || status === '已暂停') return 'status-starting';
             if (status === '启动失败') return 'status-failed';
             if (status === '未部署') return 'status-undeployed';
             return 'status-stopped';
         }
 
-        // 构造操作按钮 (patch 用: deployed 态翻转时重建)
-        function buildActionButtons(serviceId, info, isDeployed, isRunning) {
+        // 中间态: 既不是跑着也不是停着 —— SCM 启停都可能被拒, 只留「强制停止」兜底
+        function isPendingStatus(status) {
+            return status === '启动中' || status === '停止中' || status === '已暂停';
+        }
+
+        // 构造操作按钮 (构建 + patch 共用: deployed/pending 态翻转时重建)
+        function buildActionButtons(serviceId, info, isDeployed) {
             if (info.self) {
+                // 工具自身: 只给「重启自身 + 配置编辑」—— 停/删会让入口消失,
+                // 换代走 deploy 包通道 (exe 必须经宿主 swap_exe)。
                 return `
                     <button class="config-edit-btn" onclick="openConfigEditor('${serviceId}', '${info.name}', ${info.self ? 'true' : 'false'})">配置编辑</button>
                     <button class="restart" onclick="restartService('${info.name}', '${info.type}', '${info.exe}')">重启自身</button>
@@ -1967,13 +1992,15 @@
             if (!isDeployed) {
                 return `<button class="deploy" onclick="deployService('${info.name}', '${info.type}', '${info.exe}')">部署服务</button>`;
             }
-            const starting = info.status === '启动中';
+            const running = info.status === '运行中';
+            const pending = isPendingStatus(info.status);
             return `
                 <button class="config-edit-btn" onclick="openConfigEditor('${serviceId}', '${info.name}', ${info.self ? 'true' : 'false'})">配置编辑</button>
                 <button class="update" onclick="triggerUpdateFile('${info.name}', '${info.type}', '${info.exe}')">更新</button>
-                <button data-role="start" onclick="startService('${info.name}', '${info.type}', '${info.exe}')" ${isRunning ? 'disabled' : ''}>启动</button>
-                <button class="stop" data-role="stop" onclick="stopService('${info.name}', '${info.type}', '${info.exe}')" ${!isRunning ? 'disabled' : ''}>停止</button>
-                <button class="restart" data-role="restart" onclick="restartService('${info.name}', '${info.type}', '${info.exe}')" ${starting ? 'disabled' : ''}>重启</button>
+                <button data-role="start" onclick="startService('${info.name}', '${info.type}', '${info.exe}')" ${(running || pending) ? 'disabled' : ''}>启动</button>
+                <button class="stop" data-role="stop" onclick="stopService('${info.name}', '${info.type}', '${info.exe}')" ${(!running || pending) ? 'disabled' : ''}>停止</button>
+                <button class="restart" data-role="restart" onclick="restartService('${info.name}', '${info.type}', '${info.exe}')" ${pending ? 'disabled' : ''}>重启</button>
+                ${pending ? `<button class="force-stop" onclick="forceStopService('${info.name}', '${info.type}', '${info.exe}')" title="优雅停止失败时强杀进程 (会丢未落盘数据)">强制停止</button>` : ''}
                 <button class="delete" onclick="deleteService('${info.name}', '${info.type}')">删除部署</button>
             `;
         }
@@ -1984,7 +2011,8 @@
             serviceGrid.querySelectorAll('.service-item[data-sid]').forEach(item => {
                 const info = data[item.dataset.sid];
                 if (!info) return;
-                const isRunning = info.status === '运行中' || info.status === '启动中';
+                const running = info.status === '运行中';
+                const pending = isPendingStatus(info.status);
                 const isDeployed = info.status !== '未部署';
                 const badge = item.querySelector('.status');
                 if (badge) {
@@ -1996,17 +2024,20 @@
                 const up = item.querySelector('.svc-updated');
                 if (up) up.textContent = fmtTs(info.updated_at);
                 const wasDeployed = item.dataset.deployed === '1';
-                if (wasDeployed !== isDeployed) {
+                const wasPending = item.dataset.pending === '1';
+                // 按钮集合随 deployed / pending 翻转 (中途态要出「强制停止」) -> 重建
+                if (wasDeployed !== isDeployed || wasPending !== pending) {
                     item.dataset.deployed = isDeployed ? '1' : '0';
+                    item.dataset.pending = pending ? '1' : '0';
                     const actions = item.querySelector('.service-actions');
-                    if (actions) actions.innerHTML = buildActionButtons(item.dataset.sid, info, isDeployed, isRunning);
+                    if (actions) actions.innerHTML = buildActionButtons(item.dataset.sid, info, isDeployed);
                 } else if (wasDeployed) {
                     const s = item.querySelector('[data-role="start"]');
                     const p = item.querySelector('[data-role="stop"]');
                     const r = item.querySelector('[data-role="restart"]');
-                    if (s) s.disabled = isRunning;
-                    if (p) p.disabled = !isRunning;
-                    if (r) r.disabled = info.status === '启动中';
+                    if (s) s.disabled = running || pending;
+                    if (p) p.disabled = !running || pending;
+                    if (r) r.disabled = pending;
                 }
             });
             // 更新各游戏面板运行中计数
@@ -2023,11 +2054,13 @@
         }
 
         // 分发: 服务集合变化才全量重建, 否则就地 patch (避免每 3s wipe 打断 transition)
+        // 指纹**保序** (不 sort): 卡片顺序来自 config.json 的 serviceOrder, 顺序变了也要重建,
+        // 否则改完排序得手动刷新页面才生效。
         function updateServiceStatus() {
             fetch('/api/services/status')
                 .then(response => response.json())
                 .then(data => {
-                    const fingerprint = Object.keys(data).sort().join('|');
+                    const fingerprint = Object.keys(data).join('|');
                     if (fingerprint !== lastServiceFingerprint) {
                         lastServiceFingerprint = fingerprint;
                         buildServiceGrid(data);
@@ -2095,6 +2128,28 @@
                 setTimeout(() => {
                     startService(name, type, exe);
                 }, 1000);
+            });
+        }
+
+        // 强制停止: 只在服务卡在「停止中/启动中」时出现 (优雅停止已失效, SCM 指令被拒)。
+        // 会强杀进程 —— 可能丢未落盘数据, 故必须二次确认。
+        function forceStopService(name, type, exe) {
+            if (!confirm(`确定要强制结束服务 ${name} (${type}) 的进程吗？\n\n仅用于服务卡在「停止中/启动中」、常规停止无效的情况。\n强制结束可能丢失未落盘数据，请先确认业务已停写。`)) {
+                return;
+            }
+            fetch('/api/services/force-stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, type: type, exe: exe })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                updateServiceStatus();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('强制停止时发生错误');
             });
         }
 

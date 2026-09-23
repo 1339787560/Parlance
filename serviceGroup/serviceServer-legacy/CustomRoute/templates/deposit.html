@@ -741,7 +741,7 @@
                 <button class="tab-button" onclick="switchTab('tqvip')">荣耀特权</button>
                 <button class="tab-button" onclick="switchTab('weekcard')">周卡</button>
                 <button class="tab-button" onclick="switchTab('monthcard')">月卡</button>
-                <button class="tab-button" onclick="switchTab('costume')">装扮查询</button>
+                <button class="tab-button" onclick="switchTab('costume')">装扮</button>
                 <button class="tab-button" onclick="switchTab('newplayergift')">迎新礼包</button>
             </div>
 
@@ -878,7 +878,7 @@
             <div id="resultMonthCard" class="result" style="display: none;"></div>
         </div>
 
-        <!-- 装扮查询选项卡内容 -->
+        <!-- 装扮选项卡内容: 查询 + 设置有效期（设置走 chunkSvr 调试口，见 Migration.lua） -->
         <div id="costume" class="tab-content">
             <div class="form-group">
                 <label for="user-id-costume">玩家ID：</label>
@@ -889,6 +889,20 @@
 
             <div id="resultCostume" class="result" style="display: none;"></div>
             <div id="costume-detail" style="margin-top: 15px;"></div>
+
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">
+            <div class="form-group">
+                <label for="costume-deco">设置有效期 · 装扮：</label>
+                <select id="costume-deco" style="width: 100%; max-width: 460px; padding: 6px; box-sizing: border-box;">
+                    <option value="">（点开本页签自动加载…）</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="costume-expire">有效期（0 = 永久 / -1 = 已过期 / 其他 = 有效天数）：</label>
+                <input type="number" id="costume-expire" placeholder="例如 30（30 天后过期）" value="30">
+            </div>
+            <button class="submit-btn" onclick="submitCostumeExpire()">提交设置</button>
+            <div id="resultCostumeExpire" class="result" style="display: none;"></div>
         </div>
 
         <!-- 迎新礼包选项卡内容 -->
@@ -1036,6 +1050,8 @@
                 const uid = document.getElementById('cp-userid').value;
                 if (uid && parseInt(uid) > 0) cpLoadModules();
             }
+            // 进装扮 tab: 懒加载装扮清单 (下拉选项来自 chunkSvr, 只拉一次)
+            if (tabId === 'costume' && !skipClear) costumeInitDecorations();
         }
 
         // 清空 CP 数据面板「已显示的」查询结果 (输入保留)
@@ -1053,66 +1069,65 @@
         }
 
         // 提交金币设置
-        function submitGoldSetting() {
+        // 走 chunkSvr 调试口 /api/migration/set-gold（与迁移同源, 返回 before/after 真值）;
+        // 旧 /api/set-gold（起 RobotToolD.exe, fire-and-forget 无返回）保留不动, 页面不再走。
+        async function submitGoldSetting() {
             const operation = document.querySelector('input[name="operationGold"]:checked').value;
             const goldCount = parseInt(document.getElementById('gold-count').value);
             const resultDiv = document.getElementById('resultGold');
-            
-            // 验证金币数量
-            if (isNaN(goldCount) || goldCount <= 0) {
-                showResult('error', '请输入有效的金币数量', resultDiv);
+
+            // 验证金币数量（0 合法 = 把金币清零, 用于构造 tier2「金币 == 0」玩家）
+            if (isNaN(goldCount) || goldCount < 0) {
+                showResult('error', '请输入有效的金币数量（非负整数）', resultDiv);
                 return;
             }
-            
-            let data = { goldCount: goldCount };
-            
+
+            let body = { gold: goldCount };
+
             if (operation === 'single') {
-                const userId = document.getElementById('user-id-gold').value.trim();
-                if (!userId) {
-                    showResult('error', '请输入玩家ID', resultDiv);
+                const userId = parseInt(document.getElementById('user-id-gold').value.trim());
+                if (isNaN(userId) || userId <= 0) {
+                    showResult('error', '请输入有效的玩家ID', resultDiv);
                     return;
                 }
-                data.userId = parseInt(userId);
-                data.operation = 'single';
+                body.userid = userId;
             } else {
                 const userIdsText = document.getElementById('user-ids-gold').value.trim();
                 if (!userIdsText) {
                     showResult('error', '请输入玩家ID列表', resultDiv);
                     return;
                 }
-                
                 const userIds = userIdsText.split(',')
                     .map(id => parseInt(id.trim()))
                     .filter(id => !isNaN(id) && id > 0);
-                
                 if (userIds.length === 0) {
                     showResult('error', '请输入有效的玩家ID列表', resultDiv);
                     return;
                 }
-                
-                data.userIds = userIds;
-                data.operation = 'multi';
+                body.userIds = userIds;
             }
-            
+
             // 显示加载状态
             resultDiv.style.display = 'none';
-            
-            // 发送请求
-            fetch('/api/set-gold', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            })
-            .then(response => response.json())
-            .then(data => {
-                // 移除成功回显，因为用户认为请求一定会成功
-                // 如果需要，可以在这里添加其他成功后的逻辑，例如清空表单
-            })
-            .catch(error => {
-                console.error('Fetch Error:', error);
-                // 简化错误处理，不显示给用户，因为用户认为请求一定会成功
-                // showResult('error', '设置失败：' + error.message, resultDiv);
-            });
+
+            try {
+                const r = await cpPost('/api/migration/set-gold', body);
+                if (r.success) {
+                    const lines = (r.results || []).map(it => {
+                        const d = it.result || {};
+                        return `玩家 ${it.userid}：${d.before} → ${d.after}`;
+                    });
+                    showResult('success', `设置成功（目标金币 ${r.gold}）\n` + lines.join('\n'), resultDiv);
+                } else {
+                    const lines = (r.results || []).map(it =>
+                        `玩家 ${it.userid}：${it.error || JSON.stringify(it.result)}`);
+                    showResult('error',
+                        (r.message || '设置失败') + (lines.length ? '\n' + lines.join('\n') : ''), resultDiv);
+                }
+                resultDiv.style.whiteSpace = 'pre-line';
+            } catch (error) {
+                showResult('error', '网络错误：' + error.message, resultDiv);
+            }
         }
 
         // 提交积分设置
@@ -1424,6 +1439,84 @@
                 detailDiv.innerHTML = '';
                 showResult('error', '网络错误：' + error.message, resultDiv);
             });
+        }
+
+        // ---- 装扮: 设置有效期 (走 chunkSvr 调试口 /api/migration/set-costume-expire) ----
+
+        // 懒加载装扮清单填充下拉（下拉选项来自 chunkSvr 的 TQDecorations 配置, 只拉一次）
+        async function costumeInitDecorations() {
+            const sel = document.getElementById('costume-deco');
+            if (!sel || sel.dataset.loaded === '1') return;
+            try {
+                const r = await cpPost('/api/migration/decoration-list', {});
+                const list = (r.success && r.data && r.data.decorations) || [];
+                if (!list.length) {
+                    sel.innerHTML = '<option value="">（装扮清单获取失败）</option>';
+                    return;
+                }
+                const typeLabel = { head: '头像', table: '牌桌', card: '牌背' };
+                const groups = {};
+                list.forEach(d => {
+                    const k = typeLabel[d.type_name] || d.type_name || '其他';
+                    (groups[k] = groups[k] || []).push(d);
+                });
+                let html = '';
+                Object.keys(groups).forEach(k => {
+                    html += `<optgroup label="${k}">`;
+                    groups[k].forEach(d => {
+                        html += `<option value="${d.id}">${d.id}（propid ${d.propid}）</option>`;
+                    });
+                    html += '</optgroup>';
+                });
+                sel.innerHTML = html;
+                sel.dataset.loaded = '1';
+            } catch (e) {
+                sel.innerHTML = '<option value="">（装扮清单获取失败）</option>';
+            }
+        }
+
+        // 提交装扮有效期设置
+        //   有效期语义: 0 = 永久 / -1 = 已过期 / 正数 = N 天后过期（起始按当前时间）
+        //   目标装扮未拥有时会自动新建一件（便于构造迁移 tier2 玩家）
+        async function submitCostumeExpire() {
+            const resultDiv = document.getElementById('resultCostumeExpire');
+            const userId = parseInt(document.getElementById('user-id-costume').value.trim());
+            const decoId = parseInt(document.getElementById('costume-deco').value);
+            const expireRaw = document.getElementById('costume-expire').value.trim();
+            const expire = parseInt(expireRaw);
+
+            if (isNaN(userId) || userId <= 0) {
+                showResult('error', '请输入有效的玩家ID', resultDiv);
+                return;
+            }
+            if (isNaN(decoId) || decoId <= 0) {
+                showResult('error', '请选择装扮', resultDiv);
+                return;
+            }
+            if (expireRaw === '' || isNaN(expire) || expire < -1) {
+                showResult('error', '有效期只支持 0（永久）/ -1（已过期）/ 正数（有效天数）', resultDiv);
+                return;
+            }
+
+            try {
+                const r = await cpPost('/api/migration/set-costume-expire',
+                    { userid: userId, decoration_id: decoId, expire: expire });
+                if (r.success) {
+                    const d = r.data || {};
+                    const beforeText = (d.before === undefined || d.before === null)
+                        ? '（原本未拥有 → 已新建）' : d.before;
+                    showResult('success',
+                        `设置成功：装扮 ${d.decoration_id}（${d.type_name || ''}，propid ${d.propid}）`
+                        + `\n到期时间 = ${d.expiredate}${d.permanent ? '（永久）' : ''}`
+                        + `\n原值 = ${beforeText}`,
+                        resultDiv);
+                } else {
+                    showResult('error', r.message || '设置失败', resultDiv);
+                }
+                resultDiv.style.whiteSpace = 'pre-line';
+            } catch (e) {
+                showResult('error', '网络错误：' + e.message, resultDiv);
+            }
         }
 
         // 提交迎新礼包设置

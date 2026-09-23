@@ -13,6 +13,14 @@ pub mod imp {
     pub fn stop(name: &str) -> Result<String, String> {
         control::stop_service(name)
     }
+    /// 强制停止 (卡在 pending 时的兜底): 只由人工显式触发, 见 control::force_stop_service。
+    pub fn force_stop(
+        name: &str,
+        exe_name: &str,
+        exe_path: &std::path::Path,
+    ) -> Result<String, String> {
+        control::force_stop_service(name, exe_name, exe_path)
+    }
     pub fn delete(name: &str) -> Result<String, String> {
         control::delete_service(name)
     }
@@ -24,6 +32,13 @@ pub mod imp {
         Err("non-windows stub".into())
     }
     pub fn stop(_name: &str) -> Result<String, String> {
+        Err("non-windows stub".into())
+    }
+    pub fn force_stop(
+        _name: &str,
+        _exe_name: &str,
+        _exe_path: &std::path::Path,
+    ) -> Result<String, String> {
         Err("non-windows stub".into())
     }
     pub fn delete(_name: &str) -> Result<String, String> {

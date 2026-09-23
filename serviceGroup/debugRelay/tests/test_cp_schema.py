@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """cp_schema 单元测试: schema 完整性 + 归一化形状 + 白名单。
 
-覆盖 Test 面板「全局 CP」的单一真相源: 13 模块 43 req, 模块名/req 名/参数样例/读写标记。
+覆盖 Test 面板「全局 CP」的单一真相源: 13 模块 47 req, 模块名/req 名/参数样例/读写标记。
 运行: cd serviceGroup/debugRelay && python -m pytest tests/test_cp_schema.py -v
 """
 import os
@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cp_schema import CP_REQ_SCHEMA, cp_catalog, cp_namespaces, find_req, validate  # noqa: E402
 
 EXPECTED_MODULES = 13
-EXPECTED_REQS = 46
+EXPECTED_REQS = 47
 
 
 def test_schema_integrity():

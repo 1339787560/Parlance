@@ -27,6 +27,9 @@ pub struct PathMap {
 #[derive(Default)]
 struct Cached {
     entries: HashMap<String, ServicePath>,
+    /// service_id 显示顺序 (refresh 时按「组名 -> serviceOrder rank -> service_id」排好)。
+    /// 组名优先 => 同组卡片连续, 面板顺序稳定; rank 见 config.service_order。
+    order: Vec<String>,
     mtime: Option<SystemTime>,
     abspath: String,
     doc: Option<ConfigDoc>,
@@ -70,8 +73,28 @@ impl PathMap {
                 );
             }
         }
+        let mut order: Vec<String> = entries.keys().cloned().collect();
+        // 显示顺序: 组名 -> serviceOrder rank -> service_id。
+        // 组名优先 => 同组卡片连续、面板顺序稳定; rank 未列入 = usize::MAX => 排尾。
+        // 空 serviceOrder (缺该键) => 退化为 service_id 字典序 (旧行为)。
+        let rank: HashMap<String, usize> = doc
+            .service_order
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, t)| (t, i))
+            .collect();
+        order.sort_by(|a, b| {
+            let ea = &entries[a];
+            let eb = &entries[b];
+            ea.name
+                .cmp(&eb.name)
+                .then_with(|| rank_of(&rank, &ea.svc_type).cmp(&rank_of(&rank, &eb.svc_type)))
+                .then_with(|| a.cmp(b))
+        });
         let mut c = self.cached.write().unwrap();
         c.entries = entries;
+        c.order = order;
         c.abspath = abspath;
         c.doc = Some(doc);
         c.mtime = Some(mtime);
@@ -97,14 +120,12 @@ impl PathMap {
         self.cached.read().unwrap().abspath.clone()
     }
 
-    /// 全部服务 (供 /api/services/status 枚举)。
+    /// 全部服务 (供 /api/services/status 枚举), 按 config.serviceOrder 排好的显示顺序。
     pub fn all(&self) -> Vec<ServicePath> {
-        self.cached
-            .read()
-            .unwrap()
-            .entries
-            .values()
-            .cloned()
+        let c = self.cached.read().unwrap();
+        c.order
+            .iter()
+            .filter_map(|id| c.entries.get(id).cloned())
             .collect()
     }
 
@@ -140,6 +161,11 @@ fn normalize_abspath(p: &str) -> String {
 
 fn exe_dir(abspath: &str, name: &str, svc_type: &str) -> PathBuf {
     PathBuf::from(abspath).join(name).join(svc_type)
+}
+
+/// 类型在 config.serviceOrder 里的序号; 未列入 => usize::MAX (排尾)。
+fn rank_of(rank: &HashMap<String, usize>, svc_type: &str) -> usize {
+    rank.get(svc_type).copied().unwrap_or(usize::MAX)
 }
 
 #[cfg(test)]
@@ -249,5 +275,50 @@ mod tests {
         let pm = PathMap::new();
         pm.refresh(&p).unwrap();
         assert_eq!(pm.valid_roots().len(), 2, "每个服务一个根");
+    }
+
+    /// 显示顺序 = 「组名 -> serviceOrder rank -> service_id」:
+    /// 同组卡片连续、列入的类型按配置序、未列入的排在该组后段 (按 service_id)。
+    #[test]
+    fn test_path_map_service_order_drives_all_order() {
+        // Arrange: xzmo 故意打乱写入顺序 + 两个未列入 serviceOrder 的类型
+        let dir = tempdir().unwrap();
+        let cfg = json!({
+            "abspath": "D:/game/",
+            "serviceOrder": ["server_chunklog", "server_chunk", "server_assist"],
+            "service": {
+                "xzmo": [
+                    { "type": "proxy_assist", "exe": "assistmpsvr.exe" },
+                    { "type": "server_game", "exe": "xzmoSvr.exe" },
+                    { "type": "server_chunklog", "exe": "xzmoChunkLog.exe" },
+                    { "type": "server_chunk", "exe": "xzmoChunkSvr.exe" },
+                    { "type": "server_assist", "exe": "xzmoAssitSvr.exe" }
+                ],
+                "zgda": [
+                    { "type": "server_chunk", "exe": "ZgdaChunkSvr.exe" },
+                    { "type": "server_assist", "exe": "ZgdaAssitSvr.exe" }
+                ]
+            }
+        });
+        let p = write_config(dir.path(), &cfg);
+        let pm = PathMap::new();
+
+        // Act
+        pm.refresh(&p).unwrap();
+        let ids: Vec<String> = pm.all().into_iter().map(|s| s.service_id).collect();
+
+        // Assert: 组名优先 (xzmo < zgda), 组内按 rank, 未列入的 (proxy_assist / server_game) 排尾按 id
+        assert_eq!(
+            ids,
+            vec![
+                "xzmo_server_chunklog",
+                "xzmo_server_chunk",
+                "xzmo_server_assist",
+                "xzmo_proxy_assist",
+                "xzmo_server_game",
+                "zgda_server_chunk",
+                "zgda_server_assist",
+            ]
+        );
     }
 }

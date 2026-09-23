@@ -15,7 +15,8 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 /// 「最后更新」口径纳入的产物扩展名 (只看这些, 免得日志/缓存/临时文件扰动)。
 const ARTIFACT_EXTS: &[&str] = &["exe", "pdb", "dll", "ini", "json", "lua", "html", "js", "css", "png"];
@@ -64,7 +65,16 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
     let provider = state.status_provider.as_ref();
     // ports 探测集合 (Win32 一次 snapshot + IP Helper; 非 windows 走 stub 空)。
     let ports_probe = PortsProbe::capture();
-    let mut map = BTreeMap::new();
+    // 键序即卡片顺序 —— 用 serde_json::Map (preserve_order 已开) 保序, 不用 BTreeMap
+    // (BTreeMap 按 service_id 字典序重排, 是「改了 config.json 顺序也不生效」的旧根因)。
+    // 顺序由 path_map.all() 给出 (= config.serviceOrder + 组名), 前端按对象键序分组渲染。
+    //
+    // service-server 自身也在这份陈列里 (自报, 不来自 config.json): 只提供「重启自身 +
+    // 修改配置」两件事, 附 self:true 供前端渲染专用按钮 (停掉自己入口即消失; 换代必须走
+    // deploy 包通道)。固定排在第一个面板, 故先插。
+    let (self_id, self_entry) = self_service_entry();
+    let mut map = serde_json::Map::new();
+    map.insert(self_id, self_entry);
     for svc in services {
         let st = state
             .status_cache
@@ -94,13 +104,7 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
             }),
         );
     }
-    // ---- service-server 自身 (自陈列): 由本进程自报, 不来自 config.json ----
-    // 只提供「重启自身 + 修改配置」两件事, 故附 self:true 供前端渲染专用按钮
-    // (隐藏 启动/停止/更新/删除: 停掉自己入口即消失; 换代必须走 deploy 包通道)。
-    let (self_id, self_entry) = self_service_entry();
-    map.insert(self_id, self_entry);
-
-    Ok(Json(serde_json::to_value(map).unwrap()))
+    Ok(Json(Value::Object(map)))
 }
 
 /// 工具自身 (infoServer 子服务 serviceServer-rust) 的列表条目坐标。
@@ -148,7 +152,8 @@ fn self_service_entry() -> (String, serde_json::Value) {
 }
 
 /// 按 status 语义决定 ports 字段串, 对齐 legacy Service.py 各分支。
-/// - Running -> 查 pid 监听端口 CSV (空则 "未监听")
+/// - Running / 中间态 (启动中/停止中/已暂停) -> 查 pid 监听端口 CSV (空则 "未监听")
+///   (中间态进程可能还在, 端口列照样有意义 —— 停止中往往就是"还占着端口但不干活")
 /// - Stopped -> "未运行"
 /// - NotFound / QueryFailed -> "未部署" (legacy 把 QueryServiceStatus 抛错归为未部署)
 fn ports_str(
@@ -159,7 +164,7 @@ fn ports_str(
 ) -> String {
     use crate::status::ServiceState::*;
     match st {
-        Running => match probe.find_pid(exe, exe_path) {
+        Running | StartPending | StopPending | Paused => match probe.find_pid(exe, exe_path) {
             Some(pid) => {
                 let ports = probe.ports_for_pid(pid);
                 crate::ports_probe::format_ports_csv(&ports)
@@ -175,7 +180,8 @@ fn ports_str(
 pub async fn running_services(State(state): State<AppState>) -> Result<Json<serde_json::Value>> {
     state.path_map.refresh(&state.config_path)?;
     let services = state.path_map.all();
-    let mut map = BTreeMap::new();
+    // 同样保序 (配置编辑页下拉跟着卡片顺序走, 免得两处顺序打架)。
+    let mut map = serde_json::Map::new();
     for svc in services {
         if state.path_map.is_hidden(&svc.name, &svc.svc_type) {
             continue;
@@ -200,7 +206,7 @@ pub async fn running_services(State(state): State<AppState>) -> Result<Json<serd
             }),
         );
     }
-    Ok(Json(serde_json::to_value(map).unwrap()))
+    Ok(Json(Value::Object(map)))
 }
 
 // ---- 控制: start / stop / restart / delete ----
@@ -276,6 +282,43 @@ pub async fn stop_service(
         .await
         .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
     state.status_cache.invalidate(&req.service_id());
+    match res {
+        Ok(msg) => Ok(Json(serde_json::json!({ "success": true, "message": msg }))),
+        Err(msg) => Ok(Json(serde_json::json!({ "success": false, "message": msg }))),
+    }
+}
+
+/// POST /api/services/force-stop — 同步: 卡在 pending 时强杀进程兜底 (人工触发)。
+///
+/// 与 stop 的分工: stop 只发 SCM 停止指令 (优雅, 10s 轮询); force-stop 在优雅停不下来时
+/// 按 exe 名+路径定位进程 TerminateProcess, 再等 SCM 收敛 —— **会丢未落盘数据**, 故只由
+/// 前端「强制停止」按钮 (二次确认) 调用, 不在 update / stop 流程里自动触发。
+pub async fn force_stop_service(
+    State(state): State<AppState>,
+    Json(req): Json<ServiceReq>,
+) -> Result<Json<serde_json::Value>> {
+    // 工具自身不是 Windows 服务: 强杀它等于把自己入口干掉。
+    if req.svc_type == SELF_SERVICE_TYPE || req.name == SELF_SERVICE_NAME {
+        return Ok(Json(json_err(
+            400,
+            "工具自身不支持强制停止（它不是 Windows 服务）",
+        )));
+    }
+    let exe = match &req.exe {
+        Some(e) if !e.is_empty() => e.clone(),
+        _ => return Ok(Json(json_err(400, "请提供可执行文件名"))),
+    };
+    state.path_map.refresh(&state.config_path)?;
+    let abspath = state.path_map.abspath();
+    let exe_path = exe_path(&abspath, &req.name, &req.svc_type, &exe);
+    let id = req.service_id();
+    let id_task = id.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        crate::svc_control::imp::force_stop(&id_task, &exe, &exe_path)
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    state.status_cache.invalidate(&id);
     match res {
         Ok(msg) => Ok(Json(serde_json::json!({ "success": true, "message": msg }))),
         Err(msg) => Ok(Json(serde_json::json!({ "success": false, "message": msg }))),
@@ -680,7 +723,13 @@ fn start_one(name: &str, svc_type: &str, exe: &str) {
     }
 }
 
-/// 热更新主体 (阻塞): 停 -> sleep 2s -> 替换 exe/pdb -> 启。
+/// 热更新主体 (阻塞): 查中间态 -> 停 -> 等到 exe 可写 -> 替换 exe/pdb -> 启。
+///
+/// 2026-09-23 加固 (chunksvr 上传踩坑):
+/// ① pending 态 (停止中/启动中/已暂停) 前置拒绝 —— 别在服务本来就卡着时再制造一次半停机;
+/// ② 固定 sleep 2s 换成 wait_writable 轮询: Windows 释放被停进程的 image section 有延迟
+///    (实测偶发 >2s), 固定 sleep 赌不过去, 写 exe 直接撞 Error 32;
+/// ③ 停止成功但替换失败时, 用旧 exe 把服务拉回运行 —— 不留"停了就不管"的停机现场。
 fn do_update(
     state: &AppState,
     name: &str,
@@ -698,25 +747,97 @@ fn do_update(
     let pdb_path = exe_path.with_extension("pdb");
     let id = format!("{name}_{svc_type}");
     let display = display(&id);
+    // 0. 中间态前置拒绝: 已经卡着的服务先让人处理 (强制停止), 不在这里二次踩踏。
+    let st = state.status_provider.query(&id);
+    if st.is_pending() {
+        return (
+            false,
+            format!(
+                "服务 {display} 当前处于「{}」, 请等它稳定或用「强制停止」后再上传",
+                st.label()
+            ),
+        );
+    }
     // 1. 停服务 (已停止/不存在视为成功, 对齐 legacy 文案白名单)。
     if let Err(m) = crate::svc_control::imp::stop(&id) {
         if !["不存在", "已经停止", "未找到"].iter().any(|k| m.contains(k)) {
+            // 停不下来最常见的是卡在 STOP_PENDING (进程不响应停止指令): 点明当前状态 + 给出出路,
+            // 别只丢一句「停止服务失败」让人猜 (2026-09-23: chunksvr 上传报的就是这个症状)。
+            let now = state.status_provider.query(&id);
+            if now.is_pending() {
+                return (
+                    false,
+                    format!(
+                        "服务 {display} 卡在「{}」（进程未响应停止指令），未替换文件；请用卡片上的「强制停止」后再上传",
+                        now.label()
+                    ),
+                );
+            }
             return (false, format!("停止服务失败，无法更新: {m}"));
         }
     }
-    // 2. 等进程退出。
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    state.status_cache.invalidate(&id);
+    // 2. 等 exe 真能打开写句柄 (替代固定 sleep 2s)。
+    if !wait_writable(&exe_path, Duration::from_secs(20)) {
+        return (
+            false,
+            format!(
+                "exe 仍被占用（进程未完全退出），未替换文件; {}",
+                recover_after_failed_update(state, &id, &display)
+            ),
+        );
+    }
     // 3. 替换文件 (legacy 用 open 'wb' 直接覆盖, 停服后无 busy 冲突)。
     if let Err(e) = std::fs::write(&exe_path, exe_bytes) {
-        return (false, format!("替换文件时发生错误: {e}"));
+        return (
+            false,
+            format!(
+                "替换文件时发生错误: {e}; {}",
+                recover_after_failed_update(state, &id, &display)
+            ),
+        );
     }
     if let Err(e) = std::fs::write(&pdb_path, pdb_bytes) {
-        return (false, format!("替换文件时发生错误: {e}"));
+        return (
+            false,
+            format!(
+                "替换文件时发生错误: {e}; {}",
+                recover_after_failed_update(state, &id, &display)
+            ),
+        );
     }
     // 4. 重启。
-    match crate::svc_control::imp::start(&id) {
+    let res = match crate::svc_control::imp::start(&id) {
         Ok(_) => (true, format!("服务 {display} 更新并启动成功")),
         Err(m) => (true, format!("服务 {display} 文件已更新，但启动失败: {m}")),
+    };
+    state.status_cache.invalidate(&id);
+    res
+}
+
+/// 替换失败后的收尾: 用旧 exe 把服务拉回运行, 不留"停了就不管"的停机现场。
+fn recover_after_failed_update(state: &AppState, id: &str, display: &str) -> String {
+    let note = match crate::svc_control::imp::start(id) {
+        Ok(_) => format!("已把服务 {display} 用原文件拉回运行"),
+        Err(m) => format!("且拉回启动失败: {m}（服务当前为停止状态，请手动启动）"),
+    };
+    state.status_cache.invalidate(id);
+    note
+}
+
+/// 轮询到能给 path 打开写句柄 (或超时/文件不存在)。
+///
+/// 用途: 判断被停进程是否已释放 exe 的 image section —— Windows 上这件事有延迟 (实测偶发
+/// 14s 量级), 固定 sleep 赌不过去 (与 infoserver 宿主 swap_exe 的 wait_writable 同一教训)。
+fn wait_writable(path: &Path, timeout: Duration) -> bool {
+    let start = Instant::now();
+    loop {
+        match std::fs::OpenOptions::new().write(true).open(path) {
+            Ok(_) => return true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return false,
+            Err(_) if start.elapsed() >= timeout => return false,
+            Err(_) => std::thread::sleep(Duration::from_millis(300)),
+        }
     }
 }
 
@@ -858,6 +979,25 @@ mod tests {
 
         // Act + Assert
         assert_eq!(mtime_epoch(&dir.path().join("nope.exe")), None);
+    }
+
+    /// wait_writable: 可写文件立即通过; 缺失路径立即失败 (不空等到超时)。
+    #[test]
+    fn test_wait_writable_probe() {
+        // Arrange
+        let dir = tempfile::tempdir().unwrap();
+        let ok = dir.path().join("ok.exe");
+        std::fs::write(&ok, b"x").unwrap();
+
+        // Act + Assert: 可写 -> true; 不存在 -> 立即 false (不是等满超时)
+        assert!(wait_writable(&ok, Duration::from_millis(200)));
+        let t0 = Instant::now();
+        assert!(!wait_writable(&dir.path().join("nope.exe"), Duration::from_millis(5000)));
+        assert!(
+            t0.elapsed() < Duration::from_secs(1),
+            "缺失文件必须立即返回, 不该空等: {:?}",
+            t0.elapsed()
+        );
     }
 }
 

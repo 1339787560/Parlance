@@ -11,6 +11,12 @@ use std::time::{Duration, Instant};
 pub enum ServiceState {
     Running,
     Stopped,
+    /// START_PENDING / CONTINUE_PENDING: 启动中 (SCM 中间态, 启动/停止双向可能被拒)。
+    StartPending,
+    /// STOP_PENDING: 停止中 (卡死时进程仍在, 是「页面说未运行但进程还活着」的根源)。
+    StopPending,
+    /// PAUSED / PAUSE_PENDING: 已暂停 (服务不支持暂停, 正常不会出现)。
+    Paused,
     NotFound,
     QueryFailed,
 }
@@ -19,10 +25,20 @@ impl ServiceState {
     pub fn is_running(self) -> bool {
         matches!(self, ServiceState::Running)
     }
+    /// SCM 中间态: 既不是跑着也不是停着, 启停都会受影响。
+    pub fn is_pending(self) -> bool {
+        matches!(
+            self,
+            ServiceState::StartPending | ServiceState::StopPending | ServiceState::Paused
+        )
+    }
     pub fn label(self) -> &'static str {
         match self {
             ServiceState::Running => "运行中",
             ServiceState::Stopped => "未运行",
+            ServiceState::StartPending => "启动中",
+            ServiceState::StopPending => "停止中",
+            ServiceState::Paused => "已暂停",
             ServiceState::NotFound => "未部署",
             ServiceState::QueryFailed => "查询失败",
         }
@@ -169,9 +185,28 @@ mod tests {
     #[rstest]
     #[case(ServiceState::Running, true)]
     #[case(ServiceState::Stopped, false)]
+    #[case(ServiceState::StartPending, false)]
+    #[case(ServiceState::StopPending, false)]
+    #[case(ServiceState::Paused, false)]
     #[case(ServiceState::NotFound, false)]
     #[case(ServiceState::QueryFailed, false)]
     fn test_service_state_is_running_matrix(#[case] s: ServiceState, #[case] expected: bool) {
         assert_eq!(s.is_running(), expected);
+    }
+
+    /// pending 三态如实命名 (2026-09-23): STOP_PENDING 不再折叠成「未运行」。
+    #[rstest]
+    #[case(ServiceState::StartPending, "启动中", true)]
+    #[case(ServiceState::StopPending, "停止中", true)]
+    #[case(ServiceState::Paused, "已暂停", true)]
+    #[case(ServiceState::Running, "运行中", false)]
+    #[case(ServiceState::Stopped, "未运行", false)]
+    fn test_service_state_pending_labels(
+        #[case] s: ServiceState,
+        #[case] label: &str,
+        #[case] pending: bool,
+    ) {
+        assert_eq!(s.label(), label);
+        assert_eq!(s.is_pending(), pending);
     }
 }

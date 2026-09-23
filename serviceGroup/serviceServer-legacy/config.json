@@ -2,6 +2,17 @@
     "chunkSvrHttpUrl": "http://192.168.102.53:60463/v1.0/chunkluareq",
     "hideForBG":true,
     "abspath": "D:/game/",
+    "serviceOrder": [
+        "server_chunklog",
+        "server_chunk",
+        "server_assist",
+        "server_game",
+        "server_room",
+        "robot_tool",
+        "proxy_game",
+        "proxy_room",
+        "proxy_assist"
+    ],
     "toolbarButtons": {
         "configModify": true,
         "serverStatus": true,
