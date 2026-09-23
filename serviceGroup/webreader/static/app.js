@@ -4,8 +4,8 @@
 // - 字号 A+/A-, 侧栏宽度可拖拽, mac/win 通用
 
 import { EditorView, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
-         keymap, drawSelection, gutter, GutterMarker } from '@codemirror/view';
-import { EditorState, Compartment, Text } from '@codemirror/state';
+         keymap, drawSelection, gutter, GutterMarker, Decoration, WidgetType } from '@codemirror/view';
+import { EditorState, Compartment, Text, StateField, StateEffect } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { HighlightStyle, syntaxHighlighting, defaultHighlightStyle, indentOnInput,
          bracketMatching, foldGutter, foldKeymap } from '@codemirror/language';
@@ -20,6 +20,9 @@ import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { yaml } from '@codemirror/lang-yaml';
 import { oneDark } from '@codemirror/theme-one-dark';
+// 编辑态装饰的纯逻辑 (零 CM6 依赖, Node 直测): 只读扫描 + 投影/原子删除决策
+import { scanMermaidBlocks } from './editor/md-blocks.mjs';
+import { planMermaidProjection, decideAtomicDelete, pruneRevealed } from './editor/edit-decorations.mjs';
 
 // ============== 状态 ==============
 const state = {
@@ -5006,6 +5009,131 @@ function scheduleEditPreview() {
   }, EDIT_PREVIEW_DEBOUNCE);
 }
 
+// ============== mermaid 内联 (子任务 3 / N5) ==============
+// 文档层零改动: 围栏源码永远在位, 只是被 replace 装饰盖住 → 呈现为渲染图。
+// 交互层三条 (tech_discuss「原子范围坑点」):
+//   - 原子范围: 上下键/选区把整块当一格, 不逐字符钻进去
+//   - 退格防误删: 首次贴边删除只"揭示源码", 再次才真删 (否则一按退格整张图没了)
+//   - 收束: 光标离开该块即合上投影, 回到渲染图
+//
+// 为什么是 StateField 而不是 ViewPlugin: CM6 明确禁止 plugin 提供"块装饰"与
+// "替换换行的装饰" —— mermaid 块正是多行整块替换, 两条都踩
+// (view.mjs: "Block decorations may not be specified via plugins" /
+//  "Decorations that replace line breaks may not be specified via plugins"),
+// 所以只能走 StateField + EditorView.decorations.from(field)。
+const revealMermaidEffect = StateEffect.define();   // value = 块首偏移; null = 清空全部揭示
+
+// 已揭示为源码的块首偏移集合。referential stability: 无实质变化时返回同一引用,
+// 免得下游 decorations 字段每次光标移动都全量重算。
+const revealedMermaidField = StateField.define({
+  create: () => new Set(),
+  update(set, tr) {
+    let next = set;
+    for (const e of tr.effects) {
+      if (!e.is(revealMermaidEffect)) continue;
+      next = e.value == null ? new Set() : new Set(next).add(e.value);
+    }
+    if (tr.docChanged || tr.selection) {
+      const pruned = pruneRevealed(
+        mermaidBlocksOf(tr.state.doc.toString()),
+        next,
+        tr.state.selection.main.head,
+      );
+      if (pruned.size !== next.size || [...pruned].some(v => !next.has(v))) next = pruned;
+    }
+    return next;
+  },
+});
+
+function mermaidBlocksOf(docText) {
+  try {
+    return scanMermaidBlocks(docText);
+  } catch (e) {
+    console.warn('[mermaid-inline] scan failed:', e);
+    return [];
+  }
+}
+
+// mermaid 块 → 渲染图的整块替换装饰集
+function buildMermaidDecorations(state) {
+  const plan = planMermaidProjection(
+    mermaidBlocksOf(state.doc.toString()),
+    state.field(revealedMermaidField),
+  );
+  const marks = plan.map(p => Decoration.replace({
+    widget: new MermaidInlineWidget(p.src),
+    block: true,
+    inclusive: false,
+  }).range(p.from, p.to));
+  return Decoration.set(marks, true);
+}
+
+const mermaidDecorationsField = StateField.define({
+  create: (state) => buildMermaidDecorations(state),
+  update(deco, tr) {
+    const before = tr.startState.field(revealedMermaidField);
+    const after = tr.state.field(revealedMermaidField);
+    if (tr.docChanged || before !== after) return buildMermaidDecorations(tr.state);
+    return deco;
+  },
+});
+
+// 单个 .mermaid 容器 → SVG。与阅读态同一条 mermaid.run 路径, 只是这里单节点。
+async function renderMermaidNode(node) {
+  if (!window.mermaid || !node || !node.isConnected) return;
+  if (node.querySelector('svg')) return;             // 已渲染
+  ensureMermaidInit();
+  if (!__mermaidInited) return;
+  try {
+    await window.mermaid.run({ nodes: [node] });
+  } catch (e) {
+    node.classList.add('mermaid-error');
+    node.textContent = '[mermaid 渲染失败] ' + (e && e.message || e);
+  }
+}
+
+class MermaidInlineWidget extends WidgetType {
+  constructor(src) { super(); this.src = src; }
+  eq(other) { return other.src === this.src; }   // 源码没变就不重建 DOM (免得重算装饰时闪)
+  toDOM() {
+    const div = document.createElement('div');
+    div.className = 'mermaid mermaid-inline';
+    div.textContent = this.src;
+    requestAnimationFrame(() => { if (div.isConnected) renderMermaidNode(div); });
+    return div;
+  }
+  ignoreEvent() { return false; }   // 放行点击 (复用既有 mermaid 放大 lightbox)
+}
+
+// 首次贴边删除 → 只揭示源码, 且把这一次按键吃掉; 已揭示 / 不贴边 → 交默认行为
+function guardAtomicDelete(view, dir) {
+  const sel = view.state.selection.main;
+  if (!sel.empty) return false;      // 有选区: 跨块选区要连续, 不拦
+  const d = decideAtomicDelete(
+    mermaidBlocksOf(view.state.doc.toString()),
+    sel.head,
+    dir,
+    view.state.field(revealedMermaidField),
+  );
+  if (d.action !== 'reveal') return false;
+  view.dispatch({ effects: revealMermaidEffect.of(d.block.from) });
+  return true;
+}
+
+// 编辑态 mermaid 三件套: 装饰集 + 原子范围 + 删除守卫
+function mermaidInlineExtensions() {
+  return [
+    revealedMermaidField,
+    mermaidDecorationsField,
+    EditorView.decorations.from(mermaidDecorationsField),
+    EditorView.atomicRanges.of((view) => view.state.field(mermaidDecorationsField)),
+    keymap.of([
+      { key: 'Backspace', run: (v) => guardAtomicDelete(v, -1) },
+      { key: 'Delete', run: (v) => guardAtomicDelete(v, 1) },
+    ]),
+  ];
+}
+
 function enterEditMode() {
   if (!state.currentFile) return;
   // CM6 是目标编辑器 → 先走完整退场 (同步+落盘+销毁 Vditor IR)。
@@ -5031,6 +5159,8 @@ function enterEditMode() {
     state.editor.dispatch({
       changes: { from: 0, to: state.editor.state.doc.length,
                  insert: state.currentFile.content },
+      // 换文档: 清掉上一份文档残留的"已揭示"偏移, 免得误命中新文档里的块
+      effects: revealMermaidEffect.of(null),
     });
     state.editor.dispatch({
       effects: state.editorLangCompartment.reconfigure(
@@ -5093,6 +5223,8 @@ function enterEditMode() {
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         state.editorLangCompartment.of(langSupport),
         keymap.of(listTableBindings),
+        // mermaid 内联三件套 (块装饰 + 原子范围 + 删除守卫): 排在主 keymap 之前先拦截
+        ...mermaidInlineExtensions(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab, ...mdFormatBindings]),
         saveCmd,
         search(),

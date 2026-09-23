@@ -1333,10 +1333,14 @@ html[data-theme="odette"] :is(#viewer, .md-render) .hljs-deletion {
 :is(#viewer, .md-render) .drawio-standalone .mxgraph { max-width: 100%; background: #fff; }
 
 /* ===== Mermaid 图渲染 (```mermaid 块 → SVG) =====
-   marked 只读路径 (.mermaid-block) 和 Vditor IR 编辑路径 (.mermaid-preview) 共用样式。
-   两条路径都把 mermaid.run() 产出的 SVG 注入 .mermaid 容器。 */
+   三条路径共用样式, 保证同一张图在三个位置长得一样:
+     - marked 只读路径 (.mermaid-block, 阅读态 / 右侧预览)
+     - Vditor IR 编辑路径 (.mermaid-preview, 仅遗留)
+     - CM6 编辑态内联路径 (#editor-host .mermaid-inline, 子任务 3)
+   三条都把 mermaid.run() 产出的 SVG 注入 .mermaid 容器。 */
 :is(#viewer, .md-render) .mermaid,
-.vditor-ir .mermaid-preview {
+.vditor-ir .mermaid-preview,
+#editor-host .mermaid-inline {
   margin: 1em 0;
   padding: 12px;
   background: #fff;
@@ -1347,12 +1351,14 @@ html[data-theme="odette"] :is(#viewer, .md-render) .hljs-deletion {
   overflow-y: visible;
 }
 :is(#viewer, .md-render) .mermaid svg,
-.vditor-ir .mermaid-preview svg {
+.vditor-ir .mermaid-preview svg,
+#editor-host .mermaid-inline svg {
   max-width: 100%;
   height: auto;
 }
 :is(#viewer, .md-render) .mermaid.mermaid-error,
-.vditor-ir .mermaid-preview.mermaid-error {
+.vditor-ir .mermaid-preview.mermaid-error,
+#editor-host .mermaid-inline.mermaid-error {
   color: #c00;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1360,6 +1366,9 @@ html[data-theme="odette"] :is(#viewer, .md-render) .hljs-deletion {
   white-space: pre-wrap;
   background: #fff5f5;
 }
+/* 编辑态内联图可点开放大 (lightbox 委托挂在 document, 命中 .mermaid svg) */
+#editor-host .mermaid-inline { cursor: zoom-in; }
+#editor-host .mermaid-inline.mermaid-error { cursor: default; }
 
 /* ===== Mermaid 点击放大 (lightbox) ===== */
 #mermaid-zoom[hidden] { display: none !important; }
