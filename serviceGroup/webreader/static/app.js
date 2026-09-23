@@ -3069,6 +3069,7 @@ function applyHeadingIds(root) {
 // ============== Vditor IR 编辑器 (PoC) ==============
 // .md 以 Vditor 即时渲染(IR, Typora 式) 呈现+编辑, 替代 renderMarkdown + CodeMirror 编辑态。
 // Lute 引擎原生保留 frontmatter / [[wikilink]] / ![](x.drawio), 无需剥离/回填。
+// ⚠️ 已退役 (子任务 7): 随 Vditor 构造路径一起失效, 仅剩本定义 (待删)。
 function destroyVditor() {
   disconnectVditorFoldObserver();
   if (state._vditorInitTimer) { clearTimeout(state._vditorInitTimer); state._vditorInitTimer = null; }
@@ -3113,6 +3114,9 @@ function vditorCdnBase() {
   return new URL('vendor/vditor', document.baseURI).href.replace(/\/+$/, '');
 }
 
+// ⚠️ 已退役 (子任务 7): 入口统一后本函数已无任何调用点, 且 Vditor 资产不再加载
+// (index.html 摘掉了 vditor/index.css + lute.min.js + index.min.js), 故**不得再接回** ——
+// 一旦被调用会因 window.Vditor 不存在而抛错。整段待删 (见 spec 03 的"待清"节)。
 function renderMarkdownVditor(file) {
   exitEditMode();
   els.welcome.hidden = true;
@@ -5164,10 +5168,7 @@ els.editToolbar.addEventListener('click', (e) => {
 
 function enterEditMode() {
   if (!state.currentFile) return;
-  // CM6 是目标编辑器 → 先走完整退场 (同步+落盘+销毁 Vditor IR)。
-  // 不能只 destroyVditor: 还需 vditor.getValue() 回填 currentFile 并 flush, 否则丢未存改动。
-  // 必要性: mermaid 文档走本函数进入 CM6, 而它不经 renderMarkdown*, 之前会残留旧 Vditor
-  // 面板与 CM6 同时可见 (两个编辑器叠着)。2026-09-23 实测。
+  // 先走完整退场 (同步落盘 + 收起预览 + 清工具栏), 免得与上一次编辑态的残留叠着。
   exitEditMode();
   // 保存当前滚动位置，编辑切换后恢复
   const currentScroll = els.contentBody ? els.contentBody.scrollTop : 0;
@@ -5290,14 +5291,8 @@ function enterEditMode() {
 }
 
 function exitEditMode() {
-  // Vditor (IR) 清理: 先同步当前内容到 currentFile (供 renderMarkdown 立即读最新值, 避免切换只读显示旧内容), 再落盘 + 销毁
-  if (state.vditor) {
-    if (state.isDirty && state.currentFile) {
-      try { state.currentFile.content = recoverMermaidBlocks(state.vditor.getValue(), state.mermaidSnapshot, state.lastSavedContent); } catch (e) {}
-    }
-    if (state.isDirty) flushSave(true);
-    destroyVditor();
-  }
+  // Vditor IR 分支已删 (子任务 7): 编辑态唯一入口是 CM6, state.vditor 不再可能被赋值,
+  // 故连同 recoverMermaidBlocks 防丢回填一起去掉 —— 源码编辑器不 mutate 文档, 无需防御。
   if ((state.editor || state._textareaFallback) && state.isDirty) {
     flushSave(true);
   }
@@ -5323,6 +5318,8 @@ function scheduleAutosave() {
   state.saveTimer = setTimeout(flushSave, 1000);
 }
 
+// ⚠️ 已退役 (子任务 7): 这两个防丢函数只服务于 Vditor getValue 路径, 现已无调用点 (待删)。
+// 保留原因仅为缩小本次改动面; 它们不会再被执行。
 // 防御 Vditor IR 对 mermaid 代码块的 getValue 数据丢失:
 // 真实 WebReader 流程下 getValue 偶发返空 ```mermaid``` fence (最小复现未抓到确切路径,
 // 非 Vditor 内置 mermaidRender — 单测 Vditor IR 保留码). 防御策略:

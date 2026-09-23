@@ -6,8 +6,7 @@
   <title>DQ-WorkFlow Web Reader</title>
   <link rel="stylesheet" href="http://localhost:5001/static/style.css?v=20260828e" />
   <link rel="stylesheet" href="vendor/highlight-styles/github.css" />
-  <link rel="stylesheet" href="style.css?v=20260924c" />
-  <link rel="stylesheet" href="vendor/vditor/index.css" />
+  <link rel="stylesheet" href="style.css?v=20260924d" />
   <!-- 首帧主题：读 ?theme= 参数（iframe 嵌入方传），在首帧绘制前设置 data-theme，
        避免深色模式下白闪。无参数 → 回退 localStorage；均无 → 默认浅色（不跟随系统深色，
        对外分享页面对深色系统访客保持浅色）。 -->
@@ -305,16 +304,15 @@
     }
   </script>
 
-  <!-- Mermaid: ```mermaid 代码块 → SVG (marked 只读态 + Vditor IR 编辑态共用) -->
+  <!-- Mermaid: ```mermaid 代码块 → SVG (阅读态 / 右侧预览 / 编辑态内联 三处共用一套渲染) -->
   <script src="vendor/mermaid/mermaid.min.js"></script>
 
-  <!-- Vditor IR 编辑器: lute 预加载 (id=vditorLuteScript 让 Vditor 复用, 不重复拉取) -->
-  <script id="vditorLuteScript" src="vendor/vditor/lute.min.js"></script>
-  <script src="vendor/vditor/index.min.js"></script>
+  <!-- Vditor IR 已退役 (子任务 7): 编辑态统一走 CM6 源码编辑, 不再加载 Vditor 资产
+       (原 vditor/index.css + lute.min.js + index.min.js 合计 ~4.5MB, 每次开页都白付)。 -->
   <!-- 统一皮肤：manifest + shader + runner（与 Castflow/子服务同一套三部分皮肤） -->
   <script src="http://localhost:5001/static/skin-manifest.js"></script>
   <script src="http://localhost:5001/static/shader-runner.js"></script>
   <script src="http://localhost:5001/static/skin-runner.js?v=20260828f"></script>
-  <script type="module" src="app.js?v=20260924c"></script>
+  <script type="module" src="app.js?v=20260924d"></script>
 </body>
 </html>
