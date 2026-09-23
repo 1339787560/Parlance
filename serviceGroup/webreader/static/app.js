@@ -1353,6 +1353,13 @@ async function openFile(path, opts = {}) {
     // 切换前保存当前 tab 的滚动位置 (初始加载时跳过，避免覆盖恢复的 scrollTop)
     if (state.currentFile) saveCurrentTabState();
 
+    // 切换前刷掉未落盘改动: autosave 是 1s 防抖, 用户在防抖窗口内切档时下面会把
+    // isDirty 重置为 false, 那笔改动既不 flush、又会被新文档内容顶掉 → 静默丢失
+    // (2026-09-23 实测). 必须在 state.currentFile 仍指向旧文档时执行。
+    if (state.isDirty) {
+      try { await flushSave(true); } catch (e) { console.warn('[openFile] flush before switch failed:', e); }
+    }
+
     const file = await apiFile(path);
     state.currentFile = file;
     state.lastSavedContent = file.content;
@@ -3043,8 +3050,10 @@ function applyHeadingIds(root) {
 // Lute 引擎原生保留 frontmatter / [[wikilink]] / ![](x.drawio), 无需剥离/回填。
 function destroyVditor() {
   disconnectVditorFoldObserver();
+  if (state._vditorInitTimer) { clearTimeout(state._vditorInitTimer); state._vditorInitTimer = null; }
   if (state.vditor) {
-    state.vditor.destroy();
+    // 初始化未完成时 destroy 会抛 (内部 IR 元素尚未建好), 不能让清理路径连带失败
+    try { state.vditor.destroy(); } catch (e) { console.warn('[vditor] destroy failed:', e); }
     state.vditor = null;
   }
   if (els.vditorHost) {
@@ -3070,6 +3079,19 @@ function setMdToggleState(editMode) {
   els.editToggle.classList.add('edit-active');
 }
 
+// Vditor 静态资源基址 (本地托管, 不走 CDN)
+// 为什么: Vditor 缺省 cdn = https://unpkg.com/vditor@<ver>, 构造时会 await 拉取
+//   dist/js/i18n/<lang>.js + dist/js/icons/<icon>.js。离线/内网下该请求
+//   ERR_CONNECTION_CLOSED → promise 永不 settle → 既不建 DOM 也不抛错
+//   → 编辑态静默空白面板 (2026-09-23 本机实测: unpkg 不可达, 打开 md 编辑即空白)。
+// 故在 static/vendor/vditor/dist/js/{i18n,icons}/ 自带这两个文件。
+// ponytail: 只托管这两个资源; 换 Vditor 版本时必须同步更新它们, 否则语言/图标会错配。
+const VDITOR_LANG = 'zh_CN';
+const VDITOR_ICON = 'ant';
+function vditorCdnBase() {
+  return new URL('vendor/vditor', document.baseURI).href.replace(/\/+$/, '');
+}
+
 function renderMarkdownVditor(file) {
   exitEditMode();
   els.welcome.hidden = true;
@@ -3092,6 +3114,10 @@ function renderMarkdownVditor(file) {
       value: md,
       height: 'auto',
       cache: { enable: false },
+      // 本地资源基址: 不传则 Vditor 会 await CDN i18n, 离线环境静默空白 (见 vditorCdnBase 注释)
+      cdn: vditorCdnBase(),
+      lang: VDITOR_LANG,
+      icon: VDITOR_ICON,
       toolbar: ['headings', 'bold', 'italic', 'strike', 'link', 'quote', 'table', 'list', 'ordered-list', 'check', 'code', 'line'],
       preview: { hljs: { enable: true, style: 'github' } },
       link: {
@@ -3109,6 +3135,8 @@ function renderMarkdownVditor(file) {
         scheduleMermaidRender(els.vditorHost);
       },
       after: () => {
+        // 初始化成功 → 撤销"静默空白"兜底定时器
+        if (state._vditorInitTimer) { clearTimeout(state._vditorInitTimer); state._vditorInitTimer = null; }
         console.log('[vditor] after callback fired');
         setSaveStatus('已加载', 'saved');
         // mermaid 快照 (load-time, 不漂移): 供 recoverMermaidBlocks 防 Vditor getValue 丢码
@@ -3138,6 +3166,19 @@ function renderMarkdownVditor(file) {
     renderMarkdown(file);
     return;
   }
+
+  // 静默空白兜底: Vditor 初始化依赖外部资源, 资源不可达时它既不建 DOM 也不抛错
+  // (promise 悬空), 上面 catch 抓不到 → 面板全空且无提示。故按 DOM 实况判定:
+  // 超时仍无 .vditor-ir 即认定失败, 降级到 CM6 纯文本编辑 (可编辑, 不是白板)。
+  state._vditorInitTimer = setTimeout(() => {
+    state._vditorInitTimer = null;
+    if (!els.vditorHost || els.vditorHost.querySelector('.vditor-ir')) return;
+    console.warn('[vditor] init timeout, fallback to CM6');
+    destroyVditor();
+    els.vditorHost.hidden = true;
+    enterEditMode();
+    setSaveStatus('所见即所得编辑器加载失败, 已切换纯文本编辑', 'error');
+  }, 8000);
 
   // .md 编辑态: toggle 启用 + 绿色 + 标签"只读" (点击切到只读渲染)
   setMdToggleState(true);
@@ -4893,6 +4934,11 @@ const listTableBindings = [
 
 function enterEditMode() {
   if (!state.currentFile) return;
+  // CM6 是目标编辑器 → 先走完整退场 (同步+落盘+销毁 Vditor IR)。
+  // 不能只 destroyVditor: 还需 vditor.getValue() 回填 currentFile 并 flush, 否则丢未存改动。
+  // 必要性: mermaid 文档走本函数进入 CM6, 而它不经 renderMarkdown*, 之前会残留旧 Vditor
+  // 面板与 CM6 同时可见 (两个编辑器叠着)。2026-09-23 实测。
+  exitEditMode();
   // 保存当前滚动位置，编辑切换后恢复
   const currentScroll = els.contentBody ? els.contentBody.scrollTop : 0;
   els.viewer.hidden = true;
