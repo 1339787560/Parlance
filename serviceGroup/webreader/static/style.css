@@ -1559,6 +1559,40 @@ html[data-theme="odette"] .code-view {
   }
 }
 
+/* 编辑态命令工具栏 (N8): 吸在编辑区顶部。content-body 是滚动容器, 用 sticky 保证不滚走。
+   每个按钮只产出一笔 Markdown 事务, 不做富文本工具栏。 */
+#edit-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: 980px;
+  margin: 0 auto 8px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+/* 设了 display:flex 会压掉 [hidden] 的默认 display:none, 显式还原 */
+#edit-toolbar[hidden] { display: none; }
+#edit-toolbar button {
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 8px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+#edit-toolbar button:hover { background: rgba(128, 128, 128, 0.12); }
+#edit-toolbar .tb-group { display: inline-flex; gap: 4px; }
+#edit-toolbar .tb-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+#edit-toolbar .spacer { flex: 1 1 auto; }
+
 .empty-state {
   text-align: center;
   color: var(--fg-muted);

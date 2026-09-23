@@ -6,7 +6,7 @@
   <title>DQ-WorkFlow Web Reader</title>
   <link rel="stylesheet" href="http://localhost:5001/static/style.css?v=20260828e" />
   <link rel="stylesheet" href="vendor/highlight-styles/github.css" />
-  <link rel="stylesheet" href="style.css?v=20260924b" />
+  <link rel="stylesheet" href="style.css?v=20260924c" />
   <link rel="stylesheet" href="vendor/vditor/index.css" />
   <!-- 首帧主题：读 ?theme= 参数（iframe 嵌入方传），在首帧绘制前设置 data-theme，
        避免深色模式下白闪。无参数 → 回退 localStorage；均无 → 默认浅色（不跟随系统深色，
@@ -111,6 +111,28 @@
           </div>
           <article id="viewer" hidden></article>
           <div id="vditor-host" hidden></div>
+          <!-- 编辑态命令工具栏 (N8): 每个按钮只产出一笔 Markdown 事务, 不做富文本工具栏 -->
+          <div id="edit-toolbar" hidden>
+            <span class="tb-group">
+              <button type="button" data-md-cmd="h1" title="一级标题 (Alt+Ctrl+1)">H1</button>
+              <button type="button" data-md-cmd="h2" title="二级标题 (Alt+Ctrl+2)">H2</button>
+              <button type="button" data-md-cmd="h3" title="三级标题 (Alt+Ctrl+3)">H3</button>
+            </span>
+            <span class="tb-sep"></span>
+            <span class="tb-group">
+              <button type="button" data-md-cmd="bold" title="粗体 (Ctrl+B)"><b>B</b></button>
+              <button type="button" data-md-cmd="quote" title="引用块">❝</button>
+              <button type="button" data-md-cmd="indent-in" title="列表缩进 +1 (Tab)">⇥</button>
+              <button type="button" data-md-cmd="indent-out" title="列表缩进 -1 (Shift+Tab)">⇤</button>
+              <button type="button" data-md-cmd="renumber" title="有序列表重新编号">重编号</button>
+            </span>
+            <span class="tb-sep"></span>
+            <span class="tb-group">
+              <button type="button" data-md-cmd="table-row" title="表格: 下一行插入空行 (Enter)">表格行</button>
+            </span>
+            <span class="spacer"></span>
+            <button type="button" data-md-cmd="save" title="保存 (Ctrl+S)">保存</button>
+          </div>
           <div id="editor-host" hidden></div>
         </div>
         <!-- 编辑态右侧实时预览: 与阅读态同源渲染 (renderInto), 投影不参与持久化 -->
@@ -293,6 +315,6 @@
   <script src="http://localhost:5001/static/skin-manifest.js"></script>
   <script src="http://localhost:5001/static/shader-runner.js"></script>
   <script src="http://localhost:5001/static/skin-runner.js?v=20260828f"></script>
-  <script type="module" src="app.js?v=20260924b"></script>
+  <script type="module" src="app.js?v=20260924c"></script>
 </body>
 </html>

@@ -74,6 +74,7 @@ const els = {
   viewer: $('#viewer'),
   vditorHost: $('#vditor-host'),
   editorHost: $('#editor-host'),
+  editToolbar: $('#edit-toolbar'),
   editPreview: $('#edit-preview'),
   editPreviewBody: $('#edit-preview-body'),
   contentBody: $('#content-body'),
@@ -5134,6 +5135,33 @@ function mermaidInlineExtensions() {
   ];
 }
 
+// ============== 编辑态命令工具栏 (子任务 6 / N8) ==============
+// 不做富文本工具栏: 每个按钮只产出一笔 Markdown 事务, 复用既有格式命令 (与快捷键同源),
+// 不引入第二种编辑器状态 —— 保真的前提是"只有一条写路径"。
+const MD_TOOLBAR_CMDS = {
+  h1: (v) => toggleHeading(v, 1),
+  h2: (v) => toggleHeading(v, 2),
+  h3: (v) => toggleHeading(v, 3),
+  bold: (v) => toggleBold(v),
+  quote: (v) => toggleBlockquote(v),
+  'indent-in': (v) => toggleListIndent(v, 1),
+  'indent-out': (v) => toggleListIndent(v, -1),
+  renumber: (v) => { renumberAllLists(v); return true; },
+  'table-row': (v) => insertTableRow(v),
+};
+
+els.editToolbar.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-md-cmd]');
+  if (!btn) return;
+  const cmd = btn.dataset.mdCmd;
+  if (cmd === 'save') { flushSave(); return; }     // 保存: 直接落盘, 不走格式命令
+  const run = MD_TOOLBAR_CMDS[cmd];
+  if (!run || !state.editor) return;
+  // 点按钮会先把焦点移出编辑器 → 先还焦点再执行事务, 否则命令的选区上下文可能不对
+  state.editor.focus();
+  try { run(state.editor); } catch (err) { console.error('[toolbar] cmd failed:', cmd, err); }
+});
+
 function enterEditMode() {
   if (!state.currentFile) return;
   // CM6 是目标编辑器 → 先走完整退场 (同步+落盘+销毁 Vditor IR)。
@@ -5148,6 +5176,7 @@ function enterEditMode() {
   // (applyHeadingIds 两边都按标题文本生成 slug), 留着会让 #锚点 / hash 跳到已隐藏的阅读区。
   els.viewer.innerHTML = '';
   els.editorHost.hidden = false;
+  els.editToolbar.hidden = false;
   els.editToggle.textContent = '预览';
   showEditPreview();
   // 恢复滚动位置（编辑器内容变化不会改变位置）
@@ -5285,6 +5314,7 @@ function exitEditMode() {
   }
   hideEditPreview();
   els.editorHost.hidden = true;
+  els.editToolbar.hidden = true;
   els.editToggle.textContent = '编辑';
 }
 
