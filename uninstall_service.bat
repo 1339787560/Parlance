@@ -34,7 +34,15 @@ rem ---- elevate: schtasks /Delete of a boot task requires admin ----
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo Requesting admin privileges...
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%ACTION%' -Verb RunAs"
+    rem NOTE: never pass -ArgumentList when empty. PowerShell rejects an empty value
+    rem       with "Cannot validate argument on parameter 'ArgumentList'" (zh:
+    rem       无法对参数"ArgumentList"执行参数验证), and the elevation silently fails,
+    rem       so a plain double-click would do nothing. Hence the branch below.
+    if defined ACTION (
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%ACTION%' -Verb RunAs"
+    ) else (
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    )
     exit /b
 )
 
