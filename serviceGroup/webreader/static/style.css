@@ -1546,6 +1546,18 @@ html[data-theme="odette"] .code-view {
   background: var(--cn-ink-faint, var(--scroll-thumb-hover, rgba(128,128,128,.8)));
   background-clip: content-box;
 }
+/* 编辑区光标在预览里对应的块 (联动高亮)。
+   取与 jumpToHeading 跳转高亮同色系但更淡 —— 它是常驻态, 不像跳转那样闪一下就没。 */
+#edit-preview-body .md-cursor-hl {
+  background: rgba(255, 213, 79, 0.22);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px rgba(255, 213, 79, 0.25);
+}
+/* 整表高亮时不加重描边 (行多会糊), 只留淡底 */
+#edit-preview-body table.md-cursor-hl {
+  background: rgba(255, 213, 79, 0.16);
+  box-shadow: none;
+}
 /* 手机上左右分栏太窄 → 改上下叠: 编辑器在上, 预览在下 */
 @media (max-width: 900px) {
   #content-wrap.edit-split { flex-direction: column; }

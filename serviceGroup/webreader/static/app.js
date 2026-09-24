@@ -5002,6 +5002,11 @@ function renderEditPreview() {
   const body = renderInto(els.editPreviewBody, state.currentFile.path, content, { collapse: false });
   // 大纲跟随编辑内容走 (编辑态也能看结构)
   if (isMarkdown(state.currentFile.extension)) buildOutline(body);
+  // 重渲后刷新联动索引: innerHTML 整体换过, 旧元素引用全部失效
+  __previewAnchors = collectPreviewAnchors(content);
+  __previewBlocks = [...els.editPreviewBody.querySelectorAll(PREVIEW_BLOCK_SEL)];
+  __previewHlEl = null;
+  syncPreviewCursor();   // 立刻补回光标高亮, 免得每次打字高亮都闪没
 }
 
 // 打字防抖: 每次 docChanged 都全量重渲 markdown 太重 (长文档会拖慢输入手感, 见程序实现文档"待实测确认")
@@ -5012,6 +5017,240 @@ function scheduleEditPreview() {
     __editPreviewTimer = null;
     try { renderEditPreview(); } catch (e) { console.error('[preview] render failed:', e); }
   }, EDIT_PREVIEW_DEBOUNCE);
+}
+
+// ============== 编辑区 ↔ 预览 联动 (滚动同步 + 光标同步) ==============
+// 纯视图层: 只读编辑器 view 与预览 DOM, 不改文档/不改 state/不写文件 —— 因此不可能碰保真红线。
+// 单向 (编辑区 → 预览): 反向联动会与预览的 300ms 防抖重渲互相打架, 且需求只要单向。
+//
+// 为什么不直接按比例滚: 预览与编辑区的**内容高度完全不成比例** —— 一张 mermaid 图在编辑区
+// 只占 5 行, 在预览里是几百 px。纯比例同步在有图/长表的文档上会越滚越偏。
+// 故按「标题锚点 + 区间内行比例插值」: 先把「源标题行号 ↔ 预览标题元素」配对成锚点,
+// 滚动时定位到相邻两锚点之间再插值。
+//
+// 锚点按**文本**配对 (不是按下标): 对不上的标题直接跳过, 于是既不会误配, 也不会因为
+// setext 标题或带行内格式的标题导致后续锚点整体错位 —— 最坏情况只是锚点变少 (退回比例同步)。
+
+const PREVIEW_HL_CLASS = 'md-cursor-hl';
+const PREVIEW_BLOCK_SEL = 'p, li, td, th, h1, h2, h3, h4, h5, h6, pre, blockquote, table';
+let __previewAnchors = [];      // [{ line(0基, 含 frontmatter 偏移), el }]
+let __previewBlocks = [];       // 预览块缓存 (每次重渲刷新, 免得每次移动光标都全量 query)
+let __previewHlEl = null;       // 当前高亮的预览块
+let __scrollRaf = 0;
+let __cursorRaf = 0;
+
+function normText(s) {
+  return String(s == null ? '' : s).replace(/\s+/g, '').trim();
+}
+
+// frontmatter 占用的行数 (源 body 行号 → 编辑器全文行号的偏移)
+function fmLineOffset(content, body) {
+  const chars = (content || '').length - (body || '').length;
+  return chars > 0 ? content.slice(0, chars).split('\n').length - 1 : 0;
+}
+
+// 源标题行 (跳过围栏内), 返回 [{ line(0基), text }]
+function scanSourceHeadings(body) {
+  const out = [];
+  const lines = String(body || '').split('\n');
+  let inCode = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*```/.test(lines[i])) { inCode = !inCode; continue; }
+    if (inCode) continue;
+    const m = lines[i].match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (m) out.push({ line: i, text: m[1], raw: lines[i] });
+  }
+  return out;
+}
+
+function collectPreviewAnchors(content) {
+  const { body } = splitFrontmatter(content || '');
+  const off = fmLineOffset(content, body);
+  const domHeads = [...els.editPreviewBody.querySelectorAll('h1,h2,h3,h4,h5,h6')];
+  const anchors = [];
+  let di = 0;
+  for (const h of scanSourceHeadings(body)) {
+    const want = normText(h.text);
+    if (!want) continue;
+    for (let j = di; j < domHeads.length; j++) {
+      if (normText(domHeads[j].textContent) === want) {
+        di = j + 1;
+        // raw = 源标题行原文: 用来在编辑器里按文本找回那一行, 拿它的像素位置
+        anchors.push({ line: h.line + off, el: domHeads[j], raw: h.raw });
+        break;
+      }
+    }
+  }
+  return anchors;
+}
+
+// 编辑器里某源行对应的 .cm-line (行未被渲染则返 null, 调用方退回首选方案)
+function editorLineElForText(rawText) {
+  const want = normText(rawText);
+  if (!want) return null;
+  const lines = document.querySelectorAll('#editor-host .cm-line');
+  for (const l of lines) {
+    if (normText(l.textContent) === want) return l;
+  }
+  return null;
+}
+
+// 元素在某个滚动容器内容坐标里的纵向偏移
+function yInScroller(el, scroller) {
+  return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+}
+
+// 元素在滚动容器内容里的纵向偏移
+function offsetInScroll(el, scroller) {
+  return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+}
+
+// 顶部可见行 (0基)。用 CM6 自己算, 不赌是 .cm-scroller 还是 #content-body 在滚。
+function topVisibleLine(view) {
+  const host = els.editorHost;
+  const body = els.contentBody;
+  if (!host || !body) return null;
+  const hr = host.getBoundingClientRect();
+  const br = body.getBoundingClientRect();
+  const y = Math.max(br.top, hr.top) + 4;
+  const x = hr.left + Math.min(24, Math.max(4, hr.width / 2));
+  const pos = view.posAtCoords({ x, y });
+  return pos == null ? null : view.state.doc.lineAt(pos).number - 1;
+}
+
+function syncPreviewScroll() {
+  if (!state.editor || els.editPreview.hidden) return;
+  const scroller = els.editPreviewBody;
+  const max = scroller.scrollHeight - scroller.clientHeight;
+  if (max <= 0) return;
+  const view = state.editor;
+  const line0 = topVisibleLine(view);
+  const anchors = __previewAnchors;
+
+  // 拿不到行号 / 一个锚点都没配上 → 退回比例同步 (粗, 但不会僵着不动)
+  if (line0 == null || anchors.length === 0) {
+    const edMax = Math.max(1, els.contentBody.scrollHeight - els.contentBody.clientHeight);
+    const r = Math.min(1, Math.max(0, els.contentBody.scrollTop / edMax));
+    scroller.scrollTop = r * max;
+    return;
+  }
+
+  // 找围绕 line0 的锚点对, 顺便算出它们在预览里的纵向偏移
+  let prev = null;
+  let next = null;
+  for (const a of anchors) {
+    const item = { line: a.line, off: offsetInScroll(a.el, scroller), raw: a.raw };
+    if (a.line <= line0) { prev = item; continue; }
+    next = item;
+    break;
+  }
+  const base = prev || { line: 0, off: 0, raw: null };   // 还没到第一个锚点
+
+  let target;
+  if (next) {
+    // 优先在**编辑器的像素空间**里算比例: 编辑器自身已含真实行宽/换行/内联图高度,
+    // 用它算出来的"走到哪了"比按行数算准得多 —— 长图表那一段不会再整体偏后。
+    let r = null;
+    const aEd = base.raw ? editorLineElForText(base.raw) : null;
+    const bEd = next.raw ? editorLineElForText(next.raw) : null;
+    if (aEd && bEd) {
+      const edTop = els.contentBody.scrollTop;
+      const aY = yInScroller(aEd, els.contentBody);
+      const bY = yInScroller(bEd, els.contentBody);
+      if (bY > aY + 1) r = (edTop - aY) / (bY - aY);
+    }
+    if (r == null) r = (line0 - base.line) / Math.max(1, next.line - base.line);   // 退回按行数
+    r = Math.min(1, Math.max(0, r));
+    target = base.off + r * (next.off - base.off);
+  } else {
+    // 最后一个锚点之后: 按剩余行数比例铺到容器底部
+    const lastLine = Math.max(base.line + 1, view.state.doc.lines - 1);
+    const r = Math.min(1, Math.max(0, (line0 - base.line) / (lastLine - base.line)));
+    target = base.off + r * Math.max(0, max - base.off);
+  }
+  scroller.scrollTop = Math.max(0, Math.min(max, target));
+}
+
+function onEditorScroll() {
+  if (__scrollRaf) return;
+  __scrollRaf = requestAnimationFrame(() => {
+    __scrollRaf = 0;
+    try { syncPreviewScroll(); } catch (e) { console.warn('[sync] scroll failed:', e); }
+  });
+}
+
+// 捕获阶段监听: .cm-scroller 的 scroll 不冒泡, 但会经过捕获链
+els.contentBody.addEventListener('scroll', onEditorScroll, true);
+
+// 行文本 → 匹配键 (剥掉常见 markdown 前缀与表格管道)
+function lineMatchKey(text) {
+  return normText(String(text || '')
+    .replace(/^\s*#{1,6}\s+/, '')
+    .replace(/^\s*>\s?/, '')
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/, '')
+    .replace(/^[|\-\s:]+/, '')
+    .replace(/[|\s:]+$/, ''));
+}
+
+// 找该行对应的预览块: 先按标题锚点定位区间, 再在区间内按文本前缀匹配 (由长到短渐宽)
+function findPreviewBlock(line0, lineText) {
+  const key = lineMatchKey(lineText);
+  if (!key) return null;
+  let startEl = null;
+  for (const a of __previewAnchors) {
+    if (a.line <= line0) startEl = a.el; else break;
+  }
+  const all = __previewBlocks;
+  let from = 0;
+  if (startEl) {
+    for (let i = 0; i < all.length; i++) {
+      if (all[i] === startEl || all[i].contains(startEl) || startEl.contains(all[i])) { from = i; break; }
+    }
+  }
+  for (const n of [12, 8, 5, 3]) {
+    const want = key.slice(0, n);
+    if (!want) continue;
+    for (let i = from; i < all.length; i++) {
+      const t = normText(all[i].textContent);
+      if (t && t.includes(want)) {
+        // 命中表格行/单元格时高亮整张表, 比高亮单个 td 看得清
+        return all[i].closest('table') || all[i];
+      }
+    }
+  }
+  return null;
+}
+
+function isVisibleIn(el, scroller) {
+  const a = el.getBoundingClientRect();
+  const b = scroller.getBoundingClientRect();
+  return a.bottom > b.top + 4 && a.top < b.bottom - 4;
+}
+
+// 把编辑区光标位置映射到预览并高亮 (必要时温和带出视野)
+function syncPreviewCursor() {
+  if (!state.editor || els.editPreview.hidden) return;
+  const view = state.editor;
+  const lineObj = view.state.doc.lineAt(view.state.selection.main.head);
+  const el = findPreviewBlock(lineObj.number - 1, lineObj.text);
+  if (__previewHlEl && __previewHlEl !== el) __previewHlEl.classList.remove(PREVIEW_HL_CLASS);
+  __previewHlEl = el || null;
+  if (!el) return;
+  el.classList.add(PREVIEW_HL_CLASS);
+  // 只在跑出视野时才带回来: 不抢用户自己滚的位置
+  const scroller = els.editPreviewBody;
+  if (!isVisibleIn(el, scroller)) {
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    scroller.scrollTop = Math.max(0, Math.min(max, offsetInScroll(el, scroller) - 24));
+  }
+}
+
+function schedulePreviewCursorSync() {
+  if (__cursorRaf) return;
+  __cursorRaf = requestAnimationFrame(() => {
+    __cursorRaf = 0;
+    try { syncPreviewCursor(); } catch (e) { console.warn('[sync] cursor failed:', e); }
+  });
 }
 
 // ============== mermaid 内联 (子任务 3 / N5) ==============
@@ -5217,6 +5456,8 @@ function enterEditMode() {
           try { renumberAllLists(vu.view); } catch (e) { console.error('[renumber] err', e); }
         }
       }
+      // 选区变化 (光标移动 / 拖选) → 预览里同步标出对应块
+      if (vu.selectionSet) schedulePreviewCursorSync();
     });
 
     const saveCmd = keymap.of([{
