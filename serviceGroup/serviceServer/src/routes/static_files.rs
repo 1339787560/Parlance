@@ -326,6 +326,8 @@ mod tests {
             http_client: reqwest::Client::new(),
             templates: None,
             static_root: Some(root),
+            // 操作 IP 记录: 测试用内存态 (无路径 = 不落盘)
+            op_ips: Arc::new(crate::op_ip::OpIpStore::load(None)),
         }
     }
 

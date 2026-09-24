@@ -1,5 +1,6 @@
 //! 共享状态, 通过 axum State 注入 handler。
 
+use crate::op_ip::OpIpStore;
 use crate::path_map::PathMap;
 use crate::status::{ServiceStatusProvider, StatusCache};
 use crate::templates::TemplateStore;
@@ -22,4 +23,7 @@ pub struct AppState {
     /// 权威锚点 = config.json 同级 `src` (与 `assetTool.py` 的 `ROOT/src` 同一目录);
     /// 可用 env `SERVICESVR_STATIC_DIR` 显式覆盖。None = 未解析 → 该前缀一律 404。
     pub static_root: Option<PathBuf>,
+    /// 「谁最后一次操作了这个服务」——卡片展示操作来源 IP (2026-09-24 加)。
+    /// 机器本地 dotfile, 不进 deploy 包; 详见 [crate::op_ip]。
+    pub op_ips: Arc<OpIpStore>,
 }

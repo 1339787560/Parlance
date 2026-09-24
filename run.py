@@ -35,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger("run")
 
 import yaml
-from service_manager import ManagedService
+from service_manager import ManagedService, ServiceGroupManager
 from deploy_service import (
     DEFAULT_PORT as DEPLOY_DEFAULT_PORT,
     DeployOrchestrator,
@@ -258,6 +258,26 @@ def _load_port() -> int:
     return 5001
 
 
+def _load_reload_exempt_services() -> List[dict]:
+    """取出 config.yaml 里标了 `reload_exempt: true` 的服务声明 (没有则空表)。
+
+    这类服务由**启动器**托管而不是宿主, 因为只有启动器分得清"启动 / 停止 / 重载"三个动作:
+    重载 = 杀宿主再拉起宿主, 宿主两次都是被 `taskkill /F /T` 硬杀, 挂在宿主进程树下的
+    服务必然被连带 (接 Job Object 也一样死 —— 2026-09-24 实测 dsh 就是这么被误伤两次)。
+    启动器的子进程与宿主是兄弟关系, 不在宿主 /T 的树里, 所以能活过重载。
+    """
+    ca = _config_args()
+    cfg_path = PROJECT_DIR / (ca[1] if ca else "config.yaml")
+    if not cfg_path.exists():
+        return []
+    try:
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    except Exception as e:
+        logger.warning("Failed to read %s: %s", cfg_path.name, e)
+        return []
+    return [s for s in (cfg.get("services") or []) if s.get("reload_exempt")]
+
+
 def _find_python() -> str:
     if os.name == "nt":
         venv_py = PROJECT_DIR / ".venv" / "Scripts" / "python.exe"
@@ -364,6 +384,11 @@ class SgmController:
         self._lock = threading.Lock()
         self._ctl_server: Optional[ControlServer] = None
 
+        # 外部托管服务 (config 里 reload_exempt: true) —— 由启动器托管:
+        #   启动 → 拉起 (端口被占则先杀掉再拉起); 停止 → 杀死; 重载 → 完全不碰。
+        # 为什么不在宿主那侧托管: 见 _load_reload_exempt_services 的说明。
+        self.external = ServiceGroupManager(_load_reload_exempt_services())
+
         # 主动退出标记 (quit RPC / q 键 / Ctrl+C 置位) — run() 读它决定是否以
         # EXIT_DELIBERATE 退出; 见模块头契约与 ControlServer._dispatch("quit")。
         self._deliberate = False
@@ -388,14 +413,22 @@ class SgmController:
             logger.error("Failed to start infoServer")
             return False
         logger.info("InfoServer running. PID=%s", self.service.pid)
+        # 外部托管服务: 启动时拉起 (start() 内部先 _free_port —— "已存在就杀掉再拉起")
+        if self.external.services:
+            logger.info("启动外部托管服务 (%d 个): 端口被占则先杀掉再拉起", len(self.external.services))
+            self.external.start_all()
         logger.info("Press 'r' to reload, 'q' to quit, 's' for status, 'h' for help.")
         return True
 
-    def stop(self, timeout: float = 20):
+    def stop(self, timeout: float = 20, with_external: bool = True):
         logger.info("Stopping infoServer (PID=%s)...", self.service.pid)
         self.service.stop(timeout=timeout)
         if not _ensure_port_free(self.port, timeout=15):
             logger.warning("Port %d still in use after stop", self.port)
+        # 停止 = 连外部托管服务一起杀 (需求 2)。reload 走 with_external=False 绕开这一支。
+        if with_external and self.external.services:
+            logger.info("停止外部托管服务 (%d 个)", len(self.external.services))
+            self.external.stop_all(timeout=timeout)
 
     def reload(self):
         with self._lock:
@@ -404,7 +437,9 @@ class SgmController:
             self._reloading = True
         try:
             logger.info("Reloading infoServer...")
-            self.stop()
+            # 重载只换宿主: 外部托管服务**不杀不拉**(需求 4) —— 它们与宿主是兄弟, 且启动器
+            # 自己没在重启, 所以它们连"被动重启"都不会发生。
+            self.stop(with_external=False)
             if not self._running:
                 return
             self.start()

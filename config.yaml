@@ -79,6 +79,13 @@ services:
       # 解析到 C:\Python314 (缺依赖), 而助手们需在 D:\Compiler\python 下跑, 故显式钉定, 不赌 PATH。
       # 换机器/堡垒机按其本机实际解释器改 (config.full.yaml 侧同理, 缺省仍走 python)。
       SERVICESVR_PYTHON: D:/Compiler/python/python.exe
+      # chunkSvr 调试口通道的目标（金币 / 装扮有效期 / 装扮清单 / 获取装载迁移数据 4 端点）。
+      # 缺省 = 代码内 http://127.0.0.1:60463/v1.0/chunkluareq（打**本机** chunkSvr）。
+      # 本机开发机显式改为**53 的 chunkSvr**：与 serviceServer-legacy/config.json 的
+      # chunkSvrHttpUrl（Python 侧 `_refresh_chunksvr_cache` 刷缓存用）口径对齐，
+      # 避免同一台机器上两条 chunkSvr 通道一个打本机、一个打 53。
+      # 注意：config.full.yaml（堡垒机）**刻意不设**本键 → 堡垒机走缺省打自身 chunkSvr。
+      CHUNKSVR_DEBUG_URL: http://192.168.102.53:60463/v1.0/chunkluareq
 
 
   - name: statistic-server      # 融入 castflow: extensions/statistic-server/extension.yaml
@@ -148,6 +155,10 @@ services:
     args: ["C:\\Users\\admin\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js", "web"]
     args_mac: ["/Users/liz/.nvm/versions/node/v24.16.0/lib/node_modules/@deepseek-ai/dsh/lib/bin.js", "web"]
     port: 3080
+    # 外部托管 (2026-09-24): dsh 是稳定外部服务, 不希望 infoServer 重载时把它连带重启。
+    # 语义 = 宿主冷启动时端口没人听才拉起; 已在运行则一个字不碰; 重载/停服/保活都不管它。
+    # (开这个开关后 auto_restart 对它失效 —— 生命周期归外部, 宿主不替它重启)
+    reload_exempt: true
     auto_restart: true
     tags: [dsh, deepseek, agent, web]
     enabled: true

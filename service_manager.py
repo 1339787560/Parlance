@@ -106,13 +106,23 @@ class ManagedService:
       - No pipe, no tracking, fire-and-forget
       - Child survives parent exit
       - stop()/restart() not supported
+
+    reload_exempt=True (重载豁免 / 外部托管, 2026-09-24 加; managed 之外的第三档):
+      - **由启动器 (run.py) 托管, 不是宿主**: 启动时拉起 / 停止时杀死 / **重载完全不碰**。
+      - 为什么不能由宿主托管: 重载的实现 = 杀掉宿主再拉起宿主, 而宿主在"重载"与
+        "真停服"两条路上都是被 `taskkill /F /T` 硬杀的 —— /T 按 PPID 收整棵树,
+        挂在宿主下的服务必然被连带; 接 Job Object 也照样死 (KILL_ON_JOB_CLOSE)。
+        启动器天然分得清 start/stop/reload, 且它的子进程与宿主是**兄弟**, 不在宿主
+        /T 的树里 (2026-09-24 实测: 由宿主托管时只躲 Job Object 不够, dsh 仍被 /T 带走)。
+      - 宿主侧 (ServiceGroupManager) **不启动不停止**它, 只在 status 里按端口探活报告。
     """
 
     def __init__(self, name: str, command: str, args: Optional[List[str]] = None,
                  cwd: Optional[str] = None, env: Optional[dict] = None,
                  auto_restart: bool = False, health_check: Optional[dict] = None,
                  tags: Optional[List[str]] = None, enabled: bool = True,
-                 managed: bool = True, port: Optional[int] = None):
+                 managed: bool = True, port: Optional[int] = None,
+                 reload_exempt: bool = False):
         self.name = name
         self.command = command
         self.args = args or []
@@ -124,6 +134,8 @@ class ManagedService:
         self.enabled = enabled
         self.managed = managed
         self.port = port
+        # 重载豁免 (外部托管): 见类 docstring 第三档
+        self.reload_exempt = reload_exempt
 
         self._process: Optional[subprocess.Popen] = None
         self._stop_event = threading.Event()
@@ -141,18 +153,29 @@ class ManagedService:
 
     @property
     def running(self) -> bool:
-        return self._process is not None and self._process.poll() is None
+        if self._process is not None:
+            return self._process.poll() is None
+        # 无句柄: 只可能是宿主侧在看"由启动器托管"的重载豁免服务 → 按端口探活。
+        # (启动器侧有句柄, 走上面那条; 端口探活只在报 status 时才发生)
+        if self.reload_exempt and self.port is not None:
+            return bool(self._netstat_listeners(self.port))
+        return False
 
     @property
     def pid(self) -> Optional[int]:
-        return self._process.pid if self._process else None
+        if self._process is not None:
+            return self._process.pid
+        if self.reload_exempt and self.port is not None:
+            pids = self._netstat_listeners(self.port)
+            return pids[0] if pids else None
+        return None
 
     @property
     def status(self) -> str:
-        if self._process is None:
-            return "stopped"
         if self.running:
             return "running"
+        if self._process is None:
+            return "stopped"
         return "exited"
 
     @property
@@ -536,6 +559,7 @@ class ManagedService:
             "auto_restart": self.auto_restart,
             "enabled": self.enabled,
             "managed": self.managed,
+            "reload_exempt": self.reload_exempt,   # 外部托管: 重载/停服都不动它
             "port": self.port,
             "tags": self.tags,
             "command": f"{self.command} {' '.join(self.args)}",
@@ -708,6 +732,7 @@ class ServiceGroupManager:
                 enabled=cfg.get("enabled", True),
                 managed=cfg.get("managed", True),
                 port=cfg.get("port"),
+                reload_exempt=cfg.get("reload_exempt", False),
             )
             self.services.append(svc)
             self._name_map[svc.name] = svc
@@ -716,8 +741,10 @@ class ServiceGroupManager:
         return self._name_map.get(name)
 
     def start_all(self):
-        foreground = [s for s in self.services if s.managed and s.enabled]
-        daemon = [s for s in self.services if not s.managed and s.enabled]
+        # reload_exempt 的归启动器托管, 本层不启动也不停止 → 连日志分组都要排除掉,
+        # 否则那条"前台服务会被连带终止"的警告会把一个本层根本不碰的服务也列进去。
+        foreground = [s for s in self.services if s.managed and s.enabled and not s.reload_exempt]
+        daemon = [s for s in self.services if not s.managed and s.enabled and not s.reload_exempt]
 
         if foreground:
             logger.warning("─" * 50)
@@ -733,11 +760,23 @@ class ServiceGroupManager:
             for s in daemon:
                 logger.info("  • %s", s.name)
 
+        exempt = [s for s in self.services if s.reload_exempt and s.enabled]
+        if exempt:
+            logger.info("外部托管服务 (reload_exempt=true): 由启动器(run.py)托管, 本层不启动不停止")
+            for s in exempt:
+                logger.info("  • %s", s.name)
+
         for svc in self.services:
+            if svc.reload_exempt:
+                continue   # 启动器托管: 宿主不碰它 (重载时它必须原样留着)
             svc.start()
 
     def stop_all(self, timeout: float = 15):
         for svc in self.services:
+            # 重载豁免(外部托管): 宿主不碰它 —— 启停归启动器 (run.py)
+            if svc.reload_exempt:
+                logger.info("[svc] '%s' 外部托管, 停服跳过 (重载豁免)", svc.name)
+                continue
             svc.stop(timeout=timeout)
 
     def status_all(self) -> List[Dict[str, Any]]:

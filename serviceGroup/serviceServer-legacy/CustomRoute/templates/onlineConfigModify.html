@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="/static/icon/tabIcon.ico" type="image/x-icon">
+    <!-- 编辑器内核: CodeMirror 5 (2026-09-24 加, 语法高亮 + 折叠)。
+         走本地 vendored 文件而非 CDN —— 堡垒机/内网无外网; 且 .js/.css 在 deploy 包
+         INCLUDE_EXT 白名单内, 随包发布 (serviceServer-legacy/src/vendor/codemirror)。 -->
+    <link rel="stylesheet" href="/static/vendor/codemirror/lib/codemirror.css">
+    <link rel="stylesheet" href="/static/vendor/codemirror/addon/fold/foldgutter.css">
+    <link rel="stylesheet" href="/static/vendor/codemirror/theme/material-darker.css">
     <title>在线配置修改</title>
     <style>
         /* ===== 字体 (2026-09-21) ===== 与 index.html 同口径: 界面走黑体系
@@ -143,8 +149,9 @@
             padding: 16px;
         }
 
-        /* 编辑区 = 行号槽 + 正文。行号靠"同字体同行高的 div 列 + scrollTop 同步"实现;
-           正文必须 wrap="off" —— 软换行会让一个逻辑行占两个视觉行, 行号必然错位。 */
+        /* 编辑区 = CodeMirror 5 (2026-09-24 换内核: 语法高亮 + 折叠 + 折叠槽)。
+           旧的自研「div 行号槽 + scrollTop 同步」已删除 —— CM 自带 gutter 且带折叠交互;
+           出错行也不再借行号槽标红, 改在编辑区内整行高亮 (见 .ocm-err-line)。 */
         .editor-container .ocm-editor {
             flex: 1;
             min-height: 300px;
@@ -162,41 +169,18 @@
             background: #1e1e1e;
             border-color: #555;
         }
-        .editor-container textarea {
-            flex: 1;
-            min-width: 0;
-            min-height: 0;
+        /* CM 由 fromTextArea 插到隐藏 textarea 之后, 撑满剩余空间 */
+        .editor-container .ocm-editor > .CodeMirror {
+            flex: 1 1 auto;
             height: 100%;
-            width: 100%;
-            max-width: 100%;
-            overflow: auto;
-            white-space: pre;    /* 与 wrap="off" 配套: 不软换行, 长行走横向滚动 */
-            word-break: normal;
-            border: 0;
-            border-radius: 0;
-            resize: none;        /* 有行号槽后不能再拖高, 否则行号错位 */
-        }
-        .ocm-gutter {
-            flex: 0 0 auto;
-            padding: 10px 6px 10px 10px;
-            text-align: right;
+            min-width: 0;
             font-family: var(--code-font);
             font-size: 13px;
-            line-height: 1.6; /* 与正文严格同高, 否则滚动后行号会漂 */
-            color: #9aa0a6;
-            background: rgba(0, 0, 0, 0.035);
-            border-right: 1px solid rgba(0, 0, 0, 0.06);
-            overflow: hidden;
-            user-select: none;
-            cursor: default;
+            line-height: 1.6;
         }
-        body.dark-theme .ocm-gutter {
-            color: #6b7075;
-            background: rgba(255, 255, 255, 0.04);
-            border-right-color: rgba(255, 255, 255, 0.07);
-        }
-        .ocm-gutter > div { line-height: 1.6; }
-        .ocm-gutter > div.err-line { color: #fff; background: #dc3545; border-radius: 2px; }
+        /* 格式校验报错的整行高亮 (替代旧的行号槽标红) */
+        .editor-container .ocm-editor .ocm-err-line { background: rgba(220, 53, 69, 0.18); }
+        body.dark-theme .ocm-editor .ocm-err-line { background: rgba(220, 53, 69, 0.30); }
 
         .close-btn {
             background-color: #dc3545;
@@ -483,13 +467,16 @@
                             <option value="utf-16-be">UTF-16 大端</option>
                         </select>
                         <button class="save" onclick="saveFile()">保存</button>
+                        <button onclick="ocmUnfoldAll()" title="展开当前文件的所有折叠 (并清掉本文件的折叠缓存)">完全展开</button>
                         <button onclick="promptCreateBranch()" title="创建命名备份">创建备份</button>
                         <button class="cancel" onclick="hideEditor()">取消</button>
                         <button class="close-btn" onclick="hideEditor()" title="关闭">✕</button>
                     </div>
                 </div>
                 <div class="ocm-editor" id="ocm-editor">
-                    <div class="ocm-gutter" id="ocm-gutter" aria-hidden="true"></div>
+                    <!-- 这块 textarea 是 CM5 fromTextArea 的锚点: CM 在它之后插入编辑器, 自身被隐藏,
+                         但仍是 value 的真源 (cm.on('change') 里 cm.save() 回写) ——
+                         故既有「格式校验 / 保存 / 创建备份」读 #file-content.value 的逻辑零改动。 -->
                     <textarea id="file-content" placeholder="文件内容将在此显示..." spellcheck="false" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
                 </div>
                 <div class="ocm-validate" id="ocm-validate"><span id="ocm-validate-text">格式校验: 打开文件后自动检测</span></div>
@@ -500,6 +487,15 @@
             </div>
         </div>
     </div>
+
+    <!-- CodeMirror 5 内核 (顺序: 库 → 模式 → 折叠插件; 必须在本页脚本之前加载) -->
+    <script src="/static/vendor/codemirror/lib/codemirror.js"></script>
+    <script src="/static/vendor/codemirror/mode/javascript/javascript.js"></script>
+    <script src="/static/vendor/codemirror/mode/properties/properties.js"></script>
+    <script src="/static/vendor/codemirror/mode/lua/lua.js"></script>
+    <script src="/static/vendor/codemirror/addon/fold/foldcode.js"></script>
+    <script src="/static/vendor/codemirror/addon/fold/foldgutter.js"></script>
+    <script src="/static/vendor/codemirror/addon/fold/brace-fold.js"></script>
 
     <script>
         let selectedService = null;
@@ -721,9 +717,18 @@
             editingFilePath = filePath;
 
             document.getElementById('editing-file-title').textContent = '编辑文件: ' + fileName;
-            document.getElementById('file-content').value = content;
             document.getElementById('editor-container').style.display = 'flex';
             document.getElementById('encoding-selector').value = encoding; // Set the dropdown value
+
+            // 编辑器内核 = CodeMirror 5: 按扩展名切高亮模式, 并接回折叠缓存。
+            // 顺序要紧: 容器刚从 display:none 变可见 → setValue 之后必须 refresh,
+            // 否则 CM 拿不到真实尺寸, 渲染成一片空白。
+            const ed = ocmEnsureEditor();
+            ed.setOption('mode', ocmMimeOf(fileName));
+            ed.setValue(content === undefined || content === null ? '' : content);
+            ocmErrLineHandle = null;   // setValue 会失效旧的行句柄
+            ed.refresh();
+            ocmRestoreFolds();         // 行数已定, 还原上次折叠
             ocmValidateNow(); // 打开即校验一次, 不用等用户敲键
 
             // 加载备份文件列表
@@ -936,12 +941,17 @@
             document.getElementById('editor-container').style.display = 'none';
             selectedService = null;
             editingFilePath = null;
+            ocmClearEditor();      // 关掉即清干净 (内容 / 标题)
+            ocmClearFoldStore();   // 折叠记忆也不留给下次
             ocmValidateNow(); // 清掉残留校验态
         }
         // 隐藏编辑器
         function hideEditor() {
             document.getElementById('editor-container').style.display = 'none';
             editingFilePath = null;
+            // 关掉就清干净: 不留内容 / 标题 / 折叠记忆, 免得下次打开看着像「缓存了上次的结果」
+            ocmClearEditor();
+            ocmClearFoldStore();
             ocmValidateNow();
         }
         // 遮罩点击关闭 (卡片 onclick stopPropagation 已挡冒泡)
@@ -1216,7 +1226,7 @@
                 bar.dataset.line = '';
                 bar.dataset.near = '';
                 bar.title = '';
-                ocmRenderGutter(errLine || null);
+                ocmMarkErrorLine(errLine || null);
             };
             if (!editingFilePath) { paint('', '格式校验: 打开文件后自动检测'); return; }
             const name = editingFilePath.replace(/.*[/\\]/, '');
@@ -1243,67 +1253,159 @@
             bar.title = r.msg; // 完整报错挂 title, 免得长消息把条撑爆
         }
 
-        // 点校验条 → 选中出错行并滚到可视区中间。
-        // textarea 没法给单行染色, "选中 + 滚动" 是最直观的定位手段;
-        // 要行内红线/波浪线得换 CodeMirror 或 Monaco, 属另一个量级。
+        // ===== 编辑器内核 (CodeMirror 5, 2026-09-24 换) =====
+        // 提供: 语法高亮 (json/ini/lua) + JSON/Lua 层级折叠 + 折叠状态自动缓存 + 「完全展开」。
+        // CM 经 fromTextArea 接管既有 textarea: 它被隐藏但仍是 value 真源 (change 时 cm.save()),
+        // 故校验 / 保存 / 建备份读 `#file-content`.value 的既有逻辑零改动。
+        let cm = null;
+        let ocmErrLineHandle = null;
+        let ocmFoldSaveTimer = null;
+
+        // 按扩展名选 MIME (只覆盖写白名单三类; 其余返回 null = 纯文本高亮, 不报错)
+        function ocmMimeOf(name) {
+            const m = /\.([a-z0-9]+)$/i.exec(name || '');
+            const ext = m ? m[1].toLowerCase() : '';
+            if (ext === 'json') return 'application/json';  // mode/javascript (json: true)
+            if (ext === 'ini') return 'text/x-ini';         // mode/properties
+            if (ext === 'lua') return 'text/x-lua';
+            return null;
+        }
+
+        function ocmEnsureEditor() {
+            if (cm) return cm;
+            cm = CodeMirror.fromTextArea(document.getElementById('file-content'), {
+                lineNumbers: true,
+                foldGutter: true,
+                gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+                foldOptions: { rangeFinder: CodeMirror.fold.brace },  // JSON/Lua 的 {}[] 折叠
+                lineWrapping: false,   // 与旧 textarea wrap="off" 同口径: 长行走横向滚动
+                tabSize: 4,
+                indentUnit: 4,
+                theme: document.body.classList.contains('dark-theme') ? 'material-darker' : 'default'
+            });
+            cm.on('change', () => { cm.save(); ocmScheduleValidate(); });
+            cm.on('fold', ocmScheduleFoldSave);
+            cm.on('unfold', ocmScheduleFoldSave);
+            // 深色 class 由外部 (面包屑注入的脚本) 挂到 body → 用观察器同步 CM 主题
+            new MutationObserver(() => {
+                cm.setOption('theme', document.body.classList.contains('dark-theme') ? 'material-darker' : 'default');
+            }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+            return cm;
+        }
+
+        // 清空编辑器 + 标题 (关闭时用; 必须经 CM, 直接改隐藏 textarea 不生效)
+        function ocmClearEditor() {
+            if (cm) { cm.setValue(''); ocmErrLineHandle = null; }
+            else { document.getElementById('file-content').value = ''; }
+            document.getElementById('editing-file-title').textContent = '编辑文件';
+        }
+
+        // ---- 折叠状态缓存 (内存 Map, 按文件路径; 生命周期 = 一次「打开编辑器」) ----
+        // 为什么不再落 localStorage: 需求是「重新打开配置页后无上次遗留缓存」—— 落盘会让上次的
+        // 折叠结果在下次打开时复活。改内存表 + 关闭时清空: 同一次编辑会话内(切分支/换编码重开)
+        // 仍记得折叠, 关掉再打开即干净。
+        // 行号是易失坐标: 只在「总行数与记录一致」时才还原 ——
+        // 文件被改过就宁可全展开, 也不按旧行号乱折一通。
+        let ocmFoldStore = new Map();
+        function ocmClearFoldStore() { ocmFoldStore = new Map(); }
+
+        // 一次性清理: 早期版本把折叠缓存写进 localStorage (键前缀 cfg-fold: / ocm-fold:),
+        // 现已改内存表 —— 残留键删掉, 免得浏览器里留无用数据。
+        (function ocmPurgeLegacyFoldKeys() {
+            try {
+                Object.keys(localStorage)
+                    .filter(k => k.startsWith('cfg-fold:') || k.startsWith('ocm-fold:'))
+                    .forEach(k => localStorage.removeItem(k));
+            } catch (e) { /* localStorage 不可用: 本就不落盘, 忽略 */ }
+        })();
+
+        function ocmScheduleFoldSave() {
+            if (ocmFoldSaveTimer) clearTimeout(ocmFoldSaveTimer);
+            ocmFoldSaveTimer = setTimeout(ocmSaveFolds, 250);  // 连续折/展只落一次盘
+        }
+
+        // 已折叠的行号集。
+        // 为什么不用 cm.isFolded(line): ① CM5 的 isFolded 收的是 Pos 不是行号
+        // (传数字会让它内部 findMarksAt 拿到 {line:undefined} → getLine(NaN) → 越界崩);
+        // ② 即便传 Pos(line,0) 也会漏 —— 折叠标记的起点通常在 `{` 之后 (from.ch>0),
+        // Pos(line,0) 不在标记范围内。直接读标记表是唯一稳的口径。
+        function ocmFoldedLines() {
+            const out = [];
+            if (!cm) return out;
+            cm.getAllMarks().forEach(m => {
+                if (m.__isFold) {
+                    const r = m.find();
+                    if (r && r.to.line > r.from.line) out.push(r.from.line);
+                }
+            });
+            return out;
+        }
+
+        function ocmSaveFolds() {
+            if (!cm || !editingFilePath) return;
+            ocmFoldStore.set(editingFilePath, { total: cm.lineCount(), lines: ocmFoldedLines() });
+        }
+
+        // 折一行: 起点先试行首再试行尾 (不同 rangeFinder 对起点要求不同),
+        // 以「标记表里出现了这一行」为成功判据
+        function ocmFoldLine(line) {
+            const text = cm.getLine(line) || '';
+            for (const ch of [0, text.length]) {
+                cm.foldCode(CodeMirror.Pos(line, ch));
+                if (ocmFoldedLines().includes(line)) return true;
+            }
+            return false;
+        }
+
+        function ocmRestoreFolds() {
+            if (!cm || !editingFilePath) return;
+            const saved = ocmFoldStore.get(editingFilePath);
+            if (!saved || !Array.isArray(saved.lines)) return;
+            if (saved.total !== cm.lineCount()) return;  // 内容已变 → 行号不可信
+            saved.lines.forEach(ln => {
+                if (typeof ln === 'number' && ln >= 0 && ln < cm.lineCount()) ocmFoldLine(ln);
+            });
+        }
+
+        // 显式「完全展开」按钮: 展开全部 + 清掉本文件的折叠缓存
+        function ocmUnfoldAll() {
+            if (!cm) return;
+            cm.execCommand('unfoldAll');
+            if (editingFilePath) ocmFoldStore.delete(editingFilePath);
+        }
+
+        // 出错行整行高亮 (替代旧的行号槽标红 —— 换 CM 后终于能在编辑区内标行)
+        function ocmMarkErrorLine(line) {
+            if (!cm) return;
+            if (ocmErrLineHandle !== null) {
+                cm.removeLineClass(ocmErrLineHandle, 'background', 'ocm-err-line');
+                ocmErrLineHandle = null;
+            }
+            if (line && line >= 1 && line <= cm.lineCount()) {
+                ocmErrLineHandle = cm.addLineClass(line - 1, 'background', 'ocm-err-line');
+            }
+        }
+
+        // 点校验条 → 定位到出错处并滚到可视区中间 (有行号就选中该行; 只有片段就选中片段)
         function ocmGotoValidateError() {
             const bar = document.getElementById('ocm-validate');
-            const ta = document.getElementById('file-content');
-            if (!bar || !ta) return;
+            if (!bar || !cm) return;
             const ln = bar.dataset.line ? parseInt(bar.dataset.line, 10) : 0;
             const nr = (bar.dataset.near || '').split(',').map(s => parseInt(s, 10));
             const hasNear = nr.length === 2 && !isNaN(nr[0]) && !isNaN(nr[1]) && nr[1] > nr[0];
             if (!ln && !hasNear) return;
-            ta.focus();
-            const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+            cm.focus();
             if (ln) {
-                const lines = ta.value.split('\n');
-                let start = 0;
-                for (let i = 0; i < ln - 1 && i < lines.length; i++) start += lines[i].length + 1;
-                const end = start + ((lines[ln - 1] || '').length);
-                ta.setSelectionRange(start, end);
-                ta.scrollTop = Math.max(0, (ln - 1) * lh - ta.clientHeight / 2);
+                const line = Math.min(Math.max(ln - 1, 0), cm.lineCount() - 1);
+                cm.setSelection({ line: line, ch: 0 }, { line: line, ch: (cm.getLine(line) || '').length });
+                cm.scrollIntoView({ line: line, ch: 0 }, 120);
             } else {
-                ta.setSelectionRange(nr[0], nr[1]);
-                const lineNo = ta.value.slice(0, nr[0]).split('\n').length;
-                ta.scrollTop = Math.max(0, (lineNo - 1) * lh - ta.clientHeight / 2);
+                const from = cm.posFromIndex(nr[0]);
+                cm.setSelection(from, cm.posFromIndex(nr[1]));
+                cm.scrollIntoView(from, 120);
             }
         }
 
-        // 行号槽: 与正文同字体/同行高, 只随 scrollTop 平移。
-        // 前提是 textarea 用 wrap="off" —— 软换行会让一个逻辑行占两个视觉行, 行号必然错位。
-        let ocmGutterCount = -1;
-        function ocmRenderGutter(errLine) {
-            const ta = document.getElementById('file-content');
-            const g = document.getElementById('ocm-gutter');
-            if (!ta || !g) return;
-            const n = ta.value.split('\n').length;
-            if (n !== ocmGutterCount) {
-                ocmGutterCount = n;
-                const frag = document.createDocumentFragment();
-                for (let i = 1; i <= n; i++) {
-                    const d = document.createElement('div');
-                    d.textContent = i;
-                    frag.appendChild(d);
-                }
-                g.textContent = '';
-                g.appendChild(frag);
-            }
-            // 出错行在行号槽里标红 (textarea 本体没法给单行染色, 行号槽可以)
-            const prev = g.querySelector('.err-line');
-            if (prev) prev.classList.remove('err-line');
-            if (errLine && errLine >= 1 && g.children[errLine - 1]) {
-                g.children[errLine - 1].classList.add('err-line');
-            }
-            g.scrollTop = ta.scrollTop;
-        }
-
-        document.getElementById('file-content').addEventListener('input', ocmScheduleValidate);
-        document.getElementById('file-content').addEventListener('input', function () { ocmRenderGutter(); });
-        document.getElementById('file-content').addEventListener('scroll', function () {
-            const g = document.getElementById('ocm-gutter');
-            if (g) g.scrollTop = this.scrollTop; // 行号跟着正文一起滚
-        });
         document.getElementById('ocm-validate').addEventListener('click', ocmGotoValidateError);
 
         // 页面加载完成后初始化

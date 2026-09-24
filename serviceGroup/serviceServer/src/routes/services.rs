@@ -9,12 +9,13 @@
 use crate::error::{AppError, Result};
 use crate::ports_probe::PortsProbe;
 use crate::state::AppState;
-use axum::extract::{Multipart, State};
-use axum::http::StatusCode;
+use axum::extract::{ConnectInfo, Multipart, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,43 @@ fn epoch_secs(t: std::time::SystemTime) -> Option<u64> {
 /// 单文件 mtime (Unix 秒); 不存在/不可读 → None。
 fn mtime_epoch(p: &std::path::Path) -> Option<u64> {
     std::fs::metadata(p).ok()?.modified().ok().and_then(epoch_secs)
+}
+
+/// 当前 Unix 秒 (操作 IP 记录用)。
+fn now_epoch() -> u64 {
+    epoch_secs(std::time::SystemTime::now()).unwrap_or(0)
+}
+
+/// 记「谁经本服务页操作了这个服务」。
+///
+/// **只在成功路径调用** —— 卡片要回答「谁最后把它动成功了」, 失败的尝试不留痕
+/// (详见 [crate::op_ip] 头注)。取 IP 的口径见 `op_ip::client_ip`。
+fn record_op(
+    state: &AppState,
+    service_id: &str,
+    headers: &HeaderMap,
+    peer: SocketAddr,
+    action: &str,
+) {
+    let ip = crate::op_ip::client_ip(headers, Some(peer));
+    state.op_ips.record(service_id, &ip, action, now_epoch());
+}
+
+/// 把「最后一次操作」三个字段挂到服务条目上 (无记录 → null, 前端渲染 "-")。
+fn attach_last_op(entry: &mut Value, op: Option<&crate::op_ip::OpRecord>) {
+    let Value::Object(m) = entry else { return };
+    m.insert(
+        "last_op_ip".into(),
+        op.map(|r| json!(r.ip)).unwrap_or(Value::Null),
+    );
+    m.insert(
+        "last_op_at".into(),
+        op.map(|r| json!(r.at)).unwrap_or(Value::Null),
+    );
+    m.insert(
+        "last_op_action".into(),
+        op.map(|r| json!(r.action)).unwrap_or(Value::Null),
+    );
 }
 
 /// 服务目录内**产物文件**的最晚修改时间 (非递归, 只 stat 一级文件)。
@@ -72,7 +110,10 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
     // service-server 自身也在这份陈列里 (自报, 不来自 config.json): 只提供「重启自身 +
     // 修改配置」两件事, 附 self:true 供前端渲染专用按钮 (停掉自己入口即消失; 换代必须走
     // deploy 包通道)。固定排在第一个面板, 故先插。
-    let (self_id, self_entry) = self_service_entry();
+    let (self_id, mut self_entry) = self_service_entry();
+    // 操作 IP 快照: 一次加锁取完, 下面逐服务查表 (2026-09-24 加)。
+    let ops = state.op_ips.snapshot();
+    attach_last_op(&mut self_entry, ops.get(&self_id));
     let mut map = serde_json::Map::new();
     map.insert(self_id, self_entry);
     for svc in services {
@@ -83,26 +124,28 @@ pub async fn list_status(State(state): State<AppState>) -> Result<Json<serde_jso
         //   status / type / exe / name / display_name / path / exe_path / ports
         //   + exe_mtime / updated_at (2026-09-21 加: 卡片展示「exe 修改时间 / 最后更新」,
         //     均为 Unix 秒, 前端本地化; None = 无该文件 / 目录不可读)
+        //   + last_op_ip / last_op_at / last_op_action (2026-09-24 加: 卡片展示「最后操作 IP」,
+        //     来源 = 经本页做服务生命周期操作的成功用户; None = 本机尚未有记录)
         let display_name = format!("同城游_{}_{}", svc.name, svc.svc_type);
         let exe_path = svc.path.join(&svc.exe);
         let ports = ports_str(st, &exe_path, &svc.exe, &ports_probe);
         let exe_mtime = mtime_epoch(&exe_path);
         let updated_at = newest_artifact_epoch(&svc.path);
-        map.insert(
-            svc.service_id.clone(),
-            serde_json::json!({
-                "status": st.label(),
-                "type": svc.svc_type,
-                "exe": svc.exe,
-                "name": svc.name,
-                "display_name": display_name,
-                "path": svc.path.display().to_string(),
-                "exe_path": exe_path.display().to_string(),
-                "ports": ports,
-                "exe_mtime": exe_mtime,
-                "updated_at": updated_at,
-            }),
-        );
+        let mut entry = serde_json::json!({
+            "status": st.label(),
+            "type": svc.svc_type,
+            "exe": svc.exe,
+            "name": svc.name,
+            "display_name": display_name,
+            "path": svc.path.display().to_string(),
+            "exe_path": exe_path.display().to_string(),
+            "ports": ports,
+            "exe_mtime": exe_mtime,
+            "updated_at": updated_at,
+        });
+        // 「谁最后一次操作了这个服务」(2026-09-24 加)
+        attach_last_op(&mut entry, ops.get(&svc.service_id));
+        map.insert(svc.service_id.clone(), entry);
     }
     Ok(Json(Value::Object(map)))
 }
@@ -236,6 +279,8 @@ impl ServiceReq {
 /// 立即返 "请求已提交", 完成后 invalidate status_cache。
 pub async fn start_service(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<ServiceReq>,
 ) -> Result<Json<serde_json::Value>> {
     // 工具自身由宿主管控, 不能走 SCM (它不是 Windows 服务); 要重启用「重启自身」。
@@ -249,6 +294,7 @@ pub async fn start_service(
         return Ok(Json(json_err(400, "参数不完整")));
     }
     let id = req.service_id();
+    record_op(&state, &id, &headers, peer, "start");
     let cache = state.status_cache.clone();
     let id_task = id.clone();
     tokio::task::spawn_blocking(move || {
@@ -264,6 +310,8 @@ pub async fn start_service(
 /// POST /api/services/stop — 同步: ControlService STOP + 轮询 STOPPED (10s)。
 pub async fn stop_service(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<ServiceReq>,
 ) -> Result<Json<serde_json::Value>> {
     // 停掉工具自身 = 入口消失 (且 enabled 由宿主托管), 故只允许「重启自身」;
@@ -283,7 +331,10 @@ pub async fn stop_service(
         .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
     state.status_cache.invalidate(&req.service_id());
     match res {
-        Ok(msg) => Ok(Json(serde_json::json!({ "success": true, "message": msg }))),
+        Ok(msg) => {
+            record_op(&state, &req.service_id(), &headers, peer, "stop");
+            Ok(Json(serde_json::json!({ "success": true, "message": msg })))
+        }
         Err(msg) => Ok(Json(serde_json::json!({ "success": false, "message": msg }))),
     }
 }
@@ -295,6 +346,8 @@ pub async fn stop_service(
 /// 前端「强制停止」按钮 (二次确认) 调用, 不在 update / stop 流程里自动触发。
 pub async fn force_stop_service(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<ServiceReq>,
 ) -> Result<Json<serde_json::Value>> {
     // 工具自身不是 Windows 服务: 强杀它等于把自己入口干掉。
@@ -320,7 +373,10 @@ pub async fn force_stop_service(
     .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
     state.status_cache.invalidate(&id);
     match res {
-        Ok(msg) => Ok(Json(serde_json::json!({ "success": true, "message": msg }))),
+        Ok(msg) => {
+            record_op(&state, &id, &headers, peer, "force-stop");
+            Ok(Json(serde_json::json!({ "success": true, "message": msg })))
+        }
         Err(msg) => Ok(Json(serde_json::json!({ "success": false, "message": msg }))),
     }
 }
@@ -328,18 +384,27 @@ pub async fn force_stop_service(
 /// POST /api/services/restart — 异步: stop -> sleep 2s -> start, 立即返。
 pub async fn restart_service(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<ServiceReq>,
 ) -> Result<Json<serde_json::Value>> {
     // 工具自身: 既不是 Windows 服务 (走不了 SCM), 也不能自杀式就地换代 ——
     // 交 legacy 经宿主管道 restart (stop_verified 端口判据 → start, 句柄留宿主),
     // 响应由 legacy 发出, 本进程随后才被停, 故调用方拿得到回包。
     if req.svc_type == SELF_SERVICE_TYPE || req.name == SELF_SERVICE_NAME {
-        return self_restart_via_legacy(&state).await;
+        let id = req.service_id();
+        let resp = self_restart_via_legacy(&state).await?;
+        // 只记成功: 委派失败 = 这次重启并未发生
+        if resp.0.get("success").and_then(Value::as_bool) == Some(true) {
+            record_op(&state, &id, &headers, peer, "restart");
+        }
+        return Ok(resp);
     }
     if req.exe.is_none() {
         return Ok(Json(json_err(400, "参数不完整（需要 name, type, exe）")));
     }
     let id = req.service_id();
+    record_op(&state, &id, &headers, peer, "restart");
     let cache = state.status_cache.clone();
     let id_task = id.clone();
     tokio::task::spawn_blocking(move || {
@@ -404,6 +469,8 @@ async fn self_restart_via_legacy(state: &AppState) -> Result<Json<serde_json::Va
 /// POST /api/services/delete — 同步: DeleteService (SCM 注销)。
 pub async fn delete_service(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<ServiceReq>,
 ) -> Result<Json<serde_json::Value>> {
     let id = req.service_id();
@@ -412,7 +479,10 @@ pub async fn delete_service(
         .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
     state.status_cache.invalidate(&req.service_id());
     match res {
-        Ok(msg) => Ok(Json(serde_json::json!({ "success": true, "message": msg }))),
+        Ok(msg) => {
+            record_op(&state, &req.service_id(), &headers, peer, "delete");
+            Ok(Json(serde_json::json!({ "success": true, "message": msg })))
+        }
         Err(msg) => Ok(Json(serde_json::json!({ "success": false, "message": msg }))),
     }
 }
@@ -431,6 +501,8 @@ fn json_err(code: u16, msg: &str) -> serde_json::Value {
 /// POST /api/services/deploy — 部署服务。
 pub async fn deploy_service(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<ServiceReq>,
 ) -> Result<(StatusCode, Json<Value>)> {
     let exe = match &req.exe {
@@ -468,11 +540,24 @@ pub async fn deploy_service(
     } else {
         format!("服务 {display} 已成功部署到 {}（配置已添加，但未注册为Windows服务）", req.name)
     };
+    record_op(&state, &service_name, &headers, peer, "deploy");
     Ok((StatusCode::OK, Json(json!({ "success": true, "message": message }))))
 }
 
 /// POST /api/services/start-all — 后台按序启动, 立即返 (对齐 legacy daemon thread)。
-pub async fn start_all_services(State(state): State<AppState>) -> Result<(StatusCode, Json<Value>)> {
+pub async fn start_all_services(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<Value>)> {
+    // 「一键启动全部」也是经本页的操作: 给本次陈列的每个服务各记一条 (同 IP / 时间 / 动作)。
+    let op_ip = crate::op_ip::client_ip(&headers, Some(peer));
+    let op_at = now_epoch();
+    if state.path_map.refresh(&state.config_path).is_ok() {
+        for svc in state.path_map.all() {
+            state.op_ips.record(&svc.service_id, &op_ip, "start-all", op_at);
+        }
+    }
     let config_path = state.config_path.clone();
     let path_map = state.path_map.clone();
     tokio::task::spawn_blocking(move || {
@@ -489,6 +574,8 @@ pub async fn start_all_services(State(state): State<AppState>) -> Result<(Status
 /// POST /api/services/update — multipart 上传 exe/pdb 热更新 (停 -> 替换 -> 启)。
 pub async fn update_service(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<Value>)> {
     let mut name: Option<String> = None;
@@ -561,12 +648,19 @@ pub async fn update_service(
         )));
     }
 
+    // state 随后被 move 进阻塞任务, 故提前取出记录入口 + 操作者 IP。
+    let op_ips = state.op_ips.clone();
+    let op_id = format!("{name}_{svc_type}");
+    let op_ip = crate::op_ip::client_ip(&headers, Some(peer));
     let res = tokio::task::spawn_blocking(move || {
         do_update(&state, &name, &svc_type, &exe, &exe_bytes, &pdb_bytes)
     })
     .await
     .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
     let (success, message) = res;
+    if success {
+        op_ips.record(&op_id, &op_ip, "update", now_epoch());
+    }
     Ok((StatusCode::OK, Json(json!({ "success": success, "message": message }))))
 }
 

@@ -49,6 +49,11 @@ EXCLUDE_DIRS = {".svn", ".git", "__pycache__", ".venv", "venv", "node_modules",
 ROOT_SKIP_FILES = {"config.yaml", "config.full.yaml"}
 CONFIG_NAME_PREFIXES = ("config",)
 
+# 不打包的**运行时状态文件** (按文件名, 任意层级): 操作 IP 记录 (src/op_ip.rs)。
+# 它是现场数据 —— 堡垒机那份记的是堡垒机操作者的 IP, 被 dev 端一次推送覆盖就等于
+# 抹掉现场记录。后缀是 .json, 不显式排除就会被 INCLUDE_EXT 收进包。
+SKIP_FILE_NAMES = {".service-op-ip.json"}
+
 
 def _is_config_name(p: Path) -> bool:
     return p.name.startswith(CONFIG_NAME_PREFIXES) and p.suffix in (".json", ".yaml", ".yml")
@@ -218,6 +223,9 @@ def collect_files(only: list[str] | None = None) -> tuple[list[str], list[str]]:
             p = Path(dirpath) / fn
             rel = p.relative_to(ROOT).as_posix()
             if p.suffix.lower() not in INCLUDE_EXT:
+                continue
+            if fn in SKIP_FILE_NAMES:
+                skipped.append(rel)
                 continue
             if _is_config_name(p):
                 skipped.append(rel)

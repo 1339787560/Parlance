@@ -10,6 +10,7 @@ mod config;
 mod encoding;
 mod error;
 mod localtime;
+mod op_ip;
 mod path_check;
 mod path_map;
 mod ports_probe;
@@ -100,6 +101,12 @@ async fn main() -> anyhow::Result<()> {
         ),
     }
 
+    // 操作 IP 记录 (2026-09-24): 机器本地 dotfile, 不进 deploy 包 (详见 op_ip 模块头注)。
+    let op_ips = Arc::new(crate::op_ip::OpIpStore::load(crate::op_ip::resolve_path(
+        std::path::Path::new(&config_path),
+        std::env::var(crate::op_ip::ENV_STATE_FILE).ok().as_deref(),
+    )));
+
     let state = AppState {
         config_path: config_path.into(),
         path_map,
@@ -109,6 +116,7 @@ async fn main() -> anyhow::Result<()> {
         http_client,
         templates,
         static_root,
+        op_ips,
     };
 
     let app = Router::new()
@@ -345,6 +353,12 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], 5000));
     tracing::info!("service-server listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    // with_connect_info: 让 handler 能用 ConnectInfo<SocketAddr> 取请求对端 IP
+    // (操作 IP 记录用; 见 op_ip::client_ip)。
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }

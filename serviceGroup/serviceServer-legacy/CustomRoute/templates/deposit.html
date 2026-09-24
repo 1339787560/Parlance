@@ -2107,6 +2107,7 @@
             }
             const judge = p.judge || {};
             const data = p.data || {};
+            const mc = data.tqmonthcard || {};
             const tierDesc = {
                 0: '皆无 → 非 Lua 玩家（CP 侧只置状态门）',
                 1: '金币 > 0 → Lua 老玩家',
@@ -2114,6 +2115,33 @@
             };
             const badge = (txt, bg, fg) =>
                 `<span style="font-size:12px; padding:2px 8px; border-radius:3px; background:${bg}; color:${fg};">${txt}</span>`;
+            // 周/月卡时间量纲 = 14 位 YYYYMMDDHHMMSS（写入侧 TQVIP.py: add_time_to_timenum(gettimenum(), days=N)）；
+            // 0 / 空 / 非 14 位 → 视为「无」。仅作展示，**不参与档位判定**（兜底口径只取经验 + 有时限装扮）。
+            const parseTimeNum = (v) => {
+                const s = String(v || '');
+                if (!/^\d{14}$/.test(s) || s === '00000000000000') return null;
+                const d = new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8),
+                    +s.slice(8, 10), +s.slice(10, 12), +s.slice(12, 14));
+                return isNaN(d.getTime()) ? null : d;
+            };
+            const fmtTimeNum = (v) => {
+                const s = String(v || '').padStart(14, '0');
+                return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)} ${s.slice(8, 10)}:${s.slice(10, 12)}`;
+            };
+            const cardBadge = (label, card) => {
+                const end = card && card.endtime;
+                const d = parseTimeNum(end);
+                if (!d) return badge(label + ' 无', '#f2f2f2', '#666');
+                if (d <= new Date()) return badge(`${label} 已过期 ${fmtTimeNum(end)}`, '#f2f2f2', '#999');
+                const days = Math.ceil((d - new Date()) / 86400000);
+                return badge(`${label} 有效 ${days}天 至 ${fmtTimeNum(end)}`, '#eefaf0', '#1a7a3d');
+            };
+            // 免赔卡（propid 20002 月卡 / 20003 周卡，Baopeikainfo 有才出现）：有值才附注
+            const redressBadge = (label, r) => {
+                const d = r && parseTimeNum(r.endtime);
+                if (!d) return '';
+                return badge(`${label}免赔 ${d <= new Date() ? '已过期' : '至'} ${fmtTimeNum(r.endtime)}`, '#f2f2f2', '#666');
+            };
             let html = '';
             html += '<h3 class="cp-section-title">判定结果</h3>';
             html += '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">';
@@ -2124,6 +2152,10 @@
             html += badge('经验 ' + (judge.experience || 0), '#fff8e1', '#856404');
             html += badge('有时限装扮 ' + (judge.timeLimitedDeco || 0), '#fff8e1', '#856404');
             html += badge('拥有装扮 ' + (judge.ownedDeco || 0), '#f2f2f2', '#666');
+            html += cardBadge('周卡', mc.weekcard);
+            html += cardBadge('月卡', mc.monthcard);
+            html += redressBadge('周卡', mc.weekcardRedress);
+            html += redressBadge('月卡', mc.monthcardRedress);
             html += badge('载荷 ' + d.len + ' 字节', '#f2f2f2', '#666');
             html += '</div>';
             html += `<p style="font-size:12px; color:#888; margin:0 0 12px;">档位语义：${tierDesc[p.tier] || '未知'}</p>`;

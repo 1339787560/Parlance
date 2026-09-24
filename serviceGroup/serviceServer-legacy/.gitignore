@@ -6,6 +6,8 @@ src/cache
 src/background
 src/extern
 src/icon
+# 操作 IP 记录 (runtime 现场数据: 每台机器一份, 既不入库也不进 deploy 包; 见 src/op_ip.rs)
+.service-op-ip.json
 # 重型二进制与数据 (Phase 2 搬入后补, 不入 infoServer 仓)
 *.exe
 *.pdb
